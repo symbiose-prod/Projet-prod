@@ -347,7 +347,7 @@ with st.sidebar:
 
     # Footer logout tout en bas de la sidebar
     st.markdown("---")
-    user_menu_footer()
+    user_menu_footer(user)
 
 # 4) Sélection utilisateur
 st.subheader("Sélection des produits")
