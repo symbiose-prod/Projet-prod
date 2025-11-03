@@ -66,18 +66,20 @@ def _default_recipients_from_cfg() -> list[str]:
         return [x.strip() for x in cfg.split(",") if x.strip()]
     return []
 
+# ================================== EMAIL (wrapper) ===========================
+from common.email import send_html_with_pdf, html_signature, _get  # _get_ns plus nécessaire ici
+
 def send_mail_with_pdf(
     pdf_bytes: bytes,
     filename: str,
     total_palettes: int,
     to_list: list[str],
     date_ramasse: dt.date,
-    bcc_me: bool = True
+    bcc_me: bool = True,
 ):
     """
-    Envoi via common.email → API Brevo (ou autre backend selon env).
-    - Corps HTML + signature inline
-    - PDF en pièce jointe
+    Envoie le mail de demande de ramasse à CHAQUE destinataire en utilisant
+    common.email.send_html_with_pdf(to_email=..., ...), qui attend un seul destinataire.
     """
     subject = f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
 
@@ -87,24 +89,23 @@ def send_mail_with_pdf(
     Pour <strong>{total_palettes}</strong> palettes.</p>
     <p>Merci,<br>Bon après-midi.</p>
     """
-    # On compose : corps + signature
     html = body_html + html_signature()
 
-    # BCC expéditeur si demandé (on l’obtient via EMAIL_SENDER / [email].sender)
+    # éventuel BCC expéditeur
     sender = _get("EMAIL_SENDER")
     recipients = list(to_list)
     if bcc_me and sender:
         if sender not in recipients:
             recipients.append(sender)
 
-    # Envoi (exceptions remontent pour affichage UI)
-    send_html_with_pdf(
-        subject=subject,
-        html_body=html,
-        recipients=recipients,
-        pdf_bytes=pdf_bytes,
-        pdf_name=filename
-    )
+    # on envoie un mail par destinataire
+    for rcpt in recipients:
+        send_html_with_pdf(
+            to_email=rcpt,
+            subject=subject,
+            html_body=html,
+            attachments=[(filename, pdf_bytes)],
+        )
 
 
 # ================================ Réglages ====================================
