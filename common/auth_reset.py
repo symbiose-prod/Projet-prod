@@ -107,7 +107,7 @@ def create_password_reset(
     )
 
     # 4) construire l'URL vers la page publique
-    reset_url = f"{BASE_URL}/{RESET_PAGE}?token={token}"
+    reset_url = f"{BASE_URL}/?token={token}"
     return reset_url
 
 
