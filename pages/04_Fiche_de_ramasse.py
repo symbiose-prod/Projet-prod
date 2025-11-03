@@ -467,28 +467,38 @@ else:
     # 2) Récup PDF (ou possibilité de régénérer si absent)
     pdf_bytes = st.session_state.get("fiche_ramasse_pdf")
 
-    # 3) UI destinataires (pré-remplie et persistante)
+       # --- 3) UI destinataires (pré-remplie et persistante) ---
+
+    # 1) Détermine des destinataires par défaut
+    #    ordre de priorité :
+    #    - EMAIL_RECIPIENTS (env / secrets) -> ex: "a@x.com,b@y.com"
+    #    - fallback local ci-dessous (à adapter)
+    DEFAULT_RECIPIENTS_FALLBACK = "chloe.etheve@supbiotech.fr, ethevechloeemilie974@hotmail.com"
+
     try:
-        sender_hint = _get_ns("email", "sender") or _get("EMAIL_SENDER") or _get_ns("email", "user") or _get("EMAIL_USER")
-        rec_list = _default_recipients_from_cfg()
-        rec_str = ", ".join(rec_list)
+        sender_hint = _get_ns("email", "sender") or _get("EMAIL_SENDER") \
+                      or _get_ns("email", "user") or _get("EMAIL_USER")
+        rec_list = _default_recipients_from_cfg()  # depuis env/secrets
     except Exception:
         sender_hint = None
-        rec_str = ""
+        rec_list = []
 
-    if "ramasse_email_to" not in st.session_state:
-        st.session_state["ramasse_email_to"] = rec_str or ""
+    # 2) Initialise le state UNE FOIS avec une vraie valeur (pas un placeholder)
+    if "ramasse_email_to" not in st.session_state or not st.session_state["ramasse_email_to"].strip():
+        st.session_state["ramasse_email_to"] = (
+            ", ".join(rec_list) if rec_list else DEFAULT_RECIPIENTS_FALLBACK
+        )
 
+    # 3) Champ lié au state (valeur réelle)
     to_input = st.text_input(
         "Destinataires (séparés par des virgules)",
         key="ramasse_email_to",
-        placeholder="ex: chloe.etheve@supbiotech.fr, ethevechloeemilie974@hotmail.com",
     )
 
-    def _parse_emails(s: str):
+    def _parse_emails(s: str) -> list[str]:
         return [e.strip() for e in (s or "").split(",") if e.strip()]
 
-    to_list = _parse_emails(st.session_state.get("ramasse_email_to",""))
+    to_list = _parse_emails(st.session_state.get("ramasse_email_to", ""))
 
     if sender_hint:
         st.caption(f"Expéditeur utilisé : **{sender_hint}**")
