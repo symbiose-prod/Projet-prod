@@ -482,7 +482,7 @@ else:
     to_input = st.text_input(
         "Destinataires (séparés par des virgules)",
         key="ramasse_email_to",
-        placeholder="ex: logistique@transporteur.com, expeditions@tonentreprise.fr",
+        placeholder="ex: chloe.etheve@supbiotech.fr, ethevechloeemilie974@hotmail.com",
     )
 
     def _parse_emails(s: str):
