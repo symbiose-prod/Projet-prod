@@ -1,84 +1,106 @@
 # common/auth_reset.py
 from __future__ import annotations
-import os
-import secrets
-import hashlib
-import datetime as dt
+import os, secrets, hashlib, datetime
 from typing import Optional, Dict, Any
-
-from sqlalchemy import text
 from db.conn import run_sql
 
-# ⚠️ On importe les fonctions qui existent chez toi
-from common.auth import find_user_by_email, hash_password  # <- OK
-
-BASE_URL = os.getenv("BASE_URL", "https://ton-domaine.app")
+BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
 RESET_TTL_MINUTES = int(os.getenv("RESET_TTL_MINUTES", "60"))
 
-def _hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
+def _now_utc():
+    return datetime.datetime.now(datetime.timezone.utc)
 
-def _now_utc() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+def _hash_token(t: str) -> str:
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
-def create_password_reset(email: str, meta: Optional[Dict[str, str]] = None) -> Optional[str]:
-    """
-    Crée un token de reset pour l'utilisateur (si l'email existe).
-    Retourne l'URL de reset (avec token) OU None si pas d'utilisateur.
-    Côté UI, on ne divulgue jamais si l'email existe.
-    """
-    user = find_user_by_email(email)
+def _recent_requests_for_user(user_id: str) -> Dict[str, Any]:
+    rows = run_sql("""
+        SELECT id, created_at, used_at, expires_at
+        FROM password_resets
+        WHERE user_id = :u
+        ORDER BY id DESC
+        LIMIT 5
+    """, {"u": user_id})
+    return rows
+
+def create_password_reset(email: str, request_ip: str = None, request_ua: str = None) -> Optional[str]:
+    # 1) Trouver l'utilisateur
+    user = run_sql("""
+        SELECT id, email FROM users WHERE lower(email)=lower(:e) LIMIT 1
+    """, {"e": (email or "").strip()})
     if not user:
+        # Sécurité : ne révèle pas l'existence ou non de l'email
+        return None
+    user_id = user[0]["id"]
+
+    # 2) Anti-spam léger
+    recents = _recent_requests_for_user(user_id)
+    active_cnt = 0
+    last_created = None
+    now = _now_utc()
+    for r in recents:
+        if r["used_at"] is None and r["expires_at"] > now:
+            active_cnt += 1
+        if last_created is None or r["created_at"] > last_created:
+            last_created = r["created_at"]
+
+    if active_cnt >= 3:
+        # Trop de resets actifs
+        return None
+    if last_created and (now - last_created).total_seconds() < 60:
+        # 60s entre deux demandes
         return None
 
-    # Rate-limit léger: max 3 tokens actifs, et 1 requête / minute
-    rows = run_sql(text("""
-        SELECT created_at FROM password_resets
-        WHERE user_id=:uid AND used_at IS NULL AND expires_at > now()
-        ORDER BY created_at DESC
-        LIMIT 3
-    """), {"uid": str(user["id"])})
-
-    if rows:
-        last = rows[0]["created_at"]
-        if _now_utc() - last < dt.timedelta(seconds=60):
-            return None
-        if len(rows) >= 3:
-            return None
-
+    # 3) Générer token (non stocké en clair en DB)
     token = secrets.token_urlsafe(32)
     token_hash = _hash_token(token)
-    expires_at = _now_utc() + dt.timedelta(minutes=RESET_TTL_MINUTES)
+    expires_at = now + datetime.timedelta(minutes=RESET_TTL_MINUTES)
 
-    run_sql(text("""
-        INSERT INTO password_resets (user_id, token_hash, expires_at, request_ip, request_ua)
-        VALUES (:uid, :th, :exp, :ip, :ua)
-    """), {
-        "uid": str(user["id"]),
-        "th": token_hash,
-        "exp": expires_at,
-        "ip": (meta or {}).get("ip"),
-        "ua": (meta or {}).get("ua"),
-    })
+    created = run_sql("""
+        INSERT INTO password_resets (user_id, token_hash, expires_at, request_ip, request_ua, created_at)
+        VALUES (:u, :th, :exp, :ip, :ua, now())
+        RETURNING id
+    """, {"u": user_id, "th": token_hash, "exp": expires_at, "ip": request_ip, "ua": request_ua})
 
-    # ancien: reset_url = f"{BASE_URL}/_01_Reset_password?token={token}" ou .../Auth?reset_token=...
     reset_url = f"{BASE_URL}/06_Reset_password?token={token}"
     return reset_url
 
 def verify_token(token: str) -> Optional[Dict[str, Any]]:
+    if not token:
+        return None
     token_hash = _hash_token(token)
-    row = run_sql(text("""
-        SELECT pr.id AS reset_id, pr.user_id
+    rows = run_sql("""
+        SELECT pr.id AS reset_id, pr.user_id, pr.expires_at, pr.used_at, u.email
         FROM password_resets pr
-        WHERE pr.token_hash=:th AND pr.used_at IS NULL AND pr.expires_at > now()
+        JOIN users u ON u.id = pr.user_id
+        WHERE pr.token_hash = :th
         ORDER BY pr.id DESC
         LIMIT 1
-    """), {"th": token_hash})
-    return dict(row[0]) if row else None
+    """, {"th": token_hash})
+    if not rows:
+        return None
+    r = rows[0]
+    now = _now_utc()
+    if r["used_at"] is not None:
+        return None
+    if r["expires_at"] <= now:
+        return None
+    return r
 
-def consume_token_and_set_password(reset_id: int, user_id: str, new_password: str) -> None:
-    pwd_hash = hash_password(new_password)
-    run_sql(text("""
-        UPDATE users SET password_hash=:ph WHERE id=:uid;
-        UPDATE password_resets SET used_at=now() WHERE id=:rid;
-    """), {"ph": pwd_hash, "uid": user_id, "rid": reset_id})
+def consume_token_and_set_password(reset_id: int, user_id: str, new_password: str) -> bool:
+    # 1) Mettre à jour le mot de passe
+    from werkzeug.security import generate_password_hash
+    pwd_hash = generate_password_hash(new_password)
+
+    run_sql("""
+        UPDATE users SET password_hash=:p WHERE id=:u
+    """, {"p": pwd_hash, "u": user_id})
+
+    # 2) Marquer le token comme utilisé
+    run_sql("""
+        UPDATE password_resets
+        SET used_at = now()
+        WHERE id = :rid AND user_id = :u
+    """, {"rid": reset_id, "u": user_id})
+
+    return True
