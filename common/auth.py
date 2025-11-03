@@ -1,24 +1,14 @@
 # common/auth.py
 from __future__ import annotations
-import os, base64, secrets, hashlib, re
+import base64
+import secrets
+import hashlib
+import re
+import uuid
 from typing import Optional, Dict, Any
-from datetime import datetime
 
-import pandas as pd
-from sqlalchemy import text
-from db.conn import run_sql  # votre helper SQL
+from db.conn import run_sql  # helper SQL qui renvoie list[dict] pour SELECT
 
-# ------------------------------------------------------------------------------
-# Helpers DataFrame / SQL
-# ------------------------------------------------------------------------------
-def _to_df(res) -> pd.DataFrame:
-    """Compat: transforme CursorResult (SQLAlchemy 2.x) en DataFrame."""
-    try:
-        if isinstance(res, pd.DataFrame):
-            return res
-        return pd.DataFrame(list(res.mappings()))
-    except Exception:
-        return pd.DataFrame()
 
 # ------------------------------------------------------------------------------
 # PBKDF2 (format: pbkdf2_sha256$<iters>$<salt_b64>$<hash_b64>)
@@ -27,10 +17,14 @@ PBKDF2_ALGO = "sha256"
 PBKDF2_ITERS = 310_000
 SALT_BYTES = 16
 
+
 def hash_password(password: str) -> str:
+    if not isinstance(password, str) or not password:
+        raise ValueError("Mot de passe requis.")
     salt = secrets.token_bytes(SALT_BYTES)
     dk = hashlib.pbkdf2_hmac(PBKDF2_ALGO, password.encode("utf-8"), salt, PBKDF2_ITERS)
     return f"pbkdf2_sha256${PBKDF2_ITERS}${base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
+
 
 def verify_password(password: str, stored: str) -> bool:
     try:
@@ -45,28 +39,81 @@ def verify_password(password: str, stored: str) -> bool:
     except Exception:
         return False
 
+
 # ------------------------------------------------------------------------------
-# Tenants (résolution nom <-> UUID)
+# Tenants (résolution nom <-> UUID) - robustes aux courses d'écriture
 # ------------------------------------------------------------------------------
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
 
+
+def _norm_tenant_name(name: str) -> str:
+    # Trim + collapse espaces ; comparaison en lower côté SQL
+    return re.sub(r"\s+", " ", (name or "").strip())
+
+
+def _is_uuid(v: str) -> bool:
+    try:
+        uuid.UUID(str(v))
+        return True
+    except Exception:
+        return False
+
+
 def get_tenant_by_name(name: str) -> Optional[Dict[str, Any]]:
     """Recherche insensible à la casse."""
-    q = text("SELECT id, name, created_at FROM tenants WHERE lower(name)=lower(:n) LIMIT 1")
-    df = _to_df(run_sql(q, {"n": name}))
-    return None if df.empty else df.iloc[0].to_dict()
+    n = _norm_tenant_name(name)
+    rows = run_sql(
+        """
+        SELECT id, name, created_at
+        FROM tenants
+        WHERE lower(name) = lower(:n)
+        LIMIT 1
+        """,
+        {"n": n},
+    )
+    return rows[0] if rows else None
+
 
 def create_tenant(name: str) -> Dict[str, Any]:
     """Crée le tenant et renvoie (id, name, created_at)."""
-    q = text("INSERT INTO tenants(name) VALUES (:n) RETURNING id, name, created_at")
-    df = _to_df(run_sql(q, {"n": name}))
-    return df.iloc[0].to_dict()
+    n = _norm_tenant_name(name)
+    created = run_sql(
+        """
+        INSERT INTO tenants (id, name, created_at)
+        VALUES (gen_random_uuid(), :n, now())
+        RETURNING id, name, created_at
+        """,
+        {"n": n},
+    )
+    return created[0]
+
 
 def get_or_create_tenant(name: str) -> Dict[str, Any]:
-    t = get_tenant_by_name(name)
-    return t if t else create_tenant(name)
+    """
+    Idempotent et sûr en concurrence :
+    - SELECT (lower)
+    - INSERT si absent
+    - En cas de course (UNIQUE violation), re-SELECT
+    """
+    n = _norm_tenant_name(name)
+    if not n:
+        raise ValueError("Tenant name requis.")
+
+    existing = get_tenant_by_name(n)
+    if existing:
+        return existing
+
+    try:
+        return create_tenant(n)
+    except Exception:
+        # Probable course → le tenant vient d'être créé par un autre worker
+        again = get_tenant_by_name(n)
+        if again:
+            return again
+        raise
+
 
 def ensure_tenant_id(tenant_name_or_id: str) -> str:
     """
@@ -77,47 +124,97 @@ def ensure_tenant_id(tenant_name_or_id: str) -> str:
     t = (tenant_name_or_id or "").strip()
     if not t:
         raise ValueError("Tenant requis.")
-    if _UUID_RE.match(t):
+    if _is_uuid(t):
         return t
     return get_or_create_tenant(t)["id"]
+
 
 # ------------------------------------------------------------------------------
 # Users
 # ------------------------------------------------------------------------------
 def find_user_by_email(email: str) -> Optional[Dict[str, Any]]:
-    q = text("SELECT * FROM users WHERE lower(email)=lower(:e) LIMIT 1")
-    df = _to_df(run_sql(q, {"e": email}))
-    return None if df.empty else df.iloc[0].to_dict()
+    e = (email or "").strip()
+    if not e:
+        return None
+    rows = run_sql(
+        """
+        SELECT id, tenant_id, email, password_hash, role, is_active, created_at
+        FROM users
+        WHERE lower(email) = lower(:e)
+        LIMIT 1
+        """,
+        {"e": e},
+    )
+    return rows[0] if rows else None
+
 
 def count_users_in_tenant(tenant_id: str) -> int:
-    q = text("SELECT COUNT(*) AS n FROM users WHERE tenant_id=:t")
-    df = _to_df(run_sql(q, {"t": tenant_id}))
-    return int(df.iloc[0]["n"]) if not df.empty else 0
+    rows = run_sql(
+        "SELECT COUNT(*)::int AS n FROM users WHERE tenant_id = :t",
+        {"t": tenant_id},
+    )
+    return int(rows[0]["n"]) if rows else 0
 
-def create_user(email: str, password: str, tenant_name_or_id: str, role: str = "user") -> Dict[str, Any]:
+
+def create_user(email: str, password: str, tenant_name_or_id: str, role: str = None) -> Dict[str, Any]:
     """
-    Crée un utilisateur (active=True). tenant_name_or_id peut être un nom ou un UUID.
+    Crée un utilisateur actif.
+    - Vérifie l’existence de l’e-mail (insensible à la casse).
+    - Résout/crée le tenant.
+    - Rôle = 'admin' si premier user du tenant, sinon 'user' (sauf override explicite).
     """
+    e = (email or "").strip()
+    if not e or not password:
+        raise ValueError("email et mot de passe requis.")
+
     tenant_id = ensure_tenant_id(tenant_name_or_id)
-    q = text("""
-        INSERT INTO users(tenant_id, email, password_hash, role, is_active)
-        VALUES (:t, lower(:e), :ph, :r, TRUE)
+
+    # Email déjà pris ?
+    if find_user_by_email(e):
+        raise ValueError("Cet e-mail est déjà utilisé.")
+
+    # Rôle par défaut selon le nombre d'utilisateurs dans le tenant
+    computed_role = role or ("admin" if count_users_in_tenant(tenant_id) == 0 else "user")
+
+    created = run_sql(
+        """
+        INSERT INTO users (id, tenant_id, email, password_hash, role, is_active, created_at)
+        VALUES (gen_random_uuid(), :t, lower(:e), :ph, :r, true, now())
         RETURNING id, tenant_id, email, role, is_active, created_at
-    """)
-    df = _to_df(run_sql(q, {"t": tenant_id, "e": email, "ph": hash_password(password), "r": role or "user"}))
-    return df.iloc[0].to_dict()
+        """,
+        {"t": tenant_id, "e": e, "ph": hash_password(password), "r": computed_role},
+    )
+    return created[0]
+
 
 def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
-    q = text("SELECT * FROM users WHERE lower(email)=lower(:e) LIMIT 1")
-    df = _to_df(run_sql(q, {"e": email}))
-    if df.empty:
+    e = (email or "").strip()
+    if not e or not password:
         return None
-    user = df.iloc[0].to_dict()
+    rows = run_sql(
+        """
+        SELECT id, tenant_id, email, password_hash, role, is_active, created_at
+        FROM users
+        WHERE lower(email) = lower(:e)
+        LIMIT 1
+        """,
+        {"e": e},
+    )
+    if not rows:
+        return None
+    user = rows[0]
     return user if verify_password(password, user["password_hash"]) else None
 
+
 def set_user_role(user_id: str, role: str) -> None:
-    run_sql(text("UPDATE users SET role=:r WHERE id=:id"), {"r": role, "id": user_id})
+    run_sql(
+        "UPDATE users SET role = :r WHERE id = :id",
+        {"r": role, "id": user_id},
+    )
+
 
 def change_password(user_id: str, new_password: str) -> None:
-    run_sql(text("UPDATE users SET password_hash=:ph WHERE id=:id"),
-            {"ph": hash_password(new_password), "id": user_id})
+    run_sql(
+        "UPDATE users SET password_hash = :ph WHERE id = :id",
+        {"ph": hash_password(new_password), "id": user_id},
+    )
