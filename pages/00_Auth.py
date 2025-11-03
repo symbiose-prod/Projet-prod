@@ -1,5 +1,5 @@
-# pages/00_Auth.py
 from __future__ import annotations
+import os
 import streamlit as st
 
 # --- Config page + masquage sidebar ---
@@ -16,40 +16,58 @@ from common.auth import authenticate, create_user, find_user_by_email
 from common.session import login_user, current_user
 
 # Reset password (création de lien + envoi e-mail)
-from common.auth_reset import create_password_reset
+from common.auth_reset import create_password_reset, verify_reset_token, consume_token_and_set_password
 from common.email import send_reset_email
 
 
-# --- Helpers ---
-def _safe_switch_to_accueil():
-    """
-    Tente d'ouvrir la page Accueil si l'environnement Streamlit le permet,
-    sinon laisse la navigation via le lien.
-    """
-    try:
-        st.switch_page("pages/01_Accueil.py")  # Streamlit >= 1.26
-    except Exception:
-        st.page_link("pages/01_Accueil.py", label="➡️ Aller à la production")
+# =========================================================
+# 0) MODE "JE VIENS DU MAIL" → ?token=XXXX dans l’URL
+# =========================================================
+qp = st.query_params
+raw_token = qp.get("token")
+if isinstance(raw_token, list):
+    token_from_url = raw_token[0]
+else:
+    token_from_url = raw_token
+
+if token_from_url:
+    st.title("🔑 Réinitialiser le mot de passe")
+    ok, info = verify_reset_token(token_from_url)
+    if not ok:
+        st.error(info or "Lien de réinitialisation invalide ou expiré.")
+        st.stop()
+
+    user_id = info["user_id"]
+    reset_id = info["reset_id"]
+
+    pwd1 = st.text_input("Nouveau mot de passe", type="password")
+    pwd2 = st.text_input("Confirmez le mot de passe", type="password")
+
+    if st.button("Changer le mot de passe", type="primary"):
+        if not pwd1 or not pwd2:
+            st.error("Veuillez saisir et confirmer le mot de passe.")
+        elif pwd1 != pwd2:
+            st.error("Les mots de passe ne correspondent pas.")
+        else:
+            try:
+                consume_token_and_set_password(reset_id, user_id, pwd1)
+                st.success("Mot de passe mis à jour ✅")
+                st.info("Vous pouvez maintenant vous connecter avec ce mot de passe.")
+                # petit bouton pour revenir à la page auth “normale”
+                st.page_link("pages/00_Auth.py", label="➡️ Revenir à la connexion")
+            except Exception as e:
+                st.error(f"Erreur lors de la mise à jour : {e}")
+    st.stop()   # on n'affiche pas les onglets dans ce mode
 
 
-def _get_client_meta():
-    """
-    Récupère des infos client si elles ont été stockées côté session (optionnel).
-    Ne bloque jamais si absent.
-    """
-    ip = st.session_state.get("client_ip")
-    ua = st.session_state.get("client_ua")
-    return ip, ua
-
-
-# --- Titre ---
+# --- Titre (mode normal) ---
 st.title("🔐 Authentification")
 
 # --- Si déjà connecté, on redirige vers l'app ---
 u = current_user()
 if u:
     st.success(f"Déjà connecté en tant que {u['email']}.")
-    _safe_switch_to_accueil()
+    st.page_link("pages/01_Accueil.py", label="➡️ Aller à la production")
     st.stop()
 
 
@@ -70,14 +88,14 @@ def forgot_password_ui():
         return
 
     if st.button("Envoyer le lien de réinitialisation", type="primary"):
-        request_ip, request_ua = _get_client_meta()
+        meta = {"ip": st.session_state.get("client_ip"), "ua": st.session_state.get("client_ua")}
         try:
             # Doit renvoyer une URL du type: {BASE_URL}/06_Reset_password?token=XXXX
-            reset_url = create_password_reset(email, request_ip=request_ip, request_ua=request_ua)
-            if reset_url:  # on n'envoie que si on a un vrai lien (user trouvé + pas throttlé)
+            # mais même si Kinsta ne route pas /06_..., on récupère quand même le token ici.
+            reset_url = create_password_reset(email, meta=meta)
+            if reset_url:  # on n'envoie que si on a un vrai lien
                 send_reset_email(email, reset_url)
-            # Dans tous les cas, ne pas révéler l’existence du compte
-            st.toast("Si un compte existe, un e-mail a été envoyé ✅")
+            st.toast("Email envoyé ✅")
         except Exception as e:
             st.error(f"Erreur d'envoi e-mail : {e}")
             st.stop()
@@ -107,7 +125,6 @@ with tab_login:
                 else:
                     login_user(user)
                     st.success("Connecté ✅")
-                    _safe_switch_to_accueil()
                     st.rerun()
     with cols[1]:
         st.caption("💡 Besoin d’aide ? Allez dans l’onglet **Mot de passe oublié ?**")
@@ -122,27 +139,21 @@ with tab_signup:
     tenant_name = st.text_input("Nom d’organisation (tenant)", placeholder="Ferment Station", key="su_tenant")
 
     if st.button("Créer le compte", type="primary", key="btn_signup"):
+        from common.auth import create_user, find_user_by_email  # import local pour éviter cycles
         if not (new_email and new_pwd and new_pwd2 and tenant_name):
             st.warning("Tous les champs sont obligatoires.")
         elif new_pwd != new_pwd2:
             st.error("Les mots de passe ne correspondent pas.")
         elif find_user_by_email(new_email):
-            # Feedback rapide pour l'utilisateur ; la vérification backend existe aussi
             st.error("Un compte existe déjà avec cet email.")
         else:
             try:
                 u = create_user(new_email, new_pwd, tenant_name)
-                # Connexion auto après inscription
                 u.pop("password_hash", None)
                 login_user(u)
                 st.success("Compte créé et connecté ✅")
-                _safe_switch_to_accueil()
                 st.rerun()
-            except ValueError as ve:
-                # Erreur fonctionnelle claire (ex : e-mail déjà utilisé)
-                st.error(str(ve))
             except Exception as e:
-                # Log technique visible en dev
                 st.exception(e)
 
 # --- Onglet 3 : Mot de passe oublié ---
