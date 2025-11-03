@@ -1,3 +1,4 @@
+# pages/04_Fiche_de_ramasse.py
 from __future__ import annotations
 from common.session import require_login, user_menu, user_menu_footer
 user = require_login()  # stoppe la page si non connecté
@@ -74,11 +75,10 @@ def send_mail_with_pdf(
     bcc_me: bool = True
 ):
     """
-    Envoi via common.email → choix auto SendGrid / Mailgun / SMTP selon variables d'env.
-    - Corps HTML + signature inline (logos en base64 via html_signature)
+    Envoi via common.email → API Brevo (ou autre backend selon env).
+    - Corps HTML + signature inline
     - PDF en pièce jointe
     """
-    # Sujet + corps
     subject = f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
 
     body_html = f"""
@@ -87,18 +87,24 @@ def send_mail_with_pdf(
     Pour <strong>{total_palettes}</strong> palettes.</p>
     <p>Merci,<br>Bon après-midi.</p>
     """
-    html = html_signature(body_html)  # ajoute logos Symbiose + NIKO
+    # On compose : corps + signature
+    html = body_html + html_signature()
 
     # BCC expéditeur si demandé (on l’obtient via EMAIL_SENDER / [email].sender)
     sender = _get_ns("email", "sender") or _get("EMAIL_SENDER")
     recipients = list(to_list)
     if bcc_me and sender:
-        # évite doublon si l’expéditeur est déjà dans la liste
         if sender not in recipients:
             recipients.append(sender)
 
     # Envoi (exceptions remontent pour affichage UI)
-    send_html_with_pdf(subject=subject, html_body=html, recipients=recipients, pdf_bytes=pdf_bytes, pdf_name=filename)
+    send_html_with_pdf(
+        subject=subject,
+        html_body=html,
+        recipients=recipients,
+        pdf_bytes=pdf_bytes,
+        pdf_name=filename
+    )
 
 
 # ================================ Réglages ====================================
@@ -172,14 +178,13 @@ def _load_catalog(path: str) -> pd.DataFrame:
 
     df["_canon_prod"] = df.get("Produit","").map(_canon)
     df["_canon_des"]  = df.get("Désignation","").map(lambda s: _canon(re.sub(r"\(.*?\)", "", s)))
-    # Concat canonisée Produit + Désignation pour un matching par "hint" (marque, ex. NIKO)
     df["_canon_full"] = (df.get("Produit","").fillna("") + " " + df.get("Désignation","").fillna("")).map(_canon)
 
     return df
 
 def _csv_lookup(catalog: pd.DataFrame, gout_canon: str, fmt_label: str, prod_hint: str | None = None) -> tuple[str, float] | None:
     """
-    Retourne (référence_6_chiffres, poids_carton) en matchant :
+    Retourne (référence_6_chiffres, poids_carton) via :
       - format (12x33 / 6x75 / 4x75)
       - + goût canonisé
       - + (optionnel) 'prod_hint' pour privilégier une marque/ligne précise (ex. NIKO)
@@ -190,17 +195,14 @@ def _csv_lookup(catalog: pd.DataFrame, gout_canon: str, fmt_label: str, prod_hin
     fmt_norm = fmt_label.lower().replace("cl","").replace(" ", "")
     g_can = _canon(gout_canon)
 
-    # candidats au bon format
     cand = catalog[catalog["_format_norm"].str.contains(fmt_norm, na=False)]
     if cand.empty:
         return None
 
-    # Tokens issus du "hint" (Produit/label) — ex. ['niko','kefir','mangue','passion']
     hint_tokens = []
     if prod_hint:
         hint_tokens = [t for t in _canon(prod_hint).split() if t]
 
-    # Score : goût exact + hint strict > goût exact > hint partiel > reste
     def score_row(row) -> tuple[int, int]:
         s1 = 1 if row.get("_canon_prod") == g_can else 0
         full = str(row.get("_canon_full") or "")
@@ -222,16 +224,10 @@ def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
     """
     Construit les options depuis la proposition sauvegardée, en ne gardant
     que les produits dont le nombre de cartons à produire > 0.
-
-    - label  : 'Produit — Stock' (désignation exacte + format)
-    - gout   : GoutCanon (pour le lookup CSV)
-    - format : '12x33' / '6x75' / '4x75' (dérivé de Stock/Format/Designation/Produit)
-    - filtre : colonne quantité cartons détectée automatiquement (voir CAND_QTY_COLS)
     """
     if df_min_saved is None or df_min_saved.empty:
         return pd.DataFrame(columns=["label", "gout", "format", "prod_hint"])
 
-    # 1) Détecte la colonne "cartons à produire"
     CAND_QTY_COLS = [
         "Cartons à produire (arrondi)",
         "Cartons à produire",
@@ -241,7 +237,6 @@ def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
     ]
     qty_col = next((c for c in CAND_QTY_COLS if c in df_min_saved.columns), None)
 
-    # 2) Filtre > 0 si on a trouvé la colonne, sinon garde tout
     df_src = df_min_saved.copy()
     if qty_col:
         qty = pd.to_numeric(df_src[qty_col], errors="coerce").fillna(0)
@@ -253,10 +248,8 @@ def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
     rows, seen = [], set()
     for _, r in df_src.iterrows():
         gout = str(r.get("GoutCanon") or "").strip()
-
-        prod_txt  = _norm(r.get("Produit", ""))     # ex. "NIKO - Kéfir de fruits Mangue Passion"
-        stock_txt = _norm(r.get("Stock", ""))       # ex. "Carton de 12 Bouteilles - 0.33L"
-
+        prod_txt  = _norm(r.get("Produit", ""))
+        stock_txt = _norm(r.get("Stock", ""))
         fmt = (
             _format_from_stock(stock_txt)
             or _format_from_stock(_norm(r.get("Format", "")))
@@ -266,10 +259,8 @@ def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
         if not gout or not fmt:
             continue
 
-        # Label final affiché
         label = f"{prod_txt} — {stock_txt}" if prod_txt and stock_txt else f"{gout} — {fmt}"
 
-        # Dédoublonnage par label (pour conserver NIKO vs non-NIKO)
         key = label.lower()
         if key in seen:
             continue
@@ -279,7 +270,7 @@ def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
             "label": label,
             "gout": gout,
             "format": fmt,
-            "prod_hint": (prod_txt or label),   # <-- sert de "hint" pour choisir la bonne réf (NIKO, etc.)
+            "prod_hint": (prod_txt or label),
         })
 
     return pd.DataFrame(rows).sort_values(by="label").reset_index(drop=True)
@@ -305,7 +296,6 @@ if catalog.empty:
 
 # 2) Construire la liste des produits selon le mode
 if source_mode == "Proposition sauvegardée":
-    # ✅ ne pas lever KeyError si la prod n'est pas en session
     sp = st.session_state.get("saved_production")
     if not sp or "df_min" not in sp:
         st.warning(
@@ -327,36 +317,37 @@ if source_mode == "Proposition sauvegardée":
                     st.error("Proposition invalide (df_min manquant).")
         st.stop()
 
-    # Ici, on est sûr d'avoir une prod en session
     df_min_saved: pd.DataFrame = sp["df_min"].copy()
     ddm_saved = dt.date.fromisoformat(sp["ddm"]) if "ddm" in sp else _today_paris()
-    # ➜ construit les options depuis la proposition (helper)
     opts_df = _build_opts_from_saved(df_min_saved)
 
 else:  # "Sélection manuelle"
     df_min_saved = None
-    ddm_saved = _today_paris()  # valeur par défaut pour la DDM si tu ne l'édites pas ensuite
-    # ➜ construit les options depuis le CSV (tous les goûts + formats)
+    ddm_saved = _today_paris()  # valeur par défaut de secours
     opts_df = _build_opts_from_catalog(catalog)
 
 if opts_df.empty:
-    st.error("Aucun produit détecté pour ce mode (vérifie `info_FDR.csv` en manuel).")
+    st.error("Aucun produit détecté pour ce mode (vérifie `info_FDR.csv`).")
     st.stop()
 
-# 3) Sidebar : dates
+# 3) Sidebar : dates + actions + footer (doit rester en dernier)
 with st.sidebar:
     st.header("Paramètres")
     date_creation = _today_paris()
     date_ramasse = st.date_input("Date de ramasse", value=date_creation)
     if st.button("🔄 Recharger le catalogue", use_container_width=True):
-        _load_catalog.clear()   # vide le cache de @st.cache_data
-        st.rerun()              # relance proprement
+        _load_catalog.clear()
+        st.rerun()
     # DDM selon le mode
     if source_mode == "Sélection manuelle":
         ddm_manual = st.date_input("DDM par défaut (manuel)", value=_today_paris())
     st.caption(f"DATE DE CRÉATION : **{date_creation.strftime('%d/%m/%Y')}**")
     if source_mode == "Proposition sauvegardée":
         st.caption(f"DDM (depuis Production) : **{ddm_saved.strftime('%d/%m/%Y')}**")
+
+    # Footer logout tout en bas de la sidebar
+    st.markdown("---")
+    user_menu_footer()
 
 # 4) Sélection utilisateur
 st.subheader("Sélection des produits")
@@ -376,7 +367,7 @@ for lab in selection_labels:
     fmt  = row_opt["format"]
     prod_hint = row_opt.get("prod_hint") or row_opt.get("label")
     ref = ""; poids_carton = 0.0
-    lk = _csv_lookup(catalog, gout, fmt, prod_hint)  # <-- lookup sensible à la marque (NIKO)
+    lk = _csv_lookup(catalog, gout, fmt, prod_hint)
     if lk: ref, poids_carton = lk
     meta_by_label[lab] = {"_format": fmt, "_poids_carton": poids_carton, "_reference": ref}
     rows.append({
@@ -400,7 +391,7 @@ edited = st.data_editor(
         "DDM": st.column_config.DateColumn(
             label="DDM",
             format="DD/MM/YYYY",
-            disabled=(source_mode == "Proposition sauvegardée")  # éditable seulement en manuel
+            disabled=(source_mode == "Proposition sauvegardée")
         ),
         "Quantité cartons":  st.column_config.NumberColumn(min_value=0, step=1),
         "Quantité palettes": st.column_config.NumberColumn(min_value=0, step=1),
@@ -440,20 +431,18 @@ if st.button("🧾 Télécharger la version PDF", use_container_width=True):
         st.error("Renseigne au moins une **Quantité cartons** > 0.")
     else:
         try:
-            # --- Conversion DDM pour export (⚠️ même indentation sous 'try:') ---
             df_for_export = df_calc[display_cols].copy()
             if not pd.api.types.is_string_dtype(df_for_export["DDM"]):
                 df_for_export["DDM"] = df_for_export["DDM"].apply(
                     lambda d: d.strftime("%d/%m/%Y") if hasattr(d, "strftime") else str(d)
                 )
-            # -----------------------------------------------------------------------
 
             pdf_bytes = build_bl_enlevements_pdf(
                 date_creation=_today_paris(),
                 date_ramasse=date_ramasse,
                 destinataire_title=DEST_TITLE,
                 destinataire_lines=DEST_LINES,
-                df_lines=df_for_export,  # ← on envoie df_for_export
+                df_lines=df_for_export,
             )
             st.session_state["fiche_ramasse_pdf"] = pdf_bytes
             st.download_button(
@@ -478,7 +467,7 @@ else:
     # 2) Récup PDF (ou possibilité de régénérer si absent)
     pdf_bytes = st.session_state.get("fiche_ramasse_pdf")
 
-    # 3) UI destinataires (pré-rempli sans masquage ***)
+    # 3) UI destinataires (pré-remplie et persistante)
     try:
         sender_hint = _get_ns("email", "sender") or _get("EMAIL_SENDER") or _get_ns("email", "user") or _get("EMAIL_USER")
         rec_list = _default_recipients_from_cfg()
@@ -487,9 +476,8 @@ else:
         sender_hint = None
         rec_str = ""
 
-    _PREFILL = (rec_str or "") + "\u200b"   # anti-masquage Streamlit
     if "ramasse_email_to" not in st.session_state:
-        st.session_state["ramasse_email_to"] = _PREFILL
+        st.session_state["ramasse_email_to"] = rec_str or ""
 
     to_input = st.text_input(
         "Destinataires (séparés par des virgules)",
@@ -498,7 +486,7 @@ else:
     )
 
     def _parse_emails(s: str):
-        return [e.strip() for e in (s or "").replace("\u200b","").split(",") if e.strip()]
+        return [e.strip() for e in (s or "").split(",") if e.strip()]
 
     to_list = _parse_emails(st.session_state.get("ramasse_email_to",""))
 
@@ -507,7 +495,6 @@ else:
 
     # Envoi
     if st.button("✉️ Envoyer la demande de ramasse", type="primary", use_container_width=True):
-        # Régénère le PDF si nécessaire et possible
         if pdf_bytes is None:
             if tot_cartons <= 0:
                 st.error("Le PDF n’est pas prêt et aucun carton n’est saisi. Renseigne au moins une quantité > 0 puis clique à nouveau.")
@@ -538,7 +525,6 @@ else:
                 size_kb = len(pdf_bytes) / 1024
                 st.caption(f"Taille PDF : {size_kb:.0f} Ko")
 
-                # 👉 Envoi via `common.email` (API en prod, SMTP en local)
                 send_mail_with_pdf(
                     pdf_bytes=pdf_bytes,
                     filename=filename,
@@ -552,6 +538,3 @@ else:
                 st.success("📨 Demande de ramasse envoyée (backend e-mail OK).")
             except Exception as e:
                 st.error(f"Échec de l’envoi : {e}")
-
-# --- Footer sidebar (doit être le DERNIER appel de la page) ---
-user_menu_footer(user)
