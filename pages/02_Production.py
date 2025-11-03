@@ -102,7 +102,7 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    user_menu_footer()
+    user_menu_footer(user)
     
 st.caption(
     f"Fichier courant : **{st.session_state.get('file_name','(sans nom)')}** — Fenêtre (B2) : **{window_days} jours**"
