@@ -101,7 +101,9 @@ with st.sidebar:
              "le nombre sera automatiquement augmenté."
     )
 
-
+    st.markdown("---")
+    user_menu_footer()
+    
 st.caption(
     f"Fichier courant : **{st.session_state.get('file_name','(sans nom)')}** — Fenêtre (B2) : **{window_days} jours**"
 )
@@ -380,6 +382,3 @@ else:
     st.info("Aucune proposition enregistrée pour l’instant.")
 
 
-
-# --- Footer sidebar (doit être le DERNIER appel de la page) ---
-user_menu_footer(user)
