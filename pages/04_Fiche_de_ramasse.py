@@ -91,7 +91,7 @@ def send_mail_with_pdf(
     html = body_html + html_signature()
 
     # BCC expéditeur si demandé (on l’obtient via EMAIL_SENDER / [email].sender)
-    sender = _get_ns("email", "sender") or _get("EMAIL_SENDER")
+    sender = _get("EMAIL_SENDER")
     recipients = list(to_list)
     if bcc_me and sender:
         if sender not in recipients:
@@ -476,12 +476,13 @@ else:
     DEFAULT_RECIPIENTS_FALLBACK = "chloe.etheve@supbiotech.fr, ethevechloeemilie974@hotmail.com"
 
     try:
-        sender_hint = _get_ns("email", "sender") or _get("EMAIL_SENDER") \
-                      or _get_ns("email", "user") or _get("EMAIL_USER")
-        rec_list = _default_recipients_from_cfg()  # depuis env/secrets
+    # on regarde d’abord si on a un expéditeur dans les env
+        sender_hint = _get("EMAIL_SENDER") or _get("EMAIL_USER")
+        rec_list = _default_recipients_from_cfg()
     except Exception:
         sender_hint = None
         rec_list = []
+
 
     # 2) Initialise le state UNE FOIS avec une vraie valeur (pas un placeholder)
     if "ramasse_email_to" not in st.session_state or not st.session_state["ramasse_email_to"].strip():
