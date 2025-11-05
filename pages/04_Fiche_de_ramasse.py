@@ -66,20 +66,24 @@ def _default_recipients_from_cfg() -> list[str]:
         return [x.strip() for x in cfg.split(",") if x.strip()]
     return []
 
-# ================================== EMAIL (wrapper) ===========================
-from common.email import send_html_with_pdf, html_signature, _get  # _get_ns plus nécessaire ici
 
-import base64, os
+# ================================== EMAIL (wrapper) ===========================
+import base64
 from pathlib import Path
+from common.email import send_html_with_pdf, _get  # on garde _get, ça marchait chez toi
 
 def _inline_img_from_repo(rel_path: str) -> str:
+    """
+    Charge un PNG du repo et le retourne en <img src="data:...">.
+    Si le fichier n'existe pas, retourne "".
+    """
     p = Path(rel_path)
     if not p.exists():
         return ""
     try:
         data = p.read_bytes()
         b64 = base64.b64encode(data).decode("ascii")
-        return f'<img src="data:image/png;base64,{b64}" style="height:40px;margin-right:8px;" alt="logo">'
+        return f'<img src="data:image/png;base64,{b64}" style="height:40px;margin-right:8px;" alt="">'
     except Exception:
         return ""
 
@@ -92,22 +96,25 @@ def send_mail_with_pdf(
     bcc_me: bool = True,
 ):
     """
-    Envoi via common.email, avec signature Ferment Station + logos inline.
-    Ne dépend que des vars d'env SENDER_EMAIL.
+    Même logique qu'avant (un mail par destinataire), mais HTML enrichi
+    + logos du repo.
     """
-    from common.email import send_html_with_pdf  # on importe ici pour ne rien casser ailleurs
-
     subject = f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
 
-    # logos depuis le repo
-    logo_symbiose = _inline_img_from_repo("assets/signature/logo_symbiose.png")
-    logo_niko     = _inline_img_from_repo("assets/signature/NIKO_Logo.png")
-
+    # corps principal
     body_html = f"""
     <p>Bonjour,</p>
     <p>Nous aurions besoin d’une ramasse pour demain.<br>
     Pour <strong>{total_palettes}</strong> palette{'s' if total_palettes != 1 else ''}.</p>
     <p>Merci,<br>Bon après-midi.</p>
+    """
+
+    # logos inline
+    logo_symbiose = _inline_img_from_repo("assets/signature/logo_symbiose.png")
+    logo_niko     = _inline_img_from_repo("assets/signature/NIKO_Logo.png")
+
+    # signature custom (on ne dépend plus de html_signature())
+    signature_html = f"""
     <hr>
     <p style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
         <strong>Ferment Station</strong><br>
@@ -115,26 +122,24 @@ def send_mail_with_pdf(
         26 Rue Robert Witchitz – 94200 Ivry-sur-Seine<br>
         <a href="tel:+33971227895">09 71 22 78 95</a>
     </p>
-    <p>
-        {logo_symbiose}
-        {logo_niko}
-    </p>
+    <p>{logo_symbiose}{logo_niko}</p>
     """
 
-    # BCC éventuel : on prend juste SENDER_EMAIL de l'env si présent
-    sender_email = os.getenv("SENDER_EMAIL")
-    recipients = list(to_list)
-    if bcc_me and sender_email and sender_email not in recipients:
-        recipients.append(sender_email)
+    html = body_html + signature_html
 
-    # un mail par destinataire
+    # éventuel BCC expéditeur (comme avant)
+    sender = _get("EMAIL_SENDER")
+    recipients = list(to_list)
+    if bcc_me and sender and sender not in recipients:
+        recipients.append(sender)
+
+    # on ENVOIE exactement comme avant
     for rcpt in recipients:
         send_html_with_pdf(
             to_email=rcpt,
             subject=subject,
-            html_body=body_html,
-            pdf_bytes=pdf_bytes,
-            pdf_name=filename,
+            html_body=html,
+            attachments=[(filename, pdf_bytes)],
         )
 
 # ================================ Réglages ====================================
