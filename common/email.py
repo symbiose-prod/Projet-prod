@@ -5,7 +5,7 @@ from typing import Optional, List, Tuple, Dict, Any
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 SENDER_EMAIL  = os.getenv("SENDER_EMAIL", "station.ferment@gmail.com")
-SENDER_NAME   = os.getenv("SENDER_NAME", "Symbiose")
+SENDER_NAME   = os.getenv("SENDER_NAME", "Ferment Station")
 
 class EmailSendError(RuntimeError):
     pass
