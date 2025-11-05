@@ -69,6 +69,24 @@ def _default_recipients_from_cfg() -> list[str]:
 # ================================== EMAIL (wrapper) ===========================
 from common.email import send_html_with_pdf, html_signature, _get  # _get_ns plus nécessaire ici
 
+import base64
+from pathlib import Path
+
+def _inline_img_from_repo(rel_path: str) -> str:
+    """
+    Charge un PNG du repo et le retourne en <img src="data:..."> prêt à mettre dans le HTML.
+    Si le fichier n'existe pas, retourne une chaîne vide (on n'affiche juste pas le logo).
+    """
+    p = Path(rel_path)
+    if not p.exists():
+        return ""
+    try:
+        data = p.read_bytes()
+        b64 = base64.b64encode(data).decode("ascii")
+        return f'<img src="data:image/png;base64,{b64}" style="height:40px;margin-right:8px;" alt="logo">'
+    except Exception:
+        return ""
+
 def send_mail_with_pdf(
     pdf_bytes: bytes,
     filename: str,
@@ -78,33 +96,46 @@ def send_mail_with_pdf(
     bcc_me: bool = True,
 ):
     """
-    Envoie le mail de demande de ramasse à CHAQUE destinataire en utilisant
-    common.email.send_html_with_pdf(to_email=..., ...), qui attend un seul destinataire.
+    Envoi via common.email, avec signature Ferment Station + logos inline.
     """
     subject = f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
+
+    # logos depuis le repo
+    logo_symbiose = _inline_img_from_repo("assets/signature/logo_symbiose.png")
+    logo_niko     = _inline_img_from_repo("assets/signature/NIKO_Logo.png")
 
     body_html = f"""
     <p>Bonjour,</p>
     <p>Nous aurions besoin d’une ramasse pour demain.<br>
-    Pour <strong>{total_palettes}</strong> palettes.</p>
+    Pour <strong>{total_palettes}</strong> palette{'s' if total_palettes != 1 else ''}.</p>
     <p>Merci,<br>Bon après-midi.</p>
+    <hr>
+    <p style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+        <strong>Ferment Station</strong><br>
+        Producteur de boissons fermentées<br>
+        26 Rue Robert Witchitz – 94200 Ivry-sur-Seine<br>
+        <a href="tel:+33971227895">09 71 22 78 95</a>
+    </p>
+    <p>
+        {logo_symbiose}
+        {logo_niko}
+    </p>
     """
-    html = body_html + html_signature()
 
-    # éventuel BCC expéditeur
-    sender = _get("EMAIL_SENDER")
+    # éventuel BCC expéditeur (même logique qu'avant)
+    sender = _get("EMAIL_SENDER") or _get_ns("email", "sender")
     recipients = list(to_list)
-    if bcc_me and sender:
-        if sender not in recipients:
-            recipients.append(sender)
+    if bcc_me and sender and sender not in recipients:
+        recipients.append(sender)
 
-    # on envoie un mail par destinataire
+    # on envoie un mail par destinataire, comme tu faisais déjà
     for rcpt in recipients:
         send_html_with_pdf(
             to_email=rcpt,
             subject=subject,
-            html_body=html,
-            attachments=[(filename, pdf_bytes)],
+            html_body=body_html,
+            pdf_bytes=pdf_bytes,
+            pdf_name=filename,
         )
 
 
