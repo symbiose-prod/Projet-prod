@@ -31,7 +31,8 @@ else:
 
 # si pas dans l'URL, on regarde ce que app.py a laissé en session
 if not token_from_url:
-    token_from_url = st.session_state.pop("reset_token_from_link", None)
+    token_from_url = st.session_state.get("reset_token_from_link")
+
 
 if token_from_url:
     st.title("🔑 Réinitialiser le mot de passe")
@@ -54,6 +55,8 @@ if token_from_url:
         else:
             try:
                 consume_token_and_set_password(reset_id, user_id, pwd1)
+                # on nettoie le token de la session seulement maintenant
+                st.session_state.pop("reset_token_from_link", None)
                 st.success("Mot de passe mis à jour ✅")
                 st.info("Vous pouvez maintenant vous connecter avec ce mot de passe.")
                 st.page_link("pages/00_Auth.py", label="➡️ Revenir à la connexion")
