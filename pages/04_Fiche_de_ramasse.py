@@ -69,14 +69,10 @@ def _default_recipients_from_cfg() -> list[str]:
 # ================================== EMAIL (wrapper) ===========================
 from common.email import send_html_with_pdf, html_signature, _get  # _get_ns plus nécessaire ici
 
-import base64
+import base64, os
 from pathlib import Path
 
 def _inline_img_from_repo(rel_path: str) -> str:
-    """
-    Charge un PNG du repo et le retourne en <img src="data:..."> prêt à mettre dans le HTML.
-    Si le fichier n'existe pas, retourne une chaîne vide (on n'affiche juste pas le logo).
-    """
     p = Path(rel_path)
     if not p.exists():
         return ""
@@ -97,7 +93,10 @@ def send_mail_with_pdf(
 ):
     """
     Envoi via common.email, avec signature Ferment Station + logos inline.
+    Ne dépend que des vars d'env SENDER_EMAIL.
     """
+    from common.email import send_html_with_pdf  # on importe ici pour ne rien casser ailleurs
+
     subject = f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
 
     # logos depuis le repo
@@ -122,13 +121,13 @@ def send_mail_with_pdf(
     </p>
     """
 
-    # éventuel BCC expéditeur (même logique qu'avant)
-    sender = _get("EMAIL_SENDER") or _get_ns("email", "sender")
+    # BCC éventuel : on prend juste SENDER_EMAIL de l'env si présent
+    sender_email = os.getenv("SENDER_EMAIL")
     recipients = list(to_list)
-    if bcc_me and sender and sender not in recipients:
-        recipients.append(sender)
+    if bcc_me and sender_email and sender_email not in recipients:
+        recipients.append(sender_email)
 
-    # on envoie un mail par destinataire, comme tu faisais déjà
+    # un mail par destinataire
     for rcpt in recipients:
         send_html_with_pdf(
             to_email=rcpt,
@@ -137,7 +136,6 @@ def send_mail_with_pdf(
             pdf_bytes=pdf_bytes,
             pdf_name=filename,
         )
-
 
 # ================================ Réglages ====================================
 
