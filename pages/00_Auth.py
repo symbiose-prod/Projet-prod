@@ -19,9 +19,8 @@ from common.session import login_user, current_user
 from common.auth_reset import create_password_reset, verify_reset_token, consume_token_and_set_password
 from common.email import send_reset_email
 
-
 # =========================================================
-# 0) MODE "JE VIENS DU MAIL" → ?token=XXXX dans l’URL
+# 0) MODE "JE VIENS DU MAIL" → ?token=XXXX ou token posé par app.py
 # =========================================================
 qp = st.query_params
 raw_token = qp.get("token")
@@ -29,6 +28,10 @@ if isinstance(raw_token, list):
     token_from_url = raw_token[0]
 else:
     token_from_url = raw_token
+
+# si pas dans l'URL, on regarde ce que app.py a laissé en session
+if not token_from_url:
+    token_from_url = st.session_state.pop("reset_token_from_link", None)
 
 if token_from_url:
     st.title("🔑 Réinitialiser le mot de passe")
@@ -53,11 +56,10 @@ if token_from_url:
                 consume_token_and_set_password(reset_id, user_id, pwd1)
                 st.success("Mot de passe mis à jour ✅")
                 st.info("Vous pouvez maintenant vous connecter avec ce mot de passe.")
-                # petit bouton pour revenir à la page auth “normale”
                 st.page_link("pages/00_Auth.py", label="➡️ Revenir à la connexion")
             except Exception as e:
                 st.error(f"Erreur lors de la mise à jour : {e}")
-    st.stop()   # on n'affiche pas les onglets dans ce mode
+    st.stop()
 
 
 # --- Titre (mode normal) ---
