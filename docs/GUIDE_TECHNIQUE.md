@@ -35,41 +35,35 @@ L’application est conçue pour être simple à maintenir, sécurisée, et exte
 
 Projet-prod/
 ├─ .streamlit/
-│   └─ secrets.toml           # Config Streamlit (local uniquement, ignoré par Git)
+│ └─ secrets.toml # Config Streamlit (local uniquement, ignoré par Git)
 ├─ assets/
-│   ├─ signature/
-│   │   ├─ logo_symbiose.png
-│   │   └─ NIKO_Logo.png
-│   └─ BL_enlevements_Sofripa.xlsx   # Modèle de fiche de ramasse (PDF généré)
-│
-├─ common/                    # Fonctions transversales et utilitaires
-│   ├─ auth.py                # Authentification e-mail + mot de passe
-│   ├─ auth_reset.py          # Réinitialisation de mot de passe (token + lien mail)
-│   ├─ email.py               # Envoi des e-mails via Brevo
-│   ├─ session.py             # Gestion de session (utilisateur connecté)
-│   ├─ storage.py             # Gestion fichiers / stockage
-│   └─ design.py              # Composants visuels communs (UI Streamlit)
-│
+│ ├─ signature/
+│ │ ├─ logo_symbiose.png
+│ │ └─ NIKO_Logo.png
+│ └─ BL_enlevements_Sofripa.xlsx # Modèle de fiche de ramasse (PDF généré)
+├─ common/
+│ ├─ auth.py # Authentification e-mail + mot de passe
+│ ├─ auth_reset.py # Réinitialisation de mot de passe (token + lien mail)
+│ ├─ email.py # Envoi des e-mails via Brevo
+│ ├─ session.py # Gestion de session utilisateur
+│ ├─ storage.py # Gestion fichiers / stockage
+│ └─ design.py # Composants visuels communs (UI Streamlit)
 ├─ core/
-│   ├─ optimizer.py           # Logique d’optimisation de production
-│   └─ utils.py               # Fonctions math / outils généraux
-│
+│ ├─ optimizer.py # Logique d’optimisation de production
+│ └─ utils.py # Fonctions math / outils généraux
 ├─ db/
-│   ├─ conn.py                # Connexion PostgreSQL via psycopg2
-│   └─ migrate.sql            # Script SQL complet de création des tables
-│
-├─ pages/                     # Pages Streamlit (multi-page app)
-│   ├─ 01_Accueil.py          # Page d’accueil / menu utilisateur
-│   ├─ 02_Production.py       # Module de gestion des propositions de production
-│   ├─ 03_Fiche_de_ramasse.py # Génération + envoi automatique des fiches de ramasse (PDF)
-│   ├─ 04_Paramètres.py       # Paramètres / configuration du tenant
-│   ├─ 05_Profile.py          # Profil utilisateur
-│   └─ 06_Reset_password.py   # Interface de réinitialisation de mot de passe
-│
-├─ app.py                     # Point d’entrée principal Streamlit
-├─ Procfile                   # Fichier de démarrage pour Kinsta
-└─ requirements.txt            # Liste des dépendances Python
-
+│ ├─ conn.py # Connexion PostgreSQL
+│ └─ migrate.sql # Script SQL de création des tables
+├─ pages/
+│ ├─ 01_Accueil.py
+│ ├─ 02_Production.py
+│ ├─ 03_Fiche_de_ramasse.py
+│ ├─ 04_Paramètres.py
+│ ├─ 05_Profile.py
+│ └─ 06_Reset_password.py
+├─ app.py
+├─ Procfile
+└─ requirements.txt
 ```
 
 ---
