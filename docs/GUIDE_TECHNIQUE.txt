@@ -1,0 +1,234 @@
+# ================================
+
+# GUIDE TECHNIQUE – SYMBIOSE
+
+# Ferment Station – 2025
+
+# ================================
+
+## OBJECTIF DU PROJET
+
+Symbiose est une application interne de gestion de la production et des ramasses
+pour l’entreprise Ferment Station (producteur de boissons fermentées).
+
+Développée avec Streamlit et hébergée sur Kinsta, elle fonctionne comme un
+SaaS multi-tenant (plusieurs clients / entités isolés).
+Elle permet de gérer :
+
+* Les propositions de production (recettes, stocks, contraintes)
+* Les demandes de ramasse et les envois automatiques d’e-mails
+* La centralisation des données par tenant (client, site de prod, etc.)
+
+Technologies principales :
+
+* Python 3.11+
+* Streamlit
+* PostgreSQL (hébergement Kinsta)
+* Brevo (ex-Sendinblue) pour l’envoi d’e-mails
+* ReportLab pour les PDF
+* Hébergement : Kinsta (App + DB)
+* Code source : [https://github.com/symbiose-prod/Projet-prod](https://github.com/symbiose-prod/Projet-prod)
+
+---
+
+## STRUCTURE DU DÉPÔT GITHUB
+
+Projet-prod/
+├─ .streamlit/
+│   └─ secrets.toml              → Config Streamlit (local, ignoré par Git)
+├─ assets/
+│   ├─ signature/
+│   │   ├─ logo_symbiose.png
+│   │   └─ NIKO_Logo.png
+│   └─ BL_enlevements_Sofripa.xlsx → Modèle de fiche de ramasse (PDF généré)
+├─ common/
+│   ├─ auth.py                   → Authentification e-mail + mot de passe
+│   ├─ auth_reset.py             → Réinitialisation de mot de passe (token + lien)
+│   ├─ email.py                  → Envoi des e-mails via Brevo
+│   ├─ session.py                → Gestion de session utilisateur
+│   ├─ storage.py                → Gestion fichiers / stockage
+│   └─ design.py                 → Composants visuels (UI Streamlit)
+├─ core/
+│   ├─ optimizer.py              → Logique d’optimisation de production
+│   └─ utils.py                  → Fonctions utilitaires
+├─ db/
+│   ├─ conn.py                   → Connexion PostgreSQL
+│   └─ migrate.sql               → Script SQL création tables
+├─ pages/
+│   ├─ 01_Accueil.py             → Page d’accueil / menu utilisateur
+│   ├─ 02_Production.py          → Gestion des propositions de production
+│   ├─ 03_Fiche_de_ramasse.py    → Génération et envoi automatique des PDF
+│   ├─ 04_Paramètres.py          → Configuration du tenant
+│   ├─ 05_Profile.py             → Profil utilisateur
+│   └─ 06_Reset_password.py      → Interface de réinitialisation de mot de passe
+├─ app.py                        → Point d’entrée principal Streamlit
+├─ Procfile                      → Script de démarrage Kinsta
+└─ requirements.txt              → Dépendances Python
+
+---
+
+## BASE DE DONNÉES (PostgreSQL)
+
+Tables principales :
+
+* tenants : liste des entités / clients
+* users : utilisateurs liés à un tenant
+* production_proposals : propositions de production
+* password_resets : gestion des liens de réinitialisation
+
+Les données sont isolées par tenant_id (multi-tenant).
+
+---
+
+## AUTHENTIFICATION
+
+* Auth e-mail + mot de passe
+* Table users reliée à tenants
+* Gestion des sessions : common/session.py
+* Réinitialisation de mot de passe :
+  → Génération d’un token sécurisé
+  → Envoi automatique du lien par e-mail
+  → Expiration configurable (par défaut 1h)
+
+---
+
+## ENVOI D’E-MAILS (BREVO)
+
+* Module : common/email.py
+* Fournisseur : Brevo (ex-Sendinblue)
+* Adresse d’envoi : [station.ferment@10112311.brevosend.com](mailto:station.ferment@10112311.brevosend.com)
+* Les e-mails contiennent :
+  • Corps HTML personnalisé
+  • Signature avec logos
+  • Pièce jointe PDF générée depuis un modèle Excel
+
+Les réponses sont redirigées vers : [station.ferment@gmail.com](mailto:station.ferment@gmail.com)
+
+---
+
+## HÉBERGEMENT (KINSTA)
+
+Composants :
+
+* Application : Streamlit hébergée sur Kinsta App
+* Base PostgreSQL : Kinsta Database
+* Domaine : prod.symbiose-kefir.fr
+* HTTPS activé (Let’s Encrypt)
+
+---
+
+## VARIABLES D’ENVIRONNEMENT
+
+BASE_URL=[https://prod.symbiose-kefir.fr](https://prod.symbiose-kefir.fr)
+DB_HOST=...
+DB_PORT=...
+DB_DATABASE=...
+DB_USERNAME=...
+DB_PASSWORD=...
+DB_SSLMODE=require
+EMAIL_PROVIDER=brevo
+EMAIL_SENDER=[station.ferment@10112311.brevosend.com](mailto:station.ferment@10112311.brevosend.com)
+EMAIL_SENDER_NAME=Symbiose App
+EMAIL_REPLY_TO=[station.ferment@gmail.com](mailto:station.ferment@gmail.com)
+EMAIL_RECIPIENTS=...
+BRAVO_API_KEY=...
+ENV=production
+GH_TOKEN=... (si synchro GitHub)
+
+---
+
+## DÉPLOIEMENT (RUNBOOK)
+
+1. Commit et push les changements sur GitHub (branche main)
+2. Aller sur le tableau de bord Kinsta → Application Symbiose
+3. Cliquer sur “Deploy now”
+4. Kinsta reconstruit le conteneur :
+
+   * Installation des dépendances
+   * Exécution de streamlit run app.py
+5. Vérifier :
+
+   * Le site est visible sur [https://prod.symbiose-kefir.fr](https://prod.symbiose-kefir.fr)
+   * Le cadenas SSL est présent
+
+Durée moyenne : 2 à 3 minutes.
+
+---
+
+## MAINTENANCE ET AMÉLIORATIONS
+
+Modifier le design (common/design.py)
+→ Personnaliser les couleurs, boutons, icônes Streamlit.
+
+Ajouter une nouvelle page :
+
+1. Créer pages/07_NomDeLaPage.py
+2. Exemple :
+   from common.session import require_login
+   user = require_login()
+   import streamlit as st
+   st.title("Titre de la page")
+
+La page apparaîtra automatiquement dans le menu Streamlit.
+
+Modifier la logique de production :
+→ core/optimizer.py (ajout de contraintes, filtres, calculs).
+
+Adapter la fiche de ramasse :
+→ Modifier le modèle Excel dans assets/BL_enlevements_Sofripa.xlsx.
+
+---
+
+## SÉCURITÉ ET BONNES PRATIQUES
+
+* Utiliser des mots de passe forts pour la base PostgreSQL
+* Ne jamais commit de secrets (ex: fichiers .toml)
+* Tester les e-mails sur une boîte de test avant envoi réel
+* Redéployer après chaque modification du code ou des variables
+
+---
+
+## DÉVELOPPEMENT LOCAL
+
+1. Cloner le repo :
+   git clone [https://github.com/symbiose-prod/Projet-prod.git](https://github.com/symbiose-prod/Projet-prod.git)
+   cd Projet-prod
+
+2. Créer un environnement virtuel :
+   python -m venv venv
+   source venv/bin/activate
+
+3. Installer les dépendances :
+   pip install -r requirements.txt
+
+4. Lancer l’application :
+   streamlit run app.py
+
+5. Configurer les secrets dans .streamlit/secrets.toml
+
+---
+
+## CONTACTS
+
+Entreprise : Ferment Station
+Projet : Symbiose
+Hébergement : Kinsta (App + DB)
+E-mails : Brevo (Sendinblue)
+GitHub : [https://github.com/symbiose-prod/Projet-prod](https://github.com/symbiose-prod/Projet-prod)
+
+---
+
+## RÉSUMÉ RAPIDE
+
+Authentification .................. OK (common/auth.py)
+Reset Password .................... OK (common/auth_reset.py)
+Envois e-mails + PDF .............. OK (common/email.py)
+Multi-tenant ...................... Implémenté
+Domaine sécurisé .................. prod.symbiose-kefir.fr
+Déploiement ....................... Automatique via Kinsta
+
+---
+
+RÉDIGÉ PAR : Chloé
+DATE : Novembre 2025
+
