@@ -35,25 +35,25 @@ L’application est conçue pour être simple à maintenir, sécurisée, et exte
 
 Projet-prod/
 ├─ .streamlit/
-│ └─ secrets.toml # Config Streamlit (local uniquement, ignoré par Git)
+│ └─ secrets.toml
 ├─ assets/
 │ ├─ signature/
 │ │ ├─ logo_symbiose.png
 │ │ └─ NIKO_Logo.png
-│ └─ BL_enlevements_Sofripa.xlsx # Modèle de fiche de ramasse (PDF généré)
+│ └─ BL_enlevements_Sofripa.xlsx
 ├─ common/
-│ ├─ auth.py # Authentification e-mail + mot de passe
-│ ├─ auth_reset.py # Réinitialisation de mot de passe (token + lien mail)
-│ ├─ email.py # Envoi des e-mails via Brevo
-│ ├─ session.py # Gestion de session utilisateur
-│ ├─ storage.py # Gestion fichiers / stockage
-│ └─ design.py # Composants visuels communs (UI Streamlit)
+│ ├─ auth.py
+│ ├─ auth_reset.py
+│ ├─ email.py
+│ ├─ session.py
+│ ├─ storage.py
+│ └─ design.py
 ├─ core/
-│ ├─ optimizer.py # Logique d’optimisation de production
-│ └─ utils.py # Fonctions math / outils généraux
+│ ├─ optimizer.py
+│ └─ utils.py
 ├─ db/
-│ ├─ conn.py # Connexion PostgreSQL
-│ └─ migrate.sql # Script SQL de création des tables
+│ ├─ conn.py
+│ └─ migrate.sql
 ├─ pages/
 │ ├─ 01_Accueil.py
 │ ├─ 02_Production.py
