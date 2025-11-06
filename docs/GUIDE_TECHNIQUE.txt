@@ -27,7 +27,7 @@ Technologies principales :
 * Brevo (ex-Sendinblue) pour l’envoi d’e-mails
 * ReportLab pour les PDF
 * Hébergement : Kinsta (App + DB)
-* Code source : [https://github.com/symbiose-prod/Projet-prod](https://github.com/symbiose-prod/Projet-prod)
+* Code source : [https://github.com/symbiose-prod/Projet-prod]
 
 ---
 
