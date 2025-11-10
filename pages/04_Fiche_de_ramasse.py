@@ -223,37 +223,79 @@ def _csv_lookup(catalog: pd.DataFrame, gout_canon: str, fmt_label: str, prod_hin
       - format (12x33 / 6x75 / 4x75)
       - + goût canonisé
       - + (optionnel) 'prod_hint' pour privilégier une marque/ligne précise (ex. NIKO)
+    Cette version évite de choisir un 'water kefir ...' quand on veut un kéfir classique.
     """
     if catalog is None or catalog.empty or not fmt_label:
         return None
 
-    fmt_norm = fmt_label.lower().replace("cl","").replace(" ", "")
+    # normalisation du format demandé
+    fmt_norm = (
+        fmt_label.lower()
+        .replace("cl", "")
+        .replace(" ", "")
+    )
+
     g_can = _canon(gout_canon)
 
-    cand = catalog[catalog["_format_norm"].str.contains(fmt_norm, na=False)]
+    # 1. on essaie d'abord l'égalité stricte sur le format normalisé
+    cand = catalog[catalog["_format_norm"] == fmt_norm]
+
+    # 2. fallback : comportement d'origine (contains) si rien trouvé
+    if cand.empty:
+        cand = catalog[catalog["_format_norm"].str.contains(fmt_norm, na=False)]
+
     if cand.empty:
         return None
 
-    hint_tokens = []
+    # tokens du produit d'origine (pour NIKO, gamme, etc.)
+    hint_tokens: list[str] = []
     if prod_hint:
         hint_tokens = [t for t in _canon(prod_hint).split() if t]
 
-    def score_row(row) -> tuple[int, int]:
-        s1 = 1 if row.get("_canon_prod") == g_can else 0
+    def score_row(row) -> int:
         full = str(row.get("_canon_full") or "")
-        s2 = 1 if (hint_tokens and all(tok in full for tok in hint_tokens)) else 0
-        s3 = 1 if (hint_tokens and any(tok in full for tok in hint_tokens)) else 0
-        return (s1 + s2, s3)
+        prod = str(row.get("_canon_prod") or "")
+
+        score = 0
+
+        # 1) match goût / produit
+        if prod == g_can:
+            # cas idéal
+            score += 100
+        elif g_can and (g_can in prod or prod in g_can):
+            # proche
+            score += 70
+
+        # 2) prise en compte du hint
+        if hint_tokens:
+            if all(tok in full for tok in hint_tokens):
+                score += 25
+            elif any(tok in full for tok in hint_tokens):
+                score += 10
+
+        # 3) bonus pour la gamme "kefir ..." (pas water)
+        if full.startswith("kefir ") or full.startswith("kefir de fruits"):
+            score += 5
+
+        # 4) malus pour "water kefir ..." si l'appel ne parle pas de water
+        wants_water = any(tok == "water" for tok in hint_tokens)
+        if not wants_water and "water kefir" in full:
+            score -= 30
+
+        return score
 
     cand_scored = cand.copy()
     cand_scored["_sc"] = cand_scored.apply(score_row, axis=1)
     cand_scored = cand_scored.sort_values(by="_sc", ascending=False)
 
     row = cand_scored.iloc[0]
-    code = re.sub(r"\D+", "", str(row.get("Code-barre","")))
+
+    code = re.sub(r"\D+", "", str(row.get("Code-barre", "")))
     ref6 = code[-6:] if len(code) >= 6 else code
     poids = float(row.get("Poids") or 0.0)
+
     return (ref6, poids) if ref6 else None
+
 
 def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
     """
