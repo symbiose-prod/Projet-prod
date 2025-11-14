@@ -277,10 +277,20 @@ def _csv_lookup(catalog: pd.DataFrame, gout_canon: str, fmt_label: str, prod_hin
         if full.startswith("kefir ") or full.startswith("kefir de fruits"):
             score += 5
 
-        # 4) malus pour "water kefir ..." si l'appel ne parle pas de water
-        wants_water = any(tok == "water" for tok in hint_tokens)
+        # 4) on déduit wants_water UNIQUEMENT du goût canonisé
+        wants_water = "water" in g_can
+        
+        # malus si on ne veut PAS water mais la ligne est water kefir
         if not wants_water and "water kefir" in full:
             score -= 30
+        
+        # bonus si on veut water et que la ligne est water kefir
+        if wants_water and "water kefir" in full:
+            score += 10
+        
+        # petit malus générique pour les lignes "INTER -" quand on ne veut pas water
+        if "inter" in full and not wants_water:
+            score -= 5
 
         return score
 
