@@ -560,7 +560,7 @@ else:
     #    ordre de priorité :
     #    - EMAIL_RECIPIENTS (env / secrets) -> ex: "a@x.com,b@y.com"
     #    - fallback local ci-dessous (à adapter)
-    DEFAULT_RECIPIENTS_FALLBACK = "chloe.etheve@supbiotech.fr, ethevechloeemilie974@hotmail.com"
+    DEFAULT_RECIPIENTS_FALLBACK = "z.dawam@sofripa.fr, nicolas@symbiose-kefir.fr, g.marlier@sofripa.fr, f.ricard@sofripa.fr, c.boulon@sofripa.fr, a.teixeira@sofripa.fr, prepa@sofripa.fr, annonces@sofripa.fr, exploitation@sofripa.fr, b.alves@sofripa.fr"
 
     try:
     # on regarde d’abord si on a un expéditeur dans les env
