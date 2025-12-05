@@ -363,18 +363,42 @@ def compute_plan(df_in, window_days, volume_cible, nb_gouts, repartir_pro_rv, ma
         df = df[df["GoutCanon"].astype(str).str.strip().isin(keep)]
 
     # --- agrégats par goût ---
+    jours = max(float(window_days), 1.0)
+
+    # Volume vendu / stock agrégés (comme avant)
     agg = df.groupby("GoutCanon").agg(
         ventes_hl=("Volume vendu (hl)", "sum"),
-        stock_hl=("Volume disponible (hl)", "sum")
+        stock_hl=("Volume disponible (hl)", "sum"),
     )
 
+    # Calcul du manque au niveau "référence" (goût + format),
+    # puis agrégation des manques positifs par goût
+    df_tmp = df.copy()
+    df_tmp["vitesse_j_ligne"] = df_tmp["Volume vendu (hl)"] / jours
+    df_tmp["demande_7j_ligne"] = 7.0 * df_tmp["vitesse_j_ligne"]
+    df_tmp["stock_hl_ligne"] = df_tmp["Volume disponible (hl)"]
+    df_tmp["manque_7j_ligne"] = np.clip(
+        df_tmp["demande_7j_ligne"] - df_tmp["stock_hl_ligne"],
+        a_min=0.0,
+        a_max=None,
+    )
+
+    manque_par_gout = df_tmp.groupby("GoutCanon")["manque_7j_ligne"].sum()
+    agg["manque_7j"] = manque_par_gout.reindex(agg.index, fill_value=0.0)
+
     # --- Sélection : rupture -> perte € -> autonomie ---
-    agg["vitesse_j"] = agg["ventes_hl"] / max(float(window_days), 1.0)
-    dem7 = 7.0 * agg["vitesse_j"]
-    agg["rupture_semaine"] = agg["stock_hl"] < dem7 - 1e-9
+    agg["vitesse_j"] = agg["ventes_hl"] / jours
+    agg["autonomie_j"] = np.where(
+        agg["vitesse_j"] > 0,
+        agg["stock_hl"] / agg["vitesse_j"],
+        np.inf,
+    )
+
     PRICE_REF = 400.0
-    agg["perte_7j"] = np.maximum(dem7 - agg["stock_hl"], 0.0) * PRICE_REF
-    agg["autonomie_j"] = np.where(agg["vitesse_j"] > 0, agg["stock_hl"] / agg["vitesse_j"], np.inf)
+    # Rupture si au moins UNE référence du goût est en manque
+    agg["rupture_semaine"] = agg["manque_7j"] > 1e-9
+    agg["perte_7j"] = agg["manque_7j"] * PRICE_REF
+
 
     agg = agg.sort_values(
         by=["rupture_semaine", "perte_7j", "autonomie_j"],
@@ -515,19 +539,35 @@ def compute_losses_table_v48(df_in_all: pd.DataFrame, window_days: float, price_
     if df.empty:
         return pd.DataFrame(columns=out_cols)
     jours = max(float(window_days), 1.0)
+
+    # --- Calcul par ligne (goût + format) ---
+    df["vitesse_hL_j"] = df["Volume vendu (hl)"] / jours
+    df["Demande 7 j (hL)"] = 7.0 * df["vitesse_hL_j"]
+    df["Stock (hL)"] = df["Volume disponible (hl)"]
+    df["Manque_ligne"] = np.clip(
+        df["Demande 7 j (hL)"] - df["Stock (hL)"],
+        a_min=0.0,
+        a_max=None,
+    )
+
+    # --- Agrégation par Goût : somme des manques positifs ---
     agg = df.groupby("GoutCanon", as_index=False).agg(
-        ventes_hL=("Volume vendu (hl)", "sum"),
-        stock_hL=("Volume disponible (hl)", "sum"),
+        demande_7j=("Demande 7 j (hL)", "sum"),
+        stock_hL=("Stock (hL)", "sum"),
+        manque_7j=("Manque_ligne", "sum"),
     )
     if agg.empty:
         return pd.DataFrame(columns=out_cols)
-    agg["vitesse_hL_j"] = agg["ventes_hL"] / jours
-    agg["Demande 7 j (hL)"] = 7.0 * agg["vitesse_hL_j"]
-    agg["Stock (hL)"] = agg["stock_hL"]
-    agg["Manque sur 7 j (hL)"] = np.clip(agg["Demande 7 j (hL)"] - agg["Stock (hL)"], a_min=0.0, a_max=None)
+
     agg["Prix moyen (€/hL)"] = float(price_hL)
-    agg["Perte (€)"] = (agg["Manque sur 7 j (hL)"] * agg["Prix moyen (€/hL)"]).round(0)
-    pertes = agg.rename(columns={"GoutCanon": "Goût"})[
+    agg["Perte (€)"] = (agg["manque_7j"] * agg["Prix moyen (€/hL)"]).round(0)
+
+    pertes = agg.rename(columns={
+        "GoutCanon": "Goût",
+        "demande_7j": "Demande 7 j (hL)",
+        "stock_hL": "Stock (hL)",
+        "manque_7j": "Manque sur 7 j (hL)",
+    })[
         ["Goût", "Demande 7 j (hL)", "Stock (hL)", "Manque sur 7 j (hL)", "Prix moyen (€/hL)", "Perte (€)"]
     ]
     pertes["Goût"] = pertes["Goût"].map(fix_text)
