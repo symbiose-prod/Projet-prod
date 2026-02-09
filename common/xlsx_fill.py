@@ -72,7 +72,7 @@ EXCEL_LABEL_MAP = {
     _norm_key("Mélisse"):                "EP. Mélisse",
     _norm_key("Anis étoilée"):           "EP. Anis étoilée",
     _norm_key("Zeste d'agrumes"):        "EP. Zest d'agrumes",
-    _norm_key("Pêche"):                  "IG. Pêche",
+    _norm_key("Pêche"):                  "K. Pêche",
     _norm_key("Autre"):                  "Autre :",
 }
 
