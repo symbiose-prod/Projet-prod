@@ -532,6 +532,10 @@ def fill_fiche_7000L_xlsx(
     _safe_set_cell(ws, 16, 7, int(s_75x4))       # G16 (G)
     _safe_set_cell(ws, 16, 8, int(u_75x6_niko))  # H16 (H)
 
+    # Sauvegarde en mémoire
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
     
 # ======================================================================
 #                   Remplissage BL enlèvements Sofripa
