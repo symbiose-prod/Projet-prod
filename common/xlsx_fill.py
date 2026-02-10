@@ -426,29 +426,29 @@ def fill_fiche_7000L_xlsx(
         except Exception:
             _set(ws, "A21", str(semaine_du))
 
-# --- DDM : A10 = "DDM :" (non fusionné) + B10:C10 = date ---
+# --- DDM : A10 déjà présent dans le template ; écrire la date en B10:C10 ---
 try:
-    from openpyxl.styles import Alignment, Font
+    from openpyxl.styles import Alignment
 
-    # 1) Nettoyer les fusions qui chevauchent la zone A10:C10 (ligne 10, colonnes A..C)
+    # 1) Nettoyer les fusions qui chevauchent la zone B10:C10
     for rng in list(ws.merged_cells.ranges):
-        if not (rng.max_row < 10 or rng.min_row > 10 or rng.max_col < 1 or rng.min_col > 3):
+        if not (rng.max_row < 10 or rng.min_row > 10 or rng.max_col < 2 or rng.min_col > 3):
             ws.unmerge_cells(rng.coord)
 
-    # 2) Fusionner uniquement B10:C10
+    # 2) Fusionner B10:C10 (zone de la date)
     ws.merge_cells("B10:C10")
 
-    # 3) Écrire le libellé en A10
-    _safe_set_cell(ws, 10, 1, "DDM :")  # A10
-    ws["A10"].alignment = Alignment(vertical="center", horizontal="left")
-    try:
-        ws["A10"].font = Font(bold=True)
-    except Exception:
-        pass
-
-    # 4) Écrire la date en B10 (ancre de B10:C10)
+    # 3) Écrire la date dans l'ancre B10
     _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")  # B10
     ws["B10"].alignment = Alignment(vertical="center", horizontal="left")
+
+except Exception:
+    # Fallback minimal
+    try:
+        ws.merge_cells("B10:C10")
+    except Exception:
+        pass
+    _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
 
 except Exception:
     # Fallback minimal
