@@ -426,36 +426,31 @@ def fill_fiche_7000L_xlsx(
         except Exception:
             _set(ws, "A20", str(semaine_du))
 
-    # --- DDM : garder A10:C10 fusionné ("DDM :") + D10:G10 fusionné (date) ---
-    try:
-        from openpyxl.styles import Alignment, Font
-    
-        # 1) Nettoyer les fusions qui chevauchent la zone A10:G10
-        for rng in list(ws.merged_cells.ranges):
-            if not (rng.max_row < 10 or rng.min_row > 10 or rng.max_col < 1 or rng.min_col > 7):
-                ws.unmerge_cells(rng.coord)
-    
-        # 2) Re-fusionner les zones souhaitées
-        ws.merge_cells("A10:C10")
-        ws.merge_cells("D10:G10")
-    
-        # 3) Écrire le libellé et la date
-        _safe_set_cell(ws, 10, 1, "DDM :")  # A10 (ancre de A10:C10)
-        ws["A10"].alignment = Alignment(vertical="center", horizontal="left")
-        try:
-            ws["A10"].font = Font(bold=True)
-        except Exception:
-            pass
-    
-        _safe_set_cell(ws, 10, 4, ddm, number_format="DD/MM/YYYY")  # D10 (ancre de D10:G10)
-        ws["D10"].alignment = Alignment(vertical="center", horizontal="left")  # ou 'right' si tu préfères
-    except Exception:
-        # Fallback robuste si jamais
-        ws.merge_cells("A10:C10")
-        ws.merge_cells("D10:G10")
-        _safe_set_cell(ws, 10, 1, "DDM :")
-        _safe_set_cell(ws, 10, 4, ddm, number_format="DD/MM/YYYY")
+    # --- DDM : A10 déjà présent dans le template ; écrire la date en B10:C10 ---
+try:
+    from openpyxl.styles import Alignment
 
+    # 1) Nettoyer les fusions qui chevauchent la zone B10:C10
+    for rng in list(ws.merged_cells.ranges):
+        if not (rng.max_row < 10 or rng.min_row > 10 or rng.max_col < 2 or rng.min_col > 3):
+            ws.unmerge_cells(rng.coord)
+
+    # 2) Fusionner B10:C10 (zone de la date)
+    ws.merge_cells("B10:C10")
+
+    # 3) Écrire la date dans l'ancre B10
+    _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")  # B10
+    ws["B10"].alignment = Alignment(vertical="center", horizontal="left")
+
+except Exception:
+    # Fallback minimal
+    try:
+        ws.merge_cells("B10:C10")
+    except Exception:
+        pass
+    _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
+
+    
     # --- Quantités de cartons par format -> ligne 15 (K/M/O/Q/S/U) ---
     # Mapping voulu :
     # - 33 cL EN (Water kefir)      -> K15 (K:L)
