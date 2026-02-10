@@ -302,8 +302,8 @@ def fill_fiche_7000L_xlsx(
 ) -> bytes:
     """
     Remplit UNIQUEMENT :
-      - H8 = libellé Excel du goût (via _to_excel_label)
-      - A20 = date de début de fermentation (semaine_du)
+      - B8 = libellé Excel du goût (via _to_excel_label)
+      - A21 = date de début de fermentation (semaine_du)
       - cellule à droite du libellé "DDM" = ddm
       - K15/M15/O15/Q15/S15 = quantités de cartons (33cL France, 33cL NIKO, 75cL x6, 75cL x4, 75cL NIKO x6)
       - Image schéma cuves en P29:X51 (orange pour Grande, bleu pour Petite)
@@ -314,7 +314,7 @@ def fill_fiche_7000L_xlsx(
 
     # --- ouverture & sélection de la feuille ---
     wb = openpyxl.load_workbook(template_path, data_only=False, keep_vba=False)
-    targets = [sheet_name] if sheet_name else ["Fiche de production 7000 L", "Fiche de production 7000L"]
+    targets = [sheet_name] if sheet_name else ["Fiche de production", "Fiche de production"]
     ws = None
     for nm in targets:
         if nm and nm in wb.sheetnames:
@@ -414,47 +414,50 @@ def fill_fiche_7000L_xlsx(
     _add_logo(ws, niko_path,     anchor_cell="E2", max_w=120, max_h=40)
 
 
-    # --- H8 : goût (libellé Excel)
-    _set(ws, "H8", _to_excel_label(gout1) or "")
+    # --- B8 : goût (libellé Excel)
+    _set(ws, "B8", _to_excel_label(gout1) or "")
 
-    # --- A20 : date de fermentation (semaine_du)
+    # --- A21 : date de fermentation (semaine_du)
     try:
-        _set(ws, "A20", semaine_du, number_format="DD/MM/YYYY")
+        _set(ws, "A21", semaine_du, number_format="DD/MM/YYYY")
     except Exception:
         try:
-            _set(ws, "A20", date.fromisoformat(str(semaine_du)), number_format="DD/MM/YYYY")
+            _set(ws, "A21", date.fromisoformat(str(semaine_du)), number_format="DD/MM/YYYY")
         except Exception:
-            _set(ws, "A20", str(semaine_du))
+            _set(ws, "A21", str(semaine_du))
 
-    # --- DDM : garder A10:C10 fusionné ("DDM :") + D10:G10 fusionné (date) ---
+# --- DDM : A10 = "DDM :" (non fusionné) + B10:C10 = date ---
+try:
+    from openpyxl.styles import Alignment, Font
+
+    # 1) Nettoyer les fusions qui chevauchent la zone A10:C10 (ligne 10, colonnes A..C)
+    for rng in list(ws.merged_cells.ranges):
+        if not (rng.max_row < 10 or rng.min_row > 10 or rng.max_col < 1 or rng.min_col > 3):
+            ws.unmerge_cells(rng.coord)
+
+    # 2) Fusionner uniquement B10:C10
+    ws.merge_cells("B10:C10")
+
+    # 3) Écrire le libellé en A10
+    _safe_set_cell(ws, 10, 1, "DDM :")  # A10
+    ws["A10"].alignment = Alignment(vertical="center", horizontal="left")
     try:
-        from openpyxl.styles import Alignment, Font
-    
-        # 1) Nettoyer les fusions qui chevauchent la zone A10:G10
-        for rng in list(ws.merged_cells.ranges):
-            if not (rng.max_row < 10 or rng.min_row > 10 or rng.max_col < 1 or rng.min_col > 7):
-                ws.unmerge_cells(rng.coord)
-    
-        # 2) Re-fusionner les zones souhaitées
-        ws.merge_cells("A10:C10")
-        ws.merge_cells("D10:G10")
-    
-        # 3) Écrire le libellé et la date
-        _safe_set_cell(ws, 10, 1, "DDM :")  # A10 (ancre de A10:C10)
-        ws["A10"].alignment = Alignment(vertical="center", horizontal="left")
-        try:
-            ws["A10"].font = Font(bold=True)
-        except Exception:
-            pass
-    
-        _safe_set_cell(ws, 10, 4, ddm, number_format="DD/MM/YYYY")  # D10 (ancre de D10:G10)
-        ws["D10"].alignment = Alignment(vertical="center", horizontal="left")  # ou 'right' si tu préfères
+        ws["A10"].font = Font(bold=True)
     except Exception:
-        # Fallback robuste si jamais
-        ws.merge_cells("A10:C10")
-        ws.merge_cells("D10:G10")
-        _safe_set_cell(ws, 10, 1, "DDM :")
-        _safe_set_cell(ws, 10, 4, ddm, number_format="DD/MM/YYYY")
+        pass
+
+    # 4) Écrire la date en B10 (ancre de B10:C10)
+    _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")  # B10
+    ws["B10"].alignment = Alignment(vertical="center", horizontal="left")
+
+except Exception:
+    # Fallback minimal
+    try:
+        ws.merge_cells("B10:C10")
+    except Exception:
+        pass
+    _safe_set_cell(ws, 10, 1, "DDM :")
+    _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
 
     # --- Quantités de cartons par format -> ligne 15 (K/M/O/Q/S/U) ---
     # Mapping voulu :
@@ -502,7 +505,7 @@ def fill_fiche_7000L_xlsx(
                 has_niko = "NIKO" in prod
                 is_33cl = (volL is not None) and abs(volL - 0.33) < 1e-6 and nb == 12
                 is_75cl = (volL is not None) and abs(volL - 0.75) < 1e-6
-                is_english = "WATER KEFIR" in prod  # distingue EN vs FR sur tes libellés
+                is_english = "PROBIOTIC" in prod  # distingue EN vs FR sur tes libellés
     
                 if is_33cl:
                     if is_english:
@@ -521,43 +524,15 @@ def fill_fiche_7000L_xlsx(
                     elif nb == 4 and not has_niko:
                         s_75x4 += qty             # -> S15
     
-    # Écritures (ligne 15 ; on vise l’ancre des fusions)
-    _safe_set_cell(ws, 15, 11, int(k_33_en))      # K15 (K:L)
-    _safe_set_cell(ws, 15, 13, int(m_33_fr_no))   # M15 (M:N)
-    _safe_set_cell(ws, 15, 15, int(o_33_fr_niko)) # O15 (O:P)
-    _safe_set_cell(ws, 15, 17, int(q_75x6))       # Q15 (Q:R)
-    _safe_set_cell(ws, 15, 19, int(s_75x4))       # S15 (S:T)
-    _safe_set_cell(ws, 15, 21, int(u_75x6_niko))  # U15 (U:V)
+    # Écritures (ligne 16 ; on vise l’ancre des fusions)
+    _safe_set_cell(ws, 16, 5, int(k_33_en))      # E16 (E)
+    _safe_set_cell(ws, 16, 2, int(m_33_fr_no))   # B16 (B)
+    _safe_set_cell(ws, 16, 4, int(o_33_fr_niko)) # D16 (D)
+    _safe_set_cell(ws, 16, 6, int(q_75x6))       # F16 (F)
+    _safe_set_cell(ws, 16, 7, int(s_75x4))       # G16 (G)
+    _safe_set_cell(ws, 16, 8, int(u_75x6_niko))  # H16 (H)
 
     
-    # --- Saut de page : forcer "Date de la production" en tête de page suivante ---
-    try:
-        import re
-        from openpyxl.worksheet.pagebreak import Break, PageBreak
-    
-        def _find_row(ws, pattern: str):
-            rx = re.compile(pattern, flags=re.I)
-            for row in ws.iter_rows(values_only=False):
-                for cell in row:
-                    v = cell.value
-                    if isinstance(v, str) and rx.search(v):
-                        return cell.row
-            return None
-    
-        # repère la ligne de "Date de la production"
-        row_date_prod = _find_row(ws, r"\bdate\s+de\s+la\s+production\b")
-        if row_date_prod:
-            # on vide d'éventuels anciens sauts puis on crée un saut juste avant
-            ws.row_breaks = PageBreak()
-            ws.row_breaks.append(Break(id=row_date_prod - 1))
-    except Exception as e:
-        print(f"[xlsx_fill] Saut de page manuel non appliqué: {e}")
-
-    # Sauvegarde en mémoire
-    bio = io.BytesIO()
-    wb.save(bio)
-    return bio.getvalue()
-
 # ======================================================================
 #                   Remplissage BL enlèvements Sofripa
 # ======================================================================
