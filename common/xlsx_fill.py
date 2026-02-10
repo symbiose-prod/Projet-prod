@@ -426,8 +426,8 @@ def fill_fiche_7000L_xlsx(
         except Exception:
             _set(ws, "A21", str(semaine_du))
 
-# --- DDM : A10 déjà présent dans le template ; écrire la date en B10:C10 ---
-try:
+    # --- DDM : A10 déjà présent dans le template ; écrire la date en B10:C10 ---
+    try:
     from openpyxl.styles import Alignment
 
     # 1) Nettoyer les fusions qui chevauchent la zone B10:C10
@@ -442,7 +442,7 @@ try:
     _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")  # B10
     ws["B10"].alignment = Alignment(vertical="center", horizontal="left")
 
-except Exception:
+    except Exception:
     # Fallback minimal
     try:
         ws.merge_cells("B10:C10")
@@ -450,7 +450,7 @@ except Exception:
         pass
     _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
 
-except Exception:
+    except Exception:
     # Fallback minimal
     try:
         ws.merge_cells("B10:C10")
