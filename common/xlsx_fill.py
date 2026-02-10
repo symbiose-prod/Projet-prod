@@ -378,7 +378,7 @@ def fill_fiche_7000L_xlsx(
 
             # 4) on ancre et on applique la taille SANS déformation
             #    (change "T30" pour décaler : Q/R/S = gauche/droite ; 28/32 = haut/bas)
-            anchor_cell = "T30"
+            anchor_cell = "I38"
 
             xl_img = XLImage(str(img_file))
             xl_img.width  = out_w
