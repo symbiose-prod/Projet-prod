@@ -442,7 +442,7 @@ def fill_fiche_7000L_xlsx(
         _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")  # B10
         ws["B10"].alignment = Alignment(vertical="center", horizontal="left")
     
-        except Exception:
+    except Exception:
         # Fallback minimal
         try:
             ws.merge_cells("B10:C10")
