@@ -218,3 +218,74 @@ def change_password(user_id: str, new_password: str) -> None:
         "UPDATE users SET password_hash = :ph WHERE id = :id",
         {"ph": hash_password(new_password), "id": user_id},
     )
+
+
+# ------------------------------------------------------------------------------
+# Sessions persistantes ("Se souvenir de moi") — tokens stockés en base
+# ------------------------------------------------------------------------------
+import datetime as _dt
+from datetime import timezone as _tz
+
+SESSION_COOKIE = "fs_session"
+SESSION_DEFAULT_DAYS = 30
+
+
+def create_session_token(user_id: str, tenant_id: str, days: int = SESSION_DEFAULT_DAYS) -> str:
+    """
+    Crée un token de session persistante.
+    Retourne le token brut (à stocker dans le cookie navigateur).
+    Seul le hash SHA-256 est stocké en base.
+    """
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    expires_at = _dt.datetime.now(_tz.utc) + _dt.timedelta(days=days)
+    run_sql(
+        """
+        INSERT INTO user_sessions (id, user_id, tenant_id, token_hash, expires_at)
+        VALUES (gen_random_uuid(), :u, :t, :h, :e)
+        """,
+        {"u": user_id, "t": tenant_id, "h": token_hash, "e": expires_at},
+    )
+    return token
+
+
+def verify_session_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Vérifie le token de session persistante.
+    Retourne le user dict si valide (non expiré, utilisateur actif), None sinon.
+    """
+    if not token:
+        return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    rows = run_sql(
+        """
+        SELECT u.id, u.tenant_id, u.email, u.role, u.is_active
+        FROM user_sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = :h
+          AND s.expires_at > now()
+          AND u.is_active = true
+        LIMIT 1
+        """,
+        {"h": token_hash},
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    return {
+        "id": str(row["id"]),
+        "tenant_id": str(row["tenant_id"]),
+        "email": row["email"],
+        "role": row["role"],
+    }
+
+
+def revoke_session_token(token: str) -> None:
+    """Révoque un token de session persistante (utilisé lors du logout)."""
+    if not token:
+        return
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    run_sql(
+        "DELETE FROM user_sessions WHERE token_hash = :h",
+        {"h": token_hash},
+    )
