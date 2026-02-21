@@ -145,42 +145,174 @@ if isinstance(note_msg, str) and note_msg.strip():
     st.info(note_msg)
 
 
-# ---------------- KPIs ----------------
-total_btl = int(pd.to_numeric(df_min.get("Bouteilles à produire (arrondi)"), errors="coerce").fillna(0).sum())
-total_vol = float(pd.to_numeric(df_min.get("Volume produit arrondi (hL)"), errors="coerce").fillna(0).sum())
-c1, c2, c3 = st.columns(3)
-with c1: kpi("Total bouteilles à produire", f"{total_btl:,}".replace(",", " "))
-with c2: kpi("Volume total (hL)", f"{total_vol:.2f}")
-with c3: kpi("Lignes après exclusions", f"{len(df_min)}")
+# ─── Overrides manuels (clé=(GoutCanon,Produit,Stock), valeur=nb cartons forcés) ─
+if "manual_overrides" not in st.session_state:
+    st.session_state.manual_overrides = {}
 
-
-# ---------------- Images + tableau principal ----------------
+# ─── Fonctions utilitaires ──────────────────────────────────────────────────────
 def sku_guess(name: str):
     m = re.search(r"\b([A-Z]{3,6}-\d{2,3})\b", str(name))
     return m.group(1) if m else None
 
-df_view = df_min.copy()
-df_view["SKU?"] = df_view["Produit"].apply(sku_guess)
-df_view["__img_path"] = [
-    find_image_path(images_dir, sku=sku_guess(p), flavor=g)
-    for p, g in zip(df_view["Produit"], df_view["GoutCanon"])
-]
-df_view["Image"] = df_view["__img_path"].apply(load_image_bytes)
+def _build_final_table(df_all, df_calc, gouts_cibles, overrides):
+    """Construit le tableau avec tous les formats + overrides + redistribution."""
+    sel = set(gouts_cibles)
+    base = (
+        df_all[df_all["GoutCanon"].isin(sel)][
+            ["GoutCanon", "Produit", "Stock", "Volume/carton (hL)", "Bouteilles/carton"]
+        ]
+        .drop_duplicates(subset=["GoutCanon", "Produit", "Stock"])
+        .copy()
+        .reset_index(drop=True)
+    )
+    # Merge X_adj de l'optimiseur (poids de redistribution)
+    base = base.merge(
+        df_calc[["GoutCanon", "Produit", "Stock", "X_adj (hL)"]],
+        on=["GoutCanon", "Produit", "Stock"],
+        how="left",
+    )
+    base["X_adj (hL)"] = base["X_adj (hL)"].fillna(0.0)
 
-st.data_editor(
-    df_view[[
-        "Image","GoutCanon","Produit","Stock",
-        "Cartons à produire (arrondi)","Bouteilles à produire (arrondi)",
-        "Volume produit arrondi (hL)"
-    ]],
-    use_container_width=True,
-    hide_index=True,
-    disabled=True,
-    column_config={
-        "Image": st.column_config.ImageColumn("Image", width="small"),
-        "GoutCanon": "Goût",
-        "Volume produit arrondi (hL)": st.column_config.NumberColumn(format="%.2f"),
-    },
+    rows_out = []
+    for g, grp in base.groupby("GoutCanon", sort=False):
+        V_g = grp["X_adj (hL)"].sum()
+        # Volume consommé par les lignes forcées de ce goût
+        forced_vol_g = 0.0
+        for _, row in grp.iterrows():
+            key = (row["GoutCanon"], row["Produit"], row["Stock"])
+            if key in overrides:
+                forced_vol_g += overrides[key] * row["Volume/carton (hL)"]
+        remaining_g = max(0.0, V_g - forced_vol_g)
+        # Poids des lignes non-forcées (basé sur X_adj de l'optimiseur)
+        nf_weight = grp.loc[
+            grp.apply(lambda r: (r["GoutCanon"], r["Produit"], r["Stock"]) not in overrides, axis=1),
+            "X_adj (hL)",
+        ].sum()
+
+        for _, row in grp.iterrows():
+            key = (row["GoutCanon"], row["Produit"], row["Stock"])
+            forced = overrides.get(key)
+            if forced is not None:
+                cartons = max(0, int(forced))
+            else:
+                if nf_weight > 1e-9 and row["X_adj (hL)"] > 0:
+                    alloc_hl = remaining_g * row["X_adj (hL)"] / nf_weight
+                    cartons = max(0, int(round(alloc_hl / row["Volume/carton (hL)"])))
+                else:
+                    cartons = 0
+            bouteilles = int(cartons * row["Bouteilles/carton"])
+            vol = round(cartons * row["Volume/carton (hL)"], 3)
+            rows_out.append({
+                "GoutCanon": row["GoutCanon"],
+                "Produit": row["Produit"],
+                "Stock": row["Stock"],
+                "Volume/carton (hL)": row["Volume/carton (hL)"],
+                "Bouteilles/carton": int(row["Bouteilles/carton"]),
+                "Cartons à produire (arrondi)": cartons,
+                "Bouteilles à produire (arrondi)": bouteilles,
+                "Volume produit arrondi (hL)": vol,
+                "_forcé": forced is not None,
+            })
+    return pd.DataFrame(rows_out) if rows_out else pd.DataFrame()
+
+df_final = _build_final_table(
+    df_all, df_calc, gouts_cibles, st.session_state.manual_overrides
+)
+
+# ─── KPIs ──────────────────────────────────────────────────────────────────────
+total_btl = int(df_final["Bouteilles à produire (arrondi)"].sum()) if not df_final.empty else 0
+total_vol = float(df_final["Volume produit arrondi (hL)"].sum()) if not df_final.empty else 0.0
+nb_actifs = int((df_final["Cartons à produire (arrondi)"] > 0).sum()) if not df_final.empty else 0
+nb_forcés = int(df_final["_forcé"].sum()) if not df_final.empty else 0
+c1, c2, c3 = st.columns(3)
+with c1: kpi("Total bouteilles à produire", f"{total_btl:,}".replace(",", " "))
+with c2: kpi("Volume total (hL)", f"{total_vol:.2f}")
+with c3: kpi("Formats en production", f"{nb_actifs}" + (f" ({nb_forcés} forcé{'s' if nb_forcés>1 else ''})" if nb_forcés else ""))
+
+# ─── Tableau éditable (tous les formats) ───────────────────────────────────────
+_col_info, _col_reset = st.columns([5, 1])
+with _col_info:
+    if nb_forcés:
+        st.caption(f"✏️ **{nb_forcés} ligne(s) forcée(s)** — le volume restant est redistribué proportionnellement.")
+    else:
+        st.caption("Colonne **✏️ Forcer** : tape un nombre de cartons pour forcer une ligne. Laisse vide = valeur automatique.")
+with _col_reset:
+    if st.button("♻️ Réinitialiser", key="btn_reset_overrides", use_container_width=True,
+                 help="Annule tous les forcés manuels et revient aux valeurs de l'optimiseur."):
+        st.session_state.manual_overrides = {}
+        st.rerun()
+
+if not df_final.empty:
+    df_view = df_final.copy()
+    df_view["__img_path"] = [
+        find_image_path(images_dir, sku=sku_guess(p), flavor=g)
+        for p, g in zip(df_view["Produit"], df_view["GoutCanon"])
+    ]
+    df_view["Image"] = df_view["__img_path"].apply(load_image_bytes)
+
+    # Colonne "Forcer" : nullable int (pd.NA = vide = auto)
+    _ov = st.session_state.manual_overrides
+    df_view["✏️ Forcer"] = pd.array(
+        [_ov.get((r["GoutCanon"], r["Produit"], r["Stock"])) for _, r in df_view.iterrows()],
+        dtype=pd.Int64Dtype(),
+    )
+
+    edited = st.data_editor(
+        df_view[[
+            "Image", "GoutCanon", "Produit", "Stock",
+            "✏️ Forcer",
+            "Cartons à produire (arrondi)", "Bouteilles à produire (arrondi)",
+            "Volume produit arrondi (hL)",
+        ]],
+        use_container_width=True,
+        hide_index=True,
+        disabled=[
+            "Image", "GoutCanon", "Produit", "Stock",
+            "Cartons à produire (arrondi)", "Bouteilles à produire (arrondi)",
+            "Volume produit arrondi (hL)",
+        ],
+        column_config={
+            "Image": st.column_config.ImageColumn("Image", width="small"),
+            "GoutCanon": "Goût",
+            "✏️ Forcer": st.column_config.NumberColumn(
+                "✏️ Forcer (cartons)",
+                min_value=0,
+                step=1,
+                help="Force le nombre de cartons pour cette ligne. Laisse vide pour la valeur automatique.",
+            ),
+            "Cartons à produire (arrondi)": st.column_config.NumberColumn("Cartons"),
+            "Bouteilles à produire (arrondi)": st.column_config.NumberColumn("Bouteilles"),
+            "Volume produit arrondi (hL)": st.column_config.NumberColumn("Volume (hL)", format="%.3f"),
+        },
+        key="table_prod_edit",
+    )
+
+    # Capture des overrides depuis la table éditée → mise à jour session state
+    new_overrides = {}
+    for _, row in edited.iterrows():
+        v = row.get("✏️ Forcer")
+        try:
+            if not pd.isna(v):
+                vi = int(v)
+                if vi >= 0:
+                    new_overrides[(row["GoutCanon"], row["Produit"], row["Stock"])] = vi
+        except (TypeError, ValueError):
+            pass
+    if new_overrides != st.session_state.manual_overrides:
+        st.session_state.manual_overrides = new_overrides
+        st.rerun()
+else:
+    st.warning("Aucun format disponible pour les goûts sélectionnés.")
+
+# df_min compatible avec le reste du code (save, Excel…) — ne garde que les >0 cartons
+df_min_override = (
+    df_final[df_final["Cartons à produire (arrondi)"] > 0][[
+        "GoutCanon", "Produit", "Stock",
+        "Cartons à produire (arrondi)",
+        "Bouteilles à produire (arrondi)",
+        "Volume produit arrondi (hL)",
+    ]].copy().reset_index(drop=True)
+    if not df_final.empty else df_min.copy()
 )
 
 # ======================================================================
@@ -207,13 +339,13 @@ date_ddm = date_debut + _dt.timedelta(days=365)
 
 if st.button("💾 Sauvegarder cette production", use_container_width=True):
     g_order = []
-    if isinstance(df_min, pd.DataFrame) and "GoutCanon" in df_min.columns:
-        for g in df_min["GoutCanon"].astype(str).tolist():
+    if isinstance(df_min_override, pd.DataFrame) and "GoutCanon" in df_min_override.columns:
+        for g in df_min_override["GoutCanon"].astype(str).tolist():
             if g and g not in g_order:
                 g_order.append(g)
 
     st.session_state.saved_production = {
-        "df_min": df_min.copy(),   # <<< ici
+        "df_min": df_min_override.copy(),   # <<< ici (avec overrides appliqués)
         "df_calc": df_calc.copy(),
         "gouts": g_order,
         "semaine_du": date_debut.isoformat(),
@@ -246,7 +378,7 @@ def _two_gouts_auto(sp_obj, df_min_cur, gouts_cur):
 
 if sp:
     # Déduction auto des 2 premiers goûts (si ta fiche a 2 colonnes de goût)
-    g1, g2 = _two_gouts_auto(sp, sp.get("df_min", df_min), gouts_cibles)
+    g1, g2 = _two_gouts_auto(sp, sp.get("df_min", df_min_override), gouts_cibles)
 
     template_path = TEMPLATE_MAP.get(cuve_choice)
     if not template_path or not os.path.exists(template_path):
@@ -265,7 +397,7 @@ if sp:
                 gout2=g2,
                 df_calc=sp.get("df_calc", df_calc),
                 sheet_name=SHEET_NAME,
-                df_min=sp.get("df_min", df_min),
+                df_min=sp.get("df_min", df_min_override),
             )
 
             semaine_label = _dt.date.fromisoformat(sp["semaine_du"]).strftime("%d-%m-%Y")
