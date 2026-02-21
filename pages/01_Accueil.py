@@ -43,78 +43,86 @@ def sync_easybeer(window_days: int = EASYBEER_WINDOW_DAYS):
     resp.raise_for_status()
     return resp.content
 
-# ─── Section Easy Beer ─────────────────────────────────────────────────────────
-st.subheader("🔄 Synchronisation Easy Beer")
+# ─── Layout deux colonnes ──────────────────────────────────────────────────────
+col_left, col_right = st.columns(2, gap="large")
 
-easybeer_ok = bool(EASYBEER_API_USER and EASYBEER_API_PASS)
+# ── Colonne gauche : Easy Beer ─────────────────────────────────────────────────
+with col_left:
+    st.subheader("🔄 Synchronisation Easy Beer")
 
-if not easybeer_ok:
-    st.warning("Clés API Easy Beer non configurées. Configure `EASYBEER_API_USER` et `EASYBEER_API_PASS` dans les variables d'environnement.")
-else:
-    col_sync, col_days = st.columns([2, 1])
-    with col_days:
-        window = st.number_input("Période (jours)", min_value=7, max_value=365, value=EASYBEER_WINDOW_DAYS, step=1)
-    with col_sync:
-        st.write("")  # alignement vertical
-        sync_btn = st.button("🔄 Importer depuis Easy Beer", use_container_width=True, type="primary")
+    easybeer_ok = bool(EASYBEER_API_USER and EASYBEER_API_PASS)
 
-    if sync_btn:
-        with st.spinner("Connexion à Easy Beer en cours…"):
-            try:
-                excel_bytes = sync_easybeer(window_days=window)
-                df_raw, window_days_detected = read_input_excel_and_period_from_bytes(excel_bytes)
-                st.session_state.df_raw = df_raw
-                st.session_state.window_days = window
-                st.session_state.file_name = f"easybeer-autonomie-{datetime.date.today()}.xlsx"
-                st.success(f"✅ Données Easy Beer importées ({window} jours) — {len(df_raw)} lignes chargées.")
-            except requests.HTTPError as e:
-                st.error(f"Erreur API Easy Beer : {e.response.status_code} — {e.response.text[:200]}")
-            except Exception as e:
-                st.error(f"Erreur lors de la synchronisation : {e}")
+    if not easybeer_ok:
+        st.warning("Clés API Easy Beer non configurées.")
+    else:
+        window = st.number_input(
+            "Période (jours)", min_value=7, max_value=365,
+            value=EASYBEER_WINDOW_DAYS, step=1
+        )
+        sync_btn = st.button(
+            "🔄 Importer depuis Easy Beer",
+            use_container_width=True,
+            type="primary"
+        )
 
+        if sync_btn:
+            with st.spinner("Connexion à Easy Beer…"):
+                try:
+                    excel_bytes = sync_easybeer(window_days=window)
+                    df_raw, _ = read_input_excel_and_period_from_bytes(excel_bytes)
+                    st.session_state.df_raw = df_raw
+                    st.session_state.window_days = window
+                    st.session_state.file_name = f"easybeer-autonomie-{datetime.date.today()}.xlsx"
+                    st.success(f"✅ {len(df_raw)} lignes importées ({window} jours).")
+                except requests.HTTPError as e:
+                    st.error(f"Erreur API Easy Beer : {e.response.status_code}")
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+
+# ── Colonne droite : Upload manuel ─────────────────────────────────────────────
+with col_right:
+    st.subheader("📤 Import manuel")
+    st.caption("Fichier Excel exporté depuis Easy Beer.")
+
+    uploaded = st.file_uploader(
+        "Dépose un Excel (.xlsx / .xls)",
+        type=["xlsx", "xls"],
+        label_visibility="collapsed"
+    )
+
+    if uploaded is not None:
+        try:
+            df_raw, window_days = read_input_excel_and_period_from_upload(uploaded)
+            st.session_state.df_raw = df_raw
+            st.session_state.window_days = window_days
+            st.session_state.file_name = uploaded.name
+            st.success(f"✅ **{uploaded.name}** chargé · {window_days} jours.")
+        except Exception as e:
+            st.error(f"Erreur de lecture : {e}")
+
+# ─── État courant + aperçu ─────────────────────────────────────────────────────
 st.divider()
 
-# ─── Upload manuel (fallback) ──────────────────────────────────────────────────
-st.subheader("📤 Import manuel")
-st.caption("Ou dépose directement ton fichier Excel autonomie-stocks exporté depuis Easy Beer.")
-
-uploaded = st.file_uploader("Dépose un Excel (.xlsx / .xls)", type=["xlsx", "xls"])
-
-col1, col2 = st.columns([1, 1])
-with col1:
-    clear = st.button("♻️ Réinitialiser le fichier chargé", use_container_width=True)
-with col2:
-    show_head = st.toggle("Afficher un aperçu (20 premières lignes)", value=True)
-
-# 🔄 reset
-if clear:
-    for k in ("df_raw", "window_days", "file_name"):
-        st.session_state.pop(k, None)
-    st.success("Fichier déchargé. Dépose un nouvel Excel pour continuer.")
-
-# ✅ traitement du fichier uploadé manuellement
-if uploaded is not None:
-    try:
-        df_raw, window_days = read_input_excel_and_period_from_upload(uploaded)
-        st.session_state.df_raw = df_raw
-        st.session_state.window_days = window_days
-        st.session_state.file_name = uploaded.name
-        st.success(
-            f"Fichier chargé ✅ : **{uploaded.name}** · Fenêtre détectée (B2) : **{window_days} jours**"
+col_info, col_actions = st.columns([3, 1])
+with col_info:
+    if "df_raw" in st.session_state:
+        st.info(
+            f"📂 **{st.session_state.get('file_name', '(sans nom)')}** — "
+            f"fenêtre : **{st.session_state.get('window_days', '—')} jours**"
         )
-    except Exception as e:
-        st.error(f"Erreur de lecture de l'Excel : {e}")
+    else:
+        st.warning("Aucun fichier en mémoire. Synchronise ou dépose un Excel.")
 
-# 🟣 état courant
-if "df_raw" in st.session_state:
-    st.info(
-        f"Fichier en mémoire : **{st.session_state.get('file_name','(sans nom)')}** — "
-        f"fenêtre : **{st.session_state.get('window_days', '—')} jours**"
-    )
-    if show_head:
-        st.dataframe(st.session_state.df_raw.head(20), use_container_width=True)
-else:
-    st.warning("Aucun fichier en mémoire. Synchronise depuis Easy Beer ou dépose un Excel ci-dessus.")
+with col_actions:
+    show_head = st.toggle("Aperçu", value=True)
+    if st.button("♻️ Réinitialiser", use_container_width=True):
+        for k in ("df_raw", "window_days", "file_name"):
+            st.session_state.pop(k, None)
+        st.success("Fichier déchargé.")
+        st.rerun()
 
-# --- Footer sidebar (doit être le DERNIER appel de la page) ---
+if "df_raw" in st.session_state and show_head:
+    st.dataframe(st.session_state.df_raw.head(20), use_container_width=True)
+
+# --- Footer sidebar ---
 user_menu_footer(user)
