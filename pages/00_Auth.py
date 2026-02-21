@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import datetime
 import streamlit as st
 
 # --- Config page + masquage sidebar ---
@@ -10,6 +11,14 @@ section[data-testid="stSidebar"] {display:none !important;}
 section[data-testid="stSidebarNav"] {display:none !important;}
 </style>
 """, unsafe_allow_html=True)
+
+# --- Cookie manager (invisible — pour auto-login et remember me) ---
+_cookie_manager = None
+try:
+    import extra_streamlit_components as stx
+    _cookie_manager = stx.CookieManager(key="fs_auth_cm")
+except Exception:
+    pass
 
 # --- Imports app ---
 from common.auth import authenticate, create_user, find_user_by_email
@@ -65,15 +74,32 @@ if token_from_url:
     st.stop()
 
 
-# --- Titre (mode normal) ---
-st.title("🔐 Authentification")
-
 # --- Si déjà connecté, on redirige vers l'app ---
 u = current_user()
 if u:
-    st.success(f"Déjà connecté en tant que {u['email']}.")
-    st.page_link("pages/01_Accueil.py", label="➡️ Aller à la production")
-    st.stop()
+    st.switch_page("pages/01_Accueil.py")
+
+# =========================================================
+# AUTO-LOGIN via cookie persistant ("Se souvenir de moi")
+# =========================================================
+if _cookie_manager and not current_user():
+    try:
+        session_token = _cookie_manager.get("fs_session")
+        if session_token:
+            from common.auth import verify_session_token
+            auto_user = verify_session_token(session_token)
+            if auto_user:
+                st.session_state["_fs_session_token"] = session_token
+                login_user(auto_user)
+                st.switch_page("pages/01_Accueil.py")
+            else:
+                # Token expiré ou révoqué → effacer le cookie
+                _cookie_manager.delete("fs_session")
+    except Exception:
+        pass
+
+# --- Titre (mode normal) ---
+st.title("🔐 Authentification")
 
 
 # ===============================
@@ -118,6 +144,7 @@ with tab_login:
     st.subheader("Connexion")
     email = st.text_input("Email", placeholder="prenom.nom@exemple.com", key="login_email")
     password = st.text_input("Mot de passe", type="password", key="login_pwd")
+    remember_me = st.checkbox("🔑 Se souvenir de moi (30 jours)", value=True, key="login_remember")
     cols = st.columns([1, 1, 2])
     with cols[0]:
         if st.button("Connexion", type="primary", key="btn_login"):
@@ -129,6 +156,20 @@ with tab_login:
                     st.error("Identifiants invalides.")
                 else:
                     login_user(user)
+                    # ── Remember me : créer un token persistant + cookie ──
+                    if remember_me and _cookie_manager:
+                        try:
+                            from common.auth import create_session_token
+                            token = create_session_token(
+                                str(user["id"]), str(user["tenant_id"]), days=30
+                            )
+                            st.session_state["_fs_session_token"] = token
+                            _cookie_manager.set(
+                                "fs_session", token,
+                                expires_at=datetime.datetime.now() + datetime.timedelta(days=30),
+                            )
+                        except Exception:
+                            pass  # Ne bloque pas la connexion si le cookie échoue
                     st.success("Connecté ✅")
                     st.rerun()
     with cols[1]:
