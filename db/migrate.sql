@@ -101,3 +101,21 @@ CREATE TABLE IF NOT EXISTS password_resets (
 
 CREATE INDEX IF NOT EXISTS idx_password_resets_user  ON password_resets(user_id);
 CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash);
+
+-- =========================
+-- Sessions persistantes ("Se souvenir de moi")
+-- =========================
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user  ON user_sessions(user_id);
+
+-- Nettoyage automatique des sessions expirées (optionnel, à lancer manuellement si besoin)
+-- DELETE FROM user_sessions WHERE expires_at < now();
