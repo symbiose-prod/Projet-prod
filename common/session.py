@@ -15,6 +15,14 @@ def login_user(user_dict: Dict[str, Any]) -> None:
     st.session_state[USER_KEY] = user_dict
 
 def logout_user() -> None:
+    # Révoquer le token persistant en base (si présent)
+    token = st.session_state.pop("_fs_session_token", None)
+    if token:
+        try:
+            from common.auth import revoke_session_token
+            revoke_session_token(token)
+        except Exception:
+            pass
     if USER_KEY in st.session_state:
         del st.session_state[USER_KEY]
 
@@ -146,11 +154,25 @@ def user_menu_footer(user: Dict[str, Any] | None):
     # espace qui prend toute la hauteur restante pour pousser le footer en bas
     st.sidebar.markdown('<div class="sym-sidebar-spacer"></div>', unsafe_allow_html=True)
 
+    # Cookie manager invisible — nécessaire pour effacer le cookie lors du logout
+    _cookie_manager = None
+    try:
+        import extra_streamlit_components as stx
+        _cookie_manager = stx.CookieManager(key="fs_footer_cm")
+    except Exception:
+        pass
+
     with st.sidebar:
         st.markdown('<div class="sym-sidebar-footer">', unsafe_allow_html=True)
 
         # Bouton de déconnexion (clé unique pour éviter les collisions)
         if st.button("Se déconnecter", key="logout_footer", use_container_width=True):
+            # Effacer le cookie navigateur si possible
+            if _cookie_manager:
+                try:
+                    _cookie_manager.delete("fs_session")
+                except Exception:
+                    pass
             logout_user()
             st.success("Déconnecté.")
             st.rerun()
