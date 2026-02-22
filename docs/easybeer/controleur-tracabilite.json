@@ -1,0 +1,722 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-tracabilite",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 14",
+  "paths": {
+    "/tracabilite/ascendante": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "tracabiliteAscendante",
+        "operationId": "tracabiliteAscendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleTracabilite"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/ascendante/affectation-fut/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportAffectationFutTracabiliteAscendante",
+        "operationId": "exportAffectationFutTracabiliteAscendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/ascendante/commande/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportCommandeTracabiliteAscendante",
+        "operationId": "exportCommandeTracabiliteAscendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/ascendante/fourniture/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportFournitureTracabiliteAscendante",
+        "operationId": "exportFournitureTracabiliteAscendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/ascendante/ingredient/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportIngredientTracabiliteAscendante",
+        "operationId": "exportIngredientTracabiliteAscendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/ascendante/production/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportProductionTracabiliteAscendante",
+        "operationId": "exportProductionTracabiliteAscendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/ascendante/vente-directe/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportVenteDirecteTracabiliteAscendante",
+        "operationId": "exportVenteDirecteTracabiliteAscendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/descendante": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "tracabiliteDescendante",
+        "operationId": "tracabiliteDescendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleTracabilite"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/descendante/affectation-fut/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportAffectationFutTracabiliteDescendante",
+        "operationId": "exportAffectationFutTracabiliteDescendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/descendante/commande/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportCommandeTracabiliteDescendante",
+        "operationId": "exportCommandeTracabiliteDescendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/descendante/fourniture/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportFournitureTracabiliteDescendante",
+        "operationId": "exportFournitureTracabiliteDescendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/descendante/ingredient/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportIngredientTracabiliteDescendante",
+        "operationId": "exportIngredientTracabiliteDescendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/descendante/production/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportProductionTracabiliteDescendante",
+        "operationId": "exportProductionTracabiliteDescendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/tracabilite/descendante/vente-directe/export": {
+      "post": {
+        "tags": [
+          "controleur-tracabilite"
+        ],
+        "summary": "exportVenteDirecteTracabiliteDescendante",
+        "operationId": "exportVenteDirecteTracabiliteDescendanteUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTracabiliteFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    }
+  }
+}
