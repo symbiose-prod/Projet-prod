@@ -1,0 +1,2088 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-preference",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 45",
+  "paths": {
+    "/utilisateur/preference": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "recupererPreferences",
+        "operationId": "recupererPreferencesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelePreference"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/client/liste/colonnes": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "colonnesListeClient",
+        "operationId": "colonnesListeClientUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/client/liste/colonnes/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majColonnesListeClient",
+        "operationId": "majColonnesListeClientUsingPOST",
+        "requestBody": {
+          "description": "colonnes",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "colonnes"
+      }
+    },
+    "/utilisateur/preference/commande/liste/colonnes": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "colonnesListeCommande",
+        "operationId": "colonnesListeCommandeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/commande/liste/colonnes/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majColonnesListeCommande",
+        "operationId": "majColonnesListeCommandeUsingPOST",
+        "requestBody": {
+          "description": "colonnes",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "colonnes"
+      }
+    },
+    "/utilisateur/preference/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrer",
+        "operationId": "enregistrerUsingPOST_3",
+        "requestBody": {
+          "description": "modelePreference",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePreference"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelePreference"
+      }
+    },
+    "/utilisateur/preference/filtre/client/detail/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getFiltreClient",
+        "operationId": "getFiltreClientUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleClientFiltre"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/client/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreClient",
+        "operationId": "enregistrerFiltreClientUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleClientFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/client/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreClient",
+        "operationId": "getListeFiltreClientUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleClientFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/client/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreClients",
+        "operationId": "majOrdreFiltreClientsUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleClientFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/commande/detail/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getFiltreCommande",
+        "operationId": "getFiltreCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommandeFiltre"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/commande/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreCommande",
+        "operationId": "enregistrerFiltreCommandeUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/commande/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreCommande",
+        "operationId": "getListeFiltreCommandeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandeFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/commande/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreCommande",
+        "operationId": "majOrdreFiltreCommandeUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleCommandeFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/fourniture/detail/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getFiltreFourniture",
+        "operationId": "getFiltreFournitureUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleFournitureFiltre"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/fourniture/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreFourniture",
+        "operationId": "enregistrerFiltreFournitureUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleFournitureFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/fourniture/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreFourniture",
+        "operationId": "getListeFiltreFournitureUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFournitureFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/fourniture/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreFourniture",
+        "operationId": "majOrdreFiltreFournitureUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleFournitureFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/fut/calendrier/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreFutCalendrier",
+        "operationId": "enregistrerFiltreFutCalendrierUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleFutFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/fut/calendrier/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreFutCalendrier",
+        "operationId": "getListeFiltreFutCalendrierUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFutFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/fut/calendrier/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreFutCalendrier",
+        "operationId": "majOrdreFiltreFutCalendrierUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleFutFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/fut/detail/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getFiltreFut",
+        "operationId": "getFiltreFutUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleFutFiltre"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/fut/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreFut",
+        "operationId": "enregistrerFiltreFutUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleFutFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/fut/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreFut",
+        "operationId": "getListeFiltreFutUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFutFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/fut/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreFut",
+        "operationId": "majOrdreFiltreFutUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleFutFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/location/calendrier/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreMaterielLocationCalendrier",
+        "operationId": "enregistrerFiltreMaterielLocationCalendrierUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleLocationFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/location/calendrier/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreLocationCalendrier",
+        "operationId": "getListeFiltreLocationCalendrierUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLocationFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/location/calendrier/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreMaterielLocationCalendrier",
+        "operationId": "majOrdreFiltreMaterielLocationCalendrierUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleLocationFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/location/detail/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getFiltreLocation",
+        "operationId": "getFiltreLocationUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleLocationFiltre"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/location/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreMaterielLocation",
+        "operationId": "enregistrerFiltreMaterielLocationUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleLocationFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/location/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreLocation",
+        "operationId": "getListeFiltreLocationUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLocationFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/location/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreMaterielLocation",
+        "operationId": "majOrdreFiltreMaterielLocationUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleLocationFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/prospect/detail/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getFiltreProspect",
+        "operationId": "getFiltreProspectUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleClientFiltre"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/prospect/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreProspect",
+        "operationId": "enregistrerFiltreProspectUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleClientFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/prospect/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreProspect",
+        "operationId": "getListeFiltreProspectUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleClientFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/prospect/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreProspects",
+        "operationId": "majOrdreFiltreProspectsUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleClientFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/stock-produit/detail/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getFiltreStockProduit",
+        "operationId": "getFiltreStockProduitUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleStockFiltre"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/stock-produit/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "enregistrerFiltreStockProduit",
+        "operationId": "enregistrerFiltreStockProduitUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleStockFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/utilisateur/preference/filtre/stock-produit/liste": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getListeFiltreStockProduit",
+        "operationId": "getListeFiltreStockProduitUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleStockFiltre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/filtre/stock-produit/ordonner": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majOrdreFiltreStockProduit",
+        "operationId": "majOrdreFiltreStockProduitUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleStockFiltre"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/utilisateur/preference/filtre/supprimer/{idFiltreUtilisateur}": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "supprimerFiltreUtilisateur",
+        "operationId": "supprimerFiltreUtilisateurUsingGET",
+        "parameters": [
+          {
+            "name": "idFiltreUtilisateur",
+            "in": "path",
+            "description": "idFiltreUtilisateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/fourniture/liste/colonnes": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "colonnesListeFourniture",
+        "operationId": "colonnesListeFournitureUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/fourniture/liste/colonnes/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majColonnesListeFourniture",
+        "operationId": "majColonnesListeFournitureUsingPOST",
+        "requestBody": {
+          "description": "colonnes",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "colonnes"
+      }
+    },
+    "/utilisateur/preference/sidenav": {
+      "get": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "getSidenav",
+        "operationId": "getSidenavUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleSidenav"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/utilisateur/preference/sidenav/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-preference"
+        ],
+        "summary": "majSidenav",
+        "operationId": "majSidenavUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleSidenav"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    }
+  }
+}
