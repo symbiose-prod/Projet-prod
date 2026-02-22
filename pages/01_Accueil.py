@@ -8,40 +8,17 @@ user_menu()
 
 import datetime
 import os
-import requests
 import streamlit as st
 from common.design import apply_theme, section
 from core.optimizer import read_input_excel_and_period_from_upload, read_input_excel_and_period_from_bytes
+import common.easybeer as eb
 
 # 🎨 titre / thème
 apply_theme("Ferment Station — Accueil", "🥤")
 section("Accueil", "🏠")
 
-# ─── Configuration Easy Beer (variables d'environnement) ───────────────────────
-EASYBEER_API_USER = os.environ.get("EASYBEER_API_USER", "")
-EASYBEER_API_PASS = os.environ.get("EASYBEER_API_PASS", "")
-EASYBEER_ID_BRASSERIE = int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013"))
+# ─── Configuration Easy Beer ────────────────────────────────────────────────────
 EASYBEER_WINDOW_DAYS = int(os.environ.get("EASYBEER_WINDOW_DAYS", "30"))
-
-def sync_easybeer(window_days: int = EASYBEER_WINDOW_DAYS):
-    """Appelle l'API Easy Beer et retourne les bytes du fichier Excel autonomie-stocks."""
-    date_fin = datetime.datetime.utcnow()
-    date_debut = date_fin - datetime.timedelta(days=window_days)
-    payload = {
-        "idBrasserie": EASYBEER_ID_BRASSERIE,
-        "periode": {
-            "dateDebut": date_debut.strftime("%Y-%m-%dT00:00:00.000Z"),
-            "dateFin": date_fin.strftime("%Y-%m-%dT23:59:59.999Z"),
-        }
-    }
-    resp = requests.post(
-        "https://api.easybeer.fr/indicateur/autonomie-stocks/export/excel",
-        json=payload,
-        auth=(EASYBEER_API_USER, EASYBEER_API_PASS),
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.content
 
 # ─── Layout deux colonnes ──────────────────────────────────────────────────────
 col_left, col_right = st.columns(2, gap="large")
@@ -50,9 +27,7 @@ col_left, col_right = st.columns(2, gap="large")
 with col_left:
     st.subheader("🔄 Synchronisation Easy Beer")
 
-    easybeer_ok = bool(EASYBEER_API_USER and EASYBEER_API_PASS)
-
-    if not easybeer_ok:
+    if not eb.is_configured():
         st.warning("Clés API Easy Beer non configurées.")
     else:
         window = st.number_input(
@@ -68,7 +43,7 @@ with col_left:
         if sync_btn:
             with st.spinner("Connexion à Easy Beer…"):
                 try:
-                    excel_bytes = sync_easybeer(window_days=window)
+                    excel_bytes = eb.get_autonomie_stocks_excel(window_days=window)
                     df_raw, _ = read_input_excel_and_period_from_bytes(excel_bytes)
                     st.session_state.df_raw = df_raw
                     st.session_state.window_days = window
