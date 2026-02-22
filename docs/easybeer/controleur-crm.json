@@ -1,0 +1,454 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-crm",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 8",
+  "paths": {
+    "/crm/kanban/element/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "enregistrerElement",
+        "operationId": "enregistrerElementUsingPOST",
+        "requestBody": {
+          "description": "element",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleKanbanElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "element"
+      }
+    },
+    "/crm/kanban/element/{id}": {
+      "get": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "getKanbanElement",
+        "operationId": "getKanbanElementUsingGET",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleKanbanElement"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/crm/kanban/elements/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "enregistrerElements",
+        "operationId": "enregistrerElementsUsingPOST",
+        "requestBody": {
+          "description": "elements",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleKanbanElement"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "elements"
+      }
+    },
+    "/crm/kanban/liste/{type}": {
+      "get": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "getKanbans",
+        "operationId": "getKanbansUsingGET",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "description": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleKanban"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/crm/kanban/{type}": {
+      "post": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "getKanban",
+        "operationId": "getKanbanUsingPOST",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "description": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "filtre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleKanbanFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleKanban"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "filtre"
+      }
+    },
+    "/crm/relances/detail/{id}": {
+      "get": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "getRelance",
+        "operationId": "getRelanceUsingGET",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleRelanceClient"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/crm/relances/export": {
+      "post": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "exportRelances",
+        "operationId": "exportRelancesUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCRMRelanceParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/crm/relances/liste": {
+      "post": {
+        "tags": [
+          "controleur-crm"
+        ],
+        "summary": "listeRelances",
+        "operationId": "listeRelancesUsingPOST",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCRMRelanceParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListePagineeOfModeleRelanceClient"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    }
+  }
+}
