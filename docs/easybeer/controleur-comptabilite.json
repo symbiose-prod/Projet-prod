@@ -1,0 +1,2721 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-comptabilite",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 50",
+  "paths": {
+    "/comptabilite/banque/marquer-non-reconciliable": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "marquerNonReconciliable",
+        "operationId": "marquerNonReconciliableUsingPOST",
+        "requestBody": {
+          "description": "liste",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "liste"
+      }
+    },
+    "/comptabilite/banque/marquer-reconciliable": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "marquerReconciliable",
+        "operationId": "marquerReconciliableUsingPOST",
+        "requestBody": {
+          "description": "liste",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "liste"
+      }
+    },
+    "/comptabilite/banque/reconciliation": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "reconciliation",
+        "operationId": "reconciliationUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleReconciliation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/banque/reconciliation/annuler": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "annulerReconciliation",
+        "operationId": "annulerReconciliationUsingPOST",
+        "requestBody": {
+          "description": "liste",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "liste"
+      }
+    },
+    "/comptabilite/banque/reconciliation/liste-commandes/{idBanqueTransaction}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "recupererCommandesReconciliation",
+        "operationId": "recupererCommandesReconciliationUsingGET",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idBanqueTransaction",
+            "in": "path",
+            "description": "idBanqueTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandePaiementAutre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/banque/reconciliation/liste-fournitures/{idBanqueTransaction}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "recupererFournituresReconciliation",
+        "operationId": "recupererFournituresReconciliationUsingGET",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idBanqueTransaction",
+            "in": "path",
+            "description": "idBanqueTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFourniturePaiementAutre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/banque/reconciliation/suggestion/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "suggestionsReconciliations",
+        "operationId": "suggestionsReconciliationsUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleReconciliation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/banque/reconciliations": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "reconciliations",
+        "operationId": "reconciliationsUsingPOST",
+        "requestBody": {
+          "description": "liste",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleReconciliation"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "liste"
+      }
+    },
+    "/comptabilite/banque/toggle-reconciliable/{idBanqueTransaction}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "toggleReconciliable",
+        "operationId": "toggleReconciliableUsingGET",
+        "parameters": [
+          {
+            "name": "idBanqueTransaction",
+            "in": "path",
+            "description": "idBanqueTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/banque/transaction-bancaire/supprimer": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "supprimerTransactions",
+        "operationId": "supprimerTransactionsUsingPOST",
+        "requestBody": {
+          "description": "liste",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "liste"
+      }
+    },
+    "/comptabilite/banque/transaction/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "enregistrerTransactionBancaire",
+        "operationId": "enregistrerTransactionBancaireUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBanqueTransaction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/banque/{idBanque}/connexion-mode-import": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "connecterModeImport",
+        "operationId": "connecterModeImportUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/banque/{idBanque}/transaction/export": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exporterTransactionsBancaires",
+        "operationId": "exporterTransactionsBancairesUsingPOST",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBanqueTransactionFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/comptabilite/banque/{idBanque}/transaction/liste": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "listePagineeBanqueTransaction",
+        "operationId": "listePagineeBanqueTransactionUsingPOST",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBanqueTransactionFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListePagineeOfModeleBanqueTransaction"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/comptabilite/banque/{idBanque}/transactions/import": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "importerTransactionsBancaires",
+        "operationId": "importerTransactionsBancairesUsingPOST",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file"
+                ],
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "description": "file",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/bilan": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "bilanFinancier",
+        "operationId": "bilanFinancierUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleBilanParametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBilanParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleBilanFinancier"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleBilanParametre"
+      }
+    },
+    "/comptabilite/bilan/export": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportBilanFinancier",
+        "operationId": "exportBilanFinancierUsingPOST",
+        "requestBody": {
+          "description": "modeleBilanExport",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBilanExport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleBilanExport"
+      }
+    },
+    "/comptabilite/bilan/recalcul-tresorerie": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "recalculTresorerie",
+        "operationId": "recalculTresorerieUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRecalculTresorerie"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/cloture-comptable": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "livreCompte",
+        "operationId": "livreCompteUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleClotureComptable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/cloture-comptable/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "enregistrerClotureComptable",
+        "operationId": "enregistrerClotureComptableUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleClotureComptable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/controle-remise-cheques": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "controleRemiseCheques",
+        "operationId": "controleRemiseChequesUsingPOST",
+        "requestBody": {
+          "description": "modeleRemiseCheque",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRemiseCheque"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRemiseCheque"
+      }
+    },
+    "/comptabilite/controle-remise-especes": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "controleRemiseEspeces",
+        "operationId": "controleRemiseEspecesUsingPOST",
+        "requestBody": {
+          "description": "modeleRemiseEspece",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRemiseEspece"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRemiseEspece"
+      }
+    },
+    "/comptabilite/declaration-tva": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "declarationTVA",
+        "operationId": "declarationTVAUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleBilanDeclarationTVAParametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBilanDeclarationTVAParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleBilanDeclarationTVA"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleBilanDeclarationTVAParametre"
+      }
+    },
+    "/comptabilite/declaration-tva/export": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportDeclarationTVA",
+        "operationId": "exportDeclarationTVAUsingPOST",
+        "requestBody": {
+          "description": "modeleBilanDeclarationTVAParametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBilanDeclarationTVAParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleBilanDeclarationTVAParametre"
+      }
+    },
+    "/comptabilite/ecriture-comptable/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "enregistrerEcritureComptable",
+        "operationId": "enregistrerEcritureComptableUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleEcritureComptableSaisieLibre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/ecriture-comptable/multiple/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "enregistrerMultiEcritureComptable",
+        "operationId": "enregistrerMultiEcritureComptableUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleEcritureComptableSaisieLibre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/ecriture-comptable/supprimer/{id}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "supprimerEcritureComptable",
+        "operationId": "supprimerEcritureComptableUsingGET",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/livre-compte": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "livreCompte",
+        "operationId": "livreCompteUsingPOST",
+        "requestBody": {
+          "description": "modeleLivreCompteParametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleLivreCompteParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLivreCompte"
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleLivreCompteParametre"
+      }
+    },
+    "/comptabilite/livre-compte/export": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportComptable",
+        "operationId": "exportComptableUsingPOST",
+        "requestBody": {
+          "description": "modeleLivreCompteParametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleLivreCompteParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleLivreCompteParametre"
+      }
+    },
+    "/comptabilite/livre-compte/export-excel": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportLivreCompte",
+        "operationId": "exportLivreCompteUsingPOST",
+        "requestBody": {
+          "description": "modeleLivreCompteParametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleLivreCompteParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleLivreCompteParametre"
+      }
+    },
+    "/comptabilite/remise-cheques": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "remiseCheques",
+        "operationId": "remiseChequesUsingPOST",
+        "requestBody": {
+          "description": "modeleRemiseCheque",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRemiseCheque"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRemiseCheque"
+      }
+    },
+    "/comptabilite/remise-especes": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "remiseEspeces",
+        "operationId": "remiseEspecesUsingPOST",
+        "requestBody": {
+          "description": "modeleRemiseEspece",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRemiseEspece"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRemiseEspece"
+      }
+    },
+    "/comptabilite/remises/liste": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "historiqueRemise",
+        "operationId": "historiqueRemiseUsingGET",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListePagineeOfModeleRemiseHistorique"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/remises/liste/export": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportHistoriqueRemise",
+        "operationId": "exportHistoriqueRemiseUsingGET",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/remises/supprimer/{idRemiseHistorique}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "supprimerRemise",
+        "operationId": "supprimerRemiseUsingGET",
+        "parameters": [
+          {
+            "name": "idRemiseHistorique",
+            "in": "path",
+            "description": "idRemiseHistorique",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/remises/telecharger": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "telechargerMultiRemises",
+        "operationId": "telechargerMultiRemisesUsingPOST",
+        "requestBody": {
+          "description": "modeleTelechargementMultiple",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTelechargementMultiple"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleTelechargementMultiple"
+      }
+    },
+    "/comptabilite/situation-client": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "situationClient",
+        "operationId": "situationClientUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleSituationClientRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleSituationClient"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/situation-client-multiple/export": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportSituationsMultiClients",
+        "operationId": "exportSituationsMultiClientsUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleSituationClientRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/situation-client/export": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportSituationClient",
+        "operationId": "exportSituationClientUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleSituationClientRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/comptabilite/suivi-consigne": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "suiviConsigne",
+        "operationId": "suiviConsigneUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "parametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBilanSuiviConsigneParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleBilanSuiviConsigne"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "parametre"
+      }
+    },
+    "/comptabilite/suivi-consigne/export": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "exportSuiviConsigne",
+        "operationId": "exportSuiviConsigneUsingPOST",
+        "requestBody": {
+          "description": "parametre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBilanSuiviConsigneParametre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "parametre"
+      }
+    },
+    "/comptabilite/transaction/confirmer-reception/{idTransaction}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "confirmerReception",
+        "operationId": "confirmerReceptionUsingGET",
+        "parameters": [
+          {
+            "name": "idTransaction",
+            "in": "path",
+            "description": "idTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/transaction/controle-generer-cfonb": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "controleFichierCFONB",
+        "operationId": "controleFichierCFONBUsingPOST",
+        "requestBody": {
+          "description": "modeleGenererCFONB",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleGenererCFONB"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleGenererCFONB"
+      }
+    },
+    "/comptabilite/transaction/controle-generer-lcr": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "controleFichierLCR",
+        "operationId": "controleFichierLCRUsingPOST",
+        "requestBody": {
+          "description": "modeleGenererLCR",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleGenererLCR"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleGenererLCR"
+      }
+    },
+    "/comptabilite/transaction/detail/{idTransaction}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "detailTransaction",
+        "operationId": "detailTransactionUsingGET",
+        "parameters": [
+          {
+            "name": "idTransaction",
+            "in": "path",
+            "description": "idTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleTransaction"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/transaction/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "enregistrerTransaction",
+        "operationId": "enregistrerTransactionUsingPOST",
+        "parameters": [
+          {
+            "name": "modele",
+            "in": "query",
+            "description": "modele",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fichier": {
+                    "type": "string",
+                    "description": "fichier",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/transaction/generer-cfonb": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "telechargerFichierCFONB",
+        "operationId": "telechargerFichierCFONBUsingPOST",
+        "requestBody": {
+          "description": "modeleGenererCFONB",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleGenererCFONB"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleGenererCFONB"
+      }
+    },
+    "/comptabilite/transaction/generer-lcr": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "telechargerFichierLCR",
+        "operationId": "telechargerFichierLCRUsingPOST",
+        "requestBody": {
+          "description": "modeleGenererLCR",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleGenererLCR"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleGenererLCR"
+      }
+    },
+    "/comptabilite/transaction/supprimer/{idTransaction}": {
+      "get": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "supprimerTransaction",
+        "operationId": "supprimerTransactionUsingGET",
+        "parameters": [
+          {
+            "name": "idTransaction",
+            "in": "path",
+            "description": "idTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/comptabilite/transaction/upload/{idTransaction}": {
+      "post": {
+        "tags": [
+          "controleur-comptabilite"
+        ],
+        "summary": "uploadFichierTransaction",
+        "operationId": "uploadFichierTransactionUsingPOST",
+        "parameters": [
+          {
+            "name": "commentaire",
+            "in": "query",
+            "description": "commentaire",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idTransaction",
+            "in": "path",
+            "description": "idTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "fichier"
+                ],
+                "type": "object",
+                "properties": {
+                  "fichier": {
+                    "type": "string",
+                    "description": "fichier",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleUpload"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    }
+  }
+}
