@@ -1,0 +1,4671 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-referentiel",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 114",
+  "paths": {
+    "/referentiel/action-client/etats": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeEtatActionClient",
+        "operationId": "listeEtatActionClientUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleClientActionEtat"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/action-client/types": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeActionClient",
+        "operationId": "listeTypeActionClientUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleClientActionType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/aide/theme": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeAideThemes",
+        "operationId": "listeAideThemesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleAideTheme"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/appellation-inao/recherche": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "rechercherAppellationINAO",
+        "operationId": "rechercherAppellationINAOUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAppellationINAO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleAppellationINAO"
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/referentiel/banque": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "banquePremiere",
+        "operationId": "banquePremiereUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleBanque"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/associer-compte/{idBanque}/{accountId}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "associerCompteBancaireBridgeAPI",
+        "operationId": "associerCompteBancaireBridgeAPIUsingGET",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "description": "accountId",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/associer-connexion/{idBanque}/{itemId}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "associerConnexionBancaireBridgeAPI",
+        "operationId": "associerConnexionBancaireBridgeAPIUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "description": "itemId",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/bridge-connect/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "genererLienBridgeConnect",
+        "operationId": "genererLienBridgeConnectUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/bridge-edit/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "genererLienBridgeEdit",
+        "operationId": "genererLienBridgeEditUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/bridge-sync/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "genererLienBridgeSync",
+        "operationId": "genererLienBridgeSyncUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/confirmation-pro/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "genererLienBridgeConfirmationPro",
+        "operationId": "genererLienBridgeConfirmationProUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/finaliser-connexion": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "finaliserConnexionBridgeAPI",
+        "operationId": "finaliserConnexionBridgeAPIUsingPOST",
+        "requestBody": {
+          "description": "modeleConnexion",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleConnexionBridgeAPI"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleConnexion"
+      }
+    },
+    "/referentiel/banque/bridgeapi/liste-comptes/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesBancairesBridgeAPI",
+        "operationId": "listeComptesBancairesBridgeAPIUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BridgeAPIAccount"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/liste-connexions": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeConnexionsBridgeAPI",
+        "operationId": "listeConnexionsBridgeAPIUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BridgeAPIItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/supprimer-connexion/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "supprimerConnexionBridgeAPI",
+        "operationId": "supprimerConnexionBridgeAPIUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/bridgeapi/synchroniser/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "synchronisationTransactions",
+        "operationId": "synchronisationTransactionsUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/budget-insight/finaliser-connexion": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "finaliserConnexionBudgetInsight",
+        "operationId": "finaliserConnexionBudgetInsightUsingPOST",
+        "requestBody": {
+          "description": "modeleConnexion",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleConnexionBudgetInsight"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleConnexion"
+      }
+    },
+    "/referentiel/banque/budget-insight/lien-connect/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "genererLienConnectBudgetInsight",
+        "operationId": "genererLienConnectBudgetInsightUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/budget-insight/lien-manage/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "genererLienManagerBudgetInsight",
+        "operationId": "genererLienManagerBudgetInsightUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/budget-insight/supprimer-connexion/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "supprimerConnexionBudgetInsight",
+        "operationId": "supprimerConnexionBudgetInsightUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "enregistrerBanque",
+        "operationId": "enregistrerBanqueUsingPOST",
+        "requestBody": {
+          "description": "modeleBanque",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBanque"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleBanque"
+      }
+    },
+    "/referentiel/banque/generer-tinklink/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "genererTinkLink",
+        "operationId": "genererTinkLinkUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/supprimer/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "supprimerBanque",
+        "operationId": "supprimerBanqueUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banque/{idBanque}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "recupererBanque",
+        "operationId": "recupererBanqueUsingGET",
+        "parameters": [
+          {
+            "name": "idBanque",
+            "in": "path",
+            "description": "idBanque",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleBanque"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banques": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeBanque",
+        "operationId": "listeBanqueUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleBanque"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/banques/enregistrer-ordre": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "majOrdreBanques",
+        "operationId": "majOrdreBanquesUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleBanque"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/referentiel/bi/familles-styles-produits": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "getFamillesEtStylesProduit",
+        "operationId": "getFamillesEtStylesProduitUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleStyle"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/bi/familles-types-clients": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "getFamillesEtTypesClient",
+        "operationId": "getFamillesEtTypesClientUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTypeClient"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/bi/formats-produits": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "getFormatsProduit",
+        "operationId": "getFormatsProduitUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFormat"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/bi/packagings-produits": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "getPackaginsProduit",
+        "operationId": "getPackaginsProduitUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePackaging"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/boutique/tri": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTriBoutique",
+        "operationId": "listeTriBoutiqueUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleBoutiqueTri"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/brasserie/fait-generateur": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeFaitGenerateur",
+        "operationId": "listeFaitGenerateurUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFaitGenerateur"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/brasserie/forme-juridique": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeFormeJuridique",
+        "operationId": "listeFormeJuridiqueUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFormeJuridique"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/brassin/etat": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeEtatBrassin",
+        "operationId": "listeEtatBrassinUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleBrassinEtat"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/brassin/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeBrassin",
+        "operationId": "listeTypeBrassinUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleBrassinType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/client/etats-contact": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeEtatContact",
+        "operationId": "listeEtatContactUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleClientEtatContact"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/commande/etat": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeEtatCommande",
+        "operationId": "listeEtatCommandeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandeEtat"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/commande/etat/paiement": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeEtatPaiementCommande",
+        "operationId": "listeEtatPaiementCommandeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandeEtatPaiement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/commande/type-delai": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeDelai",
+        "operationId": "listeTypeDelaiUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTypeDelai"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/commande/type-mouvement": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeMouvement",
+        "operationId": "listeTypeMouvementUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTypeMouvement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/commande/type-paiement": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypePaiementCommande",
+        "operationId": "listeTypePaiementCommandeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTypePaiement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/comptabilite/format": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeFormatsExport",
+        "operationId": "listeFormatsExportUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleComptabiliteExportFormat"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contact/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeContact",
+        "operationId": "listeTypeContactUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleContactType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeContenant",
+        "operationId": "listeContenantUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleContenant"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant/bouteille": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeContenantBouteille",
+        "operationId": "listeContenantBouteilleUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleContenant"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant/edition/{idContenant}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "editionContenant",
+        "operationId": "editionContenantUsingGET",
+        "parameters": [
+          {
+            "name": "idContenant",
+            "in": "path",
+            "description": "idContenant",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleContenant"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "enregistrerContenant",
+        "operationId": "enregistrerContenantUsingPOST",
+        "requestBody": {
+          "description": "modeleContenant",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleContenant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleContenant"
+      }
+    },
+    "/referentiel/contenant/fut": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeContenantFut",
+        "operationId": "listeContenantFutUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleContenant"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant/specifique": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeContenantSpecifique",
+        "operationId": "listeContenantSpecifiqueUsingGET",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleContenant"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant/supprimer/{idContenant}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "supprimerContenant",
+        "operationId": "supprimerContenantUsingGET",
+        "parameters": [
+          {
+            "name": "idContenant",
+            "in": "path",
+            "description": "idContenant",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant/volume": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeContenantVolume",
+        "operationId": "listeContenantVolumeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleContenant"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/contenant/vrac": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "getContenantVrac",
+        "operationId": "getContenantVracUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleContenant"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/entreprise/recherche": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "rechercherEntreprise",
+        "operationId": "rechercherEntrepriseUsingPOST",
+        "requestBody": {
+          "description": "modeleRecherche",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRecherche"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/RechercherEntrepriseReponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRecherche"
+      }
+    },
+    "/referentiel/fourniture/lieu-achat": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeLieuAchat",
+        "operationId": "listeLieuAchatUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLieu"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/fourniture/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeFourniture",
+        "operationId": "listeTypeFournitureUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTypeFournitureElement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/fourniture/type-paiement": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypePaiementFourniture",
+        "operationId": "listeTypePaiementFournitureUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTypePaiement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/fut/etat": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeEtatFut",
+        "operationId": "listeEtatFutUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleFutEtat"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/location/etat": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeEtatLocation",
+        "operationId": "listeEtatLocationUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLocationEtat"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/lot": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeLot",
+        "operationId": "listeLotUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLot"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/lot/all": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeLotGestion",
+        "operationId": "listeLotGestionUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLot"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/lot/visibilite/{idLot}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "visibiliteLot",
+        "operationId": "visibiliteLotUsingGET",
+        "parameters": [
+          {
+            "name": "idLot",
+            "in": "path",
+            "description": "idLot",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/materiel-brassage/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeMateriel",
+        "operationId": "listeTypeMaterielUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleMaterielType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/materiel-brassage/type-maintenance": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeMaintenance",
+        "operationId": "listeTypeMaintenanceUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleMaterielTypeMaintenance"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/materiel-location/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeLocation",
+        "operationId": "listeTypeLocationUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleLocationType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/matiere-premiere/conditionnement/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeMatierePremiereConditionnement",
+        "operationId": "listeTypeMatierePremiereConditionnementUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleMatierePremiereType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/matiere-premiere/divers/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeMatierePremiereDivers",
+        "operationId": "listeTypeMatierePremiereDiversUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleMatierePremiereType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/matiere-premiere/ingredient/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeMatierePremiereIngredient",
+        "operationId": "listeTypeMatierePremiereIngredientUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleMatierePremiereType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/periodes": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listePeriodes",
+        "operationId": "listePeriodesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupePeriode"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptes",
+        "operationId": "listeComptesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/achats": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesAchats",
+        "operationId": "listeComptesAchatsUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/banques": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesBanques",
+        "operationId": "listeComptesBanquesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/clients": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesClients",
+        "operationId": "listeComptesClientsUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/edition/{idPlanComptable}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "editionPlanComptable",
+        "operationId": "editionPlanComptableUsingGET",
+        "parameters": [
+          {
+            "name": "idPlanComptable",
+            "in": "path",
+            "description": "idPlanComptable",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelePlanComptable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "enregistrerPlanComptable",
+        "operationId": "enregistrerPlanComptableUsingPOST",
+        "requestBody": {
+          "description": "modelePlanComptable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePlanComptable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelePlanComptable"
+      }
+    },
+    "/referentiel/plan_comptable/export": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "exportPlanComptable",
+        "operationId": "exportPlanComptableUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/fournisseurs": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesFournisseurs",
+        "operationId": "listeComptesFournisseursUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/fournitures": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesFournitures",
+        "operationId": "listeComptesFournituresUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/immobilisations": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesImmobilisations",
+        "operationId": "listeComptesImmobilisationsUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/import/telecharger-modele": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "telechargerModeleImportClients",
+        "operationId": "telechargerModeleImportClientsUsingGET_1",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/import/{miseAJour}": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "importPlanComptable",
+        "operationId": "importPlanComptableUsingPOST",
+        "parameters": [
+          {
+            "name": "miseAJour",
+            "in": "path",
+            "description": "miseAJour",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file"
+                ],
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "description": "file",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/specifique": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesSpecifiques",
+        "operationId": "listeComptesSpecifiquesUsingGET",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/supprimer/{idPlanComptable}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "supprimerPlanComptable",
+        "operationId": "supprimerPlanComptableUsingGET",
+        "parameters": [
+          {
+            "name": "idPlanComptable",
+            "in": "path",
+            "description": "idPlanComptable",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/ventes": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeComptesVentes",
+        "operationId": "listeComptesVentesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePlanComptable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/plan_comptable/verifier-existence": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "verifierExistencePlanComptable",
+        "operationId": "verifierExistencePlanComptableUsingPOST",
+        "requestBody": {
+          "description": "modelePlanComptable",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePlanComptable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelePlanComptable"
+      }
+    },
+    "/referentiel/produit/categorie": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeProduitsCategories",
+        "operationId": "listeProduitsCategoriesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitCategorie"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/categorie/edition/{idProduitCategorie}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "editionProduitCategorie",
+        "operationId": "editionProduitCategorieUsingGET",
+        "parameters": [
+          {
+            "name": "idProduitCategorie",
+            "in": "path",
+            "description": "idProduitCategorie",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleProduitCategorie"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/categorie/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "enregistrerProduitCategorie",
+        "operationId": "enregistrerProduitCategorieUsingPOST",
+        "requestBody": {
+          "description": "modeleProduitCategorie",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleProduitCategorie"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleProduitCategorie"
+      }
+    },
+    "/referentiel/produit/categorie/supprimer/{idProduitCategorie}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "supprimerProduitCategorie",
+        "operationId": "supprimerProduitCategorieUsingGET",
+        "parameters": [
+          {
+            "name": "idProduitCategorie",
+            "in": "path",
+            "description": "idProduitCategorie",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/certification": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeProduitCertification",
+        "operationId": "listeProduitCertificationUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitCertification"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/classement": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeProduitClassement",
+        "operationId": "listeProduitClassementUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitClassement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/couleur/biere": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeCouleurProduitBiere",
+        "operationId": "listeCouleurProduitBiereUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitCouleur"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/couleur/cidre": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeCouleurProduitCidre",
+        "operationId": "listeCouleurProduitCidreUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitCouleur"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/couleur/vin": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeCouleurProduitVin",
+        "operationId": "listeCouleurProduitVinUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitCouleur"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/qualite": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeProduitQualite",
+        "operationId": "listeProduitQualiteUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitQualite"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeProduit",
+        "operationId": "listeTypeProduitUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/type/edition/{idProduitType}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "editionProduitType",
+        "operationId": "editionProduitTypeUsingGET",
+        "parameters": [
+          {
+            "name": "idProduitType",
+            "in": "path",
+            "description": "idProduitType",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleProduitType"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/type/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "enregistrerProduitType",
+        "operationId": "enregistrerProduitTypeUsingPOST",
+        "requestBody": {
+          "description": "modeleProduitType",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleProduitType"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleProduitType"
+      }
+    },
+    "/referentiel/produit/type/specifique": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeProduitsTypesSpecifiques",
+        "operationId": "listeProduitsTypesSpecifiquesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/type/supprimer/{idProduitType}": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "supprimerProduitType",
+        "operationId": "supprimerProduitTypeUsingGET",
+        "parameters": [
+          {
+            "name": "idProduitType",
+            "in": "path",
+            "description": "idProduitType",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/produit/zone-viticole": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeProduitZoneViticole",
+        "operationId": "listeProduitZoneViticoleUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleProduitZoneViticole"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/regions-departements": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "getRegionsEtDepartements",
+        "operationId": "getRegionsEtDepartementsUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleRegion"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/stock/autre/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeAutreStock",
+        "operationId": "listeTypeAutreStockUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleStockType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/stock/type-sortie": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeSortieStock",
+        "operationId": "listeTypeSortieStockUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleStockSortieType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/stock/type-sortie/all": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeSortieStockAll",
+        "operationId": "listeTypeSortieStockAllUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleStockSortieType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/tva": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTVA",
+        "operationId": "listeTVAUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTVA"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/tva/collectee": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTVACollectee",
+        "operationId": "listeTVACollecteeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTVA"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/tva/deductible": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTVADeductibles",
+        "operationId": "listeTVADeductiblesUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTVA"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/tva/editable": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTVAEditable",
+        "operationId": "listeTVAEditableUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTVA"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/unite/duree": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeUniteDuree",
+        "operationId": "listeUniteDureeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleUnite"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/unite/ingredient": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeUniteIngredient",
+        "operationId": "listeUniteIngredientUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleUnite"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/unite/volume": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeUniteVolume",
+        "operationId": "listeUniteVolumeUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleUnite"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/utilisateur/droits": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeDroitsUtilisateur",
+        "operationId": "listeDroitsUtilisateurUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleDroit"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/utilisateur/role": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeRoleUtilisateur",
+        "operationId": "listeRoleUtilisateurUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleUtilisateurRole"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/referentiel/vente-directe/type": {
+      "get": {
+        "tags": [
+          "controleur-referentiel"
+        ],
+        "summary": "listeTypeVenteDirecte",
+        "operationId": "listeTypeVenteDirecteUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleTypeVenteDirecteElement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    }
+  }
+}
