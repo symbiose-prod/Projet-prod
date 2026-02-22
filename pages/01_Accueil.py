@@ -49,8 +49,11 @@ with col_left:
                     st.session_state.window_days = window
                     st.session_state.file_name = f"easybeer-autonomie-{datetime.date.today()}.xlsx"
                     st.success(f"✅ {len(df_raw)} lignes importées ({window} jours).")
-                except requests.HTTPError as e:
-                    st.error(f"Erreur API Easy Beer : {e.response.status_code}")
+                except Exception as http_e:
+                    if hasattr(http_e, "response") and http_e.response is not None:
+                        st.error(f"Erreur API Easy Beer : {http_e.response.status_code}")
+                    else:
+                        raise http_e
                 except Exception as e:
                     st.error(f"Erreur : {e}")
 

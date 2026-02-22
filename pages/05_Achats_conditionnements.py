@@ -100,25 +100,28 @@ with col_btn:
 
 if do_sync:
     progress = st.progress(0, text="Connexion à Easy Beer…")
-    errors = []
+    errors   = []
 
     try:
         progress.progress(20, text="📊 Autonomie produits finis…")
         st.session_state["eb_autonomie"] = eb.get_autonomie_stocks(window_days=int(window_days))
     except Exception as e:
         errors.append(f"Autonomie stocks : {e}")
+        st.session_state.pop("eb_autonomie", None)
 
     try:
         progress.progress(50, text="📦 Stocks matières premières…")
         st.session_state["eb_mp"] = eb.get_mp_all(status="actif")
     except Exception as e:
         errors.append(f"Stocks MP : {e}")
+        st.session_state.pop("eb_mp", None)
 
     try:
         progress.progress(80, text="🔄 Synthèse consommations MP…")
         st.session_state["eb_conso_mp"] = eb.get_synthese_consommations_mp(window_days=int(window_days))
     except Exception as e:
         errors.append(f"Consommations MP : {e}")
+        st.session_state.pop("eb_conso_mp", None)
 
     progress.progress(100, text="Terminé.")
     st.session_state["eb_window_days"] = int(window_days)
@@ -127,9 +130,10 @@ if do_sync:
     if errors:
         for err in errors:
             st.error(f"❌ {err}")
+        st.stop()           # ← on reste sur la page pour lire les erreurs
     else:
         st.success("✅ Synchronisation réussie.")
-    st.rerun()
+        st.rerun()          # ← rerun uniquement si tout est OK
 
 # ─── Vérification données en session ───────────────────────────────────────────
 if "eb_autonomie" not in st.session_state:
@@ -147,6 +151,34 @@ with col_info:
             f"Dernière sync : **{sync_time.strftime('%d/%m/%Y %H:%M')}** "
             f"({age_min} min) — fenêtre : **{eb_window} j**"
         )
+
+# ─── Debug global ──────────────────────────────────────────────────────────────
+with st.expander("🐛 Debug — Réponses brutes Easy Beer", expanded=False):
+    import json as _json
+
+    st.subheader("autonomie-stocks (produits finis)")
+    raw_auto = st.session_state.get("eb_autonomie", {})
+    st.caption(f"Type : {type(raw_auto).__name__} | Clés : {list(raw_auto.keys()) if isinstance(raw_auto, dict) else 'N/A'}")
+    nb_prod = len(raw_auto.get("produits", [])) if isinstance(raw_auto, dict) else 0
+    st.caption(f"Nb produits : {nb_prod}")
+    if nb_prod:
+        st.json(raw_auto.get("produits", [])[:2])   # 2 premiers pour aperçu
+
+    st.subheader("stock/matieres-premieres/all")
+    raw_mp = st.session_state.get("eb_mp", [])
+    st.caption(f"Type : {type(raw_mp).__name__} | Nb MP : {len(raw_mp) if isinstance(raw_mp, list) else 'N/A'}")
+    if isinstance(raw_mp, list) and raw_mp:
+        st.json(raw_mp[:2])   # 2 premiers
+    elif isinstance(raw_mp, dict):
+        st.json(raw_mp)
+
+    st.subheader("synthese-consommations-mp")
+    raw_conso = st.session_state.get("eb_conso_mp", {})
+    st.caption(f"Type : {type(raw_conso).__name__} | Clés : {list(raw_conso.keys()) if isinstance(raw_conso, dict) else 'N/A'}")
+    elems_cond = raw_conso.get("syntheseConditionnement", {}).get("elements", []) if isinstance(raw_conso, dict) else []
+    st.caption(f"Nb éléments syntheseConditionnement : {len(elems_cond)}")
+    if elems_cond:
+        st.json(elems_cond[:3])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — PRODUITS FINIS (autonomie Easy Beer)
