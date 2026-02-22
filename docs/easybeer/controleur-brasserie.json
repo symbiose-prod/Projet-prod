@@ -1,0 +1,806 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-brasserie",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 19",
+  "paths": {
+    "/brasserie": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "brasserieUtilisateurCourant",
+        "operationId": "brasserieUtilisateurCourantUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleBrasserie"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/acces-client-pro/lien": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "genererLienAccesClientPro",
+        "operationId": "genererLienAccesClientProUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/attestation/telecharger": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "attestation",
+        "operationId": "attestationUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/cgv": {
+      "post": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "cgvBrasserieUpload",
+        "operationId": "cgvBrasserieUploadUsingPOST",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file"
+                ],
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "description": "file",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleUpload"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/cgv/supprimer": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "supprimerCgv",
+        "operationId": "supprimerCgvUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/cgv/telecharger": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "telechargerCgv",
+        "operationId": "telechargerCgvUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/cgv/visualiser": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "visualiserCgv",
+        "operationId": "visualiserCgvUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/compte/achat": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "compteAchatBrasserie",
+        "operationId": "compteAchatBrasserieUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelePlanComptable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/compte/produit": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "compteProduitBrasserie",
+        "operationId": "compteProduitBrasserieUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelePlanComptable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/compte/service": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "compteServiceBrasserie",
+        "operationId": "compteServiceBrasserieUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelePlanComptable"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/demande-contact/lien": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "genererLienDemandeContactProspect",
+        "operationId": "genererLienDemandeContactProspectUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/demande-creation-compte": {
+      "post": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "demandeCreationCompte",
+        "operationId": "demandeCreationCompteUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleFormulaireProspect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/brasserie/masque": {
+      "post": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "masqueBrasserieUpload",
+        "operationId": "masqueBrasserieUploadUsingPOST",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "file"
+                ],
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "description": "file",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleUpload"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/masque/supprimer": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "supprimerMasque",
+        "operationId": "supprimerMasqueUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/masque/telecharger": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "telechargerMasque",
+        "operationId": "telechargerMasqueUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/masque/visualiser": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "visualiserMasque",
+        "operationId": "visualiserMasqueUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/brasserie/message/liste": {
+      "post": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "listePagineeMessages",
+        "operationId": "listePagineeMessagesUsingPOST",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleMessageFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListePagineeOfModeleLogMessage"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/brasserie/smtp/test": {
+      "post": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "testConfigurationSMTP",
+        "operationId": "testConfigurationSMTPUsingPOST",
+        "requestBody": {
+          "description": "modeleMail",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleMail"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReponseMail"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleMail"
+      }
+    },
+    "/brasserie/token/{token}": {
+      "get": {
+        "tags": [
+          "controleur-brasserie"
+        ],
+        "summary": "recupererBrasserieToken",
+        "operationId": "recupererBrasserieTokenUsingGET",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleBrasserie"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    }
+  }
+}
