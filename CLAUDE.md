@@ -210,6 +210,82 @@ ssh ubuntu@92.222.229.87 "cd /home/ubuntu/app && git pull && sudo systemctl rest
 
 ---
 
+## Easy Beer API
+
+**Spec OpenAPI complète :** `docs/easybeer_openapi.json` (2.4MB, 1339 endpoints)
+**Base URL :** `https://api.easybeer.fr`
+**Auth :** HTTP Basic (`EASYBEER_API_USER` / `EASYBEER_API_PASS`)
+**ID brasserie :** `EASYBEER_ID_BRASSERIE` (valeur production : `2013`)
+**Client centralisé :** `common/easybeer.py`
+
+### Endpoints utilisés
+
+| Méthode | Endpoint | Usage | Fichier |
+|---------|----------|-------|---------|
+| `POST` | `/indicateur/autonomie-stocks/export/excel` | Excel ventes+stock → page Accueil | `01_Accueil.py` |
+| `POST` | `/indicateur/autonomie-stocks` | JSON autonomie (jours de stock) produits finis | `05_Achats_conditionnements.py` |
+| `GET`  | `/stock/matieres-premieres/all` | Stock tous composants (MP, conditionnements) | `05_Achats_conditionnements.py` |
+| `POST` | `/indicateur/synthese-consommations-mp` | Consommation MP sur période | `05_Achats_conditionnements.py` |
+
+### Format payload (CRITIQUE)
+
+Tous les endpoints `POST /indicateur/*` utilisent le schéma `ModeleIndicateur` :
+
+```json
+{
+  "idBrasserie": 2013,
+  "periode": {
+    "dateDebut": "2026-01-22T00:00:00.000Z",
+    "dateFin":   "2026-02-22T23:59:59.999Z",
+    "type":      "PERIODE_LIBRE"
+  }
+}
+```
+
+> ⚠️ **Gotchas connus :**
+> - `periode.type = "PERIODE_LIBRE"` est **obligatoire** — sans lui → 500
+> - Les endpoints JSON `/indicateur/*` requièrent `?forceRefresh=false` en query param → 500 sinon
+> - L'endpoint `/export/excel` n'a pas besoin de `forceRefresh`
+
+### Schémas clés (réponses)
+
+**`ModeleAutonomie`** (autonomie-stocks) :
+```json
+{
+  "produits": [
+    { "libelle": "Kéfir Original", "autonomie": 28.5, "quantiteVirtuelle": 1150, "volume": 4.0 }
+  ]
+}
+```
+
+**`ModeleMatierePremiere`** (matieres-premieres/all) :
+```json
+{
+  "idMatierePremiere": 42, "libelle": "Carton 12×33cl",
+  "quantiteVirtuelle": 1200.0, "seuilBas": 500.0,
+  "type": { "code": "CONDITIONNEMENT" },
+  "unite": { "symbole": "u" }
+}
+```
+
+**`ModeleSyntheseConsoMP`** (synthese-consommations-mp) :
+```json
+{
+  "syntheseConditionnement": {
+    "elements": [
+      { "idMatierePremiere": 42, "libelle": "Carton 12×33cl", "quantite": 1500.0 }
+    ]
+  }
+}
+```
+
+### Calcul durée de stock composants
+```
+durée (jours) = quantiteVirtuelle / (quantite_consommée_sur_période / nb_jours_fenêtre)
+```
+
+---
+
 ## Dependencies (Key)
 
 ```
