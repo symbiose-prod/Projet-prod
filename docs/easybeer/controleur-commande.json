@@ -1,0 +1,7297 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-commande",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 143",
+  "paths": {
+    "/commande/ajouter-element-deconsignation": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "ajouterElementDeconsignation",
+        "operationId": "ajouterElementDeconsignationUsingPOST",
+        "requestBody": {
+          "description": "modeleDeconsignation",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleElementDeconsignation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleDeconsignation"
+      }
+    },
+    "/commande/annuler": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "annulerCommande",
+        "operationId": "annulerCommandeUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/annuler-livraison": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "annulerLivraisonCommande",
+        "operationId": "annulerLivraisonCommandeUsingPOST",
+        "requestBody": {
+          "description": "commande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "commande"
+      }
+    },
+    "/commande/annuler-regroupement/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "annulerRegroupement",
+        "operationId": "annulerRegroupementUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/archiver": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "archiverMultiCommandes",
+        "operationId": "archiverMultiCommandesUsingPOST",
+        "requestBody": {
+          "description": "idsCommandes",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "idsCommandes"
+      }
+    },
+    "/commande/archiver/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "archiverCommande",
+        "operationId": "archiverCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/autres-non-payees/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "recupererAutresCommandesNonPayees",
+        "operationId": "recupererAutresCommandesNonPayeesUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandePaiementAutre"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/avoir/marquer-utilise": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "marquerAvoirCommeUtilise",
+        "operationId": "marquerAvoirCommeUtiliseUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAvoirUtiliser"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/avoir/rembourser": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "rembourserAvoir",
+        "operationId": "rembourserAvoirUsingPOST",
+        "requestBody": {
+          "description": "modeleAvoirRemboursement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAvoirRemboursement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleAvoirRemboursement"
+      }
+    },
+    "/commande/avoir/retirer/{idCommandeAvoirUtilisation}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "retirerAvoir",
+        "operationId": "retirerAvoirUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandeAvoirUtilisation",
+            "in": "path",
+            "description": "idCommandeAvoirUtilisation",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/avoir/utiliser": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "utiliserAvoir",
+        "operationId": "utiliserAvoirUsingPOST",
+        "requestBody": {
+          "description": "modeleAvoirUtiliser",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAvoirUtiliser"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleAvoirUtiliser"
+      }
+    },
+    "/commande/bordereau-livraison": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererBordereauLivraison",
+        "operationId": "genererBordereauLivraisonUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleBordereauLivraisonRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/calculer-poids": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "calculerPoids",
+        "operationId": "calculerPoidsUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/caution/rembourser/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "rembourserCaution",
+        "operationId": "rembourserCautionUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/changement-etat": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "changementEtatMultiCommandes",
+        "operationId": "changementEtatMultiCommandesUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleChangementEtatMultiple"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/chorus-pro/envoyer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "envoyerChorusPro",
+        "operationId": "envoyerChorusProUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleSoumettreDocumentChorusPro"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/chorus-pro/preparer/{idCommandeDocument}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerEnvoiChorusPro",
+        "operationId": "preparerEnvoiChorusProUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandeDocument",
+            "in": "path",
+            "description": "idCommandeDocument",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/client/relancer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "relancerClient",
+        "operationId": "relancerClientUsingPOST",
+        "requestBody": {
+          "description": "modeleRelanceClient",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRelanceClient"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRelanceClient"
+      }
+    },
+    "/commande/client/relancer-multiple": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "relancerMultiClients",
+        "operationId": "relancerMultiClientsUsingPOST",
+        "requestBody": {
+          "description": "modeleRelanceClient",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRelanceClient"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRelanceClient"
+      }
+    },
+    "/commande/client/relancer/courrier/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererRelanceCourrier",
+        "operationId": "genererRelanceCourrierUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/client/relancer/mise-en-demeure/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererRelanceMiseEnDemeure",
+        "operationId": "genererRelanceMiseEnDemeureUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/commande-en-cours/{idClient}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "getCommandeClientEnCours",
+        "operationId": "getCommandeClientEnCoursUsingGET",
+        "parameters": [
+          {
+            "name": "idClient",
+            "in": "path",
+            "description": "idClient",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/convertir-commande-devis/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "transformerCommandeEnDevis",
+        "operationId": "transformerCommandeEnDevisUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/convertir-devis-commande/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "transformerDevisEnCommande",
+        "operationId": "transformerDevisEnCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "transformerProspectEnClient",
+            "in": "query",
+            "description": "transformerProspectEnClient",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/corriger-numero-lot-multiple": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "corrigerNumerosLotsCommande",
+        "operationId": "corrigerNumerosLotsCommandeUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeCorrigerNumeroLot"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/corriger-numero-lot/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "corrigerNumerosLotsCommande",
+        "operationId": "corrigerNumerosLotsCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/degrouper/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "degrouperCommande",
+        "operationId": "degrouperCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/derniere-commande/{idClient}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "getDerniereCommande",
+        "operationId": "getDerniereCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idClient",
+            "in": "path",
+            "description": "idClient",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/desarchiver": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "desarchiverMultiCommandes",
+        "operationId": "desarchiverMultiCommandesUsingPOST",
+        "requestBody": {
+          "description": "idsCommandes",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "idsCommandes"
+      }
+    },
+    "/commande/desarchiver/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "desarchiverCommande",
+        "operationId": "desarchiverCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/detail/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "detailCommande",
+        "operationId": "detailCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/devis/accepter/{token}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "accepterDevis",
+        "operationId": "accepterDevisUsingGET",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/devis/refuser/{token}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "refuserDevis",
+        "operationId": "refuserDevisUsingGET",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/differer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "differerCommande",
+        "operationId": "differerCommandeUsingPOST",
+        "requestBody": {
+          "description": "modeleCommandeDifferer",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeDifferer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommandeDifferer"
+      }
+    },
+    "/commande/document/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "enregistrerDocument",
+        "operationId": "enregistrerDocumentUsingPOST",
+        "requestBody": {
+          "description": "modelePdf",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePdf"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelePdf"
+      }
+    },
+    "/commande/document/envoyer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "envoyerDocument",
+        "operationId": "envoyerDocumentUsingPOST",
+        "requestBody": {
+          "description": "modeleDocumentEnvoi",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleDocumentEnvoi"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleDocumentEnvoi"
+      }
+    },
+    "/commande/document/supprimer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "supprimerDocument",
+        "operationId": "supprimerDocumentUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeDocumentSupprimer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/document/telecharger/duplicata/{idCommandeDocument}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "telechargerDuplicataDocument",
+        "operationId": "telechargerDuplicataDocumentUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandeDocument",
+            "in": "path",
+            "description": "idCommandeDocument",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/document/telecharger/token/{token}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "telechargerDocumentToken",
+        "operationId": "telechargerDocumentTokenUsingGET",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/document/telecharger/{idCommandeDocument}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "telechargerDocument",
+        "operationId": "telechargerDocumentUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandeDocument",
+            "in": "path",
+            "description": "idCommandeDocument",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/document/visualiser/{idCommandeDocument}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "visualiserDocument",
+        "operationId": "visualiserDocumentUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandeDocument",
+            "in": "path",
+            "description": "idCommandeDocument",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/documents/avoirs/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererAvoirMultiClients",
+        "operationId": "genererAvoirMultiClientsUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModelePdf"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/commande/documents/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "enregistrerDocuments",
+        "operationId": "enregistrerDocumentsUsingPOST",
+        "requestBody": {
+          "description": "modelePdf",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePdf"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelePdf"
+      }
+    },
+    "/commande/documents/envoyer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "envoiMultiDocuments",
+        "operationId": "envoiMultiDocumentsUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleEnvoiDocumentMultiple"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/documents/telecharger": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "telechargerMultiDocuments",
+        "operationId": "telechargerMultiDocumentsUsingPOST",
+        "requestBody": {
+          "description": "modeleTelechargementMultiple",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTelechargementMultiple"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleTelechargementMultiple"
+      }
+    },
+    "/commande/documents/telecharger/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "telechargerDocuments",
+        "operationId": "telechargerDocumentsUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/dupliquer/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "dupliquerCommande",
+        "operationId": "dupliquerCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/edi/export": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererExportEDI",
+        "operationId": "genererExportEDIUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleExportEDI"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/editer-caution": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCaution",
+        "operationId": "editerCautionUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-commentaire": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommentaire",
+        "operationId": "editerCommentaireUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-commentaire-client": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommentaireClient",
+        "operationId": "editerCommentaireClientUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-consigne": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerConsigne",
+        "operationId": "editerConsigneUsingPOST",
+        "requestBody": {
+          "description": "modeleEditerConsigne",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleEditerConsigne"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleEditerConsigne"
+      }
+    },
+    "/commande/editer-date-livraison": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerDateLivraisonCommande",
+        "operationId": "editerDateLivraisonCommandeUsingPOST",
+        "requestBody": {
+          "description": "commande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "commande"
+      }
+    },
+    "/commande/editer-element-autre": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommandeElementAutre",
+        "operationId": "editerCommandeElementAutreUsingPOST",
+        "requestBody": {
+          "description": "modeleElement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementAutre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleElement"
+      }
+    },
+    "/commande/editer-element-bouteille": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommandeElementBouteille",
+        "operationId": "editerCommandeElementBouteilleUsingPOST",
+        "requestBody": {
+          "description": "modeleElement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleElement"
+      }
+    },
+    "/commande/editer-element-contenant": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommandeElementContenant",
+        "operationId": "editerCommandeElementContenantUsingPOST",
+        "requestBody": {
+          "description": "modeleElement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementContenant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleElement"
+      }
+    },
+    "/commande/editer-element-fut": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommandeElementFut",
+        "operationId": "editerCommandeElementFutUsingPOST",
+        "requestBody": {
+          "description": "modeleElement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementFut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleElement"
+      }
+    },
+    "/commande/editer-element-location": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommandeElementLocation",
+        "operationId": "editerCommandeElementLocationUsingPOST",
+        "requestBody": {
+          "description": "modeleElement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementLocation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleElement"
+      }
+    },
+    "/commande/editer-element-matiere-premiere": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommandeElementMatierePremiere",
+        "operationId": "editerCommandeElementMatierePremiereUsingPOST",
+        "requestBody": {
+          "description": "modeleElement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementMatierePremiere"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleElement"
+      }
+    },
+    "/commande/editer-element-saisie-libre": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerCommandeElementSaisieLibre",
+        "operationId": "editerCommandeElementSaisieLibreUsingPOST",
+        "requestBody": {
+          "description": "modeleElement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementSaisieLibre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleElement"
+      }
+    },
+    "/commande/editer-frais-livraison": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerFraisLivraison",
+        "operationId": "editerFraisLivraisonUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-information-livraison": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerInformationLivraison",
+        "operationId": "editerInformationLivraisonUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-information-reception": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerInformationReception",
+        "operationId": "editerInformationReceptionUsingPOST",
+        "requestBody": {
+          "description": "commande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "commande"
+      }
+    },
+    "/commande/editer-livreur": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerLivreur",
+        "operationId": "editerLivreurUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-preparateur": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerPreparateur",
+        "operationId": "editerPreparateurUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-reference-externe": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerReferenceExterne",
+        "operationId": "editerReferenceExterneUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-tags": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerTags",
+        "operationId": "editerTagsUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/editer-type-location-futs": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerTypeLocationFuts",
+        "operationId": "editerTypeLocationFutsUsingPOST",
+        "requestBody": {
+          "description": "commande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "commande"
+      }
+    },
+    "/commande/edition/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editionCommande",
+        "operationId": "editionCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/en-attente-fut/{idFut}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "recupererCommandesEnAttenteFut",
+        "operationId": "recupererCommandesEnAttenteFutUsingGET",
+        "parameters": [
+          {
+            "name": "idFut",
+            "in": "path",
+            "description": "idFut",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommande"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "enregistrerCommande",
+        "operationId": "enregistrerCommandeUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/expedition/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "enregistrerExpedition",
+        "operationId": "enregistrerExpeditionUsingPOST",
+        "requestBody": {
+          "description": "modeleExpedition",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleExpedition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleExpedition"
+      }
+    },
+    "/commande/expedition/fichier/{idExpedition}/{type}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "recuperererBordereauExpedition",
+        "operationId": "recuperererBordereauExpeditionUsingGET",
+        "parameters": [
+          {
+            "name": "idExpedition",
+            "in": "path",
+            "description": "idExpedition",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "type",
+            "in": "path",
+            "description": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/expedition/offre/liste": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "listeOffreExpedition",
+        "operationId": "listeOffreExpeditionUsingPOST",
+        "requestBody": {
+          "description": "modeleExpedition",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleExpedition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Offer"
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleExpedition"
+      }
+    },
+    "/commande/expedition/tracking": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "trackingBoxtal",
+        "operationId": "trackingBoxtalUsingGET",
+        "parameters": [
+          {
+            "name": "carrier_reference",
+            "in": "query",
+            "description": "carrier_reference",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "connote",
+            "in": "query",
+            "description": "connote",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "description": "date",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "emc_reference",
+            "in": "query",
+            "description": "emc_reference",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "envoi",
+            "in": "query",
+            "description": "envoi",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "etat",
+            "in": "query",
+            "description": "etat",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "label_url",
+            "in": "query",
+            "description": "label_url",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "localisation",
+            "in": "query",
+            "description": "localisation",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "remise",
+            "in": "query",
+            "description": "remise",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "text",
+            "in": "query",
+            "description": "text",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "type",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/export/{etat}": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "exportCommandes",
+        "operationId": "exportCommandesUsingPOST",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "etat",
+            "in": "path",
+            "description": "etat",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exporterTout",
+            "in": "query",
+            "description": "exporterTout",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "typeExport",
+            "in": "query",
+            "description": "typeExport",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/commande/factures-acompte/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "recupererFacturesAcompte",
+        "operationId": "recupererFacturesAcompteUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandeDocument"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/fut/changer-association": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "changerAssociationFut",
+        "operationId": "changerAssociationFutUsingPOST",
+        "requestBody": {
+          "description": "modeleCommandeElementFut",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementFut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommandeElementFut"
+      }
+    },
+    "/commande/fut/supprimer-association": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "supprimerAssociationFut",
+        "operationId": "supprimerAssociationFutUsingPOST",
+        "requestBody": {
+          "description": "modeleAssociationFut",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAssociationFut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleAssociationFut"
+      }
+    },
+    "/commande/futs/association": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "associationFuts",
+        "operationId": "associationFutsUsingPOST",
+        "requestBody": {
+          "description": "modeleAssociationFut",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAssociationFut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleAssociationFut"
+      }
+    },
+    "/commande/liste/{etat}": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "listePagineeCommande",
+        "operationId": "listePagineeCommandeUsingPOST",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "etat",
+            "in": "path",
+            "description": "etat",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListePagineeOfModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/commande/livraison/calendrier": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "calendrierLocations",
+        "operationId": "calendrierLocationsUsingPOST",
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandeLivraisonGantt"
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/commande/livraison/liste": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "listeCommandeLivraison",
+        "operationId": "listeCommandeLivraisonUsingPOST",
+        "parameters": [
+          {
+            "name": "colonneTri",
+            "in": "query",
+            "description": "colonneTri",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nombreParPage",
+            "in": "query",
+            "description": "nombreParPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "numeroPage",
+            "in": "query",
+            "description": "numeroPage",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleFiltre",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeFiltre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListePagineeOfModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleFiltre"
+      }
+    },
+    "/commande/livrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "livrerCommande",
+        "operationId": "livrerCommandeUsingPOST",
+        "parameters": [
+          {
+            "name": "verifierNumeroLot",
+            "in": "query",
+            "description": "verifierNumeroLot",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "commande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "commande"
+      }
+    },
+    "/commande/location/changer-association": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "changerAssociationLocation",
+        "operationId": "changerAssociationLocationUsingPOST",
+        "requestBody": {
+          "description": "modeleCommandeElementLocation",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementLocation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommandeElementLocation"
+      }
+    },
+    "/commande/location/changer-association-multiple": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "changerAssociationLocationMultiCommandes",
+        "operationId": "changerAssociationLocationMultiCommandesUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleChangementAssociationLocation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/matrice-preparation": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "matricePreparation",
+        "operationId": "matricePreparationUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePreparationCommandeRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleMatricePreparationCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/matrice-preparation/export": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "exportMatricePreparation",
+        "operationId": "exportMatricePreparationUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePreparationCommandeRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/mettre-en-cours/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "mettreEnCoursCommande",
+        "operationId": "mettreEnCoursCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/numero": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "detailCommandeParNumero",
+        "operationId": "detailCommandeParNumeroUsingPOST",
+        "requestBody": {
+          "description": "numeroCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "numeroCommande"
+      }
+    },
+    "/commande/paiement/associer/{idTransaction}/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "associerPaiementPointVente",
+        "operationId": "associerPaiementPointVenteUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "idTransaction",
+            "in": "path",
+            "description": "idTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/paiement/editer-date-echeance": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "editerDateEcheancePaiement",
+        "operationId": "editerDateEcheancePaiementUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/paiement/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "enregistrerPaiement",
+        "operationId": "enregistrerPaiementUsingPOST",
+        "requestBody": {
+          "description": "modeleCommandePaiement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandePaiement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommandePaiement"
+      }
+    },
+    "/commande/paiement/generer-lien-paiement-mollie": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererLienPaiementMollie",
+        "operationId": "genererLienPaiementMollieUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleGenererLienPaiement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/paiement/solvabilite/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "marquerNonSolvable",
+        "operationId": "marquerNonSolvableUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/paiement/supprimer/{idCommandePaiement}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "supprimerPaiement",
+        "operationId": "supprimerPaiementUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandePaiement",
+            "in": "path",
+            "description": "idCommandePaiement",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/palette/element/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "ajouterElementPalette",
+        "operationId": "ajouterElementPaletteUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementPalettisation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommandePalettisation"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/palette/element/supprimer/{idCommandePaletteElement}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "supprimerPaletteElement",
+        "operationId": "supprimerPaletteElementUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandePaletteElement",
+            "in": "path",
+            "description": "idCommandePaletteElement",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommandePalettisation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/palette/elements-palettisation/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "listeElementsPalettisation",
+        "operationId": "listeElementsPalettisationUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandeElementPalettisation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/palette/elements/enregistrer-ordre": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "majOrdreDashboards",
+        "operationId": "majOrdreDashboardsUsingPOST",
+        "requestBody": {
+          "description": "modeles",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleCommandePaletteElement"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeles"
+      }
+    },
+    "/commande/palette/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "ajouterPalette",
+        "operationId": "ajouterPaletteUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandePalette"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommandePalettisation"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/palette/etiquette": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererEtiquettePalette",
+        "operationId": "genererEtiquettePaletteUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeGenererEtiquettePalette"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/palette/supprimer/{idCommandePalette}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "supprimerPalette",
+        "operationId": "supprimerPaletteUsingGET",
+        "parameters": [
+          {
+            "name": "idCommandePalette",
+            "in": "path",
+            "description": "idCommandePalette",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommandePalettisation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/pdf": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "genererPdf",
+        "operationId": "genererPdfUsingPOST",
+        "requestBody": {
+          "description": "modelePdf",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePdf"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelePdf"
+      }
+    },
+    "/commande/pdf/verification-date": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "verificationDatePdf",
+        "operationId": "verificationDatePdfUsingPOST",
+        "requestBody": {
+          "description": "modelePdf",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePdf"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelePdf"
+      }
+    },
+    "/commande/preparation-commandes": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparationCommandes",
+        "operationId": "preparationCommandesUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelePreparationCommandeRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/preparer/element-autre/{idElementAutre}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommandeElementAutre",
+        "operationId": "preparerCommandeElementAutreUsingGET",
+        "parameters": [
+          {
+            "name": "idElementAutre",
+            "in": "path",
+            "description": "idElementAutre",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/preparer/element-bouteille/{idElementBouteille}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommandeElementBouteille",
+        "operationId": "preparerCommandeElementBouteilleUsingGET",
+        "parameters": [
+          {
+            "name": "idElementBouteille",
+            "in": "path",
+            "description": "idElementBouteille",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/preparer/element-contenant/{idElementContenant}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommandeElementContenant",
+        "operationId": "preparerCommandeElementContenantUsingGET",
+        "parameters": [
+          {
+            "name": "idElementContenant",
+            "in": "path",
+            "description": "idElementContenant",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/preparer/element-fut/{idElementFut}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommandeElementFut",
+        "operationId": "preparerCommandeElementFutUsingGET",
+        "parameters": [
+          {
+            "name": "idElementFut",
+            "in": "path",
+            "description": "idElementFut",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/preparer/element-location/{idElementLocation}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommandeElementLocation",
+        "operationId": "preparerCommandeElementLocationUsingGET",
+        "parameters": [
+          {
+            "name": "idElementLocation",
+            "in": "path",
+            "description": "idElementLocation",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/preparer/element-matiere-premiere/{idElementMatierePremiere}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommandeElementMatierePremiere",
+        "operationId": "preparerCommandeElementMatierePremiereUsingGET",
+        "parameters": [
+          {
+            "name": "idElementMatierePremiere",
+            "in": "path",
+            "description": "idElementMatierePremiere",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/preparer/element-saisie-libre/{idElementSaisieLibre}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommandeElementSaisieLibre",
+        "operationId": "preparerCommandeElementSaisieLibreUsingGET",
+        "parameters": [
+          {
+            "name": "idElementSaisieLibre",
+            "in": "path",
+            "description": "idElementSaisieLibre",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/preparer/sauvegarder-identifiant-lot": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "sauvegarderCommandeElementBouteille",
+        "operationId": "sauvegarderCommandeElementBouteilleUsingPOST",
+        "requestBody": {
+          "description": "element",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "element"
+      }
+    },
+    "/commande/preparer/sauvegarder-identifiant-lot-autre": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "sauvegarderCommandeElementAutre",
+        "operationId": "sauvegarderCommandeElementAutreUsingPOST",
+        "requestBody": {
+          "description": "element",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementAutre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "element"
+      }
+    },
+    "/commande/preparer/sauvegarder-identifiant-lot-mp": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "sauvegarderCommandeElementMatierePremiere",
+        "operationId": "sauvegarderCommandeElementMatierePremiereUsingPOST",
+        "requestBody": {
+          "description": "element",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementMatierePremiere"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "element"
+      }
+    },
+    "/commande/preparer/sauvegarder-reference-externe": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "sauvegarderReferenceExterneElementBouteille",
+        "operationId": "sauvegarderReferenceExterneElementBouteilleUsingPOST",
+        "requestBody": {
+          "description": "element",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "element"
+      }
+    },
+    "/commande/preparer/sauvegarder-reference-externe-autre": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "sauvegarderReferenceExterneElementAutre",
+        "operationId": "sauvegarderReferenceExterneElementAutreUsingPOST",
+        "requestBody": {
+          "description": "element",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeElementAutre"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "element"
+      }
+    },
+    "/commande/preparer/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "preparerCommande",
+        "operationId": "preparerCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/prioriser": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "prioriserCommande",
+        "operationId": "prioriserCommandeUsingPOST",
+        "requestBody": {
+          "description": "modeleCommandePriorisation",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandePriorisation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommandePriorisation"
+      }
+    },
+    "/commande/prioriser/disponibles/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "recupererCommandesDisponiblesPriorisation",
+        "operationId": "recupererCommandesDisponiblesPriorisationUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommande"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/recalculer-total-ht/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "recalculerTotalHT",
+        "operationId": "recalculerTotalHTUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/recouvrement/dossier/ouvrir": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "creationDossierRecouvrement",
+        "operationId": "creationDossierRecouvrementUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRecouvrementRequete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/recouvrement/dossier/suivi/{reference}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "getDossierRecouvrement",
+        "operationId": "getDossierRecouvrementUsingGET",
+        "parameters": [
+          {
+            "name": "reference",
+            "in": "path",
+            "description": "reference",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleRecouvrementDossier"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/recu-paiement": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "recuPaiement",
+        "operationId": "recuPaiementUsingPOST",
+        "requestBody": {
+          "description": "idsPaiements",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "idsPaiements"
+      }
+    },
+    "/commande/regroupement/ajouter": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "ajouterCommandesRegroupement",
+        "operationId": "ajouterCommandesRegroupementUsingPOST",
+        "requestBody": {
+          "description": "modeleCommandeRegrouper",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeRegrouper"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommandeRegrouper"
+      }
+    },
+    "/commande/regroupement/disponible/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "listeCommandesRegroupement",
+        "operationId": "listeCommandesRegroupementUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleCommandeDisponibleRegroupement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/regrouper": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "regrouperCommandes",
+        "operationId": "regrouperCommandesUsingPOST",
+        "requestBody": {
+          "description": "modeleCommandeRegrouper",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeRegrouper"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommandeRegrouper"
+      }
+    },
+    "/commande/remplacer-lot-unite/{idElementBouteille}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "remplacerLotParUnites",
+        "operationId": "remplacerLotParUnitesUsingGET",
+        "parameters": [
+          {
+            "name": "idElementBouteille",
+            "in": "path",
+            "description": "idElementBouteille",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/reporter-reliquat": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "reportReliquat",
+        "operationId": "reportReliquatUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/restituer-consigne": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "restituerConsigne",
+        "operationId": "restituerConsigneUsingPOST",
+        "requestBody": {
+          "description": "modeleRestituerConsigne",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleRestituerConsigne"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleRestituerConsigne"
+      }
+    },
+    "/commande/signer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "signerCommande",
+        "operationId": "signerCommandeUsingPOST",
+        "requestBody": {
+          "description": "modeleCommande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleCommande"
+      }
+    },
+    "/commande/supprimer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "supprimerMultiCommandes",
+        "operationId": "supprimerMultiCommandesUsingPOST",
+        "requestBody": {
+          "description": "idsCommandes",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "idsCommandes"
+      }
+    },
+    "/commande/supprimer/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "supprimerCommande",
+        "operationId": "supprimerCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/tag/ajouter": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "ajouterTagMultiCommande",
+        "operationId": "ajouterTagMultiCommandeUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeAjouterTag"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/tag/retirer": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "retirerTagMultiCommande",
+        "operationId": "retirerTagMultiCommandeUsingPOST",
+        "requestBody": {
+          "description": "modele",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommandeAjouterTag"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modele"
+      }
+    },
+    "/commande/token/{token}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "detailCommande",
+        "operationId": "detailCommandeUsingGET_1",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleCommande"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/trop-percu/rembourser": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "rembourserTropPercu",
+        "operationId": "rembourserTropPercuUsingPOST",
+        "requestBody": {
+          "description": "modeleTropPercuRemboursement",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleTropPercuRemboursement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleTropPercuRemboursement"
+      }
+    },
+    "/commande/trop-percu/utiliser/{idTransaction}/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "utiliserTropPercu",
+        "operationId": "utiliserTropPercuUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "idTransaction",
+            "in": "path",
+            "description": "idTransaction",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/upload/{idCommande}": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "uploadFichier",
+        "operationId": "uploadFichierUsingPOST_1",
+        "parameters": [
+          {
+            "name": "commentaire",
+            "in": "query",
+            "description": "commentaire",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "fichier"
+                ],
+                "type": "object",
+                "properties": {
+                  "fichier": {
+                    "type": "string",
+                    "description": "fichier",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleUpload"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/valider-livraison": {
+      "post": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "validerLivraisonCommande",
+        "operationId": "validerLivraisonCommandeUsingPOST",
+        "parameters": [
+          {
+            "name": "verifierNumeroLot",
+            "in": "query",
+            "description": "verifierNumeroLot",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "commande",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleCommande"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "commande"
+      }
+    },
+    "/commande/valider-preparation/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "validerPreparationCommande",
+        "operationId": "validerPreparationCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "verifierNumeroLot",
+            "in": "query",
+            "description": "verifierNumeroLot",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/commande/valider/{idCommande}": {
+      "get": {
+        "tags": [
+          "controleur-commande"
+        ],
+        "summary": "validerCommande",
+        "operationId": "validerCommandeUsingGET",
+        "parameters": [
+          {
+            "name": "idCommande",
+            "in": "path",
+            "description": "idCommande",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    }
+  }
+}
