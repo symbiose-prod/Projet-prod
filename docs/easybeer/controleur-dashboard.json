@@ -1,0 +1,588 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-dashboard",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 12",
+  "paths": {
+    "/dashboard": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "dashboardParDefaut",
+        "operationId": "dashboardParDefautUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleDashboard"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/dupliquer/{idDashboard}": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "dupliquerDashboard",
+        "operationId": "dupliquerDashboardUsingGET",
+        "parameters": [
+          {
+            "name": "idDashboard",
+            "in": "path",
+            "description": "idDashboard",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "enregistrerDashboard",
+        "operationId": "enregistrerDashboardUsingPOST",
+        "requestBody": {
+          "description": "modeleDashboard",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleDashboard"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleDashboard"
+      }
+    },
+    "/dashboard/enregistrer-ordre": {
+      "post": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "majOrdreDashboards",
+        "operationId": "majOrdreDashboardsUsingPOST_1",
+        "requestBody": {
+          "description": "modelesDashboards",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ModeleDashboard"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modelesDashboards"
+      }
+    },
+    "/dashboard/export/asynchrone/{idDashboard}": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "exportAsynchrone",
+        "operationId": "exportAsynchroneUsingGET",
+        "parameters": [
+          {
+            "name": "idDashboard",
+            "in": "path",
+            "description": "idDashboard",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "export",
+        "operationId": "exportUsingPOST",
+        "requestBody": {
+          "description": "idsIndicateurs",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "idsIndicateurs"
+      }
+    },
+    "/dashboard/indicateur/dupliquer/{idIndicateur}": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "dupliquerIndicateur",
+        "operationId": "dupliquerIndicateurUsingGET",
+        "parameters": [
+          {
+            "name": "idIndicateur",
+            "in": "path",
+            "description": "idIndicateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/indicateur/supprimer/{idIndicateur}": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "supprimerIndicateur",
+        "operationId": "supprimerIndicateurUsingGET",
+        "parameters": [
+          {
+            "name": "idIndicateur",
+            "in": "path",
+            "description": "idIndicateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/liste": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "listeDashboard",
+        "operationId": "listeDashboardUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleDashboard"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/supprimer/{idDashboard}": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "supprimerDashboard",
+        "operationId": "supprimerDashboardUsingGET",
+        "parameters": [
+          {
+            "name": "idDashboard",
+            "in": "path",
+            "description": "idDashboard",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/{idDashboard}": {
+      "get": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "recupererDashboard",
+        "operationId": "recupererDashboardUsingGET",
+        "parameters": [
+          {
+            "name": "idDashboard",
+            "in": "path",
+            "description": "idDashboard",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleDashboard"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/dashboard/{idDashboard}/indicateur/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-dashboard"
+        ],
+        "summary": "enregistrerIndicateur",
+        "operationId": "enregistrerIndicateurUsingPOST",
+        "parameters": [
+          {
+            "name": "idDashboard",
+            "in": "path",
+            "description": "idDashboard",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleDashboardIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    }
+  }
+}
