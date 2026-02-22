@@ -1,0 +1,4519 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-indicateur",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 82",
+  "paths": {
+    "/indicateur/actions-clients": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "actionsClients",
+        "operationId": "actionsClientsUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleClientAction"
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/actions-clients/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportActionsClientsExcel",
+        "operationId": "exportActionsClientsExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/actions-clients/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportActionsClientsPdf",
+        "operationId": "exportActionsClientsPdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/autonomie-stocks": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "autonomieStock",
+        "operationId": "autonomieStockUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleAutonomie"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/autonomie-stocks/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportAutonomieStockExcel",
+        "operationId": "exportAutonomieStockExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/autonomie-stocks/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportAutonomieStockPdf",
+        "operationId": "exportAutonomieStockPdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/bi/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "enregistrerIndicateurBI",
+        "operationId": "enregistrerIndicateurBIUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateurBI"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/bi/parametres/{idIndicateur}": {
+      "get": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "getParametresIndicateurBI",
+        "operationId": "getParametresIndicateurBIUsingGET",
+        "parameters": [
+          {
+            "name": "idIndicateur",
+            "in": "path",
+            "description": "idIndicateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurBI"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/indicateur/bi/repartition": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "biRepartition",
+        "operationId": "biRepartitionUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateurBI"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultatBI"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/bi/synthese-globale": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "biSyntheseGlobale",
+        "operationId": "biSyntheseGlobaleUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateurBI"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultatBI"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/bilan-recette-depense": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "bilanRecetteDepense",
+        "operationId": "bilanRecetteDepenseUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/bilan-recette-depense/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportBilanRecetteDepenseExcel",
+        "operationId": "exportBilanRecetteDepenseExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "syntheseChiffreAffaire",
+        "operationId": "syntheseChiffreAffaireUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire-beershop": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "chiffreAffaireBeershop",
+        "operationId": "chiffreAffaireBeershopUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire-beershop/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportChiffreAffaireBeershopExcel",
+        "operationId": "exportChiffreAffaireBeershopExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire-client": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "chiffreAffaireClient",
+        "operationId": "chiffreAffaireClientUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire-client/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportChiffreAffaireClientExcel",
+        "operationId": "exportChiffreAffaireClientExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire-marketplace": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "chiffreAffaireMarketplace",
+        "operationId": "chiffreAffaireMarketplaceUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire-marketplace/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportChiffreAffaireMarketplaceExcel",
+        "operationId": "exportChiffreAffaireMarketplaceExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/chiffre-affaire/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSyntheseChiffreAffaireExcel",
+        "operationId": "exportSyntheseChiffreAffaireExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/classement-clients": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "classementClients",
+        "operationId": "classementClientsUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurChiffreAffaireClientResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/classement-clients-volume": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "classementClientsParVolume",
+        "operationId": "classementClientsParVolumeUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurChiffreAffaireClientResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/classement-clients-volume/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportClassementClientParVolumeExcel",
+        "operationId": "exportClassementClientParVolumeExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/classement-clients-volume/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportClassementClientParVolumePdf",
+        "operationId": "exportClassementClientParVolumePdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/classement-clients/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportClassementClientExcel",
+        "operationId": "exportClassementClientExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/classement-clients/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportClassementClientPdf",
+        "operationId": "exportClassementClientPdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/couts-moyens-brassins": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "coutsMoyensBrassins",
+        "operationId": "coutsMoyensBrassinsUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelePrixMoyenMatierePremiere"
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/couts-moyens-brassins/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportCoutsMoyensBrassinsExcel",
+        "operationId": "exportCoutsMoyensBrassinsExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/delai-paiement": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "delaiPaiement",
+        "operationId": "delaiPaiementUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleDelaiPaiement"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/delai-paiement/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportDelaiPaiementExcel",
+        "operationId": "exportDelaiPaiementExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/delai-paiement/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportDelaiPaiementPdf",
+        "operationId": "exportDelaiPaiementPdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "enregistrerIndicateur",
+        "operationId": "enregistrerIndicateurUsingPOST_1",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/marge-brute": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "margeBrute",
+        "operationId": "margeBruteUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleSyntheseVenteGlobal"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/marge-brute/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportMargeBruteExcel",
+        "operationId": "exportMargeBruteExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/marge-brute/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportMargeBrutePdf",
+        "operationId": "exportMargeBrutePdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/panier-moyen-clients": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "panierMoyenClients",
+        "operationId": "panierMoyenClientsUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurPanierMoyenResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/panier-moyen-clients/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportPanierMoyenClientExcel",
+        "operationId": "exportPanierMoyenClientExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/panier-moyen-clients/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportPanierMoyenClientPdf",
+        "operationId": "exportPanierMoyenClientPdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/parametres/{idIndicateur}": {
+      "get": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "getParametresIndicateur",
+        "operationId": "getParametresIndicateurUsingGET",
+        "parameters": [
+          {
+            "name": "idIndicateur",
+            "in": "path",
+            "description": "idIndicateur",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateur"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/indicateur/performance-commerciale": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "performanceCommerciale",
+        "operationId": "performanceCommercialeUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelePerformanceCommercial"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/performance-commerciale/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportPerformanceCommercialeExcel",
+        "operationId": "exportPerformanceCommercialeExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/prix-moyens-ponderes": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "prixMoyensPonderes",
+        "operationId": "prixMoyensPonderesUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelePrixMoyenPondere"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/prix-moyens-ponderes/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportPrixMoyensPonderesExcel",
+        "operationId": "exportPrixMoyensPonderesExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/prix-moyens-ponderes/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportPrixMoyensPonderesPdf",
+        "operationId": "exportPrixMoyensPonderesPdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/production": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "historiqueProduction",
+        "operationId": "historiqueProductionUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/production-en-cours": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "productionEnCours",
+        "operationId": "productionEnCoursUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/production-en-cours/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportProductionEnCoursExcel",
+        "operationId": "exportProductionEnCoursExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/production/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportHistoriqueProductionExcel",
+        "operationId": "exportHistoriqueProductionExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-sortie-stock": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "repartitionSortieStock",
+        "operationId": "repartitionSortieStockUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-sortie-stock/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportRepartitionSortieStockExcel",
+        "operationId": "exportRepartitionSortieStockExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-type-paiement": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "repartitionTypePaiement",
+        "operationId": "repartitionTypePaiementUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-type-paiement/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportRepartitionTypePaiementExcel",
+        "operationId": "exportRepartitionTypePaiementExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-ventes-client": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "repartitionVentesClient",
+        "operationId": "repartitionVentesClientUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-ventes-client/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportRepartitionVentesClientExcel",
+        "operationId": "exportRepartitionVentesClientExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-ventes-contenant": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "repartitionVentesContenant",
+        "operationId": "repartitionVentesContenantUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-ventes-contenant/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportRepartitionVentesContenantExcel",
+        "operationId": "exportRepartitionVentesContenantExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-ventes-produit": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "repartitionVentesProduit",
+        "operationId": "repartitionVentesProduitUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/repartition-ventes-produit/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportRepartitionVentesProduitExcel",
+        "operationId": "exportRepartitionVentesProduitExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/status-commandes": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "statusCommandes",
+        "operationId": "statusCommandesUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/status-commandes/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportStatusCommandesExcel",
+        "operationId": "exportStatusCommandesExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/suivi-actions-clients": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "suiviActions",
+        "operationId": "suiviActionsUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/suivi-actions-clients/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSuiviActionsClientsExcel",
+        "operationId": "exportSuiviActionsClientsExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/suivi-mesures-brassins": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "suiviMesuresBrassins",
+        "operationId": "suiviMesuresBrassinsUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleBrassinMesure"
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/suivi-paiement": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "suiviPaiement",
+        "operationId": "suiviPaiementUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/suivi-paiement/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSuiviPaiementExcel",
+        "operationId": "exportSuiviPaiementExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/suivi-qualite": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "suiviQualite",
+        "operationId": "suiviQualiteUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/suivi-qualite/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSuiviQualiteExcel",
+        "operationId": "exportSuiviQualiteExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-conditionnements": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "syntheseConditionnement",
+        "operationId": "syntheseConditionnementUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleSyntheseConditionnement"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-conditionnements/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSyntheseConditionnementExcel",
+        "operationId": "exportSyntheseConditionnementExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-consommations-mp": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "syntheseConsommationMP",
+        "operationId": "syntheseConsommationMPUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleSyntheseConsoMP"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-consommations-mp/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSyntheseConsommationsMPExcel",
+        "operationId": "exportSyntheseConsommationsMPExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-stocks": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "stocksEnCours",
+        "operationId": "stocksEnCoursUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-stocks/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSyntheseStocksExcel",
+        "operationId": "exportSyntheseStocksExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-ventes": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "syntheseVente",
+        "operationId": "syntheseVenteUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleSyntheseVenteGlobal"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-ventes/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSyntheseVenteExcel",
+        "operationId": "exportSyntheseVenteExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/synthese-ventes/export/pdf": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportSyntheseVentePdf",
+        "operationId": "exportSyntheseVentePdfUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/taux-transformation-prospect": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "tauxTransformationProspect",
+        "operationId": "tauxTransformationProspectUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleTransformationProspect"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/taux-transformation-prospect/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportTauxTransformationProspectExcel",
+        "operationId": "exportTauxTransformationProspectExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/volume-production": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "volumeProduction",
+        "operationId": "volumeProductionUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/volume-production/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportVolumeProductionExcel",
+        "operationId": "exportVolumeProductionExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/volume-vendu": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "volumeVendu",
+        "operationId": "volumeVenduUsingPOST",
+        "parameters": [
+          {
+            "name": "forceRefresh",
+            "in": "query",
+            "description": "forceRefresh",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleIndicateurResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    },
+    "/indicateur/volume-vendu/export/excel": {
+      "post": {
+        "tags": [
+          "controleur-indicateur"
+        ],
+        "summary": "exportVolumeVenduExcel",
+        "operationId": "exportVolumeVenduExcelUsingPOST",
+        "requestBody": {
+          "description": "modeleIndicateur",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleIndicateur"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputStreamResource"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleIndicateur"
+      }
+    }
+  }
+}
