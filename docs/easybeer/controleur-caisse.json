@@ -1,0 +1,472 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Documentation API",
+    "description": "Swagger prÃ©sentant les diffÃ©rents services REST JSON exposÃ©s. Tous les services sont sÃ©curisÃ©s avec du Basic Auth, en utilisant l'identifiant et mot de passe gÃ©nÃ©rÃ© dans votre compte EASYBEER",
+    "contact": {
+      "name": "Dev-Team",
+      "url": "https://app.easybeer.fr",
+      "email": "easybeer.fr@gmail.com"
+    },
+    "version": "2.2.6"
+  },
+  "servers": [
+    {
+      "url": "//api.easybeer.fr/"
+    }
+  ],
+  "x-tag": "controleur-caisse",
+  "x-note": "Schemas partagés dans schemas.json. Endpoints: 10",
+  "paths": {
+    "/caisse/connexion": {
+      "post": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "connexion",
+        "operationId": "connexionUsingPOST",
+        "requestBody": {
+          "description": "authentificationApiCaisse",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAuthentificationApiCaisse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "authentificationApiCaisse"
+      }
+    },
+    "/caisse/connexion/check": {
+      "get": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "checkConnexion",
+        "operationId": "checkConnexionUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/caisse/connexion/editer": {
+      "post": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "editerConnexion",
+        "operationId": "editerConnexionUsingPOST",
+        "requestBody": {
+          "description": "authentificationApiCaisse",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleAuthentificationApiCaisse"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "authentificationApiCaisse"
+      }
+    },
+    "/caisse/deconnexion": {
+      "get": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "decconnexion",
+        "operationId": "decconnexionUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/caisse/etablissement/liste": {
+      "get": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "listeEtablissements",
+        "operationId": "listeEtablissementsUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiCaisseEtablissement"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/caisse/mapping/enregistrer": {
+      "post": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "enregistrerMapping",
+        "operationId": "enregistrerMappingUsingPOST",
+        "requestBody": {
+          "description": "modeleMappingCaisseProduit",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModeleMappingCaisseProduit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleId"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "modeleMappingCaisseProduit"
+      }
+    },
+    "/caisse/mapping/liste": {
+      "get": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "listeMapping",
+        "operationId": "listeMappingUsingGET",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModeleMappingCaisseProduit"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/caisse/mapping/supprimer/{idCaisseMappingProduit}": {
+      "get": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "supprimerMapping",
+        "operationId": "supprimerMappingUsingGET",
+        "parameters": [
+          {
+            "name": "idCaisseMappingProduit",
+            "in": "path",
+            "description": "idCaisseMappingProduit",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseEntity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/caisse/synchronisation": {
+      "post": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "synchronisationPointVente",
+        "operationId": "synchronisationPointVenteUsingPOST_1",
+        "requestBody": {
+          "description": "periode",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Periode"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "periode"
+      }
+    },
+    "/caisse/synchronisation/{idPointVente}": {
+      "post": {
+        "tags": [
+          "controleur-caisse"
+        ],
+        "summary": "synchronisationPointVente",
+        "operationId": "synchronisationPointVenteUsingPOST",
+        "parameters": [
+          {
+            "name": "idPointVente",
+            "in": "path",
+            "description": "idPointVente",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "periode",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Periode"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeleResultat"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {}
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {}
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {}
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {}
+          }
+        },
+        "deprecated": false,
+        "x-codegen-request-body-name": "periode"
+      }
+    }
+  }
+}
