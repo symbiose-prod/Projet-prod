@@ -212,7 +212,8 @@ ssh ubuntu@92.222.229.87 "cd /home/ubuntu/app && git pull && sudo systemctl rest
 
 ## Easy Beer API
 
-**Spec OpenAPI complète :** `docs/easybeer_openapi.json` (2.4MB, 1339 endpoints)
+**Spec OpenAPI :** découpée par tag dans `docs/easybeer/` — voir `docs/easybeer/INDEX.md`
+**Fichiers utiles pour ce projet :** `docs/easybeer/controleur-indicateur.json` + `docs/easybeer/controleur-stock.json`
 **Base URL :** `https://api.easybeer.fr`
 **Auth :** HTTP Basic (`EASYBEER_API_USER` / `EASYBEER_API_PASS`)
 **ID brasserie :** `EASYBEER_ID_BRASSERIE` (valeur production : `2013`)
