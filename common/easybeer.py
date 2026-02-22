@@ -9,6 +9,7 @@ Endpoints utilisés :
   POST /indicateur/autonomie-stocks               → JSON autonomie produits finis
   GET  /stock/matieres-premieres/all              → stock tous composants (MP)
   POST /indicateur/synthese-consommations-mp      → consommation MP par période
+  POST /parametres/client/liste                   → liste paginée des clients
 """
 from __future__ import annotations
 
@@ -186,3 +187,83 @@ def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
     if not r.ok:
         raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
     return r.json()
+
+
+def get_clients(
+    page: int = 0,
+    per_page: int = 100,
+    sort_by: str = "libelle",
+    sort_mode: str = "ASC",
+    filtre: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    POST /parametres/client/liste
+    → Page de clients (paginée).
+
+    Paramètres :
+      page      : numéro de page (0-indexé)
+      per_page  : résultats par page (max conseillé : 200)
+      sort_by   : colonne de tri ("libelle", "id", ...)
+      sort_mode : "ASC" | "DESC"
+      filtre    : ModeleClientFiltre — critères optionnels, ex :
+                  {"actif": True, "recherche": "dupont", "inclureProspect": False}
+
+    Réponse : ListePagineeOfModeleClient
+      {
+        "liste": [
+          {
+            "id": 123,
+            "libelle": "Nom Client",
+            "email": "...",
+            "telephone": "...",
+            "codePostal": "...",
+            "actif": true,
+            ...
+          }
+        ],
+        "totalElements": 250,
+        "totalPages": 3
+      }
+    """
+    r = requests.post(
+        f"{BASE}/parametres/client/liste",
+        params={
+            "colonneTri":    sort_by,
+            "mode":          sort_mode,
+            "nombreParPage": per_page,
+            "numeroPage":    page,
+        },
+        json=filtre or {},
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    return r.json()
+
+
+def get_all_clients(
+    sort_by: str = "libelle",
+    sort_mode: str = "ASC",
+    filtre: dict[str, Any] | None = None,
+    per_page: int = 200,
+) -> list[dict[str, Any]]:
+    """
+    Récupère TOUS les clients en gérant automatiquement la pagination.
+
+    Exemple :
+      clients = get_all_clients(filtre={"actif": True})
+      # → liste complète des clients actifs, toutes pages confondues
+    """
+    all_clients: list[dict[str, Any]] = []
+    page = 0
+    while True:
+        resp = get_clients(page=page, per_page=per_page, sort_by=sort_by,
+                           sort_mode=sort_mode, filtre=filtre)
+        liste = resp.get("liste") or []
+        all_clients.extend(liste)
+        total_pages = resp.get("totalPages", 1)
+        page += 1
+        if page >= total_pages or not liste:
+            break
+    return all_clients
