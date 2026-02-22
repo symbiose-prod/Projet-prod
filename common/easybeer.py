@@ -45,30 +45,27 @@ def _dates(window_days: int) -> tuple[str, str]:
     )
 
 
-def _excel_payload(window_days: int) -> dict[str, Any]:
-    """Payload pour les endpoints /export/excel (utilisent l'objet 'periode')."""
+def _base_payload(window_days: int) -> dict[str, Any]:
+    """
+    Payload commun pour TOUS les endpoints /indicateur/* et /export/excel.
+    Le schéma ModeleIndicateur accepte un objet 'periode' avec :
+      - dateDebut / dateFin  : bornes de la période
+      - type: "PERIODE_LIBRE" : obligatoire pour que l'API interprète les dates
+    """
     debut, fin = _dates(window_days)
     return {
         "idBrasserie": EB_ID_BRASSERIE,
-        "periode": {"dateDebut": debut, "dateFin": fin},
+        "periode": {
+            "dateDebut": debut,
+            "dateFin":   fin,
+            "type":      "PERIODE_LIBRE",
+        },
     }
 
 
-def _indicator_payload(window_days: int) -> dict[str, Any]:
-    """
-    Payload pour les endpoints JSON /indicateur/* (spec OpenAPI).
-    Ces endpoints n'acceptent PAS l'objet 'periode' — ils utilisent
-    dateCreationClientApres / dateCreationClientAvant comme filtre de période.
-    """
-    debut, fin = _dates(window_days)
-    return {
-        "idBrasserie":              EB_ID_BRASSERIE,
-        "dateCreationClientApres":  debut,
-        "dateCreationClientAvant":  fin,
-        "deduireConditionnements":  False,
-        "deduireDroitsAccise":      False,
-        "deduireFraisLivraison":    False,
-    }
+# Alias pour compatibilité interne
+_excel_payload     = _base_payload
+_indicator_payload = _base_payload
 
 
 # ─── Endpoints ─────────────────────────────────────────────────────────────────
