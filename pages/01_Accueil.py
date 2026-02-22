@@ -49,13 +49,11 @@ with col_left:
                     st.session_state.window_days = window
                     st.session_state.file_name = f"easybeer-autonomie-{datetime.date.today()}.xlsx"
                     st.success(f"✅ {len(df_raw)} lignes importées ({window} jours).")
-                except Exception as http_e:
-                    if hasattr(http_e, "response") and http_e.response is not None:
-                        st.error(f"Erreur API Easy Beer : {http_e.response.status_code}")
-                    else:
-                        raise http_e
                 except Exception as e:
-                    st.error(f"Erreur : {e}")
+                    if hasattr(e, "response") and e.response is not None:
+                        st.error(f"Erreur API Easy Beer : {e.response.status_code} — {e.response.text[:200]}")
+                    else:
+                        st.error(f"Erreur : {e}")
 
 # ── Colonne droite : Upload manuel ─────────────────────────────────────────────
 with col_right:

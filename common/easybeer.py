@@ -35,19 +35,39 @@ def _auth() -> tuple[str, str]:
     return (EB_USER, EB_PASS)
 
 
-def _periode(window_days: int) -> dict[str, str]:
+def _dates(window_days: int) -> tuple[str, str]:
+    """Retourne (date_debut_iso, date_fin_iso) pour une fenêtre de N jours jusqu'à aujourd'hui."""
     fin   = datetime.datetime.utcnow()
     debut = fin - datetime.timedelta(days=window_days)
+    return (
+        debut.strftime("%Y-%m-%dT00:00:00.000Z"),
+        fin.strftime("%Y-%m-%dT23:59:59.999Z"),
+    )
+
+
+def _excel_payload(window_days: int) -> dict[str, Any]:
+    """Payload pour les endpoints /export/excel (utilisent l'objet 'periode')."""
+    debut, fin = _dates(window_days)
     return {
-        "dateDebut": debut.strftime("%Y-%m-%dT00:00:00.000Z"),
-        "dateFin":   fin.strftime("%Y-%m-%dT23:59:59.999Z"),
+        "idBrasserie": EB_ID_BRASSERIE,
+        "periode": {"dateDebut": debut, "dateFin": fin},
     }
 
 
-def _base_payload(window_days: int) -> dict[str, Any]:
+def _indicator_payload(window_days: int) -> dict[str, Any]:
+    """
+    Payload pour les endpoints JSON /indicateur/* (spec OpenAPI).
+    Ces endpoints n'acceptent PAS l'objet 'periode' — ils utilisent
+    dateCreationClientApres / dateCreationClientAvant comme filtre de période.
+    """
+    debut, fin = _dates(window_days)
     return {
-        "idBrasserie": EB_ID_BRASSERIE,
-        "periode":     _periode(window_days),
+        "idBrasserie":              EB_ID_BRASSERIE,
+        "dateCreationClientApres":  debut,
+        "dateCreationClientAvant":  fin,
+        "deduireConditionnements":  False,
+        "deduireDroitsAccise":      False,
+        "deduireFraisLivraison":    False,
     }
 
 
@@ -60,7 +80,7 @@ def get_autonomie_stocks_excel(window_days: int) -> bytes:
     """
     r = requests.post(
         f"{BASE}/indicateur/autonomie-stocks/export/excel",
-        json=_base_payload(window_days),
+        json=_excel_payload(window_days),
         auth=_auth(),
         timeout=TIMEOUT,
     )
@@ -92,7 +112,7 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     """
     r = requests.post(
         f"{BASE}/indicateur/autonomie-stocks",
-        json=_base_payload(window_days),
+        json=_indicator_payload(window_days),
         auth=_auth(),
         timeout=TIMEOUT,
     )
@@ -159,7 +179,7 @@ def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
     """
     r = requests.post(
         f"{BASE}/indicateur/synthese-consommations-mp",
-        json=_base_payload(window_days),
+        json=_indicator_payload(window_days),
         auth=_auth(),
         timeout=TIMEOUT,
     )
