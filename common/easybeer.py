@@ -109,11 +109,13 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     """
     r = requests.post(
         f"{BASE}/indicateur/autonomie-stocks",
+        params={"forceRefresh": False},
         json=_indicator_payload(window_days),
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    r.raise_for_status()
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
     return r.json()
 
 
@@ -176,9 +178,11 @@ def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
     """
     r = requests.post(
         f"{BASE}/indicateur/synthese-consommations-mp",
+        params={"forceRefresh": False},
         json=_indicator_payload(window_days),
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    r.raise_for_status()
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
     return r.json()
