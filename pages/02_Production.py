@@ -539,12 +539,7 @@ else:
                         get_planification_matrice, add_planification_conditionnement,
                     )
 
-                    # --- Charger info_FDR.csv pour le mapping contenant ---
-                    _csv_path = os.path.join(os.path.dirname(__file__), "..", "info_FDR.csv")
-                    try:
-                        _catalog_fdr = pd.read_csv(_csv_path)
-                    except Exception:
-                        _catalog_fdr = pd.DataFrame()
+                    from core.optimizer import parse_stock as _parse_stock
 
                     # --- Entrepôt principal (pour la planification) ---
                     _id_entrepot = None
@@ -645,16 +640,15 @@ else:
                         try:
                             _matrice = get_planification_matrice(brassin_id, _id_entrepot)
 
-                            # Lookup contenants : nom → idContenant
-                            _cont_lookup: dict[str, int] = {}
+                            # Index contenants par contenance (volume bouteille)
+                            _cont_by_vol: dict[float, list[dict]] = {}
                             for _mc in _matrice.get("contenants", []):
                                 _mod = _mc.get("modeleContenant", {})
-                                for _key in ("libelleAvecContenance", "libelle", "nom"):
-                                    _val = _mod.get(_key, "")
-                                    if _val:
-                                        _cont_lookup[_val.strip().lower()] = _mod.get("idContenant")
+                                _cap = _mod.get("contenance")
+                                if _cap is not None:
+                                    _cont_by_vol.setdefault(round(float(_cap), 2), []).append(_mod)
 
-                            # Lookup packagings : nom → idLot
+                            # Index packagings : nom court → idLot
                             _pkg_lookup: dict[str, int] = {}
                             for _pk in _matrice.get("packagings", []):
                                 _lbl = (_pk.get("libelle") or "").strip().lower()
@@ -667,24 +661,41 @@ else:
                             if isinstance(_df_min_eb, pd.DataFrame) and not _df_min_eb.empty:
                                 _rows_gout = _df_min_eb[_df_min_eb["GoutCanon"].astype(str) == g]
                                 for _, _r in _rows_gout.iterrows():
-                                    _pn = str(_r.get("Produit", "")).strip()
                                     _stock = str(_r.get("Stock", "")).strip()
                                     _ct = int(_r.get("Cartons à produire (arrondi)", 0))
                                     if _ct <= 0:
                                         continue
 
-                                    # Trouver le contenant via info_FDR.csv
-                                    _id_cont = None
-                                    if not _catalog_fdr.empty and "Désignation" in _catalog_fdr.columns:
-                                        _cat_match = _catalog_fdr[
-                                            _catalog_fdr["Désignation"].astype(str).str.strip().str.lower() == _pn.lower()
-                                        ]
-                                        if not _cat_match.empty:
-                                            _cont_name = str(_cat_match.iloc[0]["Contenant"]).strip().lower()
-                                            _id_cont = _cont_lookup.get(_cont_name)
+                                    # 1) Packaging : extraire "Carton de N" / "Pack de N"
+                                    _pkg_m = re.search(r'((?:carton|pack|caisse|colis)\s+de\s+\d+)', _stock, re.IGNORECASE)
+                                    _pkg_name = _pkg_m.group(1).strip().lower() if _pkg_m else ""
+                                    _id_lot = None
+                                    for _pk_lbl, _pk_id in _pkg_lookup.items():
+                                        if _pkg_name and _pkg_name in _pk_lbl:
+                                            _id_lot = _pk_id
+                                            break
 
-                                    # Trouver le packaging (lot) via la colonne Stock
-                                    _id_lot = _pkg_lookup.get(_stock.lower())
+                                    # 2) Contenant : extraire le volume bouteille depuis Stock
+                                    _, _vol_btl = _parse_stock(_stock)
+                                    _id_cont = None
+                                    if _vol_btl is not None and not pd.isna(_vol_btl):
+                                        _vol_key = round(float(_vol_btl), 2)
+                                        _candidates = _cont_by_vol.get(_vol_key, [])
+                                        if len(_candidates) == 1:
+                                            _id_cont = _candidates[0].get("idContenant")
+                                        elif len(_candidates) > 1:
+                                            # Disambiguïté 0.75L : SAFT pour "pack", EAU GAZEUSE sinon
+                                            _is_pack = "pack" in _pkg_name
+                                            for _c in _candidates:
+                                                _c_lbl = (_c.get("libelleAvecContenance") or _c.get("libelle") or "").lower()
+                                                if _is_pack and "saft" in _c_lbl:
+                                                    _id_cont = _c.get("idContenant")
+                                                    break
+                                                elif not _is_pack and "saft" not in _c_lbl:
+                                                    _id_cont = _c.get("idContenant")
+                                                    break
+                                            if _id_cont is None:
+                                                _id_cont = _candidates[0].get("idContenant")
 
                                     if _id_cont is not None and _id_lot is not None:
                                         _elements.append({
