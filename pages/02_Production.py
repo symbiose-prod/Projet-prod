@@ -417,6 +417,150 @@ if sp:
 else:
     st.info("Sauvegarde la production ci-dessus pour activer la génération de la fiche.")
 
+# ================== Créer dans EasyBeer ==================
+section("Créer dans EasyBeer", "🍺")
+
+from common.easybeer import is_configured as _eb_configured
+
+if not _eb_configured():
+    st.warning("EasyBeer n'est pas configuré (variables EASYBEER_API_USER / EASYBEER_API_PASS manquantes).")
+elif not st.session_state.get("saved_production"):
+    st.info("Sauvegarde d'abord une production ci-dessus pour pouvoir créer les brassins dans EasyBeer.")
+else:
+    _sp_eb = st.session_state["saved_production"]
+    _gouts_eb = _sp_eb.get("gouts", [])
+    _df_calc_eb = _sp_eb.get("df_calc")
+    _semaine_du_eb = _sp_eb.get("semaine_du", "")
+
+    if not _gouts_eb:
+        st.warning("Aucun goût dans la production sauvegardée.")
+    else:
+        # --- Calcul du volume par goût (hL → litres) ---
+        _vol_par_gout: dict[str, float] = {}
+        if isinstance(_df_calc_eb, pd.DataFrame) and "GoutCanon" in _df_calc_eb.columns:
+            _vol_col = "X_adj (hL)" if "X_adj (hL)" in _df_calc_eb.columns else None
+            if _vol_col:
+                for g in _gouts_eb:
+                    mask = _df_calc_eb["GoutCanon"].astype(str) == g
+                    _vol_par_gout[g] = float(_df_calc_eb.loc[mask, _vol_col].sum()) * 100  # hL → litres
+        # Fallback si df_calc n'a pas les bonnes colonnes : utiliser df_min
+        if not _vol_par_gout:
+            _df_min_eb = _sp_eb.get("df_min")
+            if isinstance(_df_min_eb, pd.DataFrame) and "GoutCanon" in _df_min_eb.columns and "Volume produit arrondi (hL)" in _df_min_eb.columns:
+                for g in _gouts_eb:
+                    mask = _df_min_eb["GoutCanon"].astype(str) == g
+                    _vol_par_gout[g] = float(_df_min_eb.loc[mask, "Volume produit arrondi (hL)"].sum()) * 100
+
+        # --- Récupérer produits & entrepôts EasyBeer (cachés 5 min) ---
+        @st.cache_data(ttl=300, show_spinner="Chargement des produits EasyBeer…")
+        def _fetch_eb_products():
+            from common.easybeer import get_all_products
+            return get_all_products()
+
+        @st.cache_data(ttl=300, show_spinner="Chargement des entrepôts EasyBeer…")
+        def _fetch_eb_warehouses():
+            from common.easybeer import get_warehouses
+            return get_warehouses()
+
+        try:
+            _eb_products = _fetch_eb_products()
+            _eb_warehouses = _fetch_eb_warehouses()
+        except Exception as e:
+            st.error(f"Erreur de connexion à EasyBeer : {e}")
+            _eb_products = []
+            _eb_warehouses = []
+
+        if _eb_products and _eb_warehouses:
+            # --- Matching automatique par nom ---
+            _prod_labels = [p.get("libelle", "") for p in _eb_products]
+
+            def _auto_match(gout: str) -> int:
+                """Retourne l'index du produit EasyBeer dont le libellé contient le goût."""
+                g_low = gout.lower()
+                for i, lbl in enumerate(_prod_labels):
+                    if g_low in lbl.lower():
+                        return i
+                return 0  # premier produit par défaut
+
+            # --- Entrepôt par défaut (principal) ---
+            _wh_labels = [w.get("libelle") or w.get("nom", f"Entrepôt #{w.get('idEntrepot', '?')}") for w in _eb_warehouses]
+            _wh_default = 0
+            for i, w in enumerate(_eb_warehouses):
+                if w.get("principal"):
+                    _wh_default = i
+                    break
+
+            # --- Récap par goût + sélection produit EasyBeer ---
+            st.markdown(f"**Date de début :** {_semaine_du_eb}")
+            st.markdown(f"**Goûts :** {', '.join(_gouts_eb)}")
+
+            _selected_products: dict[str, int] = {}  # gout → idProduit
+            for g in _gouts_eb:
+                vol_l = _vol_par_gout.get(g, 0)
+                col_g, col_p = st.columns([1, 2])
+                with col_g:
+                    st.metric(g, f"{vol_l:.0f} L")
+                with col_p:
+                    idx = st.selectbox(
+                        f"Produit EasyBeer pour « {g} »",
+                        options=range(len(_prod_labels)),
+                        format_func=lambda i: _prod_labels[i],
+                        index=_auto_match(g),
+                        key=f"eb_prod_{g}",
+                    )
+                    _selected_products[g] = _eb_products[idx]["idProduit"]
+
+            # --- Sélection entrepôt ---
+            _wh_idx = st.selectbox(
+                "Entrepôt EasyBeer",
+                options=range(len(_wh_labels)),
+                format_func=lambda i: _wh_labels[i],
+                index=_wh_default,
+                key="eb_warehouse",
+            )
+            _selected_wh_id = _eb_warehouses[_wh_idx]["idEntrepot"]
+
+            # --- Bouton de création ---
+            _already_created = st.session_state.get("_eb_brassins_created", {})
+            _creation_key = f"{_semaine_du_eb}_{'_'.join(_gouts_eb)}"
+
+            if _creation_key in _already_created:
+                ids = _already_created[_creation_key]
+                st.success(f"Brassins déjà créés pour cette production (IDs : {', '.join(str(i) for i in ids)}).")
+                if st.button("🔄 Recréer les brassins", key="eb_recreate"):
+                    del st.session_state["_eb_brassins_created"][_creation_key]
+                    st.rerun()
+            else:
+                if st.button("🍺 Créer les brassins dans EasyBeer", type="primary", use_container_width=True, key="eb_create"):
+                    from common.easybeer import create_brassin
+                    created_ids = []
+                    errors = []
+                    for g in _gouts_eb:
+                        vol_l = _vol_par_gout.get(g, 0)
+                        payload = {
+                            "nom": f"Brassin {g} — {_semaine_du_eb}",
+                            "volume": vol_l,
+                            "dateDebutFormulaire": f"{_semaine_du_eb}T00:00:00.000Z",
+                            "produit": {"idProduit": _selected_products[g]},
+                            "entrepot": {"idEntrepot": _selected_wh_id},
+                        }
+                        try:
+                            result = create_brassin(payload)
+                            brassin_id = result.get("id", "?")
+                            created_ids.append(brassin_id)
+                            st.toast(f"Brassin « {g} » créé (ID {brassin_id})")
+                        except Exception as e:
+                            errors.append(f"{g} : {e}")
+
+                    if created_ids:
+                        if "_eb_brassins_created" not in st.session_state:
+                            st.session_state["_eb_brassins_created"] = {}
+                        st.session_state["_eb_brassins_created"][_creation_key] = created_ids
+                        st.success(f"{len(created_ids)} brassin(s) créé(s) dans EasyBeer (IDs : {', '.join(str(i) for i in created_ids)}).")
+                    if errors:
+                        for err in errors:
+                            st.error(err)
+
 # ================== Mémoire longue (persistante, 4 entrées max) ==================
 st.subheader("Mémoire longue — propositions enregistrées")
 st.caption(f"Tu peux garder jusqu’à **{MAX_SLOTS}** propositions nommées, persistantes entre sessions.")
