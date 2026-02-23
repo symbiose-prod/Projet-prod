@@ -65,6 +65,17 @@ def _format_from_stock(stock_txt: str) -> str | None:
     return None
 
 
+def _clean_product_label(raw_label: str) -> str:
+    """
+    Nettoie le libellé produit EasyBeer : supprime le suffixe degré (ex. '- 0.0°').
+    'Kéfir Pêche - 0.0°' → 'Kéfir Pêche'
+    """
+    label = str(raw_label or "").strip()
+    # Supprimer suffixe degré : "- 0.0°", "- 5.0°", etc.
+    label = re.sub(r"\s*-\s*\d+[\.,]?\d*\s*°\s*$", "", label).strip()
+    return label
+
+
 def _extract_gout_from_product(product_label: str) -> str:
     """
     Extrait le goût depuis le libellé produit EasyBeer.
@@ -72,7 +83,7 @@ def _extract_gout_from_product(product_label: str) -> str:
     'Kéfir de fruits Original'            → 'Original'
     'Infusion probiotique Menthe Poivrée' → 'Menthe Poivrée'
     """
-    label = str(product_label or "").strip()
+    label = _clean_product_label(product_label)
     for prefix in [
         "Infusion de Kéfir de fruits",
         "Infusion de Kéfir",
@@ -333,7 +344,7 @@ def _build_lines_from_brassins(
 
                 for fc in _format_combos:
                     # Vérifier si cette combinaison produit/format existe
-                    # via le code-barre EasyBeer ou le catalogue CSV
+                    # via le code-barre EasyBeer (source de vérité)
                     ref = ""
                     poids_carton = 0.0
 
@@ -341,9 +352,13 @@ def _build_lines_from_brassins(
                         cb_key = (id_produit, fc["id_contenant"], fc["id_lot"])
                         ref = cb_lookup.get(cb_key, "")
 
+                    # CSV : utilisé uniquement pour le poids carton
+                    # Si cb_lookup est dispo et a retourné vide → le produit/format
+                    # n'existe PAS, on ne tombe PAS en fallback CSV pour la ref
                     lk = _csv_lookup(catalog, gout, fc["fmt_str"], prod_label)
                     if lk:
-                        if not ref:
+                        if not ref and not cb_lookup:
+                            # Fallback CSV ref uniquement si EasyBeer indisponible
                             ref = lk[0]
                         poids_carton = lk[1]
 
@@ -351,7 +366,9 @@ def _build_lines_from_brassins(
                     if not ref:
                         continue
 
-                    label = f"{prod_label} — {fc['fmt_str']}cl"
+                    # Nettoyer le libellé produit (supprimer "- 0.0°" etc.)
+                    clean_label = _clean_product_label(prod_label)
+                    label = f"{clean_label} — {fc['fmt_str']}cl"
                     key = label.lower()
                     if key in seen:
                         continue
@@ -376,7 +393,7 @@ def _build_lines_from_brassins(
         else:
             # Fallback si pas de matrice : ligne générique par produit
             for prod in all_products:
-                prod_label = (prod.get("libelle") or "").strip()
+                prod_label = _clean_product_label((prod.get("libelle") or "").strip())
                 if not prod_label:
                     continue
                 key = prod_label.lower()
@@ -516,7 +533,7 @@ if not _brassins_valides:
 # Labels pour le multiselect
 def _brassin_label(b: dict) -> str:
     nom = b.get("nom", "?")
-    prod = (b.get("produit") or {}).get("libelle", "?")
+    prod = _clean_product_label((b.get("produit") or {}).get("libelle", "?"))
     vol = b.get("volume", 0)
     return f"{nom} — {prod} — {vol:.0f}L"
 
