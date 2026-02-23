@@ -471,3 +471,40 @@ def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
         return r.json()
     except Exception:
         return {"status": "ok"}
+
+
+def upload_fichier_brassin(
+    id_brassin: int,
+    file_bytes: bytes,
+    filename: str,
+    commentaire: str = "",
+) -> dict[str, Any]:
+    """
+    POST /brassin/upload/{idBrassin}
+    → Upload un fichier (Excel, PDF…) dans l'onglet Fichiers du brassin.
+
+    Paramètres :
+      id_brassin  : ID du brassin cible
+      file_bytes  : contenu du fichier en bytes
+      filename    : nom du fichier (ex: "Fiche de production.xlsx")
+      commentaire : commentaire optionnel
+
+    Retourne : ModeleUpload  {id, nom, taille, mimeType, ...}
+    """
+    params: dict[str, str] = {}
+    if commentaire:
+        params["commentaire"] = commentaire
+
+    r = requests.post(
+        f"{BASE}/brassin/upload/{id_brassin}",
+        params=params,
+        files={"fichier": (filename, file_bytes)},
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    try:
+        return r.json()
+    except Exception:
+        return {"status": "ok"}

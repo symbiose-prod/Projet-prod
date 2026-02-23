@@ -537,6 +537,7 @@ else:
                     from common.easybeer import (
                         create_brassin, get_product_detail, get_warehouses,
                         get_planification_matrice, add_planification_conditionnement,
+                        upload_fichier_brassin,
                     )
 
                     from core.optimizer import parse_stock as _parse_stock
@@ -718,6 +719,31 @@ else:
 
                         except Exception as _pe:
                             st.warning(f"Planification conditionnement « {g} » : {_pe}")
+
+                        # --- Upload de la fiche Excel sur le brassin ---
+                        try:
+                            _semaine_dt = _dt.date.fromisoformat(_semaine_du_eb)
+                            _ddm_dt = _dt.date.fromisoformat(_sp_eb.get("ddm", ""))
+                            _fiche_bytes = fill_fiche_7000L_xlsx(
+                                template_path=TEMPLATE_MAP.get(cuve_choice, "assets/Grande.xlsx"),
+                                semaine_du=_semaine_dt,
+                                ddm=_ddm_dt,
+                                gout1=g,
+                                gout2=None,
+                                df_calc=_sp_eb.get("df_calc", _df_calc_eb),
+                                sheet_name=SHEET_NAME,
+                                df_min=_sp_eb.get("df_min", df_min_override),
+                            )
+                            _fiche_name = f"Fiche de production — {g} — {_semaine_dt.strftime('%d-%m-%Y')}.xlsx"
+                            upload_fichier_brassin(
+                                id_brassin=brassin_id,
+                                file_bytes=_fiche_bytes,
+                                filename=_fiche_name,
+                                commentaire=f"Fiche de production {g}",
+                            )
+                            st.toast(f"Fiche Excel « {g} » uploadée ✓")
+                        except Exception as _ue:
+                            st.warning(f"Upload fiche « {g} » : {_ue}")
 
                     if created_ids:
                         if "_eb_brassins_created" not in st.session_state:
