@@ -435,42 +435,39 @@ else:
     if not _gouts_eb:
         st.warning("Aucun goût dans la production sauvegardée.")
     else:
-        # --- Calcul du volume par goût (hL → litres) ---
+        # --- Volume de perte selon la cuve choisie ---
+        # Cuve 7000L → +800L de perte ; Cuve 5000L → +400L de perte
+        _perte_litres = 800 if cuve_choice == "Cuve de 7000L" else 400
+
+        # --- Calcul du volume par goût (hL → litres + perte) ---
         _vol_par_gout: dict[str, float] = {}
         if isinstance(_df_calc_eb, pd.DataFrame) and "GoutCanon" in _df_calc_eb.columns:
             _vol_col = "X_adj (hL)" if "X_adj (hL)" in _df_calc_eb.columns else None
             if _vol_col:
                 for g in _gouts_eb:
                     mask = _df_calc_eb["GoutCanon"].astype(str) == g
-                    _vol_par_gout[g] = float(_df_calc_eb.loc[mask, _vol_col].sum()) * 100  # hL → litres
+                    _vol_par_gout[g] = float(_df_calc_eb.loc[mask, _vol_col].sum()) * 100 + _perte_litres
         # Fallback si df_calc n'a pas les bonnes colonnes : utiliser df_min
         if not _vol_par_gout:
             _df_min_eb = _sp_eb.get("df_min")
             if isinstance(_df_min_eb, pd.DataFrame) and "GoutCanon" in _df_min_eb.columns and "Volume produit arrondi (hL)" in _df_min_eb.columns:
                 for g in _gouts_eb:
                     mask = _df_min_eb["GoutCanon"].astype(str) == g
-                    _vol_par_gout[g] = float(_df_min_eb.loc[mask, "Volume produit arrondi (hL)"].sum()) * 100
+                    _vol_par_gout[g] = float(_df_min_eb.loc[mask, "Volume produit arrondi (hL)"].sum()) * 100 + _perte_litres
 
-        # --- Récupérer produits & entrepôts EasyBeer (cachés 5 min) ---
+        # --- Récupérer produits EasyBeer (cachés 5 min) ---
         @st.cache_data(ttl=300, show_spinner="Chargement des produits EasyBeer…")
         def _fetch_eb_products():
             from common.easybeer import get_all_products
             return get_all_products()
 
-        @st.cache_data(ttl=300, show_spinner="Chargement des entrepôts EasyBeer…")
-        def _fetch_eb_warehouses():
-            from common.easybeer import get_warehouses
-            return get_warehouses()
-
         try:
             _eb_products = _fetch_eb_products()
-            _eb_warehouses = _fetch_eb_warehouses()
         except Exception as e:
             st.error(f"Erreur de connexion à EasyBeer : {e}")
             _eb_products = []
-            _eb_warehouses = []
 
-        if _eb_products and _eb_warehouses:
+        if _eb_products:
             # --- Matching automatique par nom ---
             _prod_labels = [p.get("libelle", "") for p in _eb_products]
 
@@ -482,17 +479,18 @@ else:
                         return i
                 return 0  # premier produit par défaut
 
-            # --- Entrepôt par défaut (principal) ---
-            _wh_labels = [w.get("libelle") or w.get("nom", f"Entrepôt #{w.get('idEntrepot', '?')}") for w in _eb_warehouses]
-            _wh_default = 0
-            for i, w in enumerate(_eb_warehouses):
-                if w.get("principal"):
-                    _wh_default = i
-                    break
-
-            # --- Récap par goût + sélection produit EasyBeer ---
+            # --- Récap + sélections ---
             st.markdown(f"**Date de début :** {_semaine_du_eb}")
             st.markdown(f"**Goûts :** {', '.join(_gouts_eb)}")
+            st.caption(f"Volume = volume cartons + {_perte_litres} L de perte ({cuve_choice})")
+
+            # --- Date d'embouteillage ---
+            _default_embout = _dt.date.fromisoformat(_semaine_du_eb) + _dt.timedelta(days=7)
+            _date_embouteillage = st.date_input(
+                "Date d'embouteillage prévue",
+                value=_default_embout,
+                key="eb_date_embouteillage",
+            )
 
             _selected_products: dict[str, int] = {}  # gout → idProduit
             for g in _gouts_eb:
@@ -509,16 +507,6 @@ else:
                         key=f"eb_prod_{g}",
                     )
                     _selected_products[g] = _eb_products[idx]["idProduit"]
-
-            # --- Sélection entrepôt ---
-            _wh_idx = st.selectbox(
-                "Entrepôt EasyBeer",
-                options=range(len(_wh_labels)),
-                format_func=lambda i: _wh_labels[i],
-                index=_wh_default,
-                key="eb_warehouse",
-            )
-            _selected_wh_id = _eb_warehouses[_wh_idx]["idEntrepot"]
 
             # --- Bouton de création ---
             _already_created = st.session_state.get("_eb_brassins_created", {})
@@ -541,8 +529,11 @@ else:
                             "nom": f"Brassin {g} — {_semaine_du_eb}",
                             "volume": vol_l,
                             "dateDebutFormulaire": f"{_semaine_du_eb}T00:00:00.000Z",
+                            "dateConditionnementPrevue": f"{_date_embouteillage.isoformat()}T23:00:00.000Z",
                             "produit": {"idProduit": _selected_products[g]},
-                            "entrepot": {"idEntrepot": _selected_wh_id},
+                            "type": {"code": "LOCALE"},
+                            "deduireMatierePremiere": True,
+                            "changementEtapeAutomatique": True,
                         }
                         try:
                             result = create_brassin(payload)
