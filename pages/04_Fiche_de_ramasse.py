@@ -188,36 +188,58 @@ def _fetch_brassins_en_cours():
 
 
 @st.cache_data(ttl=300, show_spinner="Chargement des codes-barres…")
-def _fetch_code_barre_matrice() -> dict[tuple[int, int, int], str]:
+def _fetch_code_barre_matrice() -> dict[int, list[dict]]:
     """
-    Charge la matrice codes-barres et retourne un index :
-      (idProduit, idContenant, idLot) → code-barre (6 derniers chiffres)
+    Charge la matrice codes-barres et retourne un index par produit :
+      idProduit → [{ "ref6": "427014", "fmt_str": "12x33" }, ...]
+
+    Chaque code-barre EasyBeer = un produit/format qui existe réellement.
     """
     data = get_code_barre_matrice()
-    lookup: dict[tuple[int, int, int], str] = {}
+    by_product: dict[int, list[dict]] = {}
     for prod_entry in data.get("produits", []):
         for cb in prod_entry.get("codesBarres", []):
             code_raw = str(cb.get("code") or "")
             id_produit = (cb.get("modeleProduit") or {}).get("idProduit")
-            id_cont = (cb.get("modeleContenant") or {}).get("idContenant")
-            id_lot = (cb.get("modeleLot") or {}).get("idLot")
-            if id_produit and id_cont and id_lot and code_raw:
-                digits = re.sub(r"\D+", "", code_raw)
-                ref6 = digits[-6:] if len(digits) >= 6 else digits
-                if ref6:
-                    lookup[(id_produit, id_cont, id_lot)] = ref6
-    return lookup
+            mod_cont = cb.get("modeleContenant") or {}
+            contenance = round(float(mod_cont.get("contenance") or 0), 2)
+            mod_lot = cb.get("modeleLot") or {}
+            lot_libelle = (mod_lot.get("libelle") or "").strip()
+
+            if not (id_produit and code_raw and contenance):
+                continue
+
+            digits = re.sub(r"\D+", "", code_raw)
+            ref6 = digits[-6:] if len(digits) >= 6 else digits
+            if not ref6:
+                continue
+
+            # Dériver le format depuis contenance + lot
+            vol_cl = int(contenance * 100)  # 0.33 → 33, 0.75 → 75
+            m_pkg = re.search(r"(\d+)", lot_libelle)
+            pkg_count = int(m_pkg.group(1)) if m_pkg else 0
+            if not (vol_cl and pkg_count):
+                continue
+            fmt_str = f"{pkg_count}x{vol_cl}"
+
+            by_product.setdefault(id_produit, []).append({
+                "ref6": ref6,
+                "fmt_str": fmt_str,
+            })
+    return by_product
 
 
 def _build_lines_from_brassins(
     selected_brassins: list[dict],
     catalog: pd.DataFrame,
     id_entrepot: int | None,
-    cb_lookup: dict[tuple[int, int, int], str] | None = None,
+    cb_by_product: dict[int, list[dict]] | None = None,
 ) -> tuple[list[dict], dict]:
     """
-    Pour chaque brassin sélectionné, charge la MATRICE EasyBeer pour récupérer
-    tous les formats (contenants × packagings) ET les produits dérivés.
+    Pour chaque brassin sélectionné :
+      1. Charge la matrice EasyBeer pour connaître les produits dérivés
+      2. Pour chaque produit (principal + dérivés), interroge la matrice
+         codes-barres pour savoir quels formats existent réellement
 
     Retourne (rows, meta_by_label) prêts pour le DataFrame.
     """
@@ -270,48 +292,14 @@ def _build_lines_from_brassins(
             if _pe_label and _pe_fmt:
                 _existing_qty[(_pe_label, _pe_fmt)] = _pe_qty
 
-        # --- Matrice EasyBeer : tous les formats + dérivés ---
-        matrice: dict = {}
+        # --- Matrice EasyBeer : uniquement pour les produits dérivés ---
+        produits_derives: list[dict] = []
         if id_entrepot:
             try:
                 matrice = get_planification_matrice(id_brassin, id_entrepot)
+                produits_derives = matrice.get("produitsDerives", [])
             except Exception:
                 pass
-
-        contenants_raw = matrice.get("contenants", [])
-        packagings_raw = matrice.get("packagings", [])
-        produits_derives = matrice.get("produitsDerives", [])
-
-        # Construire TOUS les combos contenant × packaging.
-        # Le filtrage par code-barre EasyBeer éliminera les combos invalides.
-        # Ex : SAFT peut être en Pack de 4 (Kéfir) OU Carton de 6 (NIKO).
-        _format_combos: list[dict] = []
-
-        for mc_entry in contenants_raw:
-            mod = mc_entry.get("modeleContenant") or {}
-            contenance = round(float(mod.get("contenance") or 0), 2)
-            id_cont = mod.get("idContenant")
-            cont_label = (mod.get("libelleAvecContenance") or mod.get("libelle") or "").strip()
-
-            if contenance not in (0.33, 0.75):
-                continue
-            vol_cl = int(contenance * 100)  # 33 ou 75
-
-            for pkg in packagings_raw:
-                pkg_label = (pkg.get("libelle") or "").strip()
-                m_pkg = re.search(r"(\d+)", pkg_label)
-                if not m_pkg:
-                    continue
-                pkg_count = int(m_pkg.group(1))
-                fmt_str = f"{pkg_count}x{vol_cl}"
-
-                _format_combos.append({
-                    "id_contenant": id_cont,
-                    "cont_label": cont_label,
-                    "id_lot": pkg.get("idLot"),
-                    "pkg_label": pkg_label,
-                    "fmt_str": fmt_str,
-                })
 
         # --- Tous les produits : principal + dérivés ---
         all_products: list[dict] = [brassin_produit]
@@ -319,80 +307,49 @@ def _build_lines_from_brassins(
             if pd_item.get("libelle"):
                 all_products.append(pd_item)
 
-        # --- Générer les lignes : chaque produit × chaque format ---
-        # On ne garde QUE les combos qui ont un code-barre (= le produit/format existe)
-        if _format_combos:
-            for prod in all_products:
-                prod_label = (prod.get("libelle") or "").strip()
-                if not prod_label:
-                    continue
-                gout = _extract_gout_from_product(prod_label)
-                id_produit = prod.get("idProduit")
+        # --- Générer les lignes depuis la matrice codes-barres ---
+        # Chaque code-barre EasyBeer = un produit/format qui existe réellement
+        for prod in all_products:
+            prod_label = (prod.get("libelle") or "").strip()
+            id_produit = prod.get("idProduit")
+            if not prod_label or not id_produit:
+                continue
 
-                for fc in _format_combos:
-                    # Vérifier si cette combinaison produit/format existe
-                    # via le code-barre EasyBeer (source de vérité)
-                    ref = ""
-                    poids_carton = 0.0
+            clean_label = _clean_product_label(prod_label)
+            gout = _extract_gout_from_product(prod_label)
 
-                    if cb_lookup and id_produit:
-                        cb_key = (id_produit, fc["id_contenant"], fc["id_lot"])
-                        ref = cb_lookup.get(cb_key, "")
+            # Formats existants depuis la matrice codes-barres
+            formats = (cb_by_product or {}).get(id_produit, [])
 
-                    # CSV : utilisé uniquement pour le poids carton
-                    # Si cb_lookup est dispo et a retourné vide → le produit/format
-                    # n'existe PAS, on ne tombe PAS en fallback CSV pour la ref
-                    lk = _csv_lookup(catalog, gout, fc["fmt_str"], prod_label)
-                    if lk:
-                        if not ref and not cb_lookup:
-                            # Fallback CSV ref uniquement si EasyBeer indisponible
-                            ref = lk[0]
-                        poids_carton = lk[1]
+            for pf in formats:
+                ref = pf["ref6"]
+                fmt_str = pf["fmt_str"]
 
-                    # Pas de code-barre → ce produit/format n'existe pas, on saute
-                    if not ref:
-                        continue
-
-                    # Nettoyer le libellé produit (supprimer "- 0.0°" etc.)
-                    clean_label = _clean_product_label(prod_label)
-                    label = f"{clean_label} — {fc['fmt_str']}cl"
-                    key = label.lower()
-                    if key in seen:
-                        continue
-                    seen.add(key)
-
-                    # Quantité pré-remplie depuis productions existantes
-                    qty = _existing_qty.get((prod_label.lower(), fc["fmt_str"]), 0)
-
-                    meta_by_label[label] = {
-                        "_format": fc["fmt_str"],
-                        "_poids_carton": poids_carton,
-                        "_reference": ref,
-                    }
-                    rows.append({
-                        "Référence": ref,
-                        "Produit (goût + format)": label,
-                        "DDM": ddm_date,
-                        "Quantité cartons": qty,
-                        "Quantité palettes": 0,
-                        "Poids palettes (kg)": 0,
-                    })
-        else:
-            # Fallback si pas de matrice : ligne générique par produit
-            for prod in all_products:
-                prod_label = _clean_product_label((prod.get("libelle") or "").strip())
-                if not prod_label:
-                    continue
-                key = prod_label.lower()
+                label = f"{clean_label} — {fmt_str}cl"
+                key = label.lower()
                 if key in seen:
                     continue
                 seen.add(key)
-                meta_by_label[prod_label] = {"_format": "", "_poids_carton": 0.0, "_reference": ""}
+
+                # Poids carton depuis le CSV
+                poids_carton = 0.0
+                lk = _csv_lookup(catalog, gout, fmt_str, prod_label)
+                if lk:
+                    poids_carton = lk[1]
+
+                # Quantité pré-remplie depuis productions existantes
+                qty = _existing_qty.get((prod_label.lower(), fmt_str), 0)
+
+                meta_by_label[label] = {
+                    "_format": fmt_str,
+                    "_poids_carton": poids_carton,
+                    "_reference": ref,
+                }
                 rows.append({
-                    "Référence": "",
-                    "Produit (goût + format)": prod_label,
+                    "Référence": ref,
+                    "Produit (goût + format)": label,
                     "DDM": ddm_date,
-                    "Quantité cartons": 0,
+                    "Quantité cartons": qty,
                     "Quantité palettes": 0,
                     "Poids palettes (kg)": 0,
                 })
@@ -484,10 +441,10 @@ if not _eb_configured():
 # Charger le catalogue CSV (fallback poids carton)
 catalog = _load_catalog(INFO_CSV_PATH)
 
-# Charger les codes-barres EasyBeer
-_cb_lookup: dict[tuple[int, int, int], str] | None = None
+# Charger les codes-barres EasyBeer (indexés par idProduit)
+_cb_by_product: dict[int, list[dict]] | None = None
 try:
-    _cb_lookup = _fetch_code_barre_matrice()
+    _cb_by_product = _fetch_code_barre_matrice()
 except Exception:
     pass
 
@@ -545,7 +502,7 @@ rows: list[dict] = []
 
 if _selected_brassins:
     with st.spinner("Chargement des détails brassins…"):
-        rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog, _id_entrepot, _cb_lookup)
+        rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog, _id_entrepot, _cb_by_product)
 else:
     st.info("Sélectionne au moins un brassin pour construire la fiche.")
 
