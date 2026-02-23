@@ -542,9 +542,13 @@ else:
                     errors = []
                     for g in _gouts_eb:
                         vol_l = _vol_par_gout.get(g, 0)
-                        # Nom court : K + 2 premières lettres du goût + DDMMYYYY
+                        # Nom court : Kéfir → K + 2 lettres goût ; Infusion → IP + 1 lettre goût
                         _date_obj = _dt.date.fromisoformat(_semaine_du_eb)
-                        _code = "K" + g[:2].upper() + _date_obj.strftime("%d%m%Y")
+                        _prod_label = next((p.get("libelle", "") for p in _eb_products if p.get("idProduit") == _selected_products[g]), "")
+                        if "infusion" in _prod_label.lower():
+                            _code = "IP" + g[:1].upper() + _date_obj.strftime("%d%m%Y")
+                        else:
+                            _code = "K" + g[:2].upper() + _date_obj.strftime("%d%m%Y")
                         payload = {
                             "nom": _code,
                             "volume": vol_l,
