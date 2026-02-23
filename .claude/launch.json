@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "Ferment Station (Streamlit)",
-      "runtimeExecutable": "streamlit",
-      "runtimeArgs": ["run", "app.py"],
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": ["run", "app.py", "--server.headless", "true"],
       "port": 8501
     }
   ]
