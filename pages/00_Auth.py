@@ -53,10 +53,12 @@ if token_from_url:
     user_id = info["user_id"]
     reset_id = info["reset_id"]
 
-    pwd1 = st.text_input("Nouveau mot de passe", type="password")
-    pwd2 = st.text_input("Confirmez le mot de passe", type="password")
+    with st.form("reset_form"):
+        pwd1 = st.text_input("Nouveau mot de passe", type="password")
+        pwd2 = st.text_input("Confirmez le mot de passe", type="password")
+        submitted = st.form_submit_button("Changer le mot de passe", type="primary")
 
-    if st.button("Changer le mot de passe", type="primary"):
+    if submitted:
         if not pwd1 or not pwd2:
             st.error("Veuillez saisir et confirmer le mot de passe.")
         elif pwd1 != pwd2:
@@ -64,7 +66,6 @@ if token_from_url:
         else:
             try:
                 consume_token_and_set_password(reset_id, user_id, pwd1)
-                # on nettoie le token de la session seulement maintenant
                 st.session_state.pop("reset_token_from_link", None)
                 st.success("Mot de passe mis à jour ✅")
                 st.info("Vous pouvez maintenant vous connecter avec ce mot de passe.")
@@ -83,6 +84,14 @@ if u:
 # AUTO-LOGIN via cookie persistant ("Se souvenir de moi")
 # =========================================================
 if _cookie_manager and not current_user():
+    # Premier rendu : le composant JS CookieManager n'est pas encore chargé
+    # → on force un rerun après un court délai pour lire le cookie au 2e passage
+    if "_cookie_ready" not in st.session_state:
+        st.session_state["_cookie_ready"] = True
+        import time
+        time.sleep(0.5)
+        st.rerun()
+
     try:
         session_token = _cookie_manager.get("fs_session")
         if session_token:
@@ -93,7 +102,6 @@ if _cookie_manager and not current_user():
                 login_user(auto_user)
                 st.switch_page("pages/01_Accueil.py")
             else:
-                # Token expiré ou révoqué → effacer le cookie
                 _cookie_manager.delete("fs_session")
     except Exception:
         pass
@@ -107,7 +115,6 @@ st.title("🔐 Authentification")
 # ===============================
 def forgot_password_ui():
     st.subheader("Mot de passe oublié")
-    email = st.text_input("Votre e-mail", placeholder="prenom.nom@exemple.com", key="forgot_email")
     sent = st.session_state.get("reset_sent", False)
 
     if sent:
@@ -118,17 +125,19 @@ def forgot_password_ui():
             st.rerun()
         return
 
-    if st.button("Envoyer le lien de réinitialisation", type="primary"):
+    with st.form("forgot_form"):
+        email = st.text_input("Votre e-mail", placeholder="prenom.nom@exemple.com", key="forgot_email")
+        forgot_submitted = st.form_submit_button("Envoyer le lien de réinitialisation", type="primary")
+
+    if forgot_submitted:
         meta = {"ip": st.session_state.get("client_ip"), "ua": st.session_state.get("client_ua")}
         try:
-            # Doit renvoyer une URL du type: {BASE_URL}/06_Reset_password?token=XXXX
-            # mais même si Kinsta ne route pas /06_..., on récupère quand même le token ici.
             reset_url = create_password_reset(email, meta=meta)
-            if reset_url:  # on n'envoie que si on a un vrai lien
+            if reset_url:
                 send_reset_email(email, reset_url)
             st.toast("Email envoyé ✅")
         except Exception as e:
-            st.error(f"Erreur d'envoi e-mail : {e}")
+            st.error(f"Erreur d’envoi e-mail : {e}")
             st.stop()
         st.session_state["reset_sent"] = True
         st.rerun()
@@ -142,50 +151,52 @@ tab_login, tab_signup, tab_forgot = st.tabs(["Se connecter", "Créer un compte",
 # --- Onglet 1 : Connexion ---
 with tab_login:
     st.subheader("Connexion")
-    email = st.text_input("Email", placeholder="prenom.nom@exemple.com", key="login_email")
-    password = st.text_input("Mot de passe", type="password", key="login_pwd")
-    remember_me = st.checkbox("🔑 Se souvenir de moi (30 jours)", value=True, key="login_remember")
-    cols = st.columns([1, 1, 2])
-    with cols[0]:
-        if st.button("Connexion", type="primary", key="btn_login"):
-            if not email or not password:
-                st.warning("Renseigne email et mot de passe.")
+    with st.form("login_form"):
+        email = st.text_input("Email", placeholder="prenom.nom@exemple.com", key="login_email")
+        password = st.text_input("Mot de passe", type="password", key="login_pwd")
+        remember_me = st.checkbox("🔑 Se souvenir de moi (30 jours)", value=True, key="login_remember")
+        login_submitted = st.form_submit_button("Connexion", type="primary")
+
+    if login_submitted:
+        if not email or not password:
+            st.warning("Renseigne email et mot de passe.")
+        else:
+            user = authenticate(email, password)
+            if not user:
+                st.error("Identifiants invalides.")
             else:
-                user = authenticate(email, password)
-                if not user:
-                    st.error("Identifiants invalides.")
-                else:
-                    login_user(user)
-                    # ── Remember me : créer un token persistant + cookie ──
-                    if remember_me and _cookie_manager:
-                        try:
-                            from common.auth import create_session_token
-                            token = create_session_token(
-                                str(user["id"]), str(user["tenant_id"]), days=30
-                            )
-                            st.session_state["_fs_session_token"] = token
-                            _cookie_manager.set(
-                                "fs_session", token,
-                                expires_at=datetime.datetime.now() + datetime.timedelta(days=30),
-                            )
-                        except Exception:
-                            pass  # Ne bloque pas la connexion si le cookie échoue
-                    st.success("Connecté ✅")
-                    st.rerun()
-    with cols[1]:
-        st.caption("💡 Besoin d’aide ? Allez dans l’onglet **Mot de passe oublié ?**")
+                login_user(user)
+                # ── Remember me : créer un token persistant + cookie ──
+                if remember_me and _cookie_manager:
+                    try:
+                        from common.auth import create_session_token
+                        token = create_session_token(
+                            str(user["id"]), str(user["tenant_id"]), days=30
+                        )
+                        st.session_state["_fs_session_token"] = token
+                        _cookie_manager.set(
+                            "fs_session", token,
+                            expires_at=datetime.datetime.now() + datetime.timedelta(days=30),
+                        )
+                    except Exception:
+                        pass  # Ne bloque pas la connexion si le cookie échoue
+                st.success("Connecté ✅")
+                st.rerun()
+
+    st.caption("💡 Besoin d’aide ? Allez dans l’onglet **Mot de passe oublié ?**")
 
 # --- Onglet 2 : Création de compte ---
 with tab_signup:
     st.subheader("Inscription")
     st.caption("Le premier utilisateur d’un tenant devient **admin** automatiquement.")
-    new_email = st.text_input("Email", key="su_email")
-    new_pwd   = st.text_input("Mot de passe", type="password", key="su_pwd")
-    new_pwd2  = st.text_input("Confirme le mot de passe", type="password", key="su_pwd2")
-    tenant_name = st.text_input("Nom d’organisation (tenant)", placeholder="Ferment Station", key="su_tenant")
+    with st.form("signup_form"):
+        new_email = st.text_input("Email", key="su_email")
+        new_pwd   = st.text_input("Mot de passe", type="password", key="su_pwd")
+        new_pwd2  = st.text_input("Confirme le mot de passe", type="password", key="su_pwd2")
+        tenant_name = st.text_input("Nom d’organisation (tenant)", placeholder="Ferment Station", key="su_tenant")
+        signup_submitted = st.form_submit_button("Créer le compte", type="primary")
 
-    if st.button("Créer le compte", type="primary", key="btn_signup"):
-        from common.auth import create_user, find_user_by_email  # import local pour éviter cycles
+    if signup_submitted:
         if not (new_email and new_pwd and new_pwd2 and tenant_name):
             st.warning("Tous les champs sont obligatoires.")
         elif new_pwd != new_pwd2:
