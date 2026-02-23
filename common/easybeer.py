@@ -408,3 +408,66 @@ def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     )
     r.raise_for_status()
     return r.json()
+
+
+# ─── Planification de conditionnement ─────────────────────────────────────────
+
+def get_planification_matrice(id_brassin: int, id_entrepot: int) -> dict[str, Any]:
+    """
+    GET /brassin/planification-conditionnement/matrice
+    → Matrice des contenants × packagings pour un brassin et un entrepôt.
+
+    Réponse : ModeleMatricePlanificationConditionnement
+      {
+        "contenants": [
+          {
+            "modeleContenant": {"idContenant": 1, "libelle": "Bouteille - 0.33L", ...},
+            "productions": [...]
+          }
+        ],
+        "packagings": [
+          {"idLot": 5, "libelle": "Carton de 12", "quantite": 0, "visible": true}
+        ],
+        "produitsDerives": [...]
+      }
+    """
+    r = requests.get(
+        f"{BASE}/brassin/planification-conditionnement/matrice",
+        params={"idBrassin": id_brassin, "idEntrepot": id_entrepot},
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
+    """
+    POST /brassin/planification-conditionnement/ajouter
+    → Ajoute une planification de conditionnement à un brassin.
+
+    Payload : ModelePlanificationConditionnement
+      {
+        "idBrassin": 456,
+        "idProduit": 123,
+        "idEntrepot": 1,
+        "date": "2026-03-02T23:00:00.000Z",
+        "dateLimiteUtilisationOptimale": "2027-02-23T00:00:00.000Z",
+        "numeroLot": "",
+        "elements": [
+          {"idContenant": 1, "idLot": 5, "quantite": 50}
+        ]
+      }
+    """
+    r = requests.post(
+        f"{BASE}/brassin/planification-conditionnement/ajouter",
+        json=payload,
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    try:
+        return r.json()
+    except Exception:
+        return {"status": "ok"}

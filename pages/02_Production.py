@@ -534,7 +534,31 @@ else:
                     st.rerun()
             else:
                 if st.button("🍺 Créer les brassins dans EasyBeer", type="primary", use_container_width=True, key="eb_create"):
-                    from common.easybeer import create_brassin, get_product_detail
+                    from common.easybeer import (
+                        create_brassin, get_product_detail, get_warehouses,
+                        get_planification_matrice, add_planification_conditionnement,
+                    )
+
+                    # --- Charger info_FDR.csv pour le mapping contenant ---
+                    _csv_path = os.path.join(os.path.dirname(__file__), "..", "info_FDR.csv")
+                    try:
+                        _catalog_fdr = pd.read_csv(_csv_path)
+                    except Exception:
+                        _catalog_fdr = pd.DataFrame()
+
+                    # --- Entrepôt principal (pour la planification) ---
+                    _id_entrepot = None
+                    try:
+                        _warehouses = get_warehouses()
+                        for _w in _warehouses:
+                            if _w.get("principal"):
+                                _id_entrepot = _w.get("idEntrepot")
+                                break
+                        if not _id_entrepot and _warehouses:
+                            _id_entrepot = _warehouses[0].get("idEntrepot")
+                    except Exception:
+                        pass
+
                     created_ids = []
                     errors = []
                     for g in _gouts_eb:
@@ -605,45 +629,6 @@ else:
                         if _planif_etapes:
                             payload["planificationsEtapes"] = _planif_etapes
 
-                        # --- Planification de production (répartition par format) ---
-                        _planif_productions = []
-                        _df_min_eb = _sp_eb.get("df_min")
-                        if isinstance(_df_min_eb, pd.DataFrame) and not _df_min_eb.empty:
-                            _rows_gout = _df_min_eb[_df_min_eb["GoutCanon"].astype(str) == g]
-                            _ddm_iso = _sp_eb.get("ddm", "")
-                            for _, _r in _rows_gout.iterrows():
-                                _pn = str(_r.get("Produit", "")).strip()
-                                _ct = int(_r.get("Cartons à produire (arrondi)", 0))
-                                if _ct <= 0:
-                                    continue
-                                # Match produit EasyBeer (conditionné) par libellé
-                                _mp = None
-                                _pn_low = _pn.lower()
-                                for _p in _eb_products:
-                                    if _p.get("libelle", "").strip().lower() == _pn_low:
-                                        _mp = _p
-                                        break
-                                if not _mp:
-                                    # Fallback : match partiel (le libellé contient ou est contenu)
-                                    for _p in _eb_products:
-                                        if _pn_low in _p.get("libelle", "").lower():
-                                            _mp = _p
-                                            break
-                                if not _mp:
-                                    continue
-                                # Extraire le format (conditionnement) du nom produit
-                                _fm = re.search(r'(\d+)\s*[Xx]\s*(\d+)\s*[Cc][Ll]', _pn)
-                                _cond = f"{_fm.group(1)}x{_fm.group(2)}cl" if _fm else ""
-                                _planif_productions.append({
-                                    "produit": {"idProduit": _mp["idProduit"]},
-                                    "quantite": _ct,
-                                    "conditionnement": _cond,
-                                    "dateLimiteUtilisationOptimale": f"{_ddm_iso}T00:00:00.000Z" if _ddm_iso else "",
-                                    "volume": round(float(_r.get("Volume produit arrondi (hL)", 0)), 3),
-                                })
-                        if _planif_productions:
-                            payload["planificationsProductions"] = _planif_productions
-
                         try:
                             result = create_brassin(payload)
                             brassin_id = result.get("id", "?")
@@ -651,6 +636,77 @@ else:
                             st.toast(f"Brassin « {g} » créé (ID {brassin_id})")
                         except Exception as e:
                             errors.append(f"{g} : {e}")
+                            continue
+
+                        # --- Planification de conditionnement (via endpoint dédié) ---
+                        if not isinstance(brassin_id, int) or not _id_entrepot:
+                            continue
+
+                        try:
+                            _matrice = get_planification_matrice(brassin_id, _id_entrepot)
+
+                            # Lookup contenants : nom → idContenant
+                            _cont_lookup: dict[str, int] = {}
+                            for _mc in _matrice.get("contenants", []):
+                                _mod = _mc.get("modeleContenant", {})
+                                for _key in ("libelleAvecContenance", "libelle", "nom"):
+                                    _val = _mod.get(_key, "")
+                                    if _val:
+                                        _cont_lookup[_val.strip().lower()] = _mod.get("idContenant")
+
+                            # Lookup packagings : nom → idLot
+                            _pkg_lookup: dict[str, int] = {}
+                            for _pk in _matrice.get("packagings", []):
+                                _lbl = (_pk.get("libelle") or "").strip().lower()
+                                if _lbl and _pk.get("idLot") is not None:
+                                    _pkg_lookup[_lbl] = _pk["idLot"]
+
+                            # Construire les éléments depuis df_min
+                            _elements = []
+                            _df_min_eb = _sp_eb.get("df_min")
+                            if isinstance(_df_min_eb, pd.DataFrame) and not _df_min_eb.empty:
+                                _rows_gout = _df_min_eb[_df_min_eb["GoutCanon"].astype(str) == g]
+                                for _, _r in _rows_gout.iterrows():
+                                    _pn = str(_r.get("Produit", "")).strip()
+                                    _stock = str(_r.get("Stock", "")).strip()
+                                    _ct = int(_r.get("Cartons à produire (arrondi)", 0))
+                                    if _ct <= 0:
+                                        continue
+
+                                    # Trouver le contenant via info_FDR.csv
+                                    _id_cont = None
+                                    if not _catalog_fdr.empty and "Désignation" in _catalog_fdr.columns:
+                                        _cat_match = _catalog_fdr[
+                                            _catalog_fdr["Désignation"].astype(str).str.strip().str.lower() == _pn.lower()
+                                        ]
+                                        if not _cat_match.empty:
+                                            _cont_name = str(_cat_match.iloc[0]["Contenant"]).strip().lower()
+                                            _id_cont = _cont_lookup.get(_cont_name)
+
+                                    # Trouver le packaging (lot) via la colonne Stock
+                                    _id_lot = _pkg_lookup.get(_stock.lower())
+
+                                    if _id_cont is not None and _id_lot is not None:
+                                        _elements.append({
+                                            "idContenant": _id_cont,
+                                            "idLot": _id_lot,
+                                            "quantite": _ct,
+                                        })
+
+                            if _elements:
+                                _ddm_iso = _sp_eb.get("ddm", "")
+                                add_planification_conditionnement({
+                                    "idBrassin": brassin_id,
+                                    "idProduit": id_produit,
+                                    "idEntrepot": _id_entrepot,
+                                    "date": f"{_date_embouteillage.isoformat()}T23:00:00.000Z",
+                                    "dateLimiteUtilisationOptimale": f"{_ddm_iso}T00:00:00.000Z" if _ddm_iso else "",
+                                    "elements": _elements,
+                                })
+                                st.toast(f"Planification conditionnement « {g} » ajoutée ✓")
+
+                        except Exception as _pe:
+                            st.warning(f"Planification conditionnement « {g} » : {_pe}")
 
                     if created_ids:
                         if "_eb_brassins_created" not in st.session_state:
