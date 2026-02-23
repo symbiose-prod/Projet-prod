@@ -10,6 +10,9 @@ Endpoints utilisés :
   GET  /stock/matieres-premieres/all              → stock tous composants (MP)
   POST /indicateur/synthese-consommations-mp      → consommation MP par période
   POST /parametres/client/liste                   → liste paginée des clients
+  GET  /parametres/produit/liste/all              → tous les produits
+  GET  /parametres/entrepot/liste                 → tous les entrepôts
+  POST /brassin/enregistrer                       → créer un brassin
 """
 from __future__ import annotations
 
@@ -267,3 +270,66 @@ def get_all_clients(
         if page >= total_pages or not liste:
             break
     return all_clients
+
+
+# ─── Produits & Entrepôts ─────────────────────────────────────────────────────
+
+def get_all_products() -> list[dict[str, Any]]:
+    """
+    GET /parametres/produit/liste/all
+    → Liste complète des produits EasyBeer (non paginée).
+
+    Champs utiles : idProduit, libelle
+    """
+    r = requests.get(
+        f"{BASE}/parametres/produit/liste/all",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return data if isinstance(data, list) else []
+
+
+def get_warehouses() -> list[dict[str, Any]]:
+    """
+    GET /parametres/entrepot/liste
+    → Liste de tous les entrepôts.
+
+    Champs utiles : idEntrepot, libelle, nom, principal
+    """
+    r = requests.get(
+        f"{BASE}/parametres/entrepot/liste",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return data if isinstance(data, list) else []
+
+
+def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    POST /brassin/enregistrer
+    → Crée un nouveau brassin dans EasyBeer.
+
+    Payload minimal (ModeleBrassin) :
+      {
+        "nom": "Brassin Gingembre — 2026-02-23",
+        "volume": 5000.0,                              # litres
+        "dateDebutFormulaire": "2026-02-23T00:00:00.000Z",
+        "produit": {"idProduit": 123},
+        "entrepot": {"idEntrepot": 1}
+      }
+
+    Retourne : {"id": <int>}  — l'ID du brassin créé.
+    """
+    r = requests.post(
+        f"{BASE}/brassin/enregistrer",
+        json=payload,
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    return r.json()
