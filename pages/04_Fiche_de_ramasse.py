@@ -10,11 +10,8 @@ import streamlit as st
 from dateutil.tz import gettz
 
 from common.design import apply_theme, section, kpi
-import importlib
-import common.xlsx_fill as _xlsx_fill
-importlib.reload(_xlsx_fill)
-from common.xlsx_fill import fill_bl_enlevements_xlsx, build_bl_enlevements_pdf
-from common.email import send_html_with_pdf, html_signature, _get_ns, _get
+from common.xlsx_fill import build_bl_enlevements_pdf
+from common.email import send_html_with_pdf, _get
 from common.storage import list_saved, load_snapshot
 from pathlib import Path
 
@@ -53,24 +50,7 @@ def _build_opts_from_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(by="label").reset_index(drop=True)
 
 
-# ================================== EMAIL (wrapper) ===========================
-
-def _default_recipients_from_cfg() -> list[str]:
-    """
-    Lit d'abord EMAIL_RECIPIENTS (env), fallback st.secrets['email']['recipients'] (string ou liste).
-    """
-    cfg = _get_ns("email", "recipients") or _get("EMAIL_RECIPIENTS", "")
-    if isinstance(cfg, list):
-        return [x.strip() for x in cfg if x and str(x).strip()]
-    if isinstance(cfg, str):
-        return [x.strip() for x in cfg.split(",") if x.strip()]
-    return []
-
-
-# ================================== EMAIL (wrapper) ===========================
 import base64
-from pathlib import Path
-from common.email import send_html_with_pdf, _get  # on garde _get, ça marchait chez toi
 
 def _inline_img_from_repo(rel_path: str) -> str:
     """
@@ -562,13 +542,8 @@ else:
     #    - fallback local ci-dessous (à adapter)
     DEFAULT_RECIPIENTS_FALLBACK = "z.dawam@sofripa.fr, nicolas@symbiose-kefir.fr, g.marlier@sofripa.fr, f.ricard@sofripa.fr, c.boulon@sofripa.fr, a.teixeira@sofripa.fr, prepa@sofripa.fr, annonces@sofripa.fr, exploitation@sofripa.fr, b.alves@sofripa.fr"
 
-    try:
-    # on regarde d’abord si on a un expéditeur dans les env
-        sender_hint = _get("EMAIL_SENDER") or _get("EMAIL_USER")
-        rec_list = _default_recipients_from_cfg()
-    except Exception:
-        sender_hint = None
-        rec_list = []
+    sender_hint = os.environ.get("EMAIL_SENDER") or os.environ.get("EMAIL_USER")
+    rec_list = []
 
 
     # 2) Initialise le state UNE FOIS avec une vraie valeur (pas un placeholder)
@@ -632,7 +607,6 @@ else:
                     bcc_me=True
                 )
 
-                st.write("Destinataires envoyés :", ", ".join(to_list))
-                st.success("📨 Demande de ramasse envoyée (backend e-mail OK).")
+                st.success(f"📨 Demande de ramasse envoyée à {len(to_list)} destinataire(s).")
             except Exception as e:
                 st.error(f"Échec de l’envoi : {e}")

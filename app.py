@@ -16,12 +16,6 @@ if token:
     # et on bascule vers la page d'auth
     st.switch_page("pages/00_Auth.py")
 
-# si l'URL contient le token, on bascule automatiquement vers la page Auth
-_qp = st.query_params
-if "reset_token" in _qp:
-    # on laisse le token dans l'URL et on va sur la page d'auth
-    st.switch_page("pages/_00_Auth.py")
-
 st.set_page_config(page_title="Accueil", page_icon="🏠", initial_sidebar_state="collapsed")
 
 # Si l'utilisateur n'est pas connecté → on l'envoie sur la page d'auth

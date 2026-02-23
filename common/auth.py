@@ -43,11 +43,6 @@ def verify_password(password: str, stored: str) -> bool:
 # ------------------------------------------------------------------------------
 # Tenants (résolution nom <-> UUID) - robustes aux courses d'écriture
 # ------------------------------------------------------------------------------
-_UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
-)
-
-
 def _norm_tenant_name(name: str) -> str:
     # Trim + collapse espaces ; comparaison en lower côté SQL
     return re.sub(r"\s+", " ", (name or "").strip())
@@ -204,13 +199,6 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         return None
     user = rows[0]
     return user if verify_password(password, user["password_hash"]) else None
-
-
-def set_user_role(user_id: str, role: str) -> None:
-    run_sql(
-        "UPDATE users SET role = :r WHERE id = :id",
-        {"r": role, "id": user_id},
-    )
 
 
 def change_password(user_id: str, new_password: str) -> None:

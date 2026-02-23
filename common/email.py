@@ -97,10 +97,6 @@ def html_signature() -> str:
         "</div>"
     )
 
-def _get_ns() -> dict:
-    """Ancien helper de templating : on renvoie un dict vide pour compat."""
-    return {}
-
 def _get(key: str, default: Any = None) -> Any:
     """Ancien helper de templating : renvoie simplement la valeur par défaut."""
     return default

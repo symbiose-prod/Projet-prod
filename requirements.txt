@@ -5,17 +5,9 @@ openpyxl
 pillow
 pyyaml
 xlrd
-reportlab
 fpdf2
 python-dateutil
-pdfplumber
-pypdf
-tomli
-PyGithub>=1.59
 requests>=2.31.0
 SQLAlchemy==2.0.32
 psycopg2-binary==2.9.9
 extra-streamlit-components
-
-
-

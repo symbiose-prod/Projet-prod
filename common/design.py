@@ -119,10 +119,6 @@ import os, base64
 from io import BytesIO
 from PIL import Image
 
-import os, base64
-from io import BytesIO
-from PIL import Image
-
 def load_image_bytes(path: str):
     """
     Retourne :

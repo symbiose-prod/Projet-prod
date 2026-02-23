@@ -9,7 +9,6 @@ from datetime import date, datetime
 from typing import Optional, Dict, List, Tuple
 from pathlib import Path
 
-from dateutil.relativedelta import relativedelta
 import pandas as pd
 import openpyxl
 from openpyxl.utils import coordinate_to_tuple, get_column_letter
@@ -20,13 +19,6 @@ try:
 except Exception:
     AnchorMarker = TwoCellAnchor = None  # fallback si version openpyxl ancienne
 
-from reportlab.lib.utils import ImageReader  # utilisé par la partie PDF
-def _has_pillow() -> bool:
-    try:
-        import PIL  # noqa: F401
-        return True
-    except Exception:
-        return False
 def _add_logo(ws, path: Path | None, anchor_cell: str, max_w: int, max_h: int):
     """Ajoute un logo ancré sans déformer l'image (no-op si chemin invalide)."""
     try:
@@ -407,15 +399,6 @@ def fill_fiche_7000L_xlsx(
             pass
         _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
 
-    except Exception:
-        # Fallback minimal
-        try:
-            ws.merge_cells("B10:C10")
-        except Exception:
-            pass
-        _safe_set_cell(ws, 10, 1, "DDM :")
-        _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
-
     # --- Quantités de cartons par format -> ligne 15 (K/M/O/Q/S/U) ---
     # Mapping voulu :
     # - 33 cL EN (Water kefir)      -> K15 (K:L)
@@ -497,49 +480,6 @@ def fill_fiche_7000L_xlsx(
 # ======================================================================
 #                   Remplissage BL enlèvements Sofripa
 # ======================================================================
-
-def _iter_cells(ws):
-    for r in ws.iter_rows(values_only=False):
-        for c in r:
-            yield c
-
-def _find_cell_by_regex(ws, pattern: str) -> Tuple[int, int] | Tuple[None, None]:
-    rx = re.compile(pattern, flags=re.I)
-    for cell in _iter_cells(ws):
-        v = cell.value
-        if isinstance(v, str) and rx.search(v):
-            return cell.row, cell.column
-    return None, None
-
-def _write_right_of(ws, row: int, col: int, value):
-    """Écrit dans la cellule immédiatement à droite (gère fusions)."""
-    _safe_set_cell(ws, row, col + 1, value)
-
-def _write_cell(ws, row: int, col: int, value):
-    """Écrit (row,col) en gérant les fusions."""
-    _safe_set_cell(ws, row, col, value)
-
-def _normalize_header_text(s: str) -> str:
-    s = str(s or "").strip().lower()
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = s.replace("’", "'")
-    for ch in ["(", ")", ":", ";", ","]:
-        s = s.replace(ch, " ")
-    s = " ".join(s.split())
-    return s
-
-def _first_data_row_after_header(ws, hdr_row: int, cols: List[int]) -> int:
-    """
-    Si l'en-tête est fusionné sur 2+ lignes, commence à la 1ère ligne
-    *après* ces fusions sur n'importe laquelle des colonnes du tableau.
-    """
-    start = hdr_row + 1
-    for rng in ws.merged_cells.ranges:
-        if rng.min_row <= hdr_row <= rng.max_row:
-            if any(rng.min_col <= c <= rng.max_col for c in cols if c is not None):
-                start = max(start, rng.max_row + 1)
-    return start
 
 def fill_bl_enlevements_xlsx(
     template_path: str,
