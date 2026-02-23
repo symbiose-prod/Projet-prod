@@ -436,24 +436,41 @@ else:
         st.warning("Aucun goût dans la production sauvegardée.")
     else:
         # --- Volume de perte selon la cuve choisie ---
-        # Cuve 7000L → +800L de perte ; Cuve 5000L → +400L de perte
+        # Cuve 7000L (réelle : 7200L) → +800L de perte
+        # Cuve 5000L (réelle : 5200L) → +400L de perte
         _perte_litres = 800 if cuve_choice == "Cuve de 7000L" else 400
 
-        # --- Calcul du volume par goût (hL → litres + perte) ---
+        # --- Calcul du volume par goût ---
+        # On utilise volume_cible (sidebar) réparti proportionnellement entre goûts
+        # puis on ajoute la perte par brassin.
+        # Ex: volume_cible=64 hL, 1 goût → 64 hL → 6400L + 800L = 7200L
         _vol_par_gout: dict[str, float] = {}
-        if isinstance(_df_calc_eb, pd.DataFrame) and "GoutCanon" in _df_calc_eb.columns:
-            _vol_col = "X_adj (hL)" if "X_adj (hL)" in _df_calc_eb.columns else None
-            if _vol_col:
+        _nb_gouts_eb = len(_gouts_eb)
+
+        if _nb_gouts_eb == 1:
+            # Un seul goût : tout le volume_cible
+            _vol_par_gout[_gouts_eb[0]] = volume_cible * 100 + _perte_litres
+        else:
+            # Plusieurs goûts : répartir au prorata de X_adj (optimiseur)
+            _proportions: dict[str, float] = {}
+            _total_x = 0.0
+            if isinstance(_df_calc_eb, pd.DataFrame) and "GoutCanon" in _df_calc_eb.columns:
+                _vol_col = "X_adj (hL)" if "X_adj (hL)" in _df_calc_eb.columns else None
+                if _vol_col:
+                    for g in _gouts_eb:
+                        mask = _df_calc_eb["GoutCanon"].astype(str) == g
+                        val = float(_df_calc_eb.loc[mask, _vol_col].sum())
+                        _proportions[g] = val
+                        _total_x += val
+
+            if _total_x > 0:
                 for g in _gouts_eb:
-                    mask = _df_calc_eb["GoutCanon"].astype(str) == g
-                    _vol_par_gout[g] = float(_df_calc_eb.loc[mask, _vol_col].sum()) * 100 + _perte_litres
-        # Fallback si df_calc n'a pas les bonnes colonnes : utiliser df_min
-        if not _vol_par_gout:
-            _df_min_eb = _sp_eb.get("df_min")
-            if isinstance(_df_min_eb, pd.DataFrame) and "GoutCanon" in _df_min_eb.columns and "Volume produit arrondi (hL)" in _df_min_eb.columns:
+                    part = (_proportions.get(g, 0) / _total_x) * volume_cible
+                    _vol_par_gout[g] = part * 100 + _perte_litres
+            else:
+                # Fallback : répartition égale
                 for g in _gouts_eb:
-                    mask = _df_min_eb["GoutCanon"].astype(str) == g
-                    _vol_par_gout[g] = float(_df_min_eb.loc[mask, "Volume produit arrondi (hL)"].sum()) * 100 + _perte_litres
+                    _vol_par_gout[g] = (volume_cible / _nb_gouts_eb) * 100 + _perte_litres
 
         # --- Récupérer produits EasyBeer (cachés 5 min) ---
         @st.cache_data(ttl=300, show_spinner="Chargement des produits EasyBeer…")
