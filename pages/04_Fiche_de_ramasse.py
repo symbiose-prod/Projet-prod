@@ -13,7 +13,13 @@ from pathlib import Path
 from common.design import apply_theme, section, kpi
 from common.xlsx_fill import build_bl_enlevements_pdf
 from common.email import send_html_with_pdf, _get
-from common.easybeer import is_configured as _eb_configured, get_brassins_en_cours, get_brassin_detail
+from common.easybeer import (
+    is_configured as _eb_configured,
+    get_brassins_en_cours,
+    get_brassin_detail,
+    get_planification_matrice,
+    get_warehouses,
+)
 
 
 # ================================ Utilitaires ===============================
@@ -169,14 +175,20 @@ def _fetch_brassins_en_cours():
     return get_brassins_en_cours()
 
 
-def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFrame) -> tuple[list[dict], dict]:
+def _build_lines_from_brassins(
+    selected_brassins: list[dict],
+    catalog: pd.DataFrame,
+    id_entrepot: int | None,
+) -> tuple[list[dict], dict]:
     """
-    Pour chaque brassin sélectionné, récupère le détail et construit les lignes
-    de la fiche de ramasse depuis productions[] ou planificationsProductions[].
+    Pour chaque brassin sélectionné, charge la MATRICE EasyBeer pour récupérer
+    tous les formats (contenants × packagings) ET les produits dérivés.
+
+    Retourne (rows, meta_by_label) prêts pour le DataFrame.
     """
-    rows = []
+    rows: list[dict] = []
     meta_by_label: dict = {}
-    seen = set()
+    seen: set[str] = set()
 
     for brassin_summary in selected_brassins:
         id_brassin = brassin_summary.get("idBrassin")
@@ -184,130 +196,164 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
             continue
 
         brassin_produit = brassin_summary.get("produit") or {}
-        gout_parent = _extract_gout_from_product(brassin_produit.get("libelle", ""))
 
+        # --- Détail du brassin (pour DDM et quantités existantes) ---
         try:
             detail = get_brassin_detail(id_brassin)
         except Exception:
             detail = brassin_summary
 
-        # Prendre productions[] (réel) si non vide, sinon planificationsProductions[]
-        productions = detail.get("productions") or []
-        if not productions:
-            productions = detail.get("planificationsProductions") or []
+        # DDM : depuis les productions existantes ou date début + 365j
+        ddm_date = _today_paris() + dt.timedelta(days=365)
+        _existing_prods = detail.get("productions") or detail.get("planificationsProductions") or []
+        if _existing_prods:
+            ddm_str = (
+                _existing_prods[0].get("dateLimiteUtilisationOptimaleFormulaire")
+                or _existing_prods[0].get("dateLimiteUtilisationOptimale")
+                or ""
+            )
+            if ddm_str:
+                try:
+                    ddm_date = dt.date.fromisoformat(ddm_str[:10])
+                except (ValueError, TypeError):
+                    pass
+        else:
+            date_debut_str = detail.get("dateDebutFormulaire") or ""
+            if date_debut_str:
+                try:
+                    ddm_date = dt.date.fromisoformat(date_debut_str[:10]) + dt.timedelta(days=365)
+                except (ValueError, TypeError):
+                    pass
 
-        if productions:
-            for prod_entry in productions:
-                prod_obj = prod_entry.get("produit") or {}
-                prod_label = prod_obj.get("libelle") or ""
-                quantite = int(prod_entry.get("quantite") or 0)
-                conditionnement = str(prod_entry.get("conditionnement") or "")
+        # Index des quantités existantes : (prod_libelle_lower, fmt_str) → quantité
+        _existing_qty: dict[tuple[str, str], int] = {}
+        for _pe in _existing_prods:
+            _pe_label = ((_pe.get("produit") or {}).get("libelle") or "").lower()
+            _pe_cond = str(_pe.get("conditionnement") or "")
+            _pe_fmt = _format_from_stock(_pe_cond) or _format_from_stock(_pe_label)
+            _pe_qty = int(_pe.get("quantite") or 0)
+            if _pe_label and _pe_fmt:
+                _existing_qty[(_pe_label, _pe_fmt)] = _pe_qty
 
-                ddm_str = (
-                    prod_entry.get("dateLimiteUtilisationOptimaleFormulaire")
-                    or prod_entry.get("dateLimiteUtilisationOptimale")
-                    or ""
-                )
-                ddm_date = _today_paris() + dt.timedelta(days=365)
-                if ddm_str:
-                    try:
-                        ddm_date = dt.date.fromisoformat(ddm_str[:10])
-                    except (ValueError, TypeError):
-                        pass
+        # --- Matrice EasyBeer : tous les formats + dérivés ---
+        matrice: dict = {}
+        if id_entrepot:
+            try:
+                matrice = get_planification_matrice(id_brassin, id_entrepot)
+            except Exception:
+                pass
 
-                fmt = _format_from_stock(conditionnement) or _format_from_stock(prod_label)
-                gout = _extract_gout_from_product(prod_label) if prod_label else gout_parent
-                if not gout:
-                    gout = gout_parent
+        contenants_raw = matrice.get("contenants", [])
+        packagings_raw = matrice.get("packagings", [])
+        produits_derives = matrice.get("produitsDerives", [])
 
-                label = prod_label if prod_label else f"{gout_parent} — {conditionnement or '?'}"
+        # Construire la liste des formats valides (contenant → packaging)
+        # Chaque format = (id_contenant, cont_label, id_lot, pkg_label, fmt_str)
+        _format_combos: list[dict] = []
 
-                key = label.lower()
-                if key in seen:
+        # Index packagings par mots-clés
+        _pkg_by_key: dict[str, dict] = {}
+        for pk in packagings_raw:
+            lbl = (pk.get("libelle") or "").strip().lower()
+            _pkg_by_key[lbl] = pk
+
+        def _find_pkg(keyword: str) -> dict | None:
+            """Trouve un packaging dont le libellé contient le mot-clé."""
+            for lbl, pk in _pkg_by_key.items():
+                if keyword in lbl:
+                    return pk
+            return None
+
+        for mc_entry in contenants_raw:
+            mod = mc_entry.get("modeleContenant") or {}
+            contenance = round(float(mod.get("contenance") or 0), 2)
+            id_cont = mod.get("idContenant")
+            cont_label = (mod.get("libelleAvecContenance") or mod.get("libelle") or "").strip()
+
+            if contenance == 0.33:
+                pkg = _find_pkg("carton de 12")
+                fmt_str = "12x33"
+            elif "saft" in cont_label.lower():
+                pkg = _find_pkg("pack de 4")
+                fmt_str = "4x75"
+            elif contenance == 0.75:
+                pkg = _find_pkg("carton de 6")
+                fmt_str = "6x75"
+            else:
+                continue  # format non géré
+
+            if pkg and id_cont:
+                _format_combos.append({
+                    "id_contenant": id_cont,
+                    "cont_label": cont_label,
+                    "id_lot": pkg.get("idLot"),
+                    "pkg_label": (pkg.get("libelle") or "").strip(),
+                    "fmt_str": fmt_str,
+                })
+
+        # --- Tous les produits : principal + dérivés ---
+        all_products: list[dict] = [brassin_produit]
+        for pd_item in produits_derives:
+            if pd_item.get("libelle"):
+                all_products.append(pd_item)
+
+        # --- Générer les lignes : chaque produit × chaque format ---
+        if _format_combos:
+            for prod in all_products:
+                prod_label = (prod.get("libelle") or "").strip()
+                if not prod_label:
                     continue
-                seen.add(key)
+                gout = _extract_gout_from_product(prod_label)
 
-                ref = ""
-                poids_carton = 0.0
-                if fmt:
-                    lk = _csv_lookup(catalog, gout, fmt, prod_label)
+                for fc in _format_combos:
+                    label = f"{prod_label} — {fc['fmt_str']}cl"
+                    key = label.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    # Quantité pré-remplie depuis productions existantes
+                    qty = _existing_qty.get((prod_label.lower(), fc["fmt_str"]), 0)
+
+                    # Référence et poids depuis le catalogue CSV
+                    ref = ""
+                    poids_carton = 0.0
+                    lk = _csv_lookup(catalog, gout, fc["fmt_str"], prod_label)
                     if lk:
                         ref, poids_carton = lk
 
-                meta_by_label[label] = {
-                    "_format": fmt or "",
-                    "_poids_carton": poids_carton,
-                    "_reference": ref,
-                }
-                rows.append({
-                    "Référence": ref,
-                    "Produit (goût + format)": label,
-                    "DDM": ddm_date,
-                    "Quantité cartons": quantite,
-                    "Quantité palettes": 0,
-                    "Poids palettes (kg)": 0,
-                })
-        else:
-            # Aucune production ni planification → ligne générique
-            label = brassin_produit.get("libelle", f"Brassin {id_brassin}")
-            if label.lower() not in seen:
-                seen.add(label.lower())
-
-                formats_for_gout = []
-                if not catalog.empty:
-                    g_can = _canon(gout_parent)
-                    for _, cat_row in catalog.iterrows():
-                        if g_can and g_can in str(cat_row.get("_canon_prod", "")):
-                            fmt_cat = _norm(cat_row.get("Format", ""))
-                            if fmt_cat:
-                                formats_for_gout.append({
-                                    "format": fmt_cat,
-                                    "prod": _norm(cat_row.get("Produit", "")),
-                                    "des": _norm(cat_row.get("Désignation", "")),
-                                })
-
-                date_debut_str = detail.get("dateDebutFormulaire") or ""
-                ddm_date = _today_paris() + dt.timedelta(days=365)
-                if date_debut_str:
-                    try:
-                        ddm_date = dt.date.fromisoformat(date_debut_str[:10]) + dt.timedelta(days=365)
-                    except (ValueError, TypeError):
-                        pass
-
-                if formats_for_gout:
-                    for f_info in formats_for_gout:
-                        sub_label = f"{f_info['prod']} — {f_info['format']}"
-                        if sub_label.lower() in seen:
-                            continue
-                        seen.add(sub_label.lower())
-                        ref = ""
-                        poids_carton = 0.0
-                        lk = _csv_lookup(catalog, gout_parent, f_info["format"], f_info["prod"])
-                        if lk:
-                            ref, poids_carton = lk
-                        meta_by_label[sub_label] = {
-                            "_format": f_info["format"],
-                            "_poids_carton": poids_carton,
-                            "_reference": ref,
-                        }
-                        rows.append({
-                            "Référence": ref,
-                            "Produit (goût + format)": sub_label,
-                            "DDM": ddm_date,
-                            "Quantité cartons": 0,
-                            "Quantité palettes": 0,
-                            "Poids palettes (kg)": 0,
-                        })
-                else:
-                    meta_by_label[label] = {"_format": "", "_poids_carton": 0.0, "_reference": ""}
+                    meta_by_label[label] = {
+                        "_format": fc["fmt_str"],
+                        "_poids_carton": poids_carton,
+                        "_reference": ref,
+                    }
                     rows.append({
-                        "Référence": "",
+                        "Référence": ref,
                         "Produit (goût + format)": label,
                         "DDM": ddm_date,
-                        "Quantité cartons": 0,
+                        "Quantité cartons": qty,
                         "Quantité palettes": 0,
                         "Poids palettes (kg)": 0,
                     })
+        else:
+            # Fallback si pas de matrice : ligne générique par produit
+            for prod in all_products:
+                prod_label = (prod.get("libelle") or "").strip()
+                if not prod_label:
+                    continue
+                key = prod_label.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                meta_by_label[prod_label] = {"_format": "", "_poids_carton": 0.0, "_reference": ""}
+                rows.append({
+                    "Référence": "",
+                    "Produit (goût + format)": prod_label,
+                    "DDM": ddm_date,
+                    "Quantité cartons": 0,
+                    "Quantité palettes": 0,
+                    "Poids palettes (kg)": 0,
+                })
 
     return rows, meta_by_label
 
@@ -403,6 +449,19 @@ except Exception as e:
     st.error(f"Erreur de connexion à EasyBeer : {e}")
     _all_brassins = []
 
+# Entrepôt principal (nécessaire pour la matrice)
+_id_entrepot: int | None = None
+try:
+    _warehouses = get_warehouses()
+    for _w in _warehouses:
+        if _w.get("principal"):
+            _id_entrepot = _w.get("idEntrepot")
+            break
+    if not _id_entrepot and _warehouses:
+        _id_entrepot = _warehouses[0].get("idEntrepot")
+except Exception:
+    pass
+
 _brassins_valides = [b for b in _all_brassins if not b.get("annule")]
 
 if not _brassins_valides:
@@ -437,7 +496,7 @@ rows: list[dict] = []
 
 if _selected_brassins:
     with st.spinner("Chargement des détails brassins…"):
-        rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog)
+        rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog, _id_entrepot)
 else:
     st.info("Sélectionne au moins un brassin pour construire la fiche.")
 
