@@ -260,29 +260,17 @@ def _build_lines_from_brassins(
         except Exception:
             detail = brassin_summary
 
-        # DDM : depuis les productions existantes ou date début + 365j
+        # DDM calculée = date début fermentation + 365 jours
         ddm_date = _today_paris() + dt.timedelta(days=365)
-        _existing_prods = detail.get("productions") or detail.get("planificationsProductions") or []
-        if _existing_prods:
-            ddm_str = (
-                _existing_prods[0].get("dateLimiteUtilisationOptimaleFormulaire")
-                or _existing_prods[0].get("dateLimiteUtilisationOptimale")
-                or ""
-            )
-            if ddm_str:
-                try:
-                    ddm_date = dt.date.fromisoformat(ddm_str[:10])
-                except (ValueError, TypeError):
-                    pass
-        else:
-            date_debut_str = detail.get("dateDebutFormulaire") or ""
-            if date_debut_str:
-                try:
-                    ddm_date = dt.date.fromisoformat(date_debut_str[:10]) + dt.timedelta(days=365)
-                except (ValueError, TypeError):
-                    pass
+        date_debut_str = detail.get("dateDebutFormulaire") or ""
+        if date_debut_str:
+            try:
+                ddm_date = dt.date.fromisoformat(date_debut_str[:10]) + dt.timedelta(days=365)
+            except (ValueError, TypeError):
+                pass
 
         # Index des quantités existantes : (prod_libelle_lower, fmt_str) → quantité
+        _existing_prods = detail.get("productions") or detail.get("planificationsProductions") or []
         _existing_qty: dict[tuple[str, str], int] = {}
         for _pe in _existing_prods:
             _pe_label = ((_pe.get("produit") or {}).get("libelle") or "").lower()
