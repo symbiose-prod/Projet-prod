@@ -322,16 +322,35 @@ def _build_lines_from_brassins(
                 all_products.append(pd_item)
 
         # --- Générer les lignes : chaque produit × chaque format ---
+        # On ne garde QUE les combos qui ont un code-barre (= le produit/format existe)
         if _format_combos:
             for prod in all_products:
                 prod_label = (prod.get("libelle") or "").strip()
                 if not prod_label:
                     continue
                 gout = _extract_gout_from_product(prod_label)
-
                 id_produit = prod.get("idProduit")
 
                 for fc in _format_combos:
+                    # Vérifier si cette combinaison produit/format existe
+                    # via le code-barre EasyBeer ou le catalogue CSV
+                    ref = ""
+                    poids_carton = 0.0
+
+                    if cb_lookup and id_produit:
+                        cb_key = (id_produit, fc["id_contenant"], fc["id_lot"])
+                        ref = cb_lookup.get(cb_key, "")
+
+                    lk = _csv_lookup(catalog, gout, fc["fmt_str"], prod_label)
+                    if lk:
+                        if not ref:
+                            ref = lk[0]
+                        poids_carton = lk[1]
+
+                    # Pas de code-barre → ce produit/format n'existe pas, on saute
+                    if not ref:
+                        continue
+
                     label = f"{prod_label} — {fc['fmt_str']}cl"
                     key = label.lower()
                     if key in seen:
@@ -340,20 +359,6 @@ def _build_lines_from_brassins(
 
                     # Quantité pré-remplie depuis productions existantes
                     qty = _existing_qty.get((prod_label.lower(), fc["fmt_str"]), 0)
-
-                    # Référence : d'abord EasyBeer (code-barre matrice), puis CSV fallback
-                    ref = ""
-                    poids_carton = 0.0
-                    if cb_lookup and id_produit:
-                        cb_key = (id_produit, fc["id_contenant"], fc["id_lot"])
-                        ref = cb_lookup.get(cb_key, "")
-
-                    # Poids depuis le catalogue CSV (+ ref fallback si EasyBeer n'a rien)
-                    lk = _csv_lookup(catalog, gout, fc["fmt_str"], prod_label)
-                    if lk:
-                        if not ref:
-                            ref = lk[0]
-                        poids_carton = lk[1]
 
                     meta_by_label[label] = {
                         "_format": fc["fmt_str"],
