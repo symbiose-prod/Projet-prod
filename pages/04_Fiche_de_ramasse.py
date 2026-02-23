@@ -262,11 +262,15 @@ def _build_lines_from_brassins(
 
         # DDM calculée = date début fermentation + 365 jours
         ddm_date = _today_paris() + dt.timedelta(days=365)
-        date_debut_str = detail.get("dateDebutFormulaire") or ""
-        if date_debut_str:
+        _raw_debut = detail.get("dateDebutFormulaire")
+        if _raw_debut:
             try:
-                ddm_date = dt.date.fromisoformat(date_debut_str[:10]) + dt.timedelta(days=365)
-            except (ValueError, TypeError):
+                if isinstance(_raw_debut, (int, float)):
+                    # Timestamp Unix en millisecondes → date
+                    ddm_date = dt.date.fromtimestamp(_raw_debut / 1000) + dt.timedelta(days=365)
+                else:
+                    ddm_date = dt.date.fromisoformat(str(_raw_debut)[:10]) + dt.timedelta(days=365)
+            except (ValueError, TypeError, OSError):
                 pass
 
         # Index des quantités existantes : (prod_libelle_lower, fmt_str) → quantité
