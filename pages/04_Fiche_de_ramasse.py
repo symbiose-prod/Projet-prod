@@ -19,6 +19,7 @@ from common.easybeer import (
     get_brassin_detail,
     get_planification_matrice,
     get_warehouses,
+    get_code_barre_matrice,
 )
 
 
@@ -175,10 +176,33 @@ def _fetch_brassins_en_cours():
     return get_brassins_en_cours()
 
 
+@st.cache_data(ttl=300, show_spinner="Chargement des codes-barres…")
+def _fetch_code_barre_matrice() -> dict[tuple[int, int, int], str]:
+    """
+    Charge la matrice codes-barres et retourne un index :
+      (idProduit, idContenant, idLot) → code-barre (6 derniers chiffres)
+    """
+    data = get_code_barre_matrice()
+    lookup: dict[tuple[int, int, int], str] = {}
+    for prod_entry in data.get("produits", []):
+        for cb in prod_entry.get("codesBarres", []):
+            code_raw = str(cb.get("code") or "")
+            id_produit = (cb.get("modeleProduit") or {}).get("idProduit")
+            id_cont = (cb.get("modeleContenant") or {}).get("idContenant")
+            id_lot = (cb.get("modeleLot") or {}).get("idLot")
+            if id_produit and id_cont and id_lot and code_raw:
+                digits = re.sub(r"\D+", "", code_raw)
+                ref6 = digits[-6:] if len(digits) >= 6 else digits
+                if ref6:
+                    lookup[(id_produit, id_cont, id_lot)] = ref6
+    return lookup
+
+
 def _build_lines_from_brassins(
     selected_brassins: list[dict],
     catalog: pd.DataFrame,
     id_entrepot: int | None,
+    cb_lookup: dict[tuple[int, int, int], str] | None = None,
 ) -> tuple[list[dict], dict]:
     """
     Pour chaque brassin sélectionné, charge la MATRICE EasyBeer pour récupérer
@@ -305,6 +329,8 @@ def _build_lines_from_brassins(
                     continue
                 gout = _extract_gout_from_product(prod_label)
 
+                id_produit = prod.get("idProduit")
+
                 for fc in _format_combos:
                     label = f"{prod_label} — {fc['fmt_str']}cl"
                     key = label.lower()
@@ -315,12 +341,19 @@ def _build_lines_from_brassins(
                     # Quantité pré-remplie depuis productions existantes
                     qty = _existing_qty.get((prod_label.lower(), fc["fmt_str"]), 0)
 
-                    # Référence et poids depuis le catalogue CSV
+                    # Référence : d'abord EasyBeer (code-barre matrice), puis CSV fallback
                     ref = ""
                     poids_carton = 0.0
+                    if cb_lookup and id_produit:
+                        cb_key = (id_produit, fc["id_contenant"], fc["id_lot"])
+                        ref = cb_lookup.get(cb_key, "")
+
+                    # Poids depuis le catalogue CSV (+ ref fallback si EasyBeer n'a rien)
                     lk = _csv_lookup(catalog, gout, fc["fmt_str"], prod_label)
                     if lk:
-                        ref, poids_carton = lk
+                        if not ref:
+                            ref = lk[0]
+                        poids_carton = lk[1]
 
                     meta_by_label[label] = {
                         "_format": fc["fmt_str"],
@@ -439,8 +472,15 @@ if not _eb_configured():
     st.warning("EasyBeer n'est pas configuré (variables EASYBEER_API_USER / EASYBEER_API_PASS manquantes).")
     st.stop()
 
-# Charger le catalogue (uniquement pour références et poids)
+# Charger le catalogue CSV (fallback poids carton)
 catalog = _load_catalog(INFO_CSV_PATH)
+
+# Charger les codes-barres EasyBeer
+_cb_lookup: dict[tuple[int, int, int], str] | None = None
+try:
+    _cb_lookup = _fetch_code_barre_matrice()
+except Exception:
+    pass
 
 # Charger les brassins en cours
 try:
@@ -496,7 +536,7 @@ rows: list[dict] = []
 
 if _selected_brassins:
     with st.spinner("Chargement des détails brassins…"):
-        rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog, _id_entrepot)
+        rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog, _id_entrepot, _cb_lookup)
 else:
     st.info("Sélectionne au moins un brassin pour construire la fiche.")
 
@@ -509,6 +549,7 @@ with st.sidebar:
     if st.button("🔄 Recharger", use_container_width=True):
         _load_catalog.clear()
         _fetch_brassins_en_cours.clear()
+        _fetch_code_barre_matrice.clear()
         st.rerun()
 
     st.caption(f"DATE DE CRÉATION : **{date_creation.strftime('%d/%m/%Y')}**")

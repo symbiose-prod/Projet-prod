@@ -473,6 +473,39 @@ def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
         return {"status": "ok"}
 
 
+def get_code_barre_matrice() -> dict[str, Any]:
+    """
+    GET /parametres/code-barre/matrice
+    → Matrice complète des codes-barres par produit.
+
+    Réponse : ModeleMatriceCodeBarre
+      {
+        "produits": [
+          {
+            "modeleProduit": {"idProduit": 123, "libelle": "Kéfir Gingembre", ...},
+            "codesBarres": [
+              {
+                "code": "3770014427014",
+                "id": 456,
+                "modeleContenant": {"idContenant": 1, "contenance": 0.33, ...},
+                "modeleLot": {"idLot": 5, "libelle": "Carton de 12", ...},
+                "modeleProduit": {"idProduit": 123, ...}
+              }
+            ]
+          }
+        ],
+        "conditionnements": [...]
+      }
+    """
+    r = requests.get(
+        f"{BASE}/parametres/code-barre/matrice",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
 def upload_fichier_brassin(
     id_brassin: int,
     file_bytes: bytes,
