@@ -282,22 +282,10 @@ def _build_lines_from_brassins(
         packagings_raw = matrice.get("packagings", [])
         produits_derives = matrice.get("produitsDerives", [])
 
-        # Construire la liste des formats valides (contenant → packaging)
-        # Chaque format = (id_contenant, cont_label, id_lot, pkg_label, fmt_str)
+        # Construire TOUS les combos contenant × packaging.
+        # Le filtrage par code-barre EasyBeer éliminera les combos invalides.
+        # Ex : SAFT peut être en Pack de 4 (Kéfir) OU Carton de 6 (NIKO).
         _format_combos: list[dict] = []
-
-        # Index packagings par mots-clés
-        _pkg_by_key: dict[str, dict] = {}
-        for pk in packagings_raw:
-            lbl = (pk.get("libelle") or "").strip().lower()
-            _pkg_by_key[lbl] = pk
-
-        def _find_pkg(keyword: str) -> dict | None:
-            """Trouve un packaging dont le libellé contient le mot-clé."""
-            for lbl, pk in _pkg_by_key.items():
-                if keyword in lbl:
-                    return pk
-            return None
 
         for mc_entry in contenants_raw:
             mod = mc_entry.get("modeleContenant") or {}
@@ -305,24 +293,23 @@ def _build_lines_from_brassins(
             id_cont = mod.get("idContenant")
             cont_label = (mod.get("libelleAvecContenance") or mod.get("libelle") or "").strip()
 
-            if contenance == 0.33:
-                pkg = _find_pkg("carton de 12")
-                fmt_str = "12x33"
-            elif "saft" in cont_label.lower():
-                pkg = _find_pkg("pack de 4")
-                fmt_str = "4x75"
-            elif contenance == 0.75:
-                pkg = _find_pkg("carton de 6")
-                fmt_str = "6x75"
-            else:
-                continue  # format non géré
+            if contenance not in (0.33, 0.75):
+                continue
+            vol_cl = int(contenance * 100)  # 33 ou 75
 
-            if pkg and id_cont:
+            for pkg in packagings_raw:
+                pkg_label = (pkg.get("libelle") or "").strip()
+                m_pkg = re.search(r"(\d+)", pkg_label)
+                if not m_pkg:
+                    continue
+                pkg_count = int(m_pkg.group(1))
+                fmt_str = f"{pkg_count}x{vol_cl}"
+
                 _format_combos.append({
                     "id_contenant": id_cont,
                     "cont_label": cont_label,
                     "id_lot": pkg.get("idLot"),
-                    "pkg_label": (pkg.get("libelle") or "").strip(),
+                    "pkg_label": pkg_label,
                     "fmt_str": fmt_str,
                 })
 
