@@ -542,8 +542,11 @@ else:
                     errors = []
                     for g in _gouts_eb:
                         vol_l = _vol_par_gout.get(g, 0)
+                        # Nom court : K + 2 premières lettres du goût + DDMMYYYY
+                        _date_obj = _dt.date.fromisoformat(_semaine_du_eb)
+                        _code = "K" + g[:2].upper() + _date_obj.strftime("%d%m%Y")
                         payload = {
-                            "nom": f"Brassin {g} — {_semaine_du_eb}",
+                            "nom": _code,
                             "volume": vol_l,
                             "dateDebutFormulaire": f"{_semaine_du_eb}T07:30:00.000Z",
                             "dateConditionnementPrevue": f"{_date_embouteillage.isoformat()}T23:00:00.000Z",
