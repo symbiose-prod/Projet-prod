@@ -4,136 +4,19 @@ from common.session import require_login, user_menu, user_menu_footer
 user = require_login()  # stoppe la page si non connecté
 user_menu()             # nav custom (le bouton logout est dans le footer)
 
-import os, re, datetime as dt, unicodedata
+import os, re, datetime as dt, unicodedata, base64
 import pandas as pd
 import streamlit as st
 from dateutil.tz import gettz
+from pathlib import Path
 
 from common.design import apply_theme, section, kpi
 from common.xlsx_fill import build_bl_enlevements_pdf
 from common.email import send_html_with_pdf, _get
 from common.easybeer import is_configured as _eb_configured, get_brassins_en_cours, get_brassin_detail
-from pathlib import Path
 
 
-# ================================ Normalisation ===============================
-
-def _norm(s: str) -> str:
-    # normalise unicode + nettoie espaces/insécables + remplace le signe '×' par 'x'
-    s = str(s or "")
-    s = s.replace("\u00a0", " ").replace("×", "x")
-    s = unicodedata.normalize("NFKC", s)
-    s = re.sub(r"\s+", " ", s)
-    return s.strip()
-
-def _build_opts_from_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
-    """
-    Construit la liste de TOUS les produits du CSV (manuel), sans dédup agressive,
-    en normalisant Produit/Format pour éviter les caractères piégeux.
-    """
-    if catalog is None or catalog.empty:
-        return pd.DataFrame(columns=["label","gout","format","prod_hint"])
-
-    rows = []
-    for _, r in catalog.iterrows():
-        gout = _norm(r.get("Produit", ""))
-        fmt  = _norm(r.get("Format", ""))
-        des  = _norm(r.get("Désignation", ""))
-        if not (gout and fmt):
-            continue
-        rows.append({
-            "label": f"{gout} — {fmt}",
-            "gout": gout,
-            "format": fmt,
-            "prod_hint": des,
-        })
-    return pd.DataFrame(rows).sort_values(by="label").reset_index(drop=True)
-
-
-import base64
-
-def _inline_img_from_repo(rel_path: str) -> str:
-    """
-    Charge un PNG du repo et le retourne en <img src="data:...">.
-    Si le fichier n'existe pas, retourne "".
-    """
-    p = Path(rel_path)
-    if not p.exists():
-        return ""
-    try:
-        data = p.read_bytes()
-        b64 = base64.b64encode(data).decode("ascii")
-        return f'<img src="data:image/png;base64,{b64}" style="height:40px;margin-right:8px;" alt="">'
-    except Exception:
-        return ""
-
-def send_mail_with_pdf(
-    pdf_bytes: bytes,
-    filename: str,
-    total_palettes: int,
-    to_list: list[str],
-    date_ramasse: dt.date,
-    bcc_me: bool = True,
-):
-    """
-    Même logique qu'avant (un mail par destinataire), mais HTML enrichi
-    + logos du repo.
-    """
-    subject = f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
-
-    # corps principal
-    body_html = f"""
-    <p>Bonjour,</p>
-    <p>Nous aurions besoin d'une ramasse pour demain.<br>
-    Pour <strong>{total_palettes}</strong> palette{'s' if total_palettes != 1 else ''}.</p>
-    <p>Merci,<br>Bon après-midi.</p>
-    """
-
-    # logos inline
-    logo_symbiose = _inline_img_from_repo("assets/signature/logo_symbiose.png")
-    logo_niko     = _inline_img_from_repo("assets/signature/NIKO_Logo.png")
-
-    # signature custom (on ne dépend plus de html_signature())
-    signature_html = f"""
-    <hr>
-    <p style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-        <strong>Ferment Station</strong><br>
-        Producteur de boissons fermentées<br>
-        26 Rue Robert Witchitz – 94200 Ivry-sur-Seine<br>
-        <a href="tel:+33971227895">09 71 22 78 95</a>
-    </p>
-    <p>{logo_symbiose}{logo_niko}</p>
-    """
-
-    html = body_html + signature_html
-
-    # éventuel BCC expéditeur (comme avant)
-    sender = _get("EMAIL_SENDER")
-    recipients = list(to_list)
-    if bcc_me and sender and sender not in recipients:
-        recipients.append(sender)
-
-    # on ENVOIE exactement comme avant
-    for rcpt in recipients:
-        send_html_with_pdf(
-            to_email=rcpt,
-            subject=subject,
-            html_body=html,
-            attachments=[(filename, pdf_bytes)],
-        )
-
-# ================================ Réglages ====================================
-
-INFO_CSV_PATH = "info_FDR.csv"
-TEMPLATE_XLSX_PATH = "assets/BL_enlevements_Sofripa.xlsx"
-
-DEST_TITLE = "SOFRIPA"
-DEST_LINES = [
-    "ZAC du Haut de Wissous II,",
-    "Rue Hélène Boucher, 91320 Wissous",
-]
-
-# ================================ Utils =======================================
+# ================================ Utilitaires ===============================
 
 def _today_paris() -> dt.date:
     return dt.datetime.now(gettz("Europe/Paris")).date()
@@ -147,10 +30,15 @@ def _canon(s: str) -> str:
     s = re.sub(r"[^a-z0-9]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
+def _norm(s: str) -> str:
+    s = str(s or "")
+    s = s.replace("\u00a0", " ").replace("×", "x")
+    s = unicodedata.normalize("NFKC", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
 def _format_from_stock(stock_txt: str) -> str | None:
-    """
-    Détecte 12x33 / 6x75 / 4x75 dans un libellé de Stock.
-    """
+    """Détecte 12x33 / 6x75 / 4x75 dans un libellé de Stock ou conditionnement."""
     if not stock_txt:
         return None
     s = str(stock_txt).lower().replace("×", "x").replace("\u00a0", " ")
@@ -169,129 +57,12 @@ def _format_from_stock(stock_txt: str) -> str | None:
     if vol == 75 and nb == 4:  return "4x75"
     return None
 
-@st.cache_data(show_spinner=False)
-def _load_catalog(path: str) -> pd.DataFrame:
-    """
-    Lit info_FDR.csv et prépare colonnes auxiliaires pour le matching.
-    """
-    if not os.path.exists(path):
-        return pd.DataFrame(columns=["Produit","Format","Désignation","Code-barre","Poids"])
-
-    df = pd.read_csv(path, encoding="utf-8")
-    for c in ["Produit","Format","Désignation","Code-barre"]:
-        if c in df.columns:
-            df[c] = df[c].astype(str).str.strip()
-
-    if "Poids" in df.columns:
-        df["Poids"] = (
-            df["Poids"].astype(str).str.replace(",", ".", regex=False)
-        )
-        df["Poids"] = pd.to_numeric(df["Poids"], errors="coerce")
-
-    df["_format_norm"] = df.get("Format","").astype(str).str.lower()
-    df["_format_norm"] = df["_format_norm"].str.replace("cl","", regex=False).str.replace(" ", "", regex=False)
-
-    df["_canon_prod"] = df.get("Produit","").map(_canon)
-    df["_canon_des"]  = df.get("Désignation","").map(lambda s: _canon(re.sub(r"\(.*?\)", "", s)))
-    df["_canon_full"] = (df.get("Produit","").fillna("") + " " + df.get("Désignation","").fillna("")).map(_canon)
-
-    return df
-
-def _csv_lookup(catalog: pd.DataFrame, gout_canon: str, fmt_label: str, prod_hint: str | None = None) -> tuple[str, float] | None:
-    """
-    Retourne (référence_6_chiffres, poids_carton) via :
-      - format (12x33 / 6x75 / 4x75)
-      - + goût canonisé
-      - + (optionnel) 'prod_hint' pour privilégier une marque/ligne précise (ex. NIKO)
-    Cette version évite de choisir un 'water kefir ...' quand on veut un kéfir classique.
-    """
-    if catalog is None or catalog.empty or not fmt_label:
-        return None
-
-    # normalisation du format demandé
-    fmt_norm = (
-        fmt_label.lower()
-        .replace("cl", "")
-        .replace(" ", "")
-    )
-
-    g_can = _canon(gout_canon)
-
-    # 1. on essaie d'abord l'égalité stricte sur le format normalisé
-    cand = catalog[catalog["_format_norm"] == fmt_norm]
-
-    # 2. fallback : comportement d'origine (contains) si rien trouvé
-    if cand.empty:
-        cand = catalog[catalog["_format_norm"].str.contains(fmt_norm, na=False)]
-
-    if cand.empty:
-        return None
-
-    # tokens du produit d'origine (pour NIKO, gamme, etc.)
-    hint_tokens: list[str] = []
-    if prod_hint:
-        hint_tokens = [t for t in _canon(prod_hint).split() if t]
-
-    def score_row(row) -> int:
-        full = str(row.get("_canon_full") or "")
-        prod = str(row.get("_canon_prod") or "")
-
-        score = 0
-
-        # 1) match goût / produit
-        if prod == g_can:
-            # cas idéal
-            score += 100
-        elif g_can and (g_can in prod or prod in g_can):
-            # proche
-            score += 70
-
-        # 2) prise en compte du hint
-        if hint_tokens:
-            if all(tok in full for tok in hint_tokens):
-                score += 25
-            elif any(tok in full for tok in hint_tokens):
-                score += 10
-
-        # 3) bonus pour la gamme "kefir ..." (pas water)
-        if full.startswith("kefir ") or full.startswith("kefir de fruits"):
-            score += 5
-
-        # 4) on déduit wants_water UNIQUEMENT du goût canonisé
-        wants_water = "water" in g_can
-        
-        # malus si on ne veut PAS water mais la ligne est water kefir
-        if not wants_water and "water kefir" in full:
-            score -= 30
-        
-        # bonus si on veut water et que la ligne est water kefir
-        if wants_water and "water kefir" in full:
-            score += 10
-        
-        # petit malus générique pour les lignes "INTER -" quand on ne veut pas water
-        if "inter" in full and not wants_water:
-            score -= 5
-
-        return score
-
-    cand_scored = cand.copy()
-    cand_scored["_sc"] = cand_scored.apply(score_row, axis=1)
-    cand_scored = cand_scored.sort_values(by="_sc", ascending=False)
-
-    row = cand_scored.iloc[0]
-
-    code = re.sub(r"\D+", "", str(row.get("Code-barre", "")))
-    ref6 = code[-6:] if len(code) >= 6 else code
-    poids = float(row.get("Poids") or 0.0)
-
-    return (ref6, poids) if ref6 else None
-
 
 def _extract_gout_from_product(product_label: str) -> str:
     """
     Extrait le goût depuis le libellé produit EasyBeer.
-    'Kéfir Gingembre'                → 'Gingembre'
-    'Kéfir de fruits Original'       → 'Original'
+    'Kéfir Gingembre'                     → 'Gingembre'
+    'Kéfir de fruits Original'            → 'Original'
     'Infusion probiotique Menthe Poivrée' → 'Menthe Poivrée'
     """
     label = str(product_label or "").strip()
@@ -307,6 +78,92 @@ def _extract_gout_from_product(product_label: str) -> str:
     return label
 
 
+# ================================ Catalogue CSV (ref + poids) ===============
+
+INFO_CSV_PATH = "info_FDR.csv"
+
+@st.cache_data(show_spinner=False)
+def _load_catalog(path: str) -> pd.DataFrame:
+    """Lit info_FDR.csv — utilisé uniquement pour code-barre et poids carton."""
+    if not os.path.exists(path):
+        return pd.DataFrame(columns=["Produit","Format","Désignation","Code-barre","Poids"])
+
+    df = pd.read_csv(path, encoding="utf-8")
+    for c in ["Produit","Format","Désignation","Code-barre"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip()
+
+    if "Poids" in df.columns:
+        df["Poids"] = df["Poids"].astype(str).str.replace(",", ".", regex=False)
+        df["Poids"] = pd.to_numeric(df["Poids"], errors="coerce")
+
+    df["_format_norm"] = df.get("Format","").astype(str).str.lower()
+    df["_format_norm"] = df["_format_norm"].str.replace("cl","", regex=False).str.replace(" ", "", regex=False)
+    df["_canon_prod"] = df.get("Produit","").map(_canon)
+    df["_canon_des"]  = df.get("Désignation","").map(lambda s: _canon(re.sub(r"\(.*?\)", "", s)))
+    df["_canon_full"] = (df.get("Produit","").fillna("") + " " + df.get("Désignation","").fillna("")).map(_canon)
+
+    return df
+
+
+def _csv_lookup(catalog: pd.DataFrame, gout_canon: str, fmt_label: str, prod_hint: str | None = None) -> tuple[str, float] | None:
+    """
+    Retourne (référence_6_chiffres, poids_carton) via format + goût canonisé.
+    """
+    if catalog is None or catalog.empty or not fmt_label:
+        return None
+
+    fmt_norm = fmt_label.lower().replace("cl", "").replace(" ", "")
+    g_can = _canon(gout_canon)
+
+    cand = catalog[catalog["_format_norm"] == fmt_norm]
+    if cand.empty:
+        cand = catalog[catalog["_format_norm"].str.contains(fmt_norm, na=False)]
+    if cand.empty:
+        return None
+
+    hint_tokens: list[str] = []
+    if prod_hint:
+        hint_tokens = [t for t in _canon(prod_hint).split() if t]
+
+    def score_row(row) -> int:
+        full = str(row.get("_canon_full") or "")
+        prod = str(row.get("_canon_prod") or "")
+        score = 0
+        if prod == g_can:
+            score += 100
+        elif g_can and (g_can in prod or prod in g_can):
+            score += 70
+        if hint_tokens:
+            if all(tok in full for tok in hint_tokens):
+                score += 25
+            elif any(tok in full for tok in hint_tokens):
+                score += 10
+        if full.startswith("kefir ") or full.startswith("kefir de fruits"):
+            score += 5
+        wants_water = "water" in g_can
+        if not wants_water and "water kefir" in full:
+            score -= 30
+        if wants_water and "water kefir" in full:
+            score += 10
+        if "inter" in full and not wants_water:
+            score -= 5
+        return score
+
+    cand_scored = cand.copy()
+    cand_scored["_sc"] = cand_scored.apply(score_row, axis=1)
+    cand_scored = cand_scored.sort_values(by="_sc", ascending=False)
+
+    row = cand_scored.iloc[0]
+    code = re.sub(r"\D+", "", str(row.get("Code-barre", "")))
+    ref6 = code[-6:] if len(code) >= 6 else code
+    poids = float(row.get("Poids") or 0.0)
+
+    return (ref6, poids) if ref6 else None
+
+
+# ================================ EasyBeer =================================
+
 @st.cache_data(ttl=120, show_spinner="Chargement des brassins EasyBeer…")
 def _fetch_brassins_en_cours():
     return get_brassins_en_cours()
@@ -316,8 +173,6 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
     """
     Pour chaque brassin sélectionné, récupère le détail et construit les lignes
     de la fiche de ramasse depuis productions[] ou planificationsProductions[].
-
-    Retourne (rows, meta_by_label) prêts pour le DataFrame.
     """
     rows = []
     meta_by_label: dict = {}
@@ -328,16 +183,15 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
         if not id_brassin:
             continue
 
-        # Goût depuis le produit parent du brassin
         brassin_produit = brassin_summary.get("produit") or {}
         gout_parent = _extract_gout_from_product(brassin_produit.get("libelle", ""))
 
         try:
             detail = get_brassin_detail(id_brassin)
         except Exception:
-            detail = brassin_summary  # fallback : utilise le résumé
+            detail = brassin_summary
 
-        # Prendre productions[] (réel) si non vide, sinon planificationsProductions[] (planifié)
+        # Prendre productions[] (réel) si non vide, sinon planificationsProductions[]
         productions = detail.get("productions") or []
         if not productions:
             productions = detail.get("planificationsProductions") or []
@@ -349,7 +203,6 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
                 quantite = int(prod_entry.get("quantite") or 0)
                 conditionnement = str(prod_entry.get("conditionnement") or "")
 
-                # DDM : différent selon productions vs planificationsProductions
                 ddm_str = (
                     prod_entry.get("dateLimiteUtilisationOptimaleFormulaire")
                     or prod_entry.get("dateLimiteUtilisationOptimale")
@@ -362,15 +215,11 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
                     except (ValueError, TypeError):
                         pass
 
-                # Format : depuis conditionnement ou depuis le libellé produit
                 fmt = _format_from_stock(conditionnement) or _format_from_stock(prod_label)
-
-                # Goût : extraire depuis prod_label ou utiliser le goût parent
                 gout = _extract_gout_from_product(prod_label) if prod_label else gout_parent
                 if not gout:
                     gout = gout_parent
 
-                # Label pour la fiche
                 label = prod_label if prod_label else f"{gout_parent} — {conditionnement or '?'}"
 
                 key = label.lower()
@@ -378,7 +227,6 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
                     continue
                 seen.add(key)
 
-                # Référence et poids depuis le catalogue
                 ref = ""
                 poids_carton = 0.0
                 if fmt:
@@ -400,12 +248,11 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
                     "Poids palettes (kg)": 0,
                 })
         else:
-            # Aucune production ni planification → ligne générique avec le goût parent
+            # Aucune production ni planification → ligne générique
             label = brassin_produit.get("libelle", f"Brassin {id_brassin}")
             if label.lower() not in seen:
                 seen.add(label.lower())
 
-                # Essayer de trouver les formats depuis le catalogue
                 formats_for_gout = []
                 if not catalog.empty:
                     g_can = _canon(gout_parent)
@@ -419,7 +266,6 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
                                     "des": _norm(cat_row.get("Désignation", "")),
                                 })
 
-                # DDM par défaut : dateDebutFormulaire + 365 jours
                 date_debut_str = detail.get("dateDebutFormulaire") or ""
                 ddm_date = _today_paris() + dt.timedelta(days=365)
                 if date_debut_str:
@@ -466,87 +312,136 @@ def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFr
     return rows, meta_by_label
 
 
-# ================================== UI =======================================
+# ================================ Email =====================================
+
+def _inline_img_from_repo(rel_path: str) -> str:
+    p = Path(rel_path)
+    if not p.exists():
+        return ""
+    try:
+        data = p.read_bytes()
+        b64 = base64.b64encode(data).decode("ascii")
+        return f'<img src="data:image/png;base64,{b64}" style="height:40px;margin-right:8px;" alt="">'
+    except Exception:
+        return ""
+
+def send_mail_with_pdf(
+    pdf_bytes: bytes,
+    filename: str,
+    total_palettes: int,
+    to_list: list[str],
+    date_ramasse: dt.date,
+    bcc_me: bool = True,
+):
+    subject = f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
+
+    body_html = f"""
+    <p>Bonjour,</p>
+    <p>Nous aurions besoin d'une ramasse pour demain.<br>
+    Pour <strong>{total_palettes}</strong> palette{'s' if total_palettes != 1 else ''}.</p>
+    <p>Merci,<br>Bon après-midi.</p>
+    """
+
+    logo_symbiose = _inline_img_from_repo("assets/signature/logo_symbiose.png")
+    logo_niko     = _inline_img_from_repo("assets/signature/NIKO_Logo.png")
+
+    signature_html = f"""
+    <hr>
+    <p style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+        <strong>Ferment Station</strong><br>
+        Producteur de boissons fermentées<br>
+        26 Rue Robert Witchitz – 94200 Ivry-sur-Seine<br>
+        <a href="tel:+33971227895">09 71 22 78 95</a>
+    </p>
+    <p>{logo_symbiose}{logo_niko}</p>
+    """
+
+    html = body_html + signature_html
+
+    sender = _get("EMAIL_SENDER")
+    recipients = list(to_list)
+    if bcc_me and sender and sender not in recipients:
+        recipients.append(sender)
+
+    for rcpt in recipients:
+        send_html_with_pdf(
+            to_email=rcpt,
+            subject=subject,
+            html_body=html,
+            attachments=[(filename, pdf_bytes)],
+        )
+
+
+# ================================ Réglages ==================================
+
+DEST_TITLE = "SOFRIPA"
+DEST_LINES = [
+    "ZAC du Haut de Wissous II,",
+    "Rue Hélène Boucher, 91320 Wissous",
+]
+
+DEFAULT_RECIPIENTS_FALLBACK = "z.dawam@sofripa.fr, nicolas@symbiose-kefir.fr, g.marlier@sofripa.fr, f.ricard@sofripa.fr, c.boulon@sofripa.fr, a.teixeira@sofripa.fr, prepa@sofripa.fr, annonces@sofripa.fr, exploitation@sofripa.fr, b.alves@sofripa.fr"
+
+
+# ================================== UI ======================================
 
 apply_theme("Fiche de ramasse — Ferment Station", "🚚")
 section("Fiche de ramasse", "🚚")
 
-# 0) Choix de la source
-_eb_ok = _eb_configured()
-source_options = (["Brassins EasyBeer", "Sélection manuelle"] if _eb_ok
-                  else ["Sélection manuelle"])
-source_mode = st.radio(
-    "Source des produits pour la fiche",
-    options=source_options,
-    horizontal=True,
-    key="ramasse_source_mode",
+# Garde : EasyBeer doit être configuré
+if not _eb_configured():
+    st.warning("EasyBeer n'est pas configuré (variables EASYBEER_API_USER / EASYBEER_API_PASS manquantes).")
+    st.stop()
+
+# Charger le catalogue (uniquement pour références et poids)
+catalog = _load_catalog(INFO_CSV_PATH)
+
+# Charger les brassins en cours
+try:
+    _all_brassins = _fetch_brassins_en_cours()
+except Exception as e:
+    st.error(f"Erreur de connexion à EasyBeer : {e}")
+    _all_brassins = []
+
+_brassins_valides = [b for b in _all_brassins if not b.get("annule")]
+
+if not _brassins_valides:
+    st.info("Aucun brassin en cours dans EasyBeer.")
+    st.stop()
+
+# Labels pour le multiselect
+def _brassin_label(b: dict) -> str:
+    nom = b.get("nom", "?")
+    prod = (b.get("produit") or {}).get("libelle", "?")
+    vol = b.get("volume", 0)
+    return f"{nom} — {prod} — {vol:.0f}L"
+
+_brassin_labels = [_brassin_label(b) for b in _brassins_valides]
+
+st.subheader("Sélection des brassins")
+selected_labels = st.multiselect(
+    "Brassins à inclure",
+    options=_brassin_labels,
+    default=[],
+    key="ramasse_eb_brassins",
 )
 
-# 1) Charger le catalogue (utile en tout mode pour les références/poids)
-catalog = _load_catalog(INFO_CSV_PATH)
-if catalog.empty:
-    st.warning("`info_FDR.csv` introuvable ou vide — références/poids non calculables.")
+_selected_brassins = [
+    _brassins_valides[_brassin_labels.index(lbl)]
+    for lbl in selected_labels
+    if lbl in _brassin_labels
+]
 
-# 2) Construire la liste des produits selon le mode
-_eb_mode = (source_mode == "Brassins EasyBeer")
 meta_by_label: dict = {}
 rows: list[dict] = []
 
-if _eb_mode:
-    # --- Mode EasyBeer : charger les brassins en cours ---
-    try:
-        _all_brassins = _fetch_brassins_en_cours()
-    except Exception as e:
-        st.error(f"Erreur de connexion à EasyBeer : {e}")
-        _all_brassins = []
-
-    # Filtrer : non annulés
-    _brassins_valides = [
-        b for b in _all_brassins
-        if not b.get("annule")
-    ]
-
-    if not _brassins_valides:
-        st.info("Aucun brassin en cours dans EasyBeer.")
-        st.stop()
-
-    # Labels pour le multiselect
-    def _brassin_label(b: dict) -> str:
-        nom = b.get("nom", "?")
-        prod = (b.get("produit") or {}).get("libelle", "?")
-        vol = b.get("volume", 0)
-        return f"{nom} — {prod} — {vol:.0f}L"
-
-    _brassin_labels = [_brassin_label(b) for b in _brassins_valides]
-
-    st.subheader("Sélection des brassins")
-    selected_labels = st.multiselect(
-        "Brassins à inclure",
-        options=_brassin_labels,
-        default=[],
-        key="ramasse_eb_brassins",
-    )
-
-    _selected_brassins = [
-        _brassins_valides[_brassin_labels.index(lbl)]
-        for lbl in selected_labels
-        if lbl in _brassin_labels
-    ]
-
-    if _selected_brassins:
-        with st.spinner("Chargement des détails brassins…"):
-            rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog)
-    else:
-        st.info("Sélectionne au moins un brassin pour construire la fiche.")
-
+if _selected_brassins:
+    with st.spinner("Chargement des détails brassins…"):
+        rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog)
 else:
-    # --- Mode Sélection manuelle (inchangé) ---
-    opts_df = _build_opts_from_catalog(catalog)
-    if opts_df.empty:
-        st.error("Aucun produit détecté (vérifie `info_FDR.csv`).")
-        st.stop()
+    st.info("Sélectionne au moins un brassin pour construire la fiche.")
 
-# 3) Sidebar : dates + actions + footer
+# Sidebar
 with st.sidebar:
     st.header("Paramètres")
     date_creation = _today_paris()
@@ -554,46 +449,14 @@ with st.sidebar:
 
     if st.button("🔄 Recharger", use_container_width=True):
         _load_catalog.clear()
-        if _eb_mode:
-            _fetch_brassins_en_cours.clear()
+        _fetch_brassins_en_cours.clear()
         st.rerun()
 
-    if not _eb_mode:
-        ddm_manual = st.date_input("DDM par défaut (manuel)", value=_today_paris())
     st.caption(f"DATE DE CRÉATION : **{date_creation.strftime('%d/%m/%Y')}**")
-
     st.markdown("---")
     user_menu_footer(user)
 
-# 4) Mode manuel : sélection + construction des lignes
-if not _eb_mode and not opts_df.empty:
-    st.subheader("Sélection des produits")
-    selection_labels = st.multiselect(
-        "Produits à inclure (Goût — Format)",
-        options=opts_df["label"].tolist(),
-        default=[],
-    )
-    for lab in selection_labels:
-        row_opt = opts_df.loc[opts_df["label"] == lab].iloc[0]
-        gout = row_opt["gout"]
-        fmt = row_opt["format"]
-        prod_hint = row_opt.get("prod_hint") or row_opt.get("label")
-        ref = ""
-        poids_carton = 0.0
-        lk = _csv_lookup(catalog, gout, fmt, prod_hint)
-        if lk:
-            ref, poids_carton = lk
-        meta_by_label[lab] = {"_format": fmt, "_poids_carton": poids_carton, "_reference": ref}
-        rows.append({
-            "Référence": ref,
-            "Produit (goût + format)": lab,
-            "DDM": ddm_manual,
-            "Quantité cartons": 0,
-            "Quantité palettes": 0,
-            "Poids palettes (kg)": 0,
-        })
-
-# 5) Table éditable (commune aux deux modes)
+# Table éditable
 display_cols = ["Référence", "Produit (goût + format)", "DDM", "Quantité cartons", "Quantité palettes", "Poids palettes (kg)"]
 base_df = pd.DataFrame(rows, columns=display_cols) if rows else pd.DataFrame(columns=display_cols)
 
@@ -614,7 +477,7 @@ if not base_df.empty:
 else:
     edited = base_df
 
-# 6) Calculs
+# Calculs poids
 def _apply_calculs(df_disp: pd.DataFrame) -> pd.DataFrame:
     out = df_disp.copy()
     poids = []
@@ -640,7 +503,7 @@ with c2: kpi("Total palettes", f"{tot_palettes}")
 with c3: kpi("Poids total (kg)", f"{tot_poids:,}".replace(",", " "))
 st.dataframe(df_calc[display_cols], use_container_width=True, hide_index=True)
 
-# 7-bis) Téléchargement PDF
+# Téléchargement PDF
 if st.button("🧾 Télécharger la version PDF", use_container_width=True):
     if tot_cartons <= 0:
         st.error("Renseigne au moins une **Quantité cartons** > 0.")
@@ -671,90 +534,68 @@ if st.button("🧾 Télécharger la version PDF", use_container_width=True):
             st.error(f"Erreur PDF : {e}")
 
 # ======================== ENVOI PAR E-MAIL ====================================
-# 1) Total palettes
-PALETTE_COL_CANDIDATES = ["Quantité palettes", "N° palettes", "Nb palettes", "Quantite palettes"]
-pal_col = next((c for c in PALETTE_COL_CANDIDATES if c in df_calc.columns), None)
-if pal_col is None:
-    st.error("Colonne des palettes introuvable dans df_calc. Renomme une des colonnes en " + ", ".join(PALETTE_COL_CANDIDATES))
-else:
-    total_palettes = int(pd.to_numeric(df_calc[pal_col], errors="coerce").fillna(0).sum())
 
-    # 2) Récup PDF (ou possibilité de régénérer si absent)
-    pdf_bytes = st.session_state.get("fiche_ramasse_pdf")
+total_palettes = tot_palettes  # alias pour l'email
+pdf_bytes = st.session_state.get("fiche_ramasse_pdf")
 
-       # --- 3) UI destinataires (pré-remplie et persistante) ---
+sender_hint = os.environ.get("EMAIL_SENDER") or os.environ.get("EMAIL_USER")
 
-    # 1) Détermine des destinataires par défaut
-    #    ordre de priorité :
-    #    - EMAIL_RECIPIENTS (env / secrets) -> ex: "a@x.com,b@y.com"
-    #    - fallback local ci-dessous (à adapter)
-    DEFAULT_RECIPIENTS_FALLBACK = "z.dawam@sofripa.fr, nicolas@symbiose-kefir.fr, g.marlier@sofripa.fr, f.ricard@sofripa.fr, c.boulon@sofripa.fr, a.teixeira@sofripa.fr, prepa@sofripa.fr, annonces@sofripa.fr, exploitation@sofripa.fr, b.alves@sofripa.fr"
+if "ramasse_email_to" not in st.session_state or not st.session_state["ramasse_email_to"].strip():
+    st.session_state["ramasse_email_to"] = DEFAULT_RECIPIENTS_FALLBACK
 
-    sender_hint = os.environ.get("EMAIL_SENDER") or os.environ.get("EMAIL_USER")
-    rec_list = []
+to_input = st.text_input(
+    "Destinataires (séparés par des virgules)",
+    key="ramasse_email_to",
+)
 
+def _parse_emails(s: str) -> list[str]:
+    return [e.strip() for e in (s or "").split(",") if e.strip()]
 
-    # 2) Initialise le state UNE FOIS avec une vraie valeur (pas un placeholder)
-    if "ramasse_email_to" not in st.session_state or not st.session_state["ramasse_email_to"].strip():
-        st.session_state["ramasse_email_to"] = (
-            ", ".join(rec_list) if rec_list else DEFAULT_RECIPIENTS_FALLBACK
-        )
+to_list = _parse_emails(st.session_state.get("ramasse_email_to", ""))
 
-    # 3) Champ lié au state (valeur réelle)
-    to_input = st.text_input(
-        "Destinataires (séparés par des virgules)",
-        key="ramasse_email_to",
-    )
+if sender_hint:
+    st.caption(f"Expéditeur utilisé : **{sender_hint}**")
 
-    def _parse_emails(s: str) -> list[str]:
-        return [e.strip() for e in (s or "").split(",") if e.strip()]
-
-    to_list = _parse_emails(st.session_state.get("ramasse_email_to", ""))
-
-    if sender_hint:
-        st.caption(f"Expéditeur utilisé : **{sender_hint}**")
-
-    # Envoi
-    if st.button("✉️ Envoyer la demande de ramasse", type="primary", use_container_width=True):
-        if pdf_bytes is None:
-            if tot_cartons <= 0:
-                st.error("Le PDF n'est pas prêt et aucun carton n'est saisi. Renseigne au moins une quantité > 0 puis clique à nouveau.")
-                st.stop()
-            try:
-                df_for_export = df_calc[display_cols].copy()
-                if not pd.api.types.is_string_dtype(df_for_export["DDM"]):
-                    df_for_export["DDM"] = df_for_export["DDM"].apply(
-                        lambda d: d.strftime("%d/%m/%Y") if hasattr(d, "strftime") else str(d)
-                    )
-                pdf_bytes = build_bl_enlevements_pdf(
-                    date_creation=_today_paris(),
-                    date_ramasse=date_ramasse,
-                    destinataire_title=DEST_TITLE,
-                    destinataire_lines=DEST_LINES,
-                    df_lines=df_for_export,
+if st.button("✉️ Envoyer la demande de ramasse", type="primary", use_container_width=True):
+    if pdf_bytes is None:
+        if tot_cartons <= 0:
+            st.error("Le PDF n'est pas prêt et aucun carton n'est saisi. Renseigne au moins une quantité > 0 puis clique à nouveau.")
+            st.stop()
+        try:
+            df_for_export = df_calc[display_cols].copy()
+            if not pd.api.types.is_string_dtype(df_for_export["DDM"]):
+                df_for_export["DDM"] = df_for_export["DDM"].apply(
+                    lambda d: d.strftime("%d/%m/%Y") if hasattr(d, "strftime") else str(d)
                 )
-                st.session_state["fiche_ramasse_pdf"] = pdf_bytes
-            except Exception as e:
-                st.error(f"Erreur PDF : {e}")
-                st.stop()
+            pdf_bytes = build_bl_enlevements_pdf(
+                date_creation=_today_paris(),
+                date_ramasse=date_ramasse,
+                destinataire_title=DEST_TITLE,
+                destinataire_lines=DEST_LINES,
+                df_lines=df_for_export,
+            )
+            st.session_state["fiche_ramasse_pdf"] = pdf_bytes
+        except Exception as e:
+            st.error(f"Erreur PDF : {e}")
+            st.stop()
 
-        if not to_list:
-            st.error("Indique au moins un destinataire.")
-        else:
-            try:
-                filename = f"Fiche_de_ramasse_{date_ramasse.strftime('%Y%m%d')}.pdf"
-                size_kb = len(pdf_bytes) / 1024
-                st.caption(f"Taille PDF : {size_kb:.0f} Ko")
+    if not to_list:
+        st.error("Indique au moins un destinataire.")
+    else:
+        try:
+            filename = f"Fiche_de_ramasse_{date_ramasse.strftime('%Y%m%d')}.pdf"
+            size_kb = len(pdf_bytes) / 1024
+            st.caption(f"Taille PDF : {size_kb:.0f} Ko")
 
-                send_mail_with_pdf(
-                    pdf_bytes=pdf_bytes,
-                    filename=filename,
-                    total_palettes=total_palettes,
-                    to_list=to_list,
-                    date_ramasse=date_ramasse,
-                    bcc_me=True
-                )
+            send_mail_with_pdf(
+                pdf_bytes=pdf_bytes,
+                filename=filename,
+                total_palettes=tot_palettes,
+                to_list=to_list,
+                date_ramasse=date_ramasse,
+                bcc_me=True
+            )
 
-                st.success(f"📨 Demande de ramasse envoyée à {len(to_list)} destinataire(s).")
-            except Exception as e:
-                st.error(f"Échec de l'envoi : {e}")
+            st.success(f"📨 Demande de ramasse envoyée à {len(to_list)} destinataire(s).")
+        except Exception as e:
+            st.error(f"Échec de l'envoi : {e}")
