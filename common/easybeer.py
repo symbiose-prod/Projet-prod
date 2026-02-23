@@ -498,7 +498,7 @@ def upload_fichier_brassin(
     r = requests.post(
         f"{BASE}/brassin/upload/{id_brassin}",
         params=params,
-        files={"fichier": (filename, file_bytes)},
+        files={"fichier": (filename, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
         auth=_auth(),
         timeout=TIMEOUT,
     )
