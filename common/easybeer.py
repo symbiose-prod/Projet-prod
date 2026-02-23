@@ -308,6 +308,25 @@ def get_warehouses() -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def get_product_detail(id_produit: int) -> dict[str, Any]:
+    """
+    GET /parametres/produit/edition/{idProduit}
+    → Détail complet d'un produit, incluant recettes et étapes.
+
+    Champs utiles :
+      - recettes[0].ingredients[]  → ingrédients avec quantités
+      - recettes[0].volumeRecette  → volume de référence de la recette (litres)
+      - etapes[]                   → étapes de production
+    """
+    r = requests.get(
+        f"{BASE}/parametres/produit/edition/{id_produit}",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
 def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     """
     POST /brassin/enregistrer

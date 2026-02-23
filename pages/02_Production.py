@@ -537,28 +537,77 @@ else:
                     st.rerun()
             else:
                 if st.button("🍺 Créer les brassins dans EasyBeer", type="primary", use_container_width=True, key="eb_create"):
-                    from common.easybeer import create_brassin
+                    from common.easybeer import create_brassin, get_product_detail
                     created_ids = []
                     errors = []
                     for g in _gouts_eb:
                         vol_l = _vol_par_gout.get(g, 0)
+                        id_produit = _selected_products[g]
+
                         # Nom court : Kéfir → K + 2 lettres goût ; Infusion → IP + 1 lettre goût
                         _date_obj = _dt.date.fromisoformat(_semaine_du_eb)
-                        _prod_label = next((p.get("libelle", "") for p in _eb_products if p.get("idProduit") == _selected_products[g]), "")
+                        _prod_label = next((p.get("libelle", "") for p in _eb_products if p.get("idProduit") == id_produit), "")
                         if "infusion" in _prod_label.lower():
                             _code = "IP" + g[:1].upper() + _date_obj.strftime("%d%m%Y")
                         else:
                             _code = "K" + g[:2].upper() + _date_obj.strftime("%d%m%Y")
+
+                        # Récupérer la recette du produit pour les ingrédients et étapes
+                        _ingredients = []
+                        _planif_etapes = []
+                        try:
+                            prod_detail = get_product_detail(id_produit)
+                            recettes = prod_detail.get("recettes") or []
+                            etapes = prod_detail.get("etapes") or []
+
+                            # Ingrédients : mise à l'échelle selon le volume du brassin
+                            if recettes:
+                                recette = recettes[0]
+                                vol_recette = recette.get("volumeRecette", 0)
+                                ratio = vol_l / vol_recette if vol_recette > 0 else 1
+                                for ing in recette.get("ingredients") or []:
+                                    _ingredients.append({
+                                        "idProduitIngredient": ing.get("idProduitIngredient"),
+                                        "matierePremiere": ing.get("matierePremiere"),
+                                        "quantite": round(ing.get("quantite", 0) * ratio, 2),
+                                        "ordre": ing.get("ordre", 0),
+                                        "unite": ing.get("unite"),
+                                        "brassageEtape": ing.get("brassageEtape"),
+                                        "modeleNumerosLots": [],
+                                    })
+
+                            # Étapes de production
+                            for et in etapes:
+                                _planif_etapes.append({
+                                    "produitEtape": {
+                                        "idProduitEtape": et.get("idProduitEtape"),
+                                        "brassageEtape": et.get("brassageEtape"),
+                                        "ordre": et.get("ordre"),
+                                        "duree": et.get("duree"),
+                                        "unite": et.get("unite"),
+                                        "etapeTerminee": False,
+                                        "etapeEnCours": False,
+                                    },
+                                    "materiel": {},
+                                })
+                        except Exception as e:
+                            st.warning(f"Impossible de charger la recette pour « {g} » : {e}")
+
                         payload = {
                             "nom": _code,
                             "volume": vol_l,
                             "dateDebutFormulaire": f"{_semaine_du_eb}T07:30:00.000Z",
                             "dateConditionnementPrevue": f"{_date_embouteillage.isoformat()}T23:00:00.000Z",
-                            "produit": {"idProduit": _selected_products[g]},
+                            "produit": {"idProduit": id_produit},
                             "type": {"code": "LOCALE"},
                             "deduireMatierePremiere": True,
                             "changementEtapeAutomatique": True,
                         }
+                        if _ingredients:
+                            payload["ingredients"] = _ingredients
+                        if _planif_etapes:
+                            payload["planificationsEtapes"] = _planif_etapes
+
                         try:
                             result = create_brassin(payload)
                             brassin_id = result.get("id", "?")
