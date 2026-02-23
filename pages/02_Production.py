@@ -605,6 +605,45 @@ else:
                         if _planif_etapes:
                             payload["planificationsEtapes"] = _planif_etapes
 
+                        # --- Planification de production (répartition par format) ---
+                        _planif_productions = []
+                        _df_min_eb = _sp_eb.get("df_min")
+                        if isinstance(_df_min_eb, pd.DataFrame) and not _df_min_eb.empty:
+                            _rows_gout = _df_min_eb[_df_min_eb["GoutCanon"].astype(str) == g]
+                            _ddm_iso = _sp_eb.get("ddm", "")
+                            for _, _r in _rows_gout.iterrows():
+                                _pn = str(_r.get("Produit", "")).strip()
+                                _ct = int(_r.get("Cartons à produire (arrondi)", 0))
+                                if _ct <= 0:
+                                    continue
+                                # Match produit EasyBeer (conditionné) par libellé
+                                _mp = None
+                                _pn_low = _pn.lower()
+                                for _p in _eb_products:
+                                    if _p.get("libelle", "").strip().lower() == _pn_low:
+                                        _mp = _p
+                                        break
+                                if not _mp:
+                                    # Fallback : match partiel (le libellé contient ou est contenu)
+                                    for _p in _eb_products:
+                                        if _pn_low in _p.get("libelle", "").lower():
+                                            _mp = _p
+                                            break
+                                if not _mp:
+                                    continue
+                                # Extraire le format (conditionnement) du nom produit
+                                _fm = re.search(r'(\d+)\s*[Xx]\s*(\d+)\s*[Cc][Ll]', _pn)
+                                _cond = f"{_fm.group(1)}x{_fm.group(2)}cl" if _fm else ""
+                                _planif_productions.append({
+                                    "produit": {"idProduit": _mp["idProduit"]},
+                                    "quantite": _ct,
+                                    "conditionnement": _cond,
+                                    "dateLimiteUtilisationOptimale": f"{_ddm_iso}T00:00:00.000Z" if _ddm_iso else "",
+                                    "volume": round(float(_r.get("Volume produit arrondi (hL)", 0)), 3),
+                                })
+                        if _planif_productions:
+                            payload["planificationsProductions"] = _planif_productions
+
                         try:
                             result = create_brassin(payload)
                             brassin_id = result.get("id", "?")
