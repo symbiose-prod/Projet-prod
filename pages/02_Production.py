@@ -545,7 +545,7 @@ else:
                         payload = {
                             "nom": f"Brassin {g} — {_semaine_du_eb}",
                             "volume": vol_l,
-                            "dateDebutFormulaire": f"{_semaine_du_eb}T00:00:00.000Z",
+                            "dateDebutFormulaire": f"{_semaine_du_eb}T07:30:00.000Z",
                             "dateConditionnementPrevue": f"{_date_embouteillage.isoformat()}T23:00:00.000Z",
                             "produit": {"idProduit": _selected_products[g]},
                             "type": {"code": "LOCALE"},
