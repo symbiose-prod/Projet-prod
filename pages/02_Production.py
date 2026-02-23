@@ -18,9 +18,6 @@ from core.optimizer import (
     compute_plan,
 )
 from common.xlsx_fill import fill_fiche_7000L_xlsx
-from common.storage import (
-    list_saved, save_snapshot, load_snapshot, delete_snapshot, MAX_SLOTS
-)
 
 # ====== Réglages modèle Excel ======
 # Mapping entre le choix UI et le fichier modèle à utiliser
@@ -624,101 +621,5 @@ else:
                     if errors:
                         for err in errors:
                             st.error(err)
-
-# ================== Mémoire longue (persistante, 4 entrées max) ==================
-st.subheader("Mémoire longue — propositions enregistrées")
-st.caption(f"Tu peux garder jusqu’à **{MAX_SLOTS}** propositions nommées, persistantes entre sessions.")
-
-coln1, coln2 = st.columns([2,1])
-default_name = ""
-if "saved_production" in st.session_state:
-    # nom par défaut : semaine du JJ-MM-YYYY + 2 premiers goûts
-    _sp = st.session_state["saved_production"]
-    try:
-        sd = _dt.date.fromisoformat(_sp["semaine_du"]).strftime("%d-%m-%Y")
-        g1 = (_sp.get("gouts") or [""])[0] if _sp.get("gouts") else ""
-        g2 = (_sp.get("gouts") or ["",""])[1] if _sp.get("gouts") else ""
-        default_name = f"{sd} — {g1}{(' + ' + g2) if g2 else ''}"
-    except Exception:
-        default_name = ""
-
-with coln1:
-    name_input = st.text_input("Nom de la proposition", value=default_name, placeholder="ex: 21-10-2025 — Gingembre + Mangue")
-with coln2:
-    if st.button("📌 Enregistrer dans la mémoire", use_container_width=True):
-        sp_cur = st.session_state.get("saved_production")
-        if not sp_cur:
-            st.error("Sauvegarde d’abord la production ci-dessus (bouton 💾).")
-        else:
-            ok, msg = save_snapshot(name_input, sp_cur)
-            (st.success if ok else st.error)(msg)
-
-saved_list = list_saved()
-if saved_list:
-    labels = [f"{it['name']} — ({it['semaine_du']})" if it.get("semaine_du") else it["name"] for it in saved_list]
-    sel = st.selectbox("Sélectionne une proposition enregistrée", options=labels, index=0)
-    idx = labels.index(sel)
-    picked = saved_list[idx]["name"]
-
-    # -------- Aperçu de la proposition sélectionnée (df_min sauvegardé) --------
-    sp_preview = load_snapshot(picked)
-    if sp_preview and isinstance(sp_preview.get("df_min"), pd.DataFrame) and not sp_preview["df_min"].empty:
-        with st.expander("👀 Aperçu de la proposition sélectionnée", expanded=False):
-            prev_df = sp_preview["df_min"].copy()
-
-            # Petits KPIs (comme pour le tableau courant)
-            prev_total_btl = int(pd.to_numeric(prev_df.get("Bouteilles à produire (arrondi)"), errors="coerce").fillna(0).sum()) if "Bouteilles à produire (arrondi)" in prev_df.columns else 0
-            prev_total_vol = float(pd.to_numeric(prev_df.get("Volume produit arrondi (hL)"), errors="coerce").fillna(0).sum()) if "Volume produit arrondi (hL)" in prev_df.columns else 0.0
-            pk1, pk2, pk3 = st.columns(3)
-            with pk1: kpi("Total bouteilles (sauvegardé)", f"{prev_total_btl:,}".replace(",", " "))
-            with pk2: kpi("Volume total (hL, sauvegardé)", f"{prev_total_vol:.2f}")
-            with pk3: kpi("Lignes", f"{len(prev_df)}")
-
-            # Image facultative comme dans le tableau principal
-            prev_df["_SKU?"] = prev_df["Produit"].apply(sku_guess)
-            prev_df["__img_path"] = [
-                find_image_path(images_dir, sku=sku_guess(p), flavor=g)
-                for p, g in zip(prev_df["Produit"], prev_df.get("GoutCanon", pd.Series(dtype=str)))
-            ]
-            prev_df["Image"] = prev_df["__img_path"].apply(load_image_bytes)
-
-            st.data_editor(
-                prev_df[[
-                    "Image","GoutCanon","Produit","Stock",
-                    "Cartons à produire (arrondi)","Bouteilles à produire (arrondi)",
-                    "Volume produit arrondi (hL)"
-                ]],
-                use_container_width=True,
-                hide_index=True,
-                disabled=True,
-                column_config={
-                    "Image": st.column_config.ImageColumn("Image", width="small"),
-                    "GoutCanon": "Goût",
-                    "Volume produit arrondi (hL)": st.column_config.NumberColumn(format="%.2f"),
-                },
-            )
-    else:
-        st.info("Aperçu indisponible pour cette proposition (df_min manquant ou vide).")
-
-    # -------- Actions --------
-    col_load, col_del, col_count = st.columns(3)
-    with col_load:
-        if st.button("▶️ Charger", use_container_width=True):
-            sp_loaded = load_snapshot(picked)
-            if sp_loaded:
-                st.session_state["saved_production"] = sp_loaded
-                st.success(f"Chargé : {picked}")
-
-    with col_del:
-        if st.button("🗑️ Supprimer", use_container_width=True):
-            if delete_snapshot(picked):
-                st.success("Supprimé.")
-            else:
-                st.error("Échec suppression.")
-
-    with col_count:
-        st.metric("Propositions stockées", f"{len(saved_list)}/{MAX_SLOTS}")
-else:
-    st.info("Aucune proposition enregistrée pour l’instant.")
 
 

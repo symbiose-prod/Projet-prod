@@ -12,7 +12,7 @@ from dateutil.tz import gettz
 from common.design import apply_theme, section, kpi
 from common.xlsx_fill import build_bl_enlevements_pdf
 from common.email import send_html_with_pdf, _get
-from common.storage import list_saved, load_snapshot
+from common.easybeer import is_configured as _eb_configured, get_brassins_en_cours, get_brassin_detail
 from pathlib import Path
 
 
@@ -84,7 +84,7 @@ def send_mail_with_pdf(
     # corps principal
     body_html = f"""
     <p>Bonjour,</p>
-    <p>Nous aurions besoin d’une ramasse pour demain.<br>
+    <p>Nous aurions besoin d'une ramasse pour demain.<br>
     Pour <strong>{total_palettes}</strong> palette{'s' if total_palettes != 1 else ''}.</p>
     <p>Merci,<br>Bon après-midi.</p>
     """
@@ -287,60 +287,183 @@ def _csv_lookup(catalog: pd.DataFrame, gout_canon: str, fmt_label: str, prod_hin
     return (ref6, poids) if ref6 else None
 
 
-def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
+def _extract_gout_from_product(product_label: str) -> str:
     """
-    Construit les options depuis la proposition sauvegardée, en ne gardant
-    que les produits dont le nombre de cartons à produire > 0.
+    Extrait le goût depuis le libellé produit EasyBeer.
+    'Kéfir Gingembre'                → 'Gingembre'
+    'Kéfir de fruits Original'       → 'Original'
+    'Infusion probiotique Menthe Poivrée' → 'Menthe Poivrée'
     """
-    if df_min_saved is None or df_min_saved.empty:
-        return pd.DataFrame(columns=["label", "gout", "format", "prod_hint"])
+    label = str(product_label or "").strip()
+    for prefix in [
+        "Infusion de Kéfir de fruits",
+        "Infusion de Kéfir",
+        "Infusion probiotique",
+        "Kéfir de fruits",
+        "Kéfir",
+    ]:
+        if label.lower().startswith(prefix.lower()):
+            return label[len(prefix):].strip()
+    return label
 
-    CAND_QTY_COLS = [
-        "Cartons à produire (arrondi)",
-        "Cartons à produire",
-        "CartonsArrondis",
-        "Cartons_produire",
-        "Cartons",
-    ]
-    qty_col = next((c for c in CAND_QTY_COLS if c in df_min_saved.columns), None)
 
-    df_src = df_min_saved.copy()
-    if qty_col:
-        qty = pd.to_numeric(df_src[qty_col], errors="coerce").fillna(0)
-        df_src = df_src[qty > 0]
+@st.cache_data(ttl=120, show_spinner="Chargement des brassins EasyBeer…")
+def _fetch_brassins_en_cours():
+    return get_brassins_en_cours()
 
-    if df_src.empty:
-        return pd.DataFrame(columns=["label", "gout", "format", "prod_hint"])
 
-    rows, seen = [], set()
-    for _, r in df_src.iterrows():
-        gout = str(r.get("GoutCanon") or "").strip()
-        prod_txt  = _norm(r.get("Produit", ""))
-        stock_txt = _norm(r.get("Stock", ""))
-        fmt = (
-            _format_from_stock(stock_txt)
-            or _format_from_stock(_norm(r.get("Format", "")))
-            or _format_from_stock(_norm(r.get("Designation", "")))
-            or _format_from_stock(prod_txt)
-        )
-        if not gout or not fmt:
+def _build_lines_from_brassins(selected_brassins: list[dict], catalog: pd.DataFrame) -> tuple[list[dict], dict]:
+    """
+    Pour chaque brassin sélectionné, récupère le détail et construit les lignes
+    de la fiche de ramasse depuis productions[] ou planificationsProductions[].
+
+    Retourne (rows, meta_by_label) prêts pour le DataFrame.
+    """
+    rows = []
+    meta_by_label: dict = {}
+    seen = set()
+
+    for brassin_summary in selected_brassins:
+        id_brassin = brassin_summary.get("idBrassin")
+        if not id_brassin:
             continue
 
-        label = f"{prod_txt} — {stock_txt}" if prod_txt and stock_txt else f"{gout} — {fmt}"
+        # Goût depuis le produit parent du brassin
+        brassin_produit = brassin_summary.get("produit") or {}
+        gout_parent = _extract_gout_from_product(brassin_produit.get("libelle", ""))
 
-        key = label.lower()
-        if key in seen:
-            continue
-        seen.add(key)
+        try:
+            detail = get_brassin_detail(id_brassin)
+        except Exception:
+            detail = brassin_summary  # fallback : utilise le résumé
 
-        rows.append({
-            "label": label,
-            "gout": gout,
-            "format": fmt,
-            "prod_hint": (prod_txt or label),
-        })
+        # Prendre productions[] (réel) si non vide, sinon planificationsProductions[] (planifié)
+        productions = detail.get("productions") or []
+        if not productions:
+            productions = detail.get("planificationsProductions") or []
 
-    return pd.DataFrame(rows).sort_values(by="label").reset_index(drop=True)
+        if productions:
+            for prod_entry in productions:
+                prod_obj = prod_entry.get("produit") or {}
+                prod_label = prod_obj.get("libelle") or ""
+                quantite = int(prod_entry.get("quantite") or 0)
+                conditionnement = str(prod_entry.get("conditionnement") or "")
+
+                # DDM : différent selon productions vs planificationsProductions
+                ddm_str = (
+                    prod_entry.get("dateLimiteUtilisationOptimaleFormulaire")
+                    or prod_entry.get("dateLimiteUtilisationOptimale")
+                    or ""
+                )
+                ddm_date = _today_paris() + dt.timedelta(days=365)
+                if ddm_str:
+                    try:
+                        ddm_date = dt.date.fromisoformat(ddm_str[:10])
+                    except (ValueError, TypeError):
+                        pass
+
+                # Format : depuis conditionnement ou depuis le libellé produit
+                fmt = _format_from_stock(conditionnement) or _format_from_stock(prod_label)
+
+                # Goût : extraire depuis prod_label ou utiliser le goût parent
+                gout = _extract_gout_from_product(prod_label) if prod_label else gout_parent
+                if not gout:
+                    gout = gout_parent
+
+                # Label pour la fiche
+                label = prod_label if prod_label else f"{gout_parent} — {conditionnement or '?'}"
+
+                key = label.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                # Référence et poids depuis le catalogue
+                ref = ""
+                poids_carton = 0.0
+                if fmt:
+                    lk = _csv_lookup(catalog, gout, fmt, prod_label)
+                    if lk:
+                        ref, poids_carton = lk
+
+                meta_by_label[label] = {
+                    "_format": fmt or "",
+                    "_poids_carton": poids_carton,
+                    "_reference": ref,
+                }
+                rows.append({
+                    "Référence": ref,
+                    "Produit (goût + format)": label,
+                    "DDM": ddm_date,
+                    "Quantité cartons": quantite,
+                    "Quantité palettes": 0,
+                    "Poids palettes (kg)": 0,
+                })
+        else:
+            # Aucune production ni planification → ligne générique avec le goût parent
+            label = brassin_produit.get("libelle", f"Brassin {id_brassin}")
+            if label.lower() not in seen:
+                seen.add(label.lower())
+
+                # Essayer de trouver les formats depuis le catalogue
+                formats_for_gout = []
+                if not catalog.empty:
+                    g_can = _canon(gout_parent)
+                    for _, cat_row in catalog.iterrows():
+                        if g_can and g_can in str(cat_row.get("_canon_prod", "")):
+                            fmt_cat = _norm(cat_row.get("Format", ""))
+                            if fmt_cat:
+                                formats_for_gout.append({
+                                    "format": fmt_cat,
+                                    "prod": _norm(cat_row.get("Produit", "")),
+                                    "des": _norm(cat_row.get("Désignation", "")),
+                                })
+
+                # DDM par défaut : dateDebutFormulaire + 365 jours
+                date_debut_str = detail.get("dateDebutFormulaire") or ""
+                ddm_date = _today_paris() + dt.timedelta(days=365)
+                if date_debut_str:
+                    try:
+                        ddm_date = dt.date.fromisoformat(date_debut_str[:10]) + dt.timedelta(days=365)
+                    except (ValueError, TypeError):
+                        pass
+
+                if formats_for_gout:
+                    for f_info in formats_for_gout:
+                        sub_label = f"{f_info['prod']} — {f_info['format']}"
+                        if sub_label.lower() in seen:
+                            continue
+                        seen.add(sub_label.lower())
+                        ref = ""
+                        poids_carton = 0.0
+                        lk = _csv_lookup(catalog, gout_parent, f_info["format"], f_info["prod"])
+                        if lk:
+                            ref, poids_carton = lk
+                        meta_by_label[sub_label] = {
+                            "_format": f_info["format"],
+                            "_poids_carton": poids_carton,
+                            "_reference": ref,
+                        }
+                        rows.append({
+                            "Référence": ref,
+                            "Produit (goût + format)": sub_label,
+                            "DDM": ddm_date,
+                            "Quantité cartons": 0,
+                            "Quantité palettes": 0,
+                            "Poids palettes (kg)": 0,
+                        })
+                else:
+                    meta_by_label[label] = {"_format": "", "_poids_carton": 0.0, "_reference": ""}
+                    rows.append({
+                        "Référence": "",
+                        "Produit (goût + format)": label,
+                        "DDM": ddm_date,
+                        "Quantité cartons": 0,
+                        "Quantité palettes": 0,
+                        "Poids palettes (kg)": 0,
+                    })
+
+    return rows, meta_by_label
 
 
 # ================================== UI =======================================
@@ -348,123 +471,148 @@ def _build_opts_from_saved(df_min_saved: pd.DataFrame) -> pd.DataFrame:
 apply_theme("Fiche de ramasse — Ferment Station", "🚚")
 section("Fiche de ramasse", "🚚")
 
-# 0) Choix de la source (un seul radio)
+# 0) Choix de la source
+_eb_ok = _eb_configured()
+source_options = (["Brassins EasyBeer", "Sélection manuelle"] if _eb_ok
+                  else ["Sélection manuelle"])
 source_mode = st.radio(
     "Source des produits pour la fiche",
-    options=["Proposition sauvegardée", "Sélection manuelle"],
+    options=source_options,
     horizontal=True,
     key="ramasse_source_mode",
 )
 
-# 1) Charger le catalogue (utile en manuel et pour les références/poids)
+# 1) Charger le catalogue (utile en tout mode pour les références/poids)
 catalog = _load_catalog(INFO_CSV_PATH)
 if catalog.empty:
-    st.warning("⚠️ `info_FDR.csv` introuvable ou vide — références/poids non calculables.")
+    st.warning("`info_FDR.csv` introuvable ou vide — références/poids non calculables.")
 
 # 2) Construire la liste des produits selon le mode
-if source_mode == "Proposition sauvegardée":
-    sp = st.session_state.get("saved_production")
-    if not sp or "df_min" not in sp:
-        st.warning(
-            "Va d’abord dans **Production** et clique **💾 Sauvegarder cette production** "
-            "ou charge une proposition depuis la mémoire longue ci-dessous."
-        )
-        saved = list_saved()
-        if saved:
-            labels = [f"{it['name']} — ({it.get('semaine_du','?')})" for it in saved]
-            sel = st.selectbox("Charger une proposition enregistrée", options=labels)
-            if st.button("▶️ Charger cette proposition", use_container_width=True):
-                picked_name = saved[labels.index(sel)]["name"]
-                sp_loaded = load_snapshot(picked_name)
-                if sp_loaded and sp_loaded.get("df_min") is not None:
-                    st.session_state["saved_production"] = sp_loaded
-                    st.success(f"Chargé : {picked_name}")
-                    st.rerun()
-                else:
-                    st.error("Proposition invalide (df_min manquant).")
+_eb_mode = (source_mode == "Brassins EasyBeer")
+meta_by_label: dict = {}
+rows: list[dict] = []
+
+if _eb_mode:
+    # --- Mode EasyBeer : charger les brassins en cours ---
+    try:
+        _all_brassins = _fetch_brassins_en_cours()
+    except Exception as e:
+        st.error(f"Erreur de connexion à EasyBeer : {e}")
+        _all_brassins = []
+
+    # Filtrer : non annulés
+    _brassins_valides = [
+        b for b in _all_brassins
+        if not b.get("annule")
+    ]
+
+    if not _brassins_valides:
+        st.info("Aucun brassin en cours dans EasyBeer.")
         st.stop()
 
-    df_min_saved: pd.DataFrame = sp["df_min"].copy()
-    ddm_saved = dt.date.fromisoformat(sp["ddm"]) if "ddm" in sp else _today_paris()
-    opts_df = _build_opts_from_saved(df_min_saved)
+    # Labels pour le multiselect
+    def _brassin_label(b: dict) -> str:
+        nom = b.get("nom", "?")
+        prod = (b.get("produit") or {}).get("libelle", "?")
+        vol = b.get("volume", 0)
+        return f"{nom} — {prod} — {vol:.0f}L"
 
-else:  # "Sélection manuelle"
-    df_min_saved = None
-    ddm_saved = _today_paris()  # valeur par défaut de secours
+    _brassin_labels = [_brassin_label(b) for b in _brassins_valides]
+
+    st.subheader("Sélection des brassins")
+    selected_labels = st.multiselect(
+        "Brassins à inclure",
+        options=_brassin_labels,
+        default=[],
+        key="ramasse_eb_brassins",
+    )
+
+    _selected_brassins = [
+        _brassins_valides[_brassin_labels.index(lbl)]
+        for lbl in selected_labels
+        if lbl in _brassin_labels
+    ]
+
+    if _selected_brassins:
+        with st.spinner("Chargement des détails brassins…"):
+            rows, meta_by_label = _build_lines_from_brassins(_selected_brassins, catalog)
+    else:
+        st.info("Sélectionne au moins un brassin pour construire la fiche.")
+
+else:
+    # --- Mode Sélection manuelle (inchangé) ---
     opts_df = _build_opts_from_catalog(catalog)
+    if opts_df.empty:
+        st.error("Aucun produit détecté (vérifie `info_FDR.csv`).")
+        st.stop()
 
-if opts_df.empty:
-    st.error("Aucun produit détecté pour ce mode (vérifie `info_FDR.csv`).")
-    st.stop()
-
-# 3) Sidebar : dates + actions + footer (doit rester en dernier)
+# 3) Sidebar : dates + actions + footer
 with st.sidebar:
     st.header("Paramètres")
     date_creation = _today_paris()
     date_ramasse = st.date_input("Date de ramasse", value=date_creation)
-    if st.button("🔄 Recharger le catalogue", use_container_width=True):
+
+    if st.button("🔄 Recharger", use_container_width=True):
         _load_catalog.clear()
+        if _eb_mode:
+            _fetch_brassins_en_cours.clear()
         st.rerun()
-    # DDM selon le mode
-    if source_mode == "Sélection manuelle":
+
+    if not _eb_mode:
         ddm_manual = st.date_input("DDM par défaut (manuel)", value=_today_paris())
     st.caption(f"DATE DE CRÉATION : **{date_creation.strftime('%d/%m/%Y')}**")
-    if source_mode == "Proposition sauvegardée":
-        st.caption(f"DDM (depuis Production) : **{ddm_saved.strftime('%d/%m/%Y')}**")
 
-    # Footer logout tout en bas de la sidebar
     st.markdown("---")
     user_menu_footer(user)
 
-# 4) Sélection utilisateur
-st.subheader("Sélection des produits")
-selection_labels = st.multiselect(
-    "Produits à inclure (Goût — Format)",
-    options=opts_df["label"].tolist(),
-    default=opts_df["label"].tolist() if source_mode == "Proposition sauvegardée" else [],
-)
+# 4) Mode manuel : sélection + construction des lignes
+if not _eb_mode and not opts_df.empty:
+    st.subheader("Sélection des produits")
+    selection_labels = st.multiselect(
+        "Produits à inclure (Goût — Format)",
+        options=opts_df["label"].tolist(),
+        default=[],
+    )
+    for lab in selection_labels:
+        row_opt = opts_df.loc[opts_df["label"] == lab].iloc[0]
+        gout = row_opt["gout"]
+        fmt = row_opt["format"]
+        prod_hint = row_opt.get("prod_hint") or row_opt.get("label")
+        ref = ""
+        poids_carton = 0.0
+        lk = _csv_lookup(catalog, gout, fmt, prod_hint)
+        if lk:
+            ref, poids_carton = lk
+        meta_by_label[lab] = {"_format": fmt, "_poids_carton": poids_carton, "_reference": ref}
+        rows.append({
+            "Référence": ref,
+            "Produit (goût + format)": lab,
+            "DDM": ddm_manual,
+            "Quantité cartons": 0,
+            "Quantité palettes": 0,
+            "Poids palettes (kg)": 0,
+        })
 
-# 5) Table éditable
-meta_by_label = {}
-rows = []
-ddm_default = ddm_saved if source_mode == "Proposition sauvegardée" else ddm_manual
-for lab in selection_labels:
-    row_opt = opts_df.loc[opts_df["label"] == lab].iloc[0]
-    gout = row_opt["gout"]
-    fmt  = row_opt["format"]
-    prod_hint = row_opt.get("prod_hint") or row_opt.get("label")
-    ref = ""; poids_carton = 0.0
-    lk = _csv_lookup(catalog, gout, fmt, prod_hint)
-    if lk: ref, poids_carton = lk
-    meta_by_label[lab] = {"_format": fmt, "_poids_carton": poids_carton, "_reference": ref}
-    rows.append({
-        "Référence": ref,
-        "Produit (goût + format)": lab,
-        "DDM": ddm_default,
-        "Quantité cartons": 0,
-        "Quantité palettes": 0,
-        "Poids palettes (kg)": 0,
-    })
-display_cols = ["Référence","Produit (goût + format)","DDM","Quantité cartons","Quantité palettes","Poids palettes (kg)"]
-base_df = pd.DataFrame(rows, columns=display_cols)
+# 5) Table éditable (commune aux deux modes)
+display_cols = ["Référence", "Produit (goût + format)", "DDM", "Quantité cartons", "Quantité palettes", "Poids palettes (kg)"]
+base_df = pd.DataFrame(rows, columns=display_cols) if rows else pd.DataFrame(columns=display_cols)
 
-st.caption("Renseigne **Quantité cartons** et, si besoin, **Quantité palettes**. Le **poids** se calcule automatiquement (cartons × poids/carton du CSV).")
-edited = st.data_editor(
-    base_df,
-    key="ramasse_editor_xlsx_v1",
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "DDM": st.column_config.DateColumn(
-            label="DDM",
-            format="DD/MM/YYYY",
-            disabled=(source_mode == "Proposition sauvegardée")
-        ),
-        "Quantité cartons":  st.column_config.NumberColumn(min_value=0, step=1),
-        "Quantité palettes": st.column_config.NumberColumn(min_value=0, step=1),
-        "Poids palettes (kg)": st.column_config.NumberColumn(disabled=True, format="%.0f"),
-    },
-)
+if not base_df.empty:
+    st.caption("Renseigne **Quantité cartons** et **Quantité palettes**. Le **poids** se calcule automatiquement.")
+    edited = st.data_editor(
+        base_df,
+        key="ramasse_editor_v2",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "DDM": st.column_config.DateColumn(label="DDM", format="DD/MM/YYYY"),
+            "Quantité cartons": st.column_config.NumberColumn(min_value=0, step=1),
+            "Quantité palettes": st.column_config.NumberColumn(min_value=0, step=1),
+            "Poids palettes (kg)": st.column_config.NumberColumn(disabled=True, format="%.0f"),
+        },
+    )
+else:
+    edited = base_df
 
 # 6) Calculs
 def _apply_calculs(df_disp: pd.DataFrame) -> pd.DataFrame:
@@ -570,7 +718,7 @@ else:
     if st.button("✉️ Envoyer la demande de ramasse", type="primary", use_container_width=True):
         if pdf_bytes is None:
             if tot_cartons <= 0:
-                st.error("Le PDF n’est pas prêt et aucun carton n’est saisi. Renseigne au moins une quantité > 0 puis clique à nouveau.")
+                st.error("Le PDF n'est pas prêt et aucun carton n'est saisi. Renseigne au moins une quantité > 0 puis clique à nouveau.")
                 st.stop()
             try:
                 df_for_export = df_calc[display_cols].copy()
@@ -609,4 +757,4 @@ else:
 
                 st.success(f"📨 Demande de ramasse envoyée à {len(to_list)} destinataire(s).")
             except Exception as e:
-                st.error(f"Échec de l’envoi : {e}")
+                st.error(f"Échec de l'envoi : {e}")

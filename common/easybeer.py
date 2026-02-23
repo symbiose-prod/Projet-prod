@@ -13,6 +13,8 @@ Endpoints utilisés :
   GET  /parametres/produit/liste/all              → tous les produits
   GET  /parametres/entrepot/liste                 → tous les entrepôts
   POST /brassin/enregistrer                       → créer un brassin
+  GET  /brassin/en-cours/liste                    → brassins en cours
+  GET  /brassin/{idBrassin}                       → détail complet d'un brassin
 """
 from __future__ import annotations
 
@@ -351,4 +353,58 @@ def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     )
     if not r.ok:
         raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    return r.json()
+
+
+# ─── Brassins ─────────────────────────────────────────────────────────────────
+
+def get_brassins_en_cours() -> list[dict[str, Any]]:
+    """
+    GET /brassin/en-cours/liste
+    → Liste des brassins actuellement en cours de production.
+
+    Chaque élément : ModeleBrassin (résumé)
+      {
+        "idBrassin": 456,
+        "nom": "KGI23022026",
+        "volume": 7200.0,
+        "dateDebutFormulaire": "2026-02-23T07:30:00.000Z",
+        "produit": {"idProduit": 123, "libelle": "Kéfir Gingembre", ...},
+        "enCours": true,
+        "termine": false,
+        "annule": false,
+        ...
+      }
+    """
+    r = requests.get(
+        f"{BASE}/brassin/en-cours/liste",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return data if isinstance(data, list) else []
+
+
+def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
+    """
+    GET /brassin/{idBrassin}
+    → Détail complet d'un brassin, incluant productions et planifications.
+
+    Champs utiles :
+      - productions[]                  → production réelle (après conditionnement)
+        - produit.libelle, quantite, conditionnement, dateLimiteUtilisationOptimaleFormulaire
+      - planificationsProductions[]    → production planifiée (avant conditionnement)
+        - produit, quantite, conditionnement, dateLimiteUtilisationOptimale
+      - produit.libelle                → nom du produit (ex: "Kéfir Gingembre")
+      - volume                         → volume en litres
+      - dateDebutFormulaire            → date de début ISO
+      - dateConditionnementPrevue      → date d'embouteillage prévue
+    """
+    r = requests.get(
+        f"{BASE}/brassin/{id_brassin}",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
     return r.json()
