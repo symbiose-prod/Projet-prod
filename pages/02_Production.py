@@ -797,7 +797,7 @@ else:
                                     (et.get("brassageEtape") or {}).get("nom", "")
                                 )
                                 _mat_for_step = {}
-                                if _selected_cuve_a_id and ("fermentation" in _etape_nom or "aromatisation" in _etape_nom):
+                                if _selected_cuve_a_id and ("fermentation" in _etape_nom or "aromatisation" in _etape_nom or "filtration" in _etape_nom):
                                     _mat_for_step = {"idMateriel": _selected_cuve_a_id}
                                 elif _selected_cuve_b_id and ("transfert" in _etape_nom or "garde" in _etape_nom):
                                     _mat_for_step = {"idMateriel": _selected_cuve_b_id}
