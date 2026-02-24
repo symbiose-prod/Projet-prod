@@ -641,6 +641,77 @@ else:
                     )
                     _selected_products[g] = _eb_products[idx]["idProduit"]
 
+            # --- Sélection du matériel (cuves) ---
+            from common.easybeer import get_all_materiels
+
+            _materiels: list[dict] = []
+            try:
+                _materiels = get_all_materiels()
+            except Exception as _me:
+                st.warning(f"Impossible de charger le matériel EasyBeer : {_me}")
+
+            # Cuve de fermentation : filtrer par volume correspondant au mode
+            _tank_cap_eb = 0
+            if mode_prod != "Manuel" and _volume_details:
+                _vd_first = list(_volume_details.values())[0]
+                _tank_cap_eb = _vd_first.get("capacity", 0)
+            elif mode_prod != "Manuel":
+                _tank_cfg_eb = TANK_CONFIGS.get(mode_prod) or {}
+                _tank_cap_eb = _tank_cfg_eb.get("capacity", 0) if _tank_cfg_eb else 0
+
+            _cuves_fermentation = [
+                m for m in _materiels
+                if m.get("type", {}).get("code") == "CUVE_FERMENTATION"
+                and abs(m.get("volume", 0) - _tank_cap_eb) < 100
+            ] if _tank_cap_eb > 0 else []
+
+            _cuve_dilution = next(
+                (m for m in _materiels if m.get("type", {}).get("code") == "CUVE_FABRICATION"),
+                None,
+            )
+
+            _selected_cuve_a_id: int | None = None  # fermentation + aromatisation
+            _selected_cuve_b_id: int | None = None  # transfert + garde
+
+            if _cuves_fermentation:
+                st.markdown("---")
+                st.markdown("**Affectation des cuves**")
+
+                _cuve_labels = [
+                    f"{m.get('identifiant', '')} ({m.get('volume', 0):.0f}L) — {m.get('etatCourant', {}).get('libelle', '?')}"
+                    for m in _cuves_fermentation
+                ]
+
+                _col_ca, _col_cb = st.columns(2)
+                with _col_ca:
+                    _idx_a = st.selectbox(
+                        "Cuve de fermentation (Cuve A)",
+                        options=range(len(_cuve_labels)),
+                        format_func=lambda i: _cuve_labels[i],
+                        index=0,
+                        key="eb_cuve_a",
+                        help="Utilisée pour : Fermentation + Aromatisation",
+                    )
+                    _selected_cuve_a_id = _cuves_fermentation[_idx_a].get("idMateriel")
+
+                with _col_cb:
+                    # Cuve B = l'autre cuve du meme volume (par defaut la suivante)
+                    _default_b = 1 if len(_cuves_fermentation) > 1 else 0
+                    if _default_b == _idx_a and len(_cuves_fermentation) > 1:
+                        _default_b = 0 if _idx_a != 0 else 1
+                    _idx_b = st.selectbox(
+                        "Cuve de garde (Cuve B)",
+                        options=range(len(_cuve_labels)),
+                        format_func=lambda i: _cuve_labels[i],
+                        index=_default_b,
+                        key="eb_cuve_b",
+                        help="Utilisée pour : Transfert + Garde",
+                    )
+                    _selected_cuve_b_id = _cuves_fermentation[_idx_b].get("idMateriel")
+
+                if _selected_cuve_a_id == _selected_cuve_b_id:
+                    st.warning("Cuve A et Cuve B sont identiques. Choisis deux cuves distinctes.")
+
             # --- Bouton de création ---
             _already_created = st.session_state.get("_eb_brassins_created", {})
             _creation_key = f"{_semaine_du_eb}_{'_'.join(_gouts_eb)}"
@@ -712,8 +783,27 @@ else:
                                         "modeleNumerosLots": [],
                                     })
 
-                            # Étapes de production
+                            # Étapes de production (avec affectation matériel)
+                            import unicodedata as _ud_etape
+
+                            def _norm_etape(s: str) -> str:
+                                s = _ud_etape.normalize("NFKD", s)
+                                s = "".join(ch for ch in s if not _ud_etape.combining(ch))
+                                return s.lower()
+
                             for et in etapes:
+                                # Déterminer le matériel pour cette étape
+                                _etape_nom = _norm_etape(
+                                    (et.get("brassageEtape") or {}).get("nom", "")
+                                )
+                                _mat_for_step = {}
+                                if _selected_cuve_a_id and ("fermentation" in _etape_nom or "aromatisation" in _etape_nom):
+                                    _mat_for_step = {"idMateriel": _selected_cuve_a_id}
+                                elif _selected_cuve_b_id and ("transfert" in _etape_nom or "garde" in _etape_nom):
+                                    _mat_for_step = {"idMateriel": _selected_cuve_b_id}
+                                elif _cuve_dilution and ("preparation" in _etape_nom or "sirop" in _etape_nom):
+                                    _mat_for_step = {"idMateriel": _cuve_dilution.get("idMateriel")}
+
                                 _planif_etapes.append({
                                     "produitEtape": {
                                         "idProduitEtape": et.get("idProduitEtape"),
@@ -724,7 +814,7 @@ else:
                                         "etapeTerminee": False,
                                         "etapeEnCours": False,
                                     },
-                                    "materiel": {},
+                                    "materiel": _mat_for_step,
                                 })
                         except Exception as e:
                             st.warning(f"Impossible de charger la recette pour « {g} » : {e}")

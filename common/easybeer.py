@@ -274,6 +274,28 @@ def get_all_clients(
     return all_clients
 
 
+# ─── Matériel (cuves, équipements) ────────────────────────────────────────────
+
+def get_all_materiels() -> list[dict[str, Any]]:
+    """
+    GET /parametres/materiel/liste/all
+    → Liste complète du matériel EasyBeer (non paginée).
+
+    Champs utiles :
+      - idMateriel, code, identifiant, volume
+      - type.code  (CUVE_FABRICATION, CUVE_FERMENTATION, …)
+      - etatCourant.code  (DISPONIBLE, AFFECTE, LAVAGE, MAINTENANCE)
+    """
+    r = requests.get(
+        f"{BASE}/parametres/materiel/liste/all",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return data if isinstance(data, list) else []
+
+
 # ─── Produits & Entrepôts ─────────────────────────────────────────────────────
 
 def get_all_products() -> list[dict[str, Any]]:
