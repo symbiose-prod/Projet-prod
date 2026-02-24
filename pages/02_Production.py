@@ -197,15 +197,22 @@ if mode_prod != "Manuel" and gouts_cibles:
     _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
     _volume_cible_recalc = _V_bottled / 100.0
 
-    # Detect infusion vs kefir
-    _prod_label_p2 = _eb_prods_p2[_matched_idx].get("libelle", "")
-    _is_infusion_p2 = "infusion" in _prod_label_p2.lower() or _prod_label_p2.upper().startswith("EP")
+    # Detect infusion vs kefir + fetch dilution ingredients
+    _is_infusion_p2 = False
+    _dilution_p2: dict[str, float] = {}
+    _id_prod_p2_safe = locals().get("_id_prod_p2")
 
-    # Fetch dilution ingredients (scaled to V_start)
-    try:
-        _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
-    except Exception:
-        _dilution_p2 = {}
+    if _id_prod_p2_safe is not None:
+        try:
+            _prod_label_p2 = _eb_prods_p2[_matched_idx].get("libelle", "")
+            _is_infusion_p2 = "infusion" in _prod_label_p2.lower() or _prod_label_p2.upper().startswith("EP")
+        except Exception:
+            pass
+
+        try:
+            _dilution_p2 = compute_dilution_ingredients(_id_prod_p2_safe, _V_start)
+        except Exception:
+            _dilution_p2 = {}
 
     _volume_details[_gout_p2] = {
         "V_start": _V_start,

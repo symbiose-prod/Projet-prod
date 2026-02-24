@@ -423,6 +423,9 @@ def fill_fiche_xlsx(
         except Exception:
             pass
 
+    # --- A21 : date de début de production ---
+    _set(ws, "A21", semaine_du, number_format="DD/MM/YYYY")
+
     # --- B8 : goût (libellé Excel)
     _set(ws, "B8", _to_excel_label(gout1) or "")
 
@@ -526,7 +529,7 @@ def fill_fiche_xlsx(
         if ct > 0:
             _safe_set_cell(ws, 16, col_idx, ct)
 
-    # --- C30-C33 : ingredients dilution ---
+    # --- C30-C33 : ingredients dilution (Préparation sirop) ---
     if dilution_ingredients:
         DILUTION_CELLS = {
             "sucre": "C30",
@@ -534,12 +537,23 @@ def fill_fiche_xlsx(
             "citron": "C32",
             "grain": "C33",
         }
+        _used_cells: set[str] = set()
         for libelle, qty in dilution_ingredients.items():
             lib_lower = libelle.lower()
+            matched = False
             for keyword, cell_addr in DILUTION_CELLS.items():
-                if keyword in lib_lower:
+                if keyword in lib_lower and cell_addr not in _used_cells:
                     _set(ws, cell_addr, round(qty, 2))
+                    _used_cells.add(cell_addr)
+                    matched = True
                     break
+            if not matched:
+                # Fallback : remplir la prochaine cellule libre C30-C33
+                for _fb_addr in ["C30", "C31", "C32", "C33"]:
+                    if _fb_addr not in _used_cells:
+                        _set(ws, _fb_addr, round(qty, 2))
+                        _used_cells.add(_fb_addr)
+                        break
 
     # --- C35-C36 : volume de remplissage + niveau de liquide ---
     if V_start > 0:

@@ -405,11 +405,24 @@ def compute_v_start_max(
 
 def compute_dilution_ingredients(id_produit: int, V_start: float) -> dict[str, float]:
     """
-    Récupère les ingrédients de l'étape "Dilution" d'une recette EasyBeer,
-    mis à l'échelle par rapport au volume de départ V_start.
+    Récupère les ingrédients de l'étape de dilution / préparation sirop
+    d'une recette EasyBeer, mis à l'échelle par rapport au volume de départ V_start.
+
+    Noms d'étapes reconnus (case-insensitive) :
+      - "Préparation sirop" / "Preparation sirop"
+      - "Dilution"
 
     Retourne un dict {libelle_ingredient: quantite_kg}.
     """
+    import unicodedata as _ud
+
+    def _normalize(s: str) -> str:
+        s = _ud.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not _ud.combining(ch))
+        return s.lower()
+
+    STEP_KEYWORDS = ("preparation sirop", "dilution")
+
     detail = get_product_detail(id_produit)
     recettes = detail.get("recettes") or []
     if not recettes:
@@ -424,8 +437,8 @@ def compute_dilution_ingredients(id_produit: int, V_start: float) -> dict[str, f
     result: dict[str, float] = {}
     for ing in recette.get("ingredients") or []:
         etape = ing.get("brassageEtape") or {}
-        etape_name = (etape.get("nom") or etape.get("libelle") or "").lower()
-        if "dilution" in etape_name:
+        etape_name = _normalize(etape.get("nom") or etape.get("libelle") or "")
+        if any(kw in etape_name for kw in STEP_KEYWORDS):
             mp = ing.get("matierePremiere") or {}
             libelle = mp.get("libelle", "")
             if not libelle:
