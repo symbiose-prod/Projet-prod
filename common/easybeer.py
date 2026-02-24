@@ -422,6 +422,9 @@ def compute_dilution_ingredients(id_produit: int, V_start: float) -> dict[str, f
         return s.lower()
 
     STEP_KEYWORDS = ("preparation sirop", "dilution")
+    # Les grains de kéfir sont dans l'étape "Fermentation", pas "Préparation sirop"
+    GRAIN_STEP_KEYWORDS = ("fermentation",)
+    GRAIN_INGREDIENT_KEYWORDS = ("grain",)
 
     detail = get_product_detail(id_produit)
     recettes = detail.get("recettes") or []
@@ -438,11 +441,18 @@ def compute_dilution_ingredients(id_produit: int, V_start: float) -> dict[str, f
     for ing in recette.get("ingredients") or []:
         etape = ing.get("brassageEtape") or {}
         etape_name = _normalize(etape.get("nom") or etape.get("libelle") or "")
+        mp = ing.get("matierePremiere") or {}
+        libelle = mp.get("libelle", "")
+        if not libelle:
+            libelle = f"Ingredient #{ing.get('ordre', '?')}"
+        lib_norm = _normalize(libelle)
+
+        # Ingrédients de l'étape Préparation sirop / Dilution
         if any(kw in etape_name for kw in STEP_KEYWORDS):
-            mp = ing.get("matierePremiere") or {}
-            libelle = mp.get("libelle", "")
-            if not libelle:
-                libelle = f"Ingredient #{ing.get('ordre', '?')}"
+            qty = float(ing.get("quantite", 0) or 0) * ratio
+            result[libelle] = round(qty, 2)
+        # Grains de kéfir : étape Fermentation
+        elif any(kw in etape_name for kw in GRAIN_STEP_KEYWORDS) and any(kw in lib_norm for kw in GRAIN_INGREDIENT_KEYWORDS):
             qty = float(ing.get("quantite", 0) or 0) * ratio
             result[libelle] = round(qty, 2)
 
