@@ -279,7 +279,42 @@ def _add_image_in_range(ws, img_path: Path, tl_addr: str, br_addr: str):
         print(f"[xlsx_fill] ERREUR insertion image: {e}")
 
 # ======================================================================
-#                    Fiche de production (Grande/Petite)
+#                    Interpolation hauteur de règle
+# ======================================================================
+
+def interpolate_ruler_height(volume_L: float, tank_capacity: int) -> float:
+    """
+    Interpole la hauteur de règle (cm) pour un volume donné dans une cuve.
+    Utilise la table data/regles_cuves.csv.
+    """
+    csv_path = _project_root() / "data" / "regles_cuves.csv"
+    if not csv_path.exists():
+        return 0.0
+
+    import pandas as _pd_ruler
+    df = _pd_ruler.read_csv(csv_path)
+    df_tank = df[df["cuve"] == tank_capacity].sort_values("volume_L")
+
+    if df_tank.empty:
+        return 0.0
+
+    volumes = df_tank["volume_L"].tolist()
+    heights = df_tank["hauteur_cm"].tolist()
+
+    if volume_L <= volumes[0]:
+        return float(heights[0])
+    if volume_L >= volumes[-1]:
+        return float(heights[-1])
+
+    for i in range(len(volumes) - 1):
+        if volumes[i] <= volume_L <= volumes[i + 1]:
+            t = (volume_L - volumes[i]) / (volumes[i + 1] - volumes[i])
+            return round(heights[i] + t * (heights[i + 1] - heights[i]), 1)
+
+    return float(heights[-1])
+
+# ======================================================================
+#                    Fiche de production
 # ======================================================================
 
 def fill_fiche_xlsx(
@@ -287,19 +322,35 @@ def fill_fiche_xlsx(
     semaine_du: date,
     ddm: date,
     gout1: str,
-    gout2: Optional[str],
-    df_calc,
+    gout2: Optional[str] = None,
+    df_calc=None,
     sheet_name: str | None = None,
     df_min=None,
+    *,
+    V_start: float = 0.0,
+    tank_capacity: int = 7200,
+    transfer_loss: float = 400.0,
+    aromatisation_volume: float = 0.0,
+    is_infusion: bool = False,
+    dilution_ingredients: Dict[str, float] | None = None,
 ) -> bytes:
     """
-    Remplit UNIQUEMENT :
-      - B8 = libellé Excel du goût (via _to_excel_label)
-      - A21 = date de début de fermentation (semaine_du)
-      - cellule à droite du libellé "DDM" = ddm
-      - K15/M15/O15/Q15/S15 = quantités de cartons (33cL France, 33cL NIKO, 75cL x6, 75cL x4, 75cL NIKO x6)
-      - Image schéma cuves en P29:X51 (orange pour Grande, bleu pour Petite)
-    Sans toucher aux autres formules.
+    Remplit la fiche de production unique (Fiche_production.xlsx).
+
+    Cases remplies automatiquement :
+      - B8        : gout (libelle Excel)
+      - B10       : DDM
+      - Row 15    : bouteilles par format (8 colonnes)
+      - Row 16    : cartons par format (8 colonnes)
+      - C30-C33   : ingredients dilution (Sucre, Figues, Citron, Grains)
+      - C35       : volume de remplissage (V_start en L)
+      - C36       : niveau de liquide (hauteur regle en cm)
+      - B42       : volume filtre (L)
+      - B43       : volume final (L)
+      - B44       : hauteur volume final (cm)
+      - B48       : volume total (L)
+      - B49       : hauteur volume total (cm)
+      - Logos     : Symbiose + NIKO en en-tete
     """
     import openpyxl
     import pandas as pd
@@ -366,15 +417,6 @@ def fill_fiche_xlsx(
     # --- B8 : goût (libellé Excel)
     _set(ws, "B8", _to_excel_label(gout1) or "")
 
-    # --- A21 : date de fermentation (semaine_du)
-    try:
-        _set(ws, "A21", semaine_du, number_format="DD/MM/YYYY")
-    except Exception:
-        try:
-            _set(ws, "A21", date.fromisoformat(str(semaine_du)), number_format="DD/MM/YYYY")
-        except Exception:
-            _set(ws, "A21", str(semaine_du))
-
     # --- DDM : A10 déjà présent dans le template ; écrire la date en B10:C10 ---
     try:
         from openpyxl.styles import Alignment
@@ -399,80 +441,127 @@ def fill_fiche_xlsx(
             pass
         _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
 
-    # --- Quantités de cartons par format -> ligne 15 (K/M/O/Q/S/U) ---
-    # Mapping voulu :
-    # - 33 cL EN (Water kefir)      -> K15 (K:L)
-    # - 33 cL FR SANS NIKO          -> M15 (M:N)
-    # - 33 cL FR AVEC NIKO          -> O15 (O:P)
-    # - 75 cL x6 SANS NIKO          -> Q15 (Q:R)
-    # - 75 cL x4 SANS NIKO          -> S15 (S:T)
-    # - 75 cL x6 AVEC NIKO          -> U15 (U:V)
-    
-    k_33_en = 0
-    m_33_fr_no = 0
-    o_33_fr_niko = 0
-    q_75x6 = 0
-    s_75x4 = 0
-    u_75x6_niko = 0
-    
+    # --- Rows 15-16 : bouteilles et cartons par format ---
+    # Colonnes du template :
+    #   B=Symbiose X12 33cL, C=Symbiose X6 33cL, D=NIKO X12 33cL, E=INTER X6 33cL
+    #   F=Symbiose X6 75cL,  G=Symbiose X4 75cL,  H=NIKO X6 75cL,  I=AUTRE 75cL
+    SLOT_COL = {
+        "sym_33_x12":  2,   # B
+        "sym_33_x6":   3,   # C
+        "niko_33_x12": 4,   # D
+        "inter_33_x6": 5,   # E
+        "sym_75_x6":   6,   # F
+        "sym_75_x4":   7,   # G
+        "niko_75_x6":  8,   # H
+        "autre_75":    9,   # I
+    }
+    cartons_by_slot    = {k: 0 for k in SLOT_COL}
+    bouteilles_by_slot = {k: 0 for k in SLOT_COL}
+
     if isinstance(df_min, pd.DataFrame) and not df_min.empty:
-        # Filtre sur le goût choisi (colonne GoutCanon du tableau affiché)
         dff = df_min.copy()
         if "GoutCanon" in dff.columns:
             dff = dff[dff["GoutCanon"].astype(str).str.strip() == str(gout1 or "").strip()]
-    
-        # Colonne "Cartons à produire ..."
-        col_cart = next((c for c in dff.columns if "Cartons à produire" in str(c)), None)
-    
+
+        col_cart = next((c for c in dff.columns if "Cartons" in str(c) and "produire" in str(c)), None)
+        col_btl  = next((c for c in dff.columns if "Bouteilles" in str(c) and "produire" in str(c)), None)
+
         if col_cart and not dff.empty:
             for _, r0 in dff.iterrows():
-                qty = pd.to_numeric(r0.get(col_cart), errors="coerce")
-                qty = int(qty) if pd.notna(qty) else 0
-                if qty <= 0:
+                ct = int(pd.to_numeric(r0.get(col_cart), errors="coerce") or 0)
+                bt = int(pd.to_numeric(r0.get(col_btl), errors="coerce") or 0) if col_btl else 0
+                if ct <= 0:
                     continue
-    
+
                 prod = str(r0.get("Produit", "")).upper()
                 stock = str(r0.get("Stock", ""))
-    
                 nb, volL = _parse_format_from_stock(stock)
+
                 if nb is None or volL is None:
-                    # fallback si "Stock" est atypique : on essaie depuis 'Produit'
                     m_nb = re.search(r"x\s*(\d+)", prod)
                     m_vol = re.search(r"(\d+(?:[.,]\d+)?)\s*cL", prod, flags=re.I)
                     nb = int(m_nb.group(1)) if m_nb else nb
                     volL = (float(m_vol.group(1).replace(",", ".")) / 100.0) if m_vol else volL
-    
-                has_niko = "NIKO" in prod
-                is_33cl = (volL is not None) and abs(volL - 0.33) < 1e-6 and nb == 12
-                is_75cl = (volL is not None) and abs(volL - 0.75) < 1e-6
-                is_english = "PROBIOTIC" in prod  # distingue EN vs FR sur tes libellés
-    
-                if is_33cl:
-                    if is_english:
-                        k_33_en += qty            # -> K15
-                    else:
-                        if has_niko:
-                            o_33_fr_niko += qty   # -> O15
-                        else:
-                            m_33_fr_no += qty     # -> M15
-                elif is_75cl:
-                    if nb == 6:
-                        if has_niko:
-                            u_75x6_niko += qty    # -> U15
-                        else:
-                            q_75x6 += qty         # -> Q15
-                    elif nb == 4 and not has_niko:
-                        s_75x4 += qty             # -> S15
-    
-    # Écritures (ligne 16 ; on vise l’ancre des fusions)
-    _safe_set_cell(ws, 16, 5, int(k_33_en))      # E16 (E)
-    _safe_set_cell(ws, 16, 2, int(m_33_fr_no))   # B16 (B)
-    _safe_set_cell(ws, 16, 4, int(o_33_fr_niko)) # D16 (D)
-    _safe_set_cell(ws, 16, 6, int(q_75x6))       # F16 (F)
-    _safe_set_cell(ws, 16, 7, int(s_75x4))       # G16 (G)
-    _safe_set_cell(ws, 16, 8, int(u_75x6_niko))  # H16 (H)
 
-    # Sauvegarde en mémoire
+                if nb is None or volL is None:
+                    continue
+
+                has_niko = "NIKO" in prod
+                is_inter = "PROBIOTIC" in prod or "WATER KEFIR" in prod
+
+                if abs(volL - 0.33) < 0.01:
+                    if nb == 12:
+                        slot = "niko_33_x12" if has_niko else "sym_33_x12"
+                    elif nb == 6:
+                        slot = "inter_33_x6" if is_inter else "sym_33_x6"
+                    else:
+                        slot = "sym_33_x12"
+                elif abs(volL - 0.75) < 0.01:
+                    if nb == 6:
+                        slot = "niko_75_x6" if has_niko else "sym_75_x6"
+                    elif nb == 4:
+                        slot = "sym_75_x4"
+                    else:
+                        slot = "autre_75"
+                else:
+                    continue
+
+                cartons_by_slot[slot] += ct
+                bouteilles_by_slot[slot] += bt
+
+    for slot_name, col_idx in SLOT_COL.items():
+        bt = bouteilles_by_slot[slot_name]
+        ct = cartons_by_slot[slot_name]
+        if bt > 0:
+            _safe_set_cell(ws, 15, col_idx, bt)
+        if ct > 0:
+            _safe_set_cell(ws, 16, col_idx, ct)
+
+    # --- C30-C33 : ingredients dilution ---
+    if dilution_ingredients:
+        DILUTION_CELLS = {
+            "sucre": "C30",
+            "figue": "C31",
+            "citron": "C32",
+            "grain": "C33",
+        }
+        for libelle, qty in dilution_ingredients.items():
+            lib_lower = libelle.lower()
+            for keyword, cell_addr in DILUTION_CELLS.items():
+                if keyword in lib_lower:
+                    _set(ws, cell_addr, round(qty, 2))
+                    break
+
+    # --- C35-C36 : volume de remplissage + niveau de liquide ---
+    if V_start > 0:
+        _set(ws, "C35", round(V_start))
+        if tank_capacity > 0:
+            h_start = interpolate_ruler_height(V_start, tank_capacity)
+            _set(ws, "C36", round(h_start, 1))
+
+    # --- Phase 2 : Filtration (B42-B44) ---
+    if V_start > 0 and transfer_loss >= 0:
+        V_transferred = V_start - transfer_loss
+        filtre_ratio = 0.0 if is_infusion else 0.60
+
+        volume_filtre = V_transferred * filtre_ratio
+        volume_non_filtre = V_transferred - volume_filtre
+        volume_final = volume_filtre + aromatisation_volume
+
+        _set(ws, "B42", round(volume_filtre))
+        _set(ws, "B43", round(volume_final))
+        if tank_capacity > 0:
+            h_final = interpolate_ruler_height(volume_final, tank_capacity)
+            _set(ws, "B44", round(h_final, 1))
+
+        # --- Phase 2 : Remplissage (B48-B49) ---
+        volume_total = volume_final + volume_non_filtre
+        _set(ws, "B48", round(volume_total))
+        if tank_capacity > 0:
+            h_total = interpolate_ruler_height(volume_total, tank_capacity)
+            _set(ws, "B49", round(h_total, 1))
+
+    # Sauvegarde en memoire
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()

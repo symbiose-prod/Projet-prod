@@ -403,6 +403,39 @@ def compute_v_start_max(
     return V_start, max(V_bottled, 0.0)
 
 
+def compute_dilution_ingredients(id_produit: int, V_start: float) -> dict[str, float]:
+    """
+    Récupère les ingrédients de l'étape "Dilution" d'une recette EasyBeer,
+    mis à l'échelle par rapport au volume de départ V_start.
+
+    Retourne un dict {libelle_ingredient: quantite_kg}.
+    """
+    detail = get_product_detail(id_produit)
+    recettes = detail.get("recettes") or []
+    if not recettes:
+        return {}
+
+    recette = recettes[0]
+    R = float(recette.get("volumeRecette", 0) or 0)
+    if R <= 0:
+        return {}
+
+    ratio = V_start / R
+    result: dict[str, float] = {}
+    for ing in recette.get("ingredients") or []:
+        etape = ing.get("brassageEtape") or {}
+        etape_name = (etape.get("nom") or etape.get("libelle") or "").lower()
+        if "dilution" in etape_name:
+            mp = ing.get("matierePremiere") or {}
+            libelle = mp.get("libelle", "")
+            if not libelle:
+                libelle = f"Ingredient #{ing.get('ordre', '?')}"
+            qty = float(ing.get("quantite", 0) or 0) * ratio
+            result[libelle] = round(qty, 2)
+
+    return result
+
+
 def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     """
     POST /brassin/enregistrer

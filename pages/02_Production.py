@@ -19,13 +19,8 @@ from core.optimizer import (
 )
 from common.xlsx_fill import fill_fiche_xlsx
 
-# ====== Réglages modèle Excel ======
-# Mapping entre le choix UI et le fichier modèle à utiliser
-TEMPLATE_MAP = {
-    "Cuve de 7200L": "assets/Grande.xlsx",   # anciennement "Fiche de Prod 250620.xlsx"
-    "Cuve de 5200L": "assets/Petite.xlsx",
-}
-SHEET_NAME = None  # laisse None si le modèle a une feuille active par défaut
+# ====== Template unique fiche de production ======
+TEMPLATE_PATH = "assets/Fiche_production.xlsx"
 
 # ====== Configurations cuves ======
 TANK_CONFIGS = {
@@ -175,6 +170,7 @@ if mode_prod != "Manuel" and gouts_cibles:
         is_configured as _eb_conf_p2,
         compute_aromatisation_volume,
         compute_v_start_max,
+        compute_dilution_ingredients,
     )
 
     _tank_cfg = TANK_CONFIGS[mode_prod]
@@ -201,6 +197,16 @@ if mode_prod != "Manuel" and gouts_cibles:
     _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
     _volume_cible_recalc = _V_bottled / 100.0
 
+    # Detect infusion vs kefir
+    _prod_label_p2 = _eb_prods_p2[_matched_idx].get("libelle", "")
+    _is_infusion_p2 = "infusion" in _prod_label_p2.lower() or _prod_label_p2.upper().startswith("EP")
+
+    # Fetch dilution ingredients (scaled to V_start)
+    try:
+        _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
+    except Exception:
+        _dilution_p2 = {}
+
     _volume_details[_gout_p2] = {
         "V_start": _V_start,
         "A_R": _A_R,
@@ -210,6 +216,9 @@ if mode_prod != "Manuel" and gouts_cibles:
         "capacity": _C,
         "transfer_loss": _Lt,
         "bottling_loss": _Lb,
+        "is_infusion": _is_infusion_p2,
+        "dilution_ingredients": _dilution_p2,
+        "id_produit": _id_prod_p2,
     }
 
     # Relance l'optimiseur si le volume a changé significativement
@@ -425,21 +434,6 @@ section("Fiche de production (modèle Excel)", "🧾")
 _sp_prev = st.session_state.get("saved_production")
 default_debut = _dt.date.fromisoformat(_sp_prev["semaine_du"]) if _sp_prev and "semaine_du" in _sp_prev else _dt.date.today()
 
-# Sélecteur de modèle (taille de cuve) — auto en modes cuve, libre en Manuel
-if mode_prod == "Cuve de 7200L (1 goût)":
-    cuve_choice = "Cuve de 7200L"
-    st.info(f"Modèle de fiche : **{cuve_choice}** (lié au mode de production)")
-elif mode_prod == "Cuve de 5200L (1 goût)":
-    cuve_choice = "Cuve de 5200L"
-    st.info(f"Modèle de fiche : **{cuve_choice}** (lié au mode de production)")
-else:
-    cuve_choice = st.radio(
-        "Modèle de fiche",
-        options=["Cuve de 7200L", "Cuve de 5200L"],
-        horizontal=True,
-        help="Choisis le modèle de fiche à générer.",
-    )
-
 # Champ unique : date de début fermentation
 date_debut = st.date_input("Date de début de fermentation", value=default_debut)
 
@@ -454,11 +448,13 @@ if st.button("💾 Sauvegarder cette production", use_container_width=True):
                 g_order.append(g)
 
     st.session_state.saved_production = {
-        "df_min": df_min_override.copy(),   # <<< ici (avec overrides appliqués)
+        "df_min": df_min_override.copy(),
         "df_calc": df_calc.copy(),
         "gouts": g_order,
         "semaine_du": date_debut.isoformat(),
         "ddm": date_ddm.isoformat(),
+        "volume_details": dict(_volume_details),
+        "mode_prod": mode_prod,
     }
     st.success("Production sauvegardée ✅ — tu peux maintenant générer la fiche.")
 
@@ -486,31 +482,33 @@ def _two_gouts_auto(sp_obj, df_min_cur, gouts_cur):
     return (base + [None, None])[:2]
 
 if sp:
-    # Déduction auto des 2 premiers goûts (si ta fiche a 2 colonnes de goût)
     g1, g2 = _two_gouts_auto(sp, sp.get("df_min", df_min_override), gouts_cibles)
 
-    template_path = TEMPLATE_MAP.get(cuve_choice)
-    if not template_path or not os.path.exists(template_path):
-        st.error(
-            f"Modèle introuvable pour **{cuve_choice}**. "
-            f"Place le fichier **{template_path}** dans le repo."
-        )
+    _sp_vd = sp.get("volume_details") or {}
+    _vd_dl = _sp_vd.get(g1, {})
+
+    if not os.path.exists(TEMPLATE_PATH):
+        st.error(f"Modele introuvable : **{TEMPLATE_PATH}**. Place le fichier dans le repo.")
     else:
         try:
-            # 👉 On ré-utilise la même fonction de remplissage : elle accepte un template_path générique
             xlsx_bytes = fill_fiche_xlsx(
-                template_path=template_path,
+                template_path=TEMPLATE_PATH,
                 semaine_du=_dt.date.fromisoformat(sp["semaine_du"]),
                 ddm=_dt.date.fromisoformat(sp["ddm"]),
                 gout1=g1 or "",
                 gout2=g2,
                 df_calc=sp.get("df_calc", df_calc),
-                sheet_name=SHEET_NAME,
                 df_min=sp.get("df_min", df_min_override),
+                V_start=_vd_dl.get("V_start", 0),
+                tank_capacity=_vd_dl.get("capacity", 7200),
+                transfer_loss=_vd_dl.get("transfer_loss", 400),
+                aromatisation_volume=_vd_dl.get("V_aroma", 0),
+                is_infusion=_vd_dl.get("is_infusion", False),
+                dilution_ingredients=_vd_dl.get("dilution_ingredients"),
             )
 
             semaine_label = _dt.date.fromisoformat(sp["semaine_du"]).strftime("%d-%m-%Y")
-            fname_xlsx = f"Fiche de production — {cuve_choice} — {semaine_label}.xlsx"
+            fname_xlsx = f"Fiche de production - {g1 or 'Multi'} - {semaine_label}.xlsx"
 
             st.download_button(
                 "📄 Télécharger la fiche (XLSX)",
@@ -520,9 +518,9 @@ if sp:
                 use_container_width=True,
             )
         except FileNotFoundError:
-            st.error("Modèle introuvable. Vérifie le chemin du fichier modèle.")
+            st.error("Modele introuvable. Verifie le chemin du fichier modele.")
         except Exception as e:
-            st.error(f"Erreur lors du remplissage du modèle : {e}")
+            st.error(f"Erreur lors du remplissage du modele : {e}")
 else:
     st.info("Sauvegarde la production ci-dessus pour activer la génération de la fiche.")
 
@@ -559,7 +557,7 @@ else:
             _perte_litres = TANK_CONFIGS[mode_prod]["transfer_loss"] + TANK_CONFIGS[mode_prod]["bottling_loss"]
         else:
             # Mode Manuel : comportement existant
-            _perte_litres = 800 if cuve_choice == "Cuve de 7200L" else 400
+            _perte_litres = 800 if volume_cible > 50 else 400
             if _nb_gouts_eb == 1:
                 _vol_par_gout[_gouts_eb[0]] = volume_cible * 100 + _perte_litres
             else:
@@ -607,10 +605,10 @@ else:
             st.markdown(f"**Goûts :** {', '.join(_gouts_eb)}")
             if mode_prod != "Manuel" and _volume_details:
                 st.caption(
-                    f"Volume = V départ (base kéfir, calculé automatiquement pour la {cuve_choice})"
+                    "Volume = V départ (base kéfir, calculé automatiquement)"
                 )
             else:
-                st.caption(f"Volume = volume cartons + {_perte_litres} L de perte ({cuve_choice})")
+                st.caption(f"Volume = volume cartons + {_perte_litres} L de perte")
 
             # --- Date d'embouteillage ---
             _default_embout = _dt.date.fromisoformat(_semaine_du_eb) + _dt.timedelta(days=7)
@@ -838,15 +836,22 @@ else:
                         try:
                             _semaine_dt = _dt.date.fromisoformat(_semaine_du_eb)
                             _ddm_dt = _dt.date.fromisoformat(_sp_eb.get("ddm", ""))
+                            _sp_vd_eb = _sp_eb.get("volume_details") or {}
+                            _vd_eb = _sp_vd_eb.get(g, {})
                             _fiche_bytes = fill_fiche_xlsx(
-                                template_path=TEMPLATE_MAP.get(cuve_choice, "assets/Grande.xlsx"),
+                                template_path=TEMPLATE_PATH,
                                 semaine_du=_semaine_dt,
                                 ddm=_ddm_dt,
                                 gout1=g,
                                 gout2=None,
                                 df_calc=_sp_eb.get("df_calc", _df_calc_eb),
-                                sheet_name=SHEET_NAME,
                                 df_min=_sp_eb.get("df_min", df_min_override),
+                                V_start=_vd_eb.get("V_start", 0),
+                                tank_capacity=_vd_eb.get("capacity", 7200),
+                                transfer_loss=_vd_eb.get("transfer_loss", 400),
+                                aromatisation_volume=_vd_eb.get("V_aroma", 0),
+                                is_infusion=_vd_eb.get("is_infusion", False),
+                                dilution_ingredients=_vd_eb.get("dilution_ingredients"),
                             )
                             _fiche_name = f"Fiche de production — {g} — {_semaine_dt.strftime('%d-%m-%Y')}.xlsx"
                             upload_fichier_brassin(
