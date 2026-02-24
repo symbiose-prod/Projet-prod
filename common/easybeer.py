@@ -329,6 +329,80 @@ def get_product_detail(id_produit: int) -> dict[str, Any]:
     return r.json()
 
 
+# ── Helpers calcul de volume avec aromatisation ──────────────────────────
+
+
+def compute_aromatisation_volume(id_produit: int) -> tuple[float, float]:
+    """
+    Récupère la recette d'un produit et calcule le volume d'ingrédients
+    ajoutés à l'étape d'aromatisation (jus, arômes).
+
+    Retourne ``(A_R, R)`` :
+      - ``A_R`` : volume total d'aromatisation à l'échelle de référence (litres,
+        en considérant 1 kg = 1 L).
+      - ``R``   : volume de référence de la recette (litres).
+
+    Si la recette n'existe pas ou ne contient pas d'ingrédients
+    d'aromatisation, ``A_R = 0``.
+    """
+    detail = get_product_detail(id_produit)
+    recettes = detail.get("recettes") or []
+    if not recettes:
+        return 0.0, 0.0
+
+    recette = recettes[0]
+    R = float(recette.get("volumeRecette", 0) or 0)
+    if R <= 0:
+        return 0.0, 0.0
+
+    A_R = 0.0
+    for ing in recette.get("ingredients") or []:
+        etape = ing.get("brassageEtape") or {}
+        etape_name = (etape.get("nom") or etape.get("libelle") or "").lower()
+        if "aromatisation" in etape_name:
+            A_R += float(ing.get("quantite", 0) or 0)
+
+    return A_R, R
+
+
+def compute_v_start_max(
+    capacity_L: float,
+    transfer_loss_L: float,
+    bottling_loss_L: float,
+    A_R: float,
+    R: float,
+) -> tuple[float, float]:
+    """
+    Calcule le volume de départ max (V_start) et le volume embouteillé.
+
+    Physique :
+      1. Fermentation  : V_start litres dans la cuve
+      2. Transfert      : −transfer_loss → V_start − Lt
+      3. Aromatisation  : +A litres (A = A_R × V_start / R)
+         → V_start − Lt + A  ≤  capacity  (contrainte de non-débordement)
+      4. Embouteillage  : −bottling_loss → V_embouteillé
+
+    Retourne ``(V_start_max, V_embouteillé)`` en litres.
+    """
+    C = capacity_L
+    Lt = transfer_loss_L
+    Lb = bottling_loss_L
+
+    if R <= 0 or A_R <= 0:
+        # Pas de recette ou pas d'aromatisation → comportement classique
+        return C, max(C - Lt - Lb, 0.0)
+
+    # V_start × (1 + A_R/R) ≤ C + Lt  →  V_start ≤ (C + Lt) × R / (R + A_R)
+    v_max_formula = (C + Lt) * R / (R + A_R)
+    V_start = min(C, v_max_formula)
+
+    # Volume après aromatisation (= capacité cuve si V_start = v_max_formula)
+    A_scaled = A_R * (V_start / R)
+    V_bottled = V_start - Lt + A_scaled - Lb
+
+    return V_start, max(V_bottled, 0.0)
+
+
 def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     """
     POST /brassin/enregistrer

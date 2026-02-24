@@ -1,7 +1,7 @@
 from __future__ import annotations
 from common.session import require_login, user_menu, user_menu_footer
 user = require_login()  # stoppe la page si non connecté
-user_menu()             # affiche l’info utilisateur + bouton logout dans la sidebar
+user_menu()             # affiche l'info utilisateur + bouton logout dans la sidebar
 
 import os
 import re
@@ -17,15 +17,28 @@ from core.optimizer import (
     apply_canonical_flavor, sanitize_gouts,
     compute_plan,
 )
-from common.xlsx_fill import fill_fiche_7000L_xlsx
+from common.xlsx_fill import fill_fiche_xlsx
 
 # ====== Réglages modèle Excel ======
 # Mapping entre le choix UI et le fichier modèle à utiliser
 TEMPLATE_MAP = {
-    "Cuve de 7000L": "assets/Grande.xlsx",   # anciennement "Fiche de Prod 250620.xlsx"
-    "Cuve de 5000L": "assets/Petite.xlsx",
+    "Cuve de 7200L": "assets/Grande.xlsx",   # anciennement "Fiche de Prod 250620.xlsx"
+    "Cuve de 5200L": "assets/Petite.xlsx",
 }
 SHEET_NAME = None  # laisse None si le modèle a une feuille active par défaut
+
+# ====== Configurations cuves ======
+TANK_CONFIGS = {
+    "Cuve de 7200L (1 goût)": {"capacity": 7200, "transfer_loss": 400, "bottling_loss": 400, "nb_gouts": 1, "nominal_hL": 64.0},
+    "Cuve de 5200L (1 goût)": {"capacity": 5200, "transfer_loss": 200, "bottling_loss": 200, "nb_gouts": 1, "nominal_hL": 48.0},
+    "Manuel": None,
+}
+
+# ====== Cache produits EasyBeer (utilisé dans passe 2 + section création) ======
+@st.cache_data(ttl=300, show_spinner="Chargement des produits EasyBeer…")
+def _fetch_eb_products():
+    from common.easybeer import get_all_products
+    return get_all_products()
 
 # ---------------- UI header ----------------
 apply_theme("Production — Ferment Station", "📦")
@@ -58,8 +71,25 @@ df_in = sanitize_gouts(df_in)
 # ---------------- Sidebar (paramètres) ----------------
 with st.sidebar:
     st.header("Paramètres")
-    volume_cible = st.number_input("Volume cible (hL)", 1.0, 1000.0, 64.0, 1.0)
-    nb_gouts = st.selectbox("Nombre de goûts simultanés", [1, 2], index=0)
+    mode_prod = st.radio(
+        "Mode de production",
+        options=list(TANK_CONFIGS.keys()),
+        index=0,
+        help=(
+            "**Cuve de 7200L / 5200L** : volume calculé automatiquement "
+            "en tenant compte des ingrédients d'aromatisation (jus, arômes). "
+            "**Manuel** : choisis toi-même le volume cible et le nombre de goûts."
+        ),
+    )
+
+    if mode_prod == "Manuel":
+        volume_cible = st.number_input("Volume cible (hL)", 1.0, 1000.0, 64.0, 1.0)
+        nb_gouts = st.selectbox("Nombre de goûts simultanés", [1, 2], index=0)
+    else:
+        _tank = TANK_CONFIGS[mode_prod]
+        nb_gouts = _tank["nb_gouts"]
+        volume_cible = _tank["nominal_hL"]  # nominal pour Passe 1
+
     repartir_pro_rv = st.checkbox("Répartition au prorata des ventes", value=True)
 
     st.markdown("---")
@@ -93,7 +123,7 @@ with st.sidebar:
     forced_gouts = st.multiselect(
         "✅ Forcer la production de ces goûts",
         options=[g for g in all_gouts if g not in set(excluded_gouts)],
-        help="Les goûts sélectionnés ici seront produits quoi qu’il arrive. "
+        help="Les goûts sélectionnés ici seront produits quoi qu'il arrive. "
              "Si tu en choisis plus que le nombre de goûts sélectionnés ci-dessus, "
              "le nombre sera automatiquement augmenté."
     )
@@ -137,10 +167,85 @@ effective_nb_gouts = max(nb_gouts, len(forced_gouts)) if forced_gouts else nb_go
     exclude_list=excluded_gouts,
 )
 
-# ✅ Affiche la note d’ajustement (ex: contrainte Infusion/Kéfir)
+# ── PASSE 2 (modes auto) : recalcul du volume avec aromatisation ─────────
+_volume_details: dict = {}  # {gout: {V_start, A_R, R, V_aroma, V_bottled, ...}}
+
+if mode_prod != "Manuel" and gouts_cibles:
+    from common.easybeer import (
+        is_configured as _eb_conf_p2,
+        compute_aromatisation_volume,
+        compute_v_start_max,
+    )
+
+    _tank_cfg = TANK_CONFIGS[mode_prod]
+    _C = _tank_cfg["capacity"]
+    _Lt = _tank_cfg["transfer_loss"]
+    _Lb = _tank_cfg["bottling_loss"]
+
+    _gout_p2 = gouts_cibles[0]  # mode auto = 1 goût
+    _A_R, _R = 0.0, 0.0
+
+    if _eb_conf_p2():
+        try:
+            _eb_prods_p2 = _fetch_eb_products()
+            _labels_p2 = [p.get("libelle", "") for p in _eb_prods_p2]
+            _g_low = _gout_p2.lower()
+            _matched_idx = next(
+                (i for i, lbl in enumerate(_labels_p2) if _g_low in lbl.lower()), 0
+            )
+            _id_prod_p2 = _eb_prods_p2[_matched_idx]["idProduit"]
+            _A_R, _R = compute_aromatisation_volume(_id_prod_p2)
+        except Exception:
+            _A_R, _R = 0.0, 0.0
+
+    _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
+    _volume_cible_recalc = _V_bottled / 100.0
+
+    _volume_details[_gout_p2] = {
+        "V_start": _V_start,
+        "A_R": _A_R,
+        "R": _R,
+        "V_aroma": _A_R * (_V_start / _R) if _R > 0 else 0.0,
+        "V_bottled": _V_bottled,
+        "capacity": _C,
+        "transfer_loss": _Lt,
+        "bottling_loss": _Lb,
+    }
+
+    # Relance l'optimiseur si le volume a changé significativement
+    if abs(_volume_cible_recalc - volume_cible) > 0.01:
+        volume_cible = _volume_cible_recalc
+        (
+            df_min, cap_resume, gouts_cibles, synth_sel, df_calc, df_all, note_msg,
+        ) = compute_plan(
+            df_in=df_in_filtered,
+            window_days=window_days,
+            volume_cible=volume_cible,
+            nb_gouts=effective_nb_gouts,
+            repartir_pro_rv=repartir_pro_rv,
+            manual_keep=forced_gouts or None,
+            exclude_list=excluded_gouts,
+        )
+
+# ✅ Affiche la note d'ajustement (ex: contrainte Infusion/Kéfir)
 if isinstance(note_msg, str) and note_msg.strip():
     st.info(note_msg)
 
+# ── Détails du calcul de volume (modes auto) ──
+if _volume_details:
+    for _g_vd, _vd in _volume_details.items():
+        with st.expander(f"📐 Détails du calcul de volume — {_g_vd}", expanded=False):
+            _c1v, _c2v, _c3v, _c4v = st.columns(4)
+            with _c1v: kpi("V d\u00e9part (L)", f"{_vd['V_start']:.0f}")
+            with _c2v: kpi("Aromatisation (L)", f"{_vd['V_aroma']:.0f}")
+            with _c3v: kpi("V embouteill\u00e9 (L)", f"{_vd['V_bottled']:.0f}")
+            with _c4v: kpi("Volume cible (hL)", f"{_vd['V_bottled']/100:.2f}")
+            st.caption(
+                f"Cuve {_vd['capacity']}L \u2014 "
+                f"Perte transfert : {_vd['transfer_loss']}L \u2014 "
+                f"Perte embouteillage : {_vd['bottling_loss']}L \u2014 "
+                f"Recette : {_vd['R']:.0f}L (r\u00e9f) avec {_vd['A_R']:.1f}L d'aromatisation"
+            )
 
 # ─── Overrides manuels (clé=(GoutCanon,Produit,Stock), valeur=nb cartons forcés) ─
 if "manual_overrides" not in st.session_state:
@@ -320,13 +425,20 @@ section("Fiche de production (modèle Excel)", "🧾")
 _sp_prev = st.session_state.get("saved_production")
 default_debut = _dt.date.fromisoformat(_sp_prev["semaine_du"]) if _sp_prev and "semaine_du" in _sp_prev else _dt.date.today()
 
-# Sélecteur de modèle (taille de cuve)
-cuve_choice = st.radio(
-    "Modèle de fiche",
-    options=["Cuve de 7000L", "Cuve de 5000L"],
-    horizontal=True,
-    help="Choisis le modèle de fiche à générer. Les données (cartons/DDM) viennent de la proposition sauvegardée."
-)
+# Sélecteur de modèle (taille de cuve) — auto en modes cuve, libre en Manuel
+if mode_prod == "Cuve de 7200L (1 goût)":
+    cuve_choice = "Cuve de 7200L"
+    st.info(f"Modèle de fiche : **{cuve_choice}** (lié au mode de production)")
+elif mode_prod == "Cuve de 5200L (1 goût)":
+    cuve_choice = "Cuve de 5200L"
+    st.info(f"Modèle de fiche : **{cuve_choice}** (lié au mode de production)")
+else:
+    cuve_choice = st.radio(
+        "Modèle de fiche",
+        options=["Cuve de 7200L", "Cuve de 5200L"],
+        horizontal=True,
+        help="Choisis le modèle de fiche à générer.",
+    )
 
 # Champ unique : date de début fermentation
 date_debut = st.date_input("Date de début de fermentation", value=default_debut)
@@ -386,7 +498,7 @@ if sp:
     else:
         try:
             # 👉 On ré-utilise la même fonction de remplissage : elle accepte un template_path générique
-            xlsx_bytes = fill_fiche_7000L_xlsx(
+            xlsx_bytes = fill_fiche_xlsx(
                 template_path=template_path,
                 semaine_du=_dt.date.fromisoformat(sp["semaine_du"]),
                 ddm=_dt.date.fromisoformat(sp["ddm"]),
@@ -432,48 +544,45 @@ else:
     if not _gouts_eb:
         st.warning("Aucun goût dans la production sauvegardée.")
     else:
-        # --- Volume de perte selon la cuve choisie ---
-        # Cuve 7000L (réelle : 7200L) → +800L de perte
-        # Cuve 5000L (réelle : 5200L) → +400L de perte
-        _perte_litres = 800 if cuve_choice == "Cuve de 7000L" else 400
-
-        # --- Calcul du volume par goût ---
-        # On utilise volume_cible (sidebar) réparti proportionnellement entre goûts
-        # puis on ajoute la perte par brassin.
-        # Ex: volume_cible=64 hL, 1 goût → 64 hL → 6400L + 800L = 7200L
+        # --- Volume par goût pour EasyBeer ---
         _vol_par_gout: dict[str, float] = {}
         _nb_gouts_eb = len(_gouts_eb)
 
-        if _nb_gouts_eb == 1:
-            # Un seul goût : tout le volume_cible
-            _vol_par_gout[_gouts_eb[0]] = volume_cible * 100 + _perte_litres
+        if mode_prod != "Manuel" and _volume_details:
+            # Mode auto : V_start déjà calculé (tient compte de l'aromatisation)
+            for g in _gouts_eb:
+                if g in _volume_details:
+                    _vol_par_gout[g] = _volume_details[g]["V_start"]
+                else:
+                    _tank_eb = TANK_CONFIGS.get(mode_prod) or TANK_CONFIGS["Cuve de 7200L (1 goût)"]
+                    _vol_par_gout[g] = float(_tank_eb["capacity"])
+            _perte_litres = TANK_CONFIGS[mode_prod]["transfer_loss"] + TANK_CONFIGS[mode_prod]["bottling_loss"]
         else:
-            # Plusieurs goûts : répartir au prorata de X_adj (optimiseur)
-            _proportions: dict[str, float] = {}
-            _total_x = 0.0
-            if isinstance(_df_calc_eb, pd.DataFrame) and "GoutCanon" in _df_calc_eb.columns:
-                _vol_col = "X_adj (hL)" if "X_adj (hL)" in _df_calc_eb.columns else None
-                if _vol_col:
-                    for g in _gouts_eb:
-                        mask = _df_calc_eb["GoutCanon"].astype(str) == g
-                        val = float(_df_calc_eb.loc[mask, _vol_col].sum())
-                        _proportions[g] = val
-                        _total_x += val
-
-            if _total_x > 0:
-                for g in _gouts_eb:
-                    part = (_proportions.get(g, 0) / _total_x) * volume_cible
-                    _vol_par_gout[g] = part * 100 + _perte_litres
+            # Mode Manuel : comportement existant
+            _perte_litres = 800 if cuve_choice == "Cuve de 7200L" else 400
+            if _nb_gouts_eb == 1:
+                _vol_par_gout[_gouts_eb[0]] = volume_cible * 100 + _perte_litres
             else:
-                # Fallback : répartition égale
-                for g in _gouts_eb:
-                    _vol_par_gout[g] = (volume_cible / _nb_gouts_eb) * 100 + _perte_litres
+                # Plusieurs goûts : répartir au prorata de X_adj (optimiseur)
+                _proportions: dict[str, float] = {}
+                _total_x = 0.0
+                if isinstance(_df_calc_eb, pd.DataFrame) and "GoutCanon" in _df_calc_eb.columns:
+                    _vol_col = "X_adj (hL)" if "X_adj (hL)" in _df_calc_eb.columns else None
+                    if _vol_col:
+                        for g in _gouts_eb:
+                            mask = _df_calc_eb["GoutCanon"].astype(str) == g
+                            val = float(_df_calc_eb.loc[mask, _vol_col].sum())
+                            _proportions[g] = val
+                            _total_x += val
 
-        # --- Récupérer produits EasyBeer (cachés 5 min) ---
-        @st.cache_data(ttl=300, show_spinner="Chargement des produits EasyBeer…")
-        def _fetch_eb_products():
-            from common.easybeer import get_all_products
-            return get_all_products()
+                if _total_x > 0:
+                    for g in _gouts_eb:
+                        part = (_proportions.get(g, 0) / _total_x) * volume_cible
+                        _vol_par_gout[g] = part * 100 + _perte_litres
+                else:
+                    # Fallback : répartition égale
+                    for g in _gouts_eb:
+                        _vol_par_gout[g] = (volume_cible / _nb_gouts_eb) * 100 + _perte_litres
 
         try:
             _eb_products = _fetch_eb_products()
@@ -496,7 +605,12 @@ else:
             # --- Récap + sélections ---
             st.markdown(f"**Date de début :** {_semaine_du_eb}")
             st.markdown(f"**Goûts :** {', '.join(_gouts_eb)}")
-            st.caption(f"Volume = volume cartons + {_perte_litres} L de perte ({cuve_choice})")
+            if mode_prod != "Manuel" and _volume_details:
+                st.caption(
+                    f"Volume = V départ (base kéfir, calculé automatiquement pour la {cuve_choice})"
+                )
+            else:
+                st.caption(f"Volume = volume cartons + {_perte_litres} L de perte ({cuve_choice})")
 
             # --- Date d'embouteillage ---
             _default_embout = _dt.date.fromisoformat(_semaine_du_eb) + _dt.timedelta(days=7)
@@ -724,7 +838,7 @@ else:
                         try:
                             _semaine_dt = _dt.date.fromisoformat(_semaine_du_eb)
                             _ddm_dt = _dt.date.fromisoformat(_sp_eb.get("ddm", ""))
-                            _fiche_bytes = fill_fiche_7000L_xlsx(
+                            _fiche_bytes = fill_fiche_xlsx(
                                 template_path=TEMPLATE_MAP.get(cuve_choice, "assets/Grande.xlsx"),
                                 semaine_du=_semaine_dt,
                                 ddm=_ddm_dt,

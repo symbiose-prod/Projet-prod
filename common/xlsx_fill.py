@@ -282,7 +282,7 @@ def _add_image_in_range(ws, img_path: Path, tl_addr: str, br_addr: str):
 #                    Fiche de production (Grande/Petite)
 # ======================================================================
 
-def fill_fiche_7000L_xlsx(
+def fill_fiche_xlsx(
     template_path: str,
     semaine_du: date,
     ddm: date,

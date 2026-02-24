@@ -204,7 +204,7 @@ ssh ubuntu@92.222.229.87 "cd /home/ubuntu/app && git pull && sudo systemctl rest
 - **Authentication:** All pages check `is_authenticated()` from `common/session.py`; unauthenticated users are redirected to `00_Auth.py`
 - **Multi-tenancy:** All data is scoped to `tenant_id`; never mix tenant data
 - **DB connections:** `db/conn.py` — sur OVH, `DB_SSLMODE=disable` car PostgreSQL est local
-- **Excel templates:** Located in `assets/` — `Grande.xlsx` (7000L), `Petite.xlsx` (5000L), `BL_enlevements_Sofripa.xlsx`
+- **Excel templates:** Located in `assets/` — `Grande.xlsx` (7200L), `Petite.xlsx` (5200L), `BL_enlevements_Sofripa.xlsx`
 - **Data files:** `data/production.xlsx` and `data/flavor_map.csv` are the main data sources
 - **Email:** Use Brevo API (not SMTP directly in production); SMTP config in secrets is for local dev only
 
