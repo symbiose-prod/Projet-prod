@@ -1,0 +1,23 @@
+{
+  "destinataires": [
+    {
+      "name": "SOFRIPA",
+      "address_lines": [
+        "ZAC du Haut de Wissous II,",
+        "Rue Hélène Boucher, 91320 Wissous"
+      ],
+      "email_recipients": [
+        "z.dawam@sofripa.fr",
+        "nicolas@symbiose-kefir.fr",
+        "g.marlier@sofripa.fr",
+        "f.ricard@sofripa.fr",
+        "c.boulon@sofripa.fr",
+        "a.teixeira@sofripa.fr",
+        "prepa@sofripa.fr",
+        "annonces@sofripa.fr",
+        "exploitation@sofripa.fr",
+        "b.alves@sofripa.fr"
+      ]
+    }
+  ]
+}
