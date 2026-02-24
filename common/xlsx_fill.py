@@ -389,15 +389,15 @@ def fill_fiche_xlsx(
     except Exception:
         pass
 
-        # --- Logos à gauche du titre (Symbiose + NIKO) ---
+    # --- Logos dans A1:B4 (Symbiose + NIKO) ---
     root = _project_root()
-    
+
     def _first_existing(paths):
         for p in paths:
             if p.exists():
                 return p
         return None
-    
+
     symbiose_path = _first_existing([
         root / "assets" / "logo_symbiose.png",
         root / "assets" / "signature" / "logo_symbiose.png",
@@ -405,14 +405,23 @@ def fill_fiche_xlsx(
     ])
     niko_path = _first_existing([
         root / "assets" / "NIKO_Logo.png",
+        root / "assets" / "signature" / "NIKO_Logo.png",
         root / "assets" / "niko_logo.png",
-        root / "assets" / "Niko_Logo.png",
     ])
-    
-    # Positionnement comme le modèle : Symbiose en B3, NIKO juste à côté (E3)
-    _add_logo(ws, symbiose_path, anchor_cell="B2", max_w=160, max_h=48)
-    _add_logo(ws, niko_path,     anchor_cell="E2", max_w=120, max_h=40)
 
+    # Symbiose en haut-gauche (A1), NIKO juste a droite (B1)
+    _add_logo(ws, symbiose_path, anchor_cell="A1", max_w=80, max_h=55)
+    _add_logo(ws, niko_path,     anchor_cell="B1", max_w=65, max_h=45)
+
+    # --- Titre "Cuve de xxxxL" dans C1:H4 ---
+    if tank_capacity > 0:
+        from openpyxl.styles import Font as _Font, Alignment as _Align
+        _set(ws, "C1", f"Cuve de {tank_capacity}L")
+        try:
+            ws["C1"].font = _Font(name="Aptos Narrow", size=20, bold=True)
+            ws["C1"].alignment = _Align(horizontal="center", vertical="center")
+        except Exception:
+            pass
 
     # --- B8 : goût (libellé Excel)
     _set(ws, "B8", _to_excel_label(gout1) or "")
