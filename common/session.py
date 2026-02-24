@@ -90,7 +90,6 @@ def sidebar_nav_logged_in():
         st.markdown("### Navigation")
         st.page_link("pages/01_Accueil.py",                 label="Accueil",                 icon="🏠")
         st.page_link("pages/02_Production.py",              label="Production",              icon="📦")
-        st.page_link("pages/03_Optimisation.py",            label="Optimisation",            icon="🧮")
         st.page_link("pages/04_Fiche_de_ramasse.py",        label="Fiche de ramasse",        icon="🚚")
         st.page_link("pages/05_Achats_conditionnements.py", label="Achats conditionnements", icon="📦")
         st.page_link("pages/99_Debug.py",                   label="Debug",                   icon="🛠️")
