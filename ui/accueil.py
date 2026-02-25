@@ -88,7 +88,7 @@ def page_accueil():
                             from common.easybeer import get_autonomie_stocks_excel
                             days = int(period_radio.value or 30)
                             xls_bytes = get_autonomie_stocks_excel(days)
-                            df, period = read_input_excel_and_period_from_bytes(xls_bytes, days)
+                            df, period = read_input_excel_and_period_from_bytes(xls_bytes)
                             state["imported"] = True
                             state["source"] = "EasyBeer"
                             state["rows"] = len(df)
@@ -142,7 +142,7 @@ def page_accueil():
                 try:
                     content = e.content.read()
                     buf = BytesIO(content) if isinstance(content, bytes) else content
-                    df, period = read_input_excel_and_period_from_bytes(buf, 30)
+                    df, period = read_input_excel_and_period_from_bytes(buf)
                     state["imported"] = True
                     state["source"] = e.name
                     state["rows"] = len(df)
