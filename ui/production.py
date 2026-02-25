@@ -386,6 +386,13 @@ def page_production():
 
             # ── Tableau final avec overrides ──────────────────────────
             df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
+            print(f"[PROD DEBUG] gouts_cibles={gouts_cibles}, df_all.shape={df_all.shape}, df_calc.shape={df_calc.shape}, df_final.shape={df_final.shape}")
+            if not df_final.empty:
+                print(f"[PROD DEBUG] df_final.columns={list(df_final.columns)}")
+                print(f"[PROD DEBUG] df_final.head()=\n{df_final.head()}")
+            else:
+                print(f"[PROD DEBUG] df_final is EMPTY")
+                print(f"[PROD DEBUG] df_all GoutCanon unique = {df_all['GoutCanon'].unique().tolist()[:10]}")
 
             # ── Affichage ─────────────────────────────────────────────
             with main_container:
