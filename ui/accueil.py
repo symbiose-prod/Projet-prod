@@ -50,6 +50,16 @@ def page_accueil():
 
         state = _get_state()
 
+        # ── Explication ────────────────────────────────────────────────
+        with ui.card().classes("w-full").props("flat bordered"):
+            with ui.card_section().classes("q-pa-md"):
+                ui.label(
+                    "Chargez vos données de ventes pour alimenter les pages "
+                    "Production et Achats. Le fichier contient les volumes vendus "
+                    "par produit sur la période choisie — il sert à calculer le plan "
+                    "de production optimal et les besoins en emballages."
+                ).classes("text-body2").style(f"color: {COLORS['ink2']}; line-height: 1.6")
+
         # ── Import Easy Beer ─────────────────────────────────────────
         with ui.row().classes("w-full gap-6"):
 
@@ -64,17 +74,22 @@ def page_accueil():
                     if not eb_configured():
                         ui.label("EasyBeer non configuré.").classes("text-grey-6")
                     else:
-                        window_input = ui.number(
-                            "Fenêtre (jours)", value=30, min=7, max=365,
-                        ).props("outlined dense").classes("w-full q-mb-md")
+                        # Choix de la période par boutons radio
+                        ui.label("Période d'analyse").classes("text-caption").style(
+                            f"color: {COLORS['ink2']}; font-weight: 500"
+                        )
+                        period_radio = ui.radio(
+                            {30: "1 mois", 60: "2 mois", 90: "3 mois", 180: "6 mois"},
+                            value=30,
+                        ).props("inline dense color=green-8")
 
-                        status_label = ui.label("").classes("text-body2")
+                        status_label = ui.label("").classes("text-body2 q-mt-sm")
                         status_label.set_visibility(False)
 
                         def do_import_eb():
                             try:
                                 from common.easybeer import get_autonomie_stocks_excel
-                                days = int(window_input.value or 30)
+                                days = int(period_radio.value or 30)
                                 xls_bytes = get_autonomie_stocks_excel(days)
                                 df, period = read_input_excel_and_period_from_bytes(xls_bytes, days)
                                 state["imported"] = True
@@ -95,7 +110,7 @@ def page_accueil():
                             "Importer depuis Easy Beer",
                             icon="cloud_download",
                             on_click=do_import_eb,
-                        ).classes("w-full").props("color=green-8 unelevated")
+                        ).classes("w-full q-mt-md").props("color=green-8 unelevated")
 
             # Col 2 : Upload Excel
             with ui.card().classes("flex-1").props("flat bordered"):
@@ -105,6 +120,13 @@ def page_accueil():
                         ui.label("Upload Excel").classes("text-h6")
 
                 with ui.card_section():
+                    ui.label(
+                        "Alternative : importez manuellement un fichier Excel "
+                        "d'autonomie des stocks exporté depuis Easy Beer."
+                    ).classes("text-body2 q-mb-md").style(
+                        f"color: {COLORS['ink2']}"
+                    )
+
                     upload_status = ui.label("").classes("text-body2")
                     upload_status.set_visibility(False)
 
