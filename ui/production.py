@@ -483,7 +483,7 @@ def page_production():
                     # Trier : Symbiose en premier, Niko ensuite
                     all_table_rows.sort(key=lambda r: (0 if r["_brand"] == "Symbiose Kéfir" else 1, r["gout"]))
 
-                    # Images par marque pour les lignes séparatrices
+                    # Images par marque
                     brand_images: dict[str, list[dict]] = {}
                     seen: set[str] = set()
                     for row in all_table_rows:
@@ -497,9 +497,22 @@ def page_production():
                                     "gout": row["gout"], "url": img_url,
                                 })
 
-                    # Injecter les images dans les rows pour le template Vue
+                    # Insérer des lignes séparatrices dans les données
+                    ordered_rows: list[dict] = []
+                    current_brand = None
                     for row in all_table_rows:
-                        row["_brand_images"] = brand_images.get(row["_brand"], [])
+                        if row["_brand"] != current_brand:
+                            current_brand = row["_brand"]
+                            ordered_rows.append({
+                                "_sep": True,
+                                "_brand": current_brand,
+                                "_brand_images": brand_images.get(current_brand, []),
+                                "_key": f"_sep_{current_brand}",
+                                "gout": "", "stock": "", "forcer": None,
+                                "cartons": 0, "bouteilles": 0, "volume": "",
+                                "produit": "",
+                            })
+                        ordered_rows.append(row)
 
                     columns = [
                         {"name": "gout", "label": "Goût", "field": "gout", "align": "left", "sortable": True},
@@ -514,57 +527,54 @@ def page_production():
 
                     table = ui.table(
                         columns=columns,
-                        rows=all_table_rows,
+                        rows=ordered_rows,
                         row_key="_key",
                     ).classes("w-full").props("flat bordered dense")
 
-                    # Slot body complet : séparateur marque + images + forcer inline
-                    table.add_slot("body", f'''
-                        <template v-for="(row, index) in props.rows" :key="row._key">
-                            <tr v-if="index === 0 || row._brand !== props.rows[index - 1]._brand"
-                                style="background: #F3F4F6;">
-                                <td colspan="{nb_cols}"
-                                    style="padding: 10px 12px; font-weight: 600; font-size: 13px; border-bottom: 2px solid {COLORS['border']};">
-                                    <div style="display: flex; align-items: center; gap: 16px;">
-                                        <span style="color: {COLORS['ink']};">{{{{ row._brand }}}}</span>
-                                        <div v-if="row._brand_images && row._brand_images.length"
-                                             style="display: flex; align-items: flex-end; gap: 10px; margin-left: 8px;">
-                                            <div v-for="img in row._brand_images" :key="img.gout"
-                                                 style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
-                                                <img :src="img.url"
-                                                     style="height: 48px; object-fit: contain; border-radius: 4px;" />
-                                                <span style="font-size: 11px; color: {COLORS['ink2']}; font-weight: 400;">
-                                                    {{{{ img.gout }}}}
-                                                </span>
-                                            </div>
+                    # Slot body : séparateur marque OU ligne de données
+                    table.add_slot("body", r'''
+                        <q-tr v-if="props.row._sep" :props="props">
+                            <q-td colspan="''' + str(nb_cols) + r'''"
+                                   style="background: #F3F4F6; padding: 10px 12px; font-weight: 600; font-size: 13px; border-bottom: 2px solid #E5E7EB;">
+                                <div style="display: flex; align-items: center; gap: 16px;">
+                                    <span>{{ props.row._brand }}</span>
+                                    <div v-if="props.row._brand_images && props.row._brand_images.length"
+                                         style="display: flex; align-items: flex-end; gap: 10px; margin-left: 8px;">
+                                        <div v-for="img in props.row._brand_images" :key="img.gout"
+                                             style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                                            <img :src="img.url"
+                                                 style="height: 48px; object-fit: contain; border-radius: 4px;" />
+                                            <span style="font-size: 11px; color: #6B7280; font-weight: 400;">
+                                                {{ img.gout }}
+                                            </span>
                                         </div>
                                     </div>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td v-for="col in props.cols" :key="col.name"
-                                    :style="'padding: 6px 8px; text-align: ' + col.align">
-                                    <template v-if="col.name === 'forcer'">
-                                        <q-input
-                                            v-model.number="row.forcer"
-                                            type="number"
-                                            dense
-                                            borderless
-                                            placeholder="auto"
-                                            input-class="text-right text-bold"
-                                            :input-style="{{color: row.forcer != null ? '#F97316' : '#9CA3AF'}}"
-                                            style="max-width: 80px"
-                                        />
-                                    </template>
-                                    <template v-else-if="col.name === 'cartons'">
-                                        <span style="font-weight: 600;">{{{{ row[col.field] }}}}</span>
-                                    </template>
-                                    <template v-else>
-                                        {{{{ row[col.field] }}}}
-                                    </template>
-                                </td>
-                            </tr>
-                        </template>
+                                </div>
+                            </q-td>
+                        </q-tr>
+                        <q-tr v-else :props="props">
+                            <q-td v-for="col in props.cols" :key="col.name" :props="props"
+                                  :style="'text-align: ' + col.align">
+                                <template v-if="col.name === 'forcer'">
+                                    <q-input
+                                        v-model.number="props.row.forcer"
+                                        type="number"
+                                        dense
+                                        borderless
+                                        placeholder="auto"
+                                        input-class="text-right text-bold"
+                                        :input-style="{color: props.row.forcer != null ? '#F97316' : '#9CA3AF'}"
+                                        style="max-width: 80px"
+                                    />
+                                </template>
+                                <template v-else-if="col.name === 'cartons'">
+                                    <span style="font-weight: 600;">{{ props.row[col.field] }}</span>
+                                </template>
+                                <template v-else>
+                                    {{ props.row[col.field] }}
+                                </template>
+                            </q-td>
+                        </q-tr>
                     ''')
 
                     with ui.row().classes("w-full gap-3 q-mt-sm"):
@@ -572,6 +582,8 @@ def page_production():
                             """Lit les valeurs 'Forcer' depuis le tableau et recalcule."""
                             new_ov = {}
                             for r in table.rows:
+                                if r.get("_sep"):
+                                    continue
                                 v = r.get("forcer")
                                 if v is not None and v != "" and v != 0:
                                     try:
