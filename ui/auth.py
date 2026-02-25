@@ -39,11 +39,13 @@ def page_login():
         with ui.card().classes("w-full q-pa-lg").props("flat bordered").style(
             "border-radius: 8px"
         ):
-            # Tabs : Connexion / Inscription
-            with ui.tabs().classes("w-full").props(f'active-color=green-8 indicator-color=green-8') as tabs:
-                tab_login = ui.tab("Connexion", icon="login")
-                tab_signup = ui.tab("Inscription", icon="person_add")
-                tab_forgot = ui.tab("Mot de passe oublié", icon="lock_reset")
+            # Tabs : Connexion / Inscription / Mot de passe
+            with ui.tabs().classes("w-full").props(
+                'active-color=green-8 indicator-color=green-8 dense no-caps'
+            ) as tabs:
+                tab_login = ui.tab("Connexion")
+                tab_signup = ui.tab("Inscription")
+                tab_forgot = ui.tab("Mot de passe oublié")
 
             with ui.tab_panels(tabs, value=tab_login).classes("w-full q-mt-md"):
 
