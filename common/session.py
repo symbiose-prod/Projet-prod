@@ -92,6 +92,7 @@ def sidebar_nav_logged_in():
         st.page_link("pages/02_Production.py",              label="Production",              icon="📦")
         st.page_link("pages/04_Fiche_de_ramasse.py",        label="Fiche de ramasse",        icon="🚚")
         st.page_link("pages/05_Achats_conditionnements.py", label="Achats conditionnements", icon="📦")
+        st.page_link("pages/07_Analyse_Biocoop.py",         label="Analyse Biocoop",         icon="🛒")
         st.page_link("pages/99_Debug.py",                   label="Debug",                   icon="🛠️")
 
 
