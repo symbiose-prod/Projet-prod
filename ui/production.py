@@ -462,7 +462,7 @@ def page_production():
                     ).classes("text-caption text-grey-6")
 
                 if not df_final.empty:
-                    # Construire les lignes + séparer Symbiose / Niko
+                    # Construire les lignes triées : Symbiose d'abord, puis Niko
                     all_table_rows = []
                     for _, r in df_final.iterrows():
                         key = f"{r['GoutCanon']}|{r['Produit']}|{r['Stock']}"
@@ -477,11 +477,29 @@ def page_production():
                             "bouteilles": int(r["Bouteilles à produire (arrondi)"]),
                             "volume": f"{float(r['Volume produit arrondi (hL)']):.3f}",
                             "_key": key,
-                            "_niko": is_niko,
+                            "_brand": "Niko" if is_niko else "Symbiose Kéfir",
                         })
 
-                    symbiose_rows = [r for r in all_table_rows if not r["_niko"]]
-                    niko_rows = [r for r in all_table_rows if r["_niko"]]
+                    # Trier : Symbiose en premier, Niko ensuite
+                    all_table_rows.sort(key=lambda r: (0 if r["_brand"] == "Symbiose Kéfir" else 1, r["gout"]))
+
+                    # Images par marque pour les lignes séparatrices
+                    brand_images: dict[str, list[dict]] = {}
+                    seen: set[str] = set()
+                    for row in all_table_rows:
+                        prod = row["produit"]
+                        brand = row["_brand"]
+                        if prod not in seen:
+                            seen.add(prod)
+                            img_url = product_images.get(prod, "")
+                            if img_url:
+                                brand_images.setdefault(brand, []).append({
+                                    "gout": row["gout"], "url": img_url,
+                                })
+
+                    # Injecter les images dans les rows pour le template Vue
+                    for row in all_table_rows:
+                        row["_brand_images"] = brand_images.get(row["_brand"], [])
 
                     columns = [
                         {"name": "gout", "label": "Goût", "field": "gout", "align": "left", "sortable": True},
@@ -492,83 +510,76 @@ def page_production():
                         {"name": "volume", "label": "Volume (hL)", "field": "volume", "align": "right", "sortable": True},
                     ]
 
-                    # Tables référencées pour "Appliquer les forcés"
-                    brand_tables: list[ui.table] = []
+                    nb_cols = len(columns)
 
-                    def _render_brand_block(brand_label: str, brand_rows: list[dict], brand_icon: str):
-                        """Affiche un bloc marque : images 33cl + tableau."""
-                        if not brand_rows:
-                            return
+                    table = ui.table(
+                        columns=columns,
+                        rows=all_table_rows,
+                        row_key="_key",
+                    ).classes("w-full").props("flat bordered dense")
 
-                        with ui.card().classes("w-full").props("flat bordered"):
-                            with ui.card_section():
-                                with ui.row().classes("items-center gap-3"):
-                                    ui.icon(brand_icon, size="sm").style(f"color: {COLORS['green']}")
-                                    ui.label(brand_label).classes("text-h6")
-
-                            # Bandeau images des bouteilles 33cl
-                            seen_products: set[str] = set()
-                            img_items: list[tuple[str, str]] = []  # (gout, image_url)
-                            for row in brand_rows:
-                                prod = row["produit"]
-                                if prod in seen_products:
-                                    continue
-                                seen_products.add(prod)
-                                # Trouver l'image correspondante
-                                img_url = product_images.get(prod, "")
-                                if img_url:
-                                    img_items.append((row["gout"], img_url))
-
-                            if img_items:
-                                with ui.card_section().classes("q-pt-none"):
-                                    with ui.row().classes("items-end gap-4"):
-                                        for gout, url in img_items:
-                                            with ui.column().classes("items-center gap-1"):
-                                                ui.image(url).classes("rounded").style(
-                                                    "width: 60px; height: 90px; object-fit: contain"
-                                                )
-                                                ui.label(gout).classes("text-caption text-grey-6")
-
-                            with ui.card_section().classes("q-pt-none"):
-                                tbl = ui.table(
-                                    columns=columns,
-                                    rows=brand_rows,
-                                    row_key="_key",
-                                ).classes("w-full").props("flat dense")
-
-                                tbl.add_slot("body-cell-forcer", r'''
-                                    <q-td :props="props">
+                    # Slot body complet : séparateur marque + images + forcer inline
+                    table.add_slot("body", f'''
+                        <template v-for="(row, index) in props.rows" :key="row._key">
+                            <tr v-if="index === 0 || row._brand !== props.rows[index - 1]._brand"
+                                style="background: #F3F4F6;">
+                                <td colspan="{nb_cols}"
+                                    style="padding: 10px 12px; font-weight: 600; font-size: 13px; border-bottom: 2px solid {COLORS['border']};">
+                                    <div style="display: flex; align-items: center; gap: 16px;">
+                                        <span style="color: {COLORS['ink']};">{{{{ row._brand }}}}</span>
+                                        <div v-if="row._brand_images && row._brand_images.length"
+                                             style="display: flex; align-items: flex-end; gap: 10px; margin-left: 8px;">
+                                            <div v-for="img in row._brand_images" :key="img.gout"
+                                                 style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                                                <img :src="img.url"
+                                                     style="height: 48px; object-fit: contain; border-radius: 4px;" />
+                                                <span style="font-size: 11px; color: {COLORS['ink2']}; font-weight: 400;">
+                                                    {{{{ img.gout }}}}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td v-for="col in props.cols" :key="col.name"
+                                    :style="'padding: 6px 8px; text-align: ' + col.align">
+                                    <template v-if="col.name === 'forcer'">
                                         <q-input
-                                            v-model.number="props.row.forcer"
+                                            v-model.number="row.forcer"
                                             type="number"
                                             dense
                                             borderless
                                             placeholder="auto"
                                             input-class="text-right text-bold"
-                                            :input-style="{color: props.row.forcer != null ? '#F97316' : '#9CA3AF'}"
+                                            :input-style="{{color: row.forcer != null ? '#F97316' : '#9CA3AF'}}"
                                             style="max-width: 80px"
                                         />
-                                    </q-td>
-                                ''')
-                                brand_tables.append(tbl)
-
-                    _render_brand_block("Symbiose Kéfir", symbiose_rows, "local_drink")
-                    _render_brand_block("Niko", niko_rows, "spa")
+                                    </template>
+                                    <template v-else-if="col.name === 'cartons'">
+                                        <span style="font-weight: 600;">{{{{ row[col.field] }}}}</span>
+                                    </template>
+                                    <template v-else>
+                                        {{{{ row[col.field] }}}}
+                                    </template>
+                                </td>
+                            </tr>
+                        </template>
+                    ''')
 
                     with ui.row().classes("w-full gap-3 q-mt-sm"):
                         async def do_apply_overrides():
-                            """Lit les valeurs 'Forcer' depuis les tableaux et recalcule."""
+                            """Lit les valeurs 'Forcer' depuis le tableau et recalcule."""
                             new_ov = {}
-                            for tbl in brand_tables:
-                                for r in tbl.rows:
-                                    v = r.get("forcer")
-                                    if v is not None and v != "" and v != 0:
-                                        try:
-                                            vi = int(float(v))
-                                            if vi >= 0:
-                                                new_ov[r["_key"]] = vi
-                                        except (TypeError, ValueError):
-                                            pass
+                            for r in table.rows:
+                                v = r.get("forcer")
+                                if v is not None and v != "" and v != 0:
+                                    try:
+                                        vi = int(float(v))
+                                        if vi >= 0:
+                                            new_ov[r["_key"]] = vi
+                                    except (TypeError, ValueError):
+                                        pass
                             overrides.clear()
                             overrides.update(new_ov)
                             app.storage.user["production_overrides"] = dict(overrides)
