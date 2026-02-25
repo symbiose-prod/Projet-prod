@@ -61,7 +61,7 @@ def page_accueil():
                 ).classes("text-body2").style(f"color: {COLORS['ink2']}; line-height: 1.6")
 
         # ── Import Easy Beer ─────────────────────────────────────────
-        with ui.card().classes("w-full").props("flat bordered"):
+        with ui.card().classes("").props("flat bordered").style("width: 50%; min-width: 320px"):
             with ui.card_section():
                 with ui.row().classes("items-center gap-2"):
                     ui.icon("cloud_download", size="sm").style(f"color: {COLORS['green']}")
