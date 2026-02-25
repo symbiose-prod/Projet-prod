@@ -156,6 +156,77 @@ def get_mp_all(status: str = "actif") -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
+    """
+    GET /stock/produit/edition/{idStockProduit}
+    → Détail complet d'un stock produit, incluant poidsUnitaire.
+
+    Champs utiles :
+      - poidsUnitaire     → poids du carton/pack complet (kg)
+      - contenant         → {contenance, poidsUnitaire (bouteille vide), ...}
+      - lot               → {libelle, quantite}
+      - produit           → {idProduit, nom, ...}
+    """
+    r = requests.get(
+        f"{BASE}/stock/produit/edition/{id_stock_produit}",
+        auth=_auth(),
+        timeout=10,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def fetch_carton_weights() -> dict[tuple[int, str], float]:
+    """
+    Récupère les poids cartons depuis EasyBeer pour tous les produits finis.
+
+    1. POST /stock/produits → arbre des stocks (1 appel)
+    2. GET /stock/produit/edition/{id} pour chaque stock (N appels)
+
+    Retourne :
+        {(idProduit, fmt_str): poidsUnitaire_kg, ...}
+        ex: {(42514, "12x33"): 6.741, (42514, "6x75"): 7.23, ...}
+    """
+    payload = {"idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))}
+    r = requests.post(
+        f"{BASE}/stock/produits",
+        json=payload,
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    data = r.json()
+
+    weights: dict[tuple[int, str], float] = {}
+    for prod in data.get("consolidationsFilles", []):
+        for conso in prod.get("consolidationsFilles", []):
+            sid = conso.get("id")
+            if not sid:
+                continue
+
+            produit = conso.get("produit") or {}
+            id_produit = produit.get("idProduit")
+            lot = conso.get("lot") or {}
+            cont = conso.get("contenant") or {}
+            contenance = float(cont.get("contenance", 0) or 0)
+            lot_qty = int(lot.get("quantite", 0) or 0)
+            if not (id_produit and contenance and lot_qty):
+                continue
+
+            fmt_str = f"{lot_qty}x{int(contenance * 100)}"
+
+            try:
+                detail = get_stock_produit_detail(sid)
+                poids = float(detail.get("poidsUnitaire", 0) or 0)
+                if poids > 0:
+                    weights[(id_produit, fmt_str)] = poids
+            except Exception:
+                pass
+
+    return weights
+
+
 def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
     """
     POST /indicateur/synthese-consommations-mp

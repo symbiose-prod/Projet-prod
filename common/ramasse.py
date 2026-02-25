@@ -27,46 +27,50 @@ from common.easybeer import (
 # ─── Config poids cartons ────────────────────────────────────────────────────
 # 5 valeurs distinctes extraites de l'ancien info_FDR.csv.
 
-CARTON_WEIGHTS: dict[str, float] = {
-    "12x33": 7.56,   # Symbiose / Infusion / Inter standard
-    "6x75":  7.23,   # Symbiose 6x75 standard
-    "4x75":  4.68,   # Pack 4x75
+# Fallback statique si EasyBeer est indisponible
+CARTON_WEIGHTS_FALLBACK: dict[str, float] = {
+    "12x33": 6.741,
+    "6x75":  7.23,
+    "4x75":  4.68,
 }
 
-WEIGHT_OVERRIDES: dict[str, dict[str, float]] = {
-    "12x33": {
-        "niko": 6.741,
-        "peche": 6.741,
-        "water kefir grapefruit": 6.741,
-    },
+WEIGHT_OVERRIDES_FALLBACK: dict[str, dict[str, float]] = {
     "6x75": {
-        "niko": 7.2,
+        "niko": 6.84,
     },
 }
 
 
-def get_carton_weight(fmt: str, product_label: str) -> float:
+def get_carton_weight(
+    fmt: str,
+    product_label: str,
+    *,
+    id_produit: int | None = None,
+    eb_weights: dict[tuple[int, str], float] | None = None,
+) -> float:
     """
     Retourne le poids d'un carton pour un format et un produit donnes.
 
     Logique :
-      1. Cherche dans WEIGHT_OVERRIDES (mot-cle dans le label normalise)
-      2. Exception : "igeba" garde le poids standard (pas 6.741)
-      3. Sinon retourne le poids par defaut du format
+      1. Si eb_weights fourni (depuis EasyBeer), cherche (idProduit, fmt)
+      2. Sinon fallback sur les constantes statiques
     """
     fmt_key = fmt.lower().replace("cl", "").replace(" ", "")
+
+    # 1) Lookup dynamique EasyBeer
+    if eb_weights and id_produit:
+        poids = eb_weights.get((id_produit, fmt_key))
+        if poids and poids > 0:
+            return poids
+
+    # 2) Fallback statique
     label_lower = _canon(product_label)
-
-    # Exception IGEBA : toujours poids standard
-    if "igeba" in label_lower:
-        return CARTON_WEIGHTS.get(fmt_key, 0.0)
-
-    overrides = WEIGHT_OVERRIDES.get(fmt_key, {})
+    overrides = WEIGHT_OVERRIDES_FALLBACK.get(fmt_key, {})
     for keyword, weight in overrides.items():
         if keyword in label_lower:
             return weight
 
-    return CARTON_WEIGHTS.get(fmt_key, 0.0)
+    return CARTON_WEIGHTS_FALLBACK.get(fmt_key, 0.0)
 
 
 # ─── Destinataires ───────────────────────────────────────────────────────────
@@ -218,6 +222,7 @@ def build_ramasse_lines(
     selected_brassins: list[dict],
     id_entrepot: int | None,
     cb_by_product: dict[int, list[dict]] | None = None,
+    eb_weights: dict[tuple[int, str], float] | None = None,
 ) -> tuple[list[dict], dict]:
     """
     Pour chaque brassin selectionne :
@@ -305,8 +310,11 @@ def build_ramasse_lines(
                     continue
                 seen.add(key)
 
-                # Poids carton
-                poids_carton = get_carton_weight(fmt_str, clean_label)
+                # Poids carton (dynamique EasyBeer ou fallback)
+                poids_carton = get_carton_weight(
+                    fmt_str, clean_label,
+                    id_produit=id_produit, eb_weights=eb_weights,
+                )
 
                 # Quantite pre-remplie depuis productions existantes
                 qty = _existing_qty.get((prod_label.lower(), fmt_str), 0)

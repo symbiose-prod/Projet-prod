@@ -28,6 +28,7 @@ from common.easybeer import (
     get_brassins_en_cours,
     get_code_barre_matrice,
     get_warehouses,
+    fetch_carton_weights,
 )
 from common.ramasse import (
     today_paris,
@@ -115,6 +116,17 @@ try:
 except Exception:
     pass
 
+# Poids cartons depuis EasyBeer (cache 1h — les poids changent rarement)
+@st.cache_data(ttl=3600, show_spinner="Chargement des poids cartons…")
+def _fetch_eb_weights() -> dict[tuple[int, str], float]:
+    return fetch_carton_weights()
+
+_eb_weights: dict[tuple[int, str], float] | None = None
+try:
+    _eb_weights = _fetch_eb_weights()
+except Exception:
+    pass  # fallback sur les poids statiques
+
 # Entrepot principal
 _id_entrepot: int | None = None
 try:
@@ -168,7 +180,7 @@ rows: list[dict] = []
 if _selected_brassins:
     with st.spinner("Chargement des détails brassins…"):
         rows, meta_by_label = build_ramasse_lines(
-            _selected_brassins, _id_entrepot, _cb_by_product
+            _selected_brassins, _id_entrepot, _cb_by_product, _eb_weights
         )
 else:
     st.info("Sélectionne au moins un brassin pour construire la fiche.")
