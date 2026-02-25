@@ -67,9 +67,9 @@ def apply_quasar_theme():
             box-shadow: none !important;
         }}
 
-        /* ── Sidebar : jaune citron ────────────────────── */
+        /* ── Sidebar : blanc pur ────────────────────── */
         .q-drawer {{
-            background: #FFF166 !important;
+            background: {COLORS['surface']} !important;
             border-right: 1px solid {COLORS['border']} !important;
         }}
 
@@ -122,19 +122,6 @@ def apply_quasar_theme():
         /* ── Separators ─────────────────────────────── */
         .q-separator {{
             background: {COLORS['border']} !important;
-        }}
-
-        /* ── Drawer : texte et séparateurs en noir ──── */
-        .q-drawer .q-separator {{
-            background: {COLORS['ink']} !important;
-        }}
-        .q-drawer .q-btn {{
-            color: {COLORS['ink']} !important;
-        }}
-        .q-drawer .text-caption,
-        .q-drawer .text-subtitle2,
-        .q-drawer .text-body2 {{
-            color: {COLORS['ink']} !important;
         }}
 
         /* ── Inputs : coins arrondis ────────────────── */
@@ -260,7 +247,7 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
         if email:
             ui.label(f"Connecté : {email}").classes(
                 "text-caption q-mt-xs"
-            ).style(f"color: {COLORS['ink']}")
+            ).style(f"color: {COLORS['ink2']}")
 
     # ─── Contenu principal ───────────────────────────────────────────
     with ui.column().classes("w-full max-w-6xl mx-auto q-pa-lg gap-4"):
