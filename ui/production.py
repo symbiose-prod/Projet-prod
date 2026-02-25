@@ -447,7 +447,6 @@ def page_production():
 
                 if not df_final.empty:
                     table_rows = []
-                    force_inputs: dict[str, ui.number] = {}
 
                     for _, r in df_final.iterrows():
                         key = f"{r['GoutCanon']}|{r['Produit']}|{r['Stock']}"
@@ -455,6 +454,7 @@ def page_production():
                             "gout": str(r["GoutCanon"]),
                             "produit": str(r["Produit"]),
                             "stock": str(r["Stock"]),
+                            "forcer": overrides.get(key, None),
                             "cartons": int(r["Cartons à produire (arrondi)"]),
                             "bouteilles": int(r["Bouteilles à produire (arrondi)"]),
                             "volume": f"{float(r['Volume produit arrondi (hL)']):.3f}",
@@ -465,73 +465,69 @@ def page_production():
                         {"name": "gout", "label": "Goût", "field": "gout", "align": "left", "sortable": True},
                         {"name": "produit", "label": "Produit", "field": "produit", "align": "left", "sortable": True},
                         {"name": "stock", "label": "Format", "field": "stock", "align": "left", "sortable": True},
+                        {"name": "forcer", "label": "Forcer", "field": "forcer", "align": "right"},
                         {"name": "cartons", "label": "Cartons", "field": "cartons", "align": "right", "sortable": True},
                         {"name": "bouteilles", "label": "Bouteilles", "field": "bouteilles", "align": "right", "sortable": True},
                         {"name": "volume", "label": "Volume (hL)", "field": "volume", "align": "right", "sortable": True},
                     ]
 
-                    ui.table(
+                    table = ui.table(
                         columns=columns,
                         rows=table_rows,
                         row_key="_key",
                     ).classes("w-full").props("flat bordered dense")
 
-                    # ── Forcer des cartons (override) ────────────
-                    with ui.expansion(
-                        "Forcer des quantités",
-                        icon="edit",
-                    ).classes("w-full q-mt-sm").props("dense header-class=text-grey-7"):
-                        ui.label(
-                            "Saisissez un nombre de cartons pour forcer un format. "
-                            "Le volume restant sera redistribué aux autres."
-                        ).classes("text-caption text-grey-6 q-mb-sm")
+                    # Slot : colonne "Forcer" avec input inline
+                    table.add_slot("body-cell-forcer", r'''
+                        <q-td :props="props">
+                            <q-input
+                                v-model.number="props.row.forcer"
+                                type="number"
+                                dense
+                                borderless
+                                placeholder="auto"
+                                input-class="text-right text-bold"
+                                :input-style="{color: props.row.forcer != null ? '#F97316' : '#9CA3AF'}"
+                                style="max-width: 80px"
+                            />
+                        </q-td>
+                    ''')
 
-                        for row in table_rows:
-                            key = row["_key"]
-                            cur_val = overrides.get(key)
-                            with ui.row().classes("w-full items-center gap-2"):
-                                ui.label(
-                                    f"{row['gout']} — {row['stock']}"
-                                ).classes("text-body2 flex-1")
-                                force_inputs[key] = ui.number(
-                                    value=cur_val,
-                                    placeholder="auto",
-                                    min=0,
-                                ).props("outlined dense").classes("w-24")
+                    with ui.row().classes("w-full gap-3 q-mt-sm"):
+                        async def do_apply_overrides():
+                            """Lit les valeurs 'Forcer' depuis le tableau et recalcule."""
+                            data = table.rows
+                            new_ov = {}
+                            for r in data:
+                                v = r.get("forcer")
+                                if v is not None and v != "" and v != 0:
+                                    try:
+                                        vi = int(float(v))
+                                        if vi >= 0:
+                                            new_ov[r["_key"]] = vi
+                                    except (TypeError, ValueError):
+                                        pass
+                            overrides.clear()
+                            overrides.update(new_ov)
+                            app.storage.user["production_overrides"] = dict(overrides)
+                            do_compute()
 
-                        with ui.row().classes("w-full gap-3 q-mt-sm"):
-                            def do_apply_overrides():
-                                new_ov = {}
-                                for k, inp in force_inputs.items():
-                                    v = inp.value
-                                    if v is not None and v != "" and v != 0:
-                                        try:
-                                            vi = int(float(v))
-                                            if vi >= 0:
-                                                new_ov[k] = vi
-                                        except (TypeError, ValueError):
-                                            pass
-                                overrides.clear()
-                                overrides.update(new_ov)
-                                app.storage.user["production_overrides"] = dict(overrides)
-                                do_compute()
+                        ui.button(
+                            "Appliquer les forcés",
+                            icon="check",
+                            on_click=do_apply_overrides,
+                        ).props("outline color=green-8")
 
-                            ui.button(
-                                "Appliquer les forcés",
-                                icon="check",
-                                on_click=do_apply_overrides,
-                            ).props("outline color=green-8")
+                        def do_reset_overrides():
+                            overrides.clear()
+                            app.storage.user["production_overrides"] = {}
+                            do_compute()
 
-                            def do_reset_overrides():
-                                overrides.clear()
-                                app.storage.user["production_overrides"] = {}
-                                do_compute()
-
-                            ui.button(
-                                "Réinitialiser",
-                                icon="restart_alt",
-                                on_click=do_reset_overrides,
-                            ).props("flat color=grey-7")
+                        ui.button(
+                            "Réinitialiser",
+                            icon="restart_alt",
+                            on_click=do_reset_overrides,
+                        ).props("flat color=grey-7")
 
                 else:
                     ui.label(
