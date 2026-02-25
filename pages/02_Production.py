@@ -822,6 +822,7 @@ else:
                         payload = {
                             "nom": _code,
                             "volume": vol_l,
+                            "pourcentagePerte": round(_perte_litres / vol_l * 100, 2) if vol_l > 0 else 0,
                             "dateDebutFormulaire": f"{_semaine_du_eb}T07:30:00.000Z",
                             "dateConditionnementPrevue": f"{_date_embouteillage.isoformat()}T23:00:00.000Z",
                             "produit": {"idProduit": id_produit},
