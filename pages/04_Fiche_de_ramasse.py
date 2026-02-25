@@ -423,15 +423,12 @@ if st.button("✉️ Envoyer la demande de ramasse", type="primary", use_contain
         st.error("Le PDF n'est pas prêt et aucun carton n'est saisi. Renseigne au moins une quantité > 0.")
         st.stop()
 
-    # Generer le PDF si pas deja en cache
-    pdf_bytes = st.session_state.get("fiche_ramasse_pdf")
-    if pdf_bytes is None:
-        try:
-            pdf_bytes = _generate_pdf()
-            st.session_state["fiche_ramasse_pdf"] = pdf_bytes
-        except Exception as e:
-            st.error(f"Erreur PDF : {e}")
-            st.stop()
+    # Toujours regénérer le PDF à l'envoi (évite d'envoyer un vieux cache)
+    try:
+        pdf_bytes = _generate_pdf()
+    except Exception as e:
+        st.error(f"Erreur PDF : {e}")
+        st.stop()
 
     if not to_list:
         st.error("Indique au moins un destinataire.")
