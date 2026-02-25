@@ -39,13 +39,13 @@ def page_login():
         with ui.card().classes("w-full q-pa-lg").props("flat bordered").style(
             "border-radius: 8px"
         ):
-            # Tabs : Connexion / Inscription / Mot de passe
+            # Tabs : Connexion / Inscription (2 onglets seulement)
             with ui.tabs().classes("w-full").props(
-                'active-color=green-8 indicator-color=green-8 dense no-caps'
+                'active-color=green-8 indicator-color=green-8'
             ) as tabs:
-                tab_login = ui.tab("Connexion")
-                tab_signup = ui.tab("Inscription")
-                tab_forgot = ui.tab("Mot de passe oublié")
+                tab_login = ui.tab("Connexion", icon="login")
+                tab_signup = ui.tab("Inscription", icon="person_add")
+                tab_forgot = ui.tab("forgot").classes("hidden")  # caché
 
             with ui.tab_panels(tabs, value=tab_login).classes("w-full q-mt-md"):
 
@@ -93,7 +93,15 @@ def page_login():
                         "Connexion",
                         icon="login",
                         on_click=do_login,
-                    ).classes("w-full q-mt-sm").props(f'color=green-8 unelevated')
+                    ).classes("w-full q-mt-sm").props("color=green-8 unelevated")
+
+                    # Lien "Mot de passe oublié ?" sous le bouton
+                    ui.button(
+                        "Mot de passe oublié ?",
+                        on_click=lambda: tabs.set_value(tab_forgot),
+                    ).classes("w-full q-mt-xs").props("flat dense color=grey-7 no-caps").style(
+                        "font-size: 13px"
+                    )
 
                     # Enter pour valider
                     pwd_input.on("keydown.enter", do_login)
@@ -151,8 +159,16 @@ def page_login():
                         on_click=do_signup,
                     ).classes("w-full q-mt-sm").props("color=green-8 unelevated")
 
-                # ── Tab Mot de passe oublié ──────────────────────────
+                # ── Panel Mot de passe oublié (tab cachée) ──────────
                 with ui.tab_panel(tab_forgot):
+                    ui.button(
+                        "Retour à la connexion",
+                        icon="arrow_back",
+                        on_click=lambda: tabs.set_value(tab_login),
+                    ).classes("q-mb-md").props("flat dense color=grey-7 no-caps").style(
+                        "font-size: 13px"
+                    )
+
                     ui.label(
                         "Entrez votre email pour recevoir un lien de réinitialisation."
                     ).classes("text-body2 text-grey-6 q-mb-md")
