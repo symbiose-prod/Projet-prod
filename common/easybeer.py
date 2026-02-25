@@ -613,6 +613,41 @@ def get_brassins_en_cours() -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def get_brassins_archives(
+    nombre: int = 3,
+    etats: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    POST /brassin/archives
+    → Liste paginée des brassins archivés / terminés.
+
+    Retourne les *nombre* brassins les plus récents correspondant aux états demandés.
+    Par défaut : ARCHIVE + TERMINE (les brassins récemment finis).
+
+    Chaque élément : ModeleBrassin (même format que get_brassins_en_cours).
+    """
+    if etats is None:
+        etats = ["ARCHIVE", "TERMINE"]
+
+    params = {
+        "colonneTri": "dateDebutFormulaire",
+        "nombreParPage": nombre,
+        "numeroPage": 0,
+    }
+    body = {"etats": etats}
+
+    r = requests.post(
+        f"{BASE}/brassin/archives",
+        params=params,
+        json=body,
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return data.get("liste", []) if isinstance(data, dict) else []
+
+
 def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     """
     GET /brassin/{idBrassin}

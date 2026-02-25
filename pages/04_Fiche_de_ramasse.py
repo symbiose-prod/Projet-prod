@@ -27,6 +27,7 @@ from common.email import send_html_with_pdf, _get
 from common.easybeer import (
     is_configured as _eb_configured,
     get_brassins_en_cours,
+    get_brassins_archives,
     get_code_barre_matrice,
     get_warehouses,
     fetch_carton_weights,
@@ -95,16 +96,30 @@ with st.sidebar:
 
 # ================================ Chargement donnees =========================
 
-# Brassins en cours
+# Brassins en cours + 3 derniers archivés
 @st.cache_data(ttl=120, show_spinner="Chargement des brassins EasyBeer…")
 def _fetch_brassins():
     return get_brassins_en_cours()
+
+@st.cache_data(ttl=120, show_spinner="Chargement des brassins archivés…")
+def _fetch_brassins_archives():
+    return get_brassins_archives(nombre=3)
 
 try:
     _all_brassins = _fetch_brassins()
 except Exception as e:
     st.error(f"Erreur de connexion à EasyBeer : {e}")
     _all_brassins = []
+
+# Ajouter les 3 derniers brassins archivés (sans doublons)
+try:
+    _archives = _fetch_brassins_archives()
+    _existing_ids = {b.get("idBrassin") for b in _all_brassins}
+    for b in _archives:
+        if b.get("idBrassin") not in _existing_ids:
+            _all_brassins.append(b)
+except Exception:
+    pass  # pas bloquant si les archives échouent
 
 # Matrice codes-barres
 @st.cache_data(ttl=300, show_spinner="Chargement des codes-barres…")
@@ -155,7 +170,12 @@ def _brassin_label(b: dict) -> str:
     nom = b.get("nom", "?")
     prod = clean_product_label((b.get("produit") or {}).get("libelle", "?"))
     vol = b.get("volume", 0)
-    return f"{nom} — {prod} — {vol:.0f}L"
+    tag = ""
+    if b.get("archive"):
+        tag = " [archivé]"
+    elif b.get("termine"):
+        tag = " [terminé]"
+    return f"{nom} — {prod} — {vol:.0f}L{tag}"
 
 
 _brassin_labels = [_brassin_label(b) for b in _brassins_valides]
