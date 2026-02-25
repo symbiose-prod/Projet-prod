@@ -160,15 +160,21 @@ def page_production():
             return
 
         # ── Préparation des données ───────────────────────────────────
+        print(f"[PROD] df_raw.shape={df_raw.shape}, window_days={window_days}")
+        print(f"[PROD] df_raw.columns={list(df_raw.columns)}")
         _, flavor_map_path, images_dir = get_paths()
+        print(f"[PROD] flavor_map_path={flavor_map_path}")
         fm = load_flavor_map_from_path(flavor_map_path)
+        print(f"[PROD] flavor_map loaded, {len(fm)} entries")
         try:
             df_in = apply_canonical_flavor(df_raw, fm)
         except KeyError as e:
+            print(f"[PROD] apply_canonical_flavor FAILED: {e}")
             ui.notify(str(e), type="negative")
             return
         df_in["Produit"] = df_in["Produit"].astype(str)
         df_in = sanitize_gouts(df_in)
+        print(f"[PROD] df_in ready, shape={df_in.shape}, columns={list(df_in.columns)}")
 
         all_gouts = sorted(
             pd.Series(df_in.get("GoutCanon", pd.Series(dtype=str)))
