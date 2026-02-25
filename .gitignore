@@ -13,6 +13,9 @@ build/
 .env
 .streamlit/secrets.toml
 
+# NiceGUI cache
+.nicegui/
+
 # IDE
 .vscode/
 .idea/

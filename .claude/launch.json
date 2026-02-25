@@ -6,6 +6,12 @@
       "runtimeExecutable": ".venv/bin/streamlit",
       "runtimeArgs": ["run", "app.py", "--server.headless", "true"],
       "port": 8501
+    },
+    {
+      "name": "nicegui",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": ["app_nicegui.py"],
+      "port": 8502
     }
   ]
 }

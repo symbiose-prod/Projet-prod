@@ -1,0 +1,454 @@
+"""
+ui/ramasse.py
+=============
+Page Fiche de ramasse — NiceGUI + AG Grid.
+
+Réutilise toute la logique métier de common/ramasse.py et common/easybeer.py.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import math
+import os
+
+from nicegui import ui
+
+from ui.auth import require_auth
+from ui.theme import page_layout, kpi_card, section_title, COLORS
+
+from common.ramasse import (
+    today_paris,
+    clean_product_label,
+    parse_barcode_matrix,
+    build_ramasse_lines,
+    load_destinataires,
+    PALETTE_EMPTY_WEIGHT,
+)
+from common.easybeer import (
+    is_configured as eb_configured,
+    get_brassins_en_cours,
+    get_brassins_archives,
+    get_code_barre_matrice,
+    get_warehouses,
+    fetch_carton_weights,
+)
+from common.xlsx_fill import build_bl_enlevements_pdf
+from common.email import send_html_with_pdf
+
+
+# ─── Helpers ────────────────────────────────────────────────────────────────
+
+def _load_brassins() -> list[dict]:
+    """Charge brassins en cours + 3 derniers archivés."""
+    try:
+        en_cours = get_brassins_en_cours()
+    except Exception:
+        en_cours = []
+
+    en_cours_ids = {b.get("idBrassin") for b in en_cours}
+    try:
+        archives = get_brassins_archives(nombre=3)
+        for b in archives:
+            if b.get("idBrassin") not in en_cours_ids:
+                b["_is_archive"] = True
+                en_cours.append(b)
+    except Exception:
+        pass
+    return [b for b in en_cours if not b.get("annule")]
+
+
+def _load_cb_matrix() -> dict[int, list[dict]] | None:
+    try:
+        raw = get_code_barre_matrice()
+        return parse_barcode_matrix(raw)
+    except Exception:
+        return None
+
+
+def _load_eb_weights() -> dict[tuple[int, str], float] | None:
+    try:
+        return fetch_carton_weights()
+    except Exception:
+        return None
+
+
+def _load_entrepot() -> int | None:
+    try:
+        warehouses = get_warehouses()
+        for w in warehouses:
+            if w.get("principal"):
+                return w.get("idEntrepot")
+        return warehouses[0].get("idEntrepot") if warehouses else None
+    except Exception:
+        return None
+
+
+def _brassin_label(b: dict) -> str:
+    nom = b.get("nom", "?")
+    prod = clean_product_label((b.get("produit") or {}).get("libelle", "?"))
+    vol = b.get("volume", 0)
+    tag = " [archivé]" if b.get("_is_archive") else ""
+    return f"{nom} — {prod} — {vol:.0f}L{tag}"
+
+
+def _compute_row(row: dict, meta: dict) -> dict:
+    """Calcule palettes et poids pour une ligne."""
+    cartons = int(row.get("cartons") or 0)
+    pc = float(meta.get("_poids_carton", 0))
+    pal_cap = int(meta.get("_palette_capacity", 0))
+    nb_pal = math.ceil(cartons / pal_cap) if pal_cap > 0 and cartons > 0 else 0
+    poids = int(round(cartons * pc + nb_pal * PALETTE_EMPTY_WEIGHT, 0))
+    return {**row, "palettes": nb_pal, "poids": poids}
+
+
+# ─── Page ───────────────────────────────────────────────────────────────────
+
+@ui.page("/ramasse")
+def page_ramasse():
+    user = require_auth()
+    if not user:
+        return
+
+    with page_layout("Fiche de ramasse", "local_shipping", "/ramasse") as sidebar:
+
+        # ── Guards ───────────────────────────────────────────────────
+        if not eb_configured():
+            ui.label("EasyBeer non configuré.").classes("text-negative")
+            return
+
+        # ── Chargement données ───────────────────────────────────────
+        with ui.spinner("dots", size="lg"):
+            pass
+
+        brassins = _load_brassins()
+        cb_by_product = _load_cb_matrix()
+        eb_weights = _load_eb_weights()
+        id_entrepot = _load_entrepot()
+
+        destinataires = load_destinataires()
+        dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
+
+        if not brassins:
+            ui.label("Aucun brassin disponible dans EasyBeer.").classes("text-grey-6")
+            return
+
+        # ── Sidebar : paramètres ─────────────────────────────────────
+        with sidebar:
+            ui.label("Paramètres").classes("text-subtitle2 text-grey-7")
+
+            date_ramasse = ui.date(
+                value=today_paris().isoformat(),
+            ).props('label="Date de ramasse" outlined dense')
+
+            dest_select = ui.select(
+                dest_names,
+                value=dest_names[0],
+                label="Destinataire",
+            ).props("outlined dense")
+
+            def do_reload():
+                ui.navigate.to("/ramasse")
+
+            ui.button("Recharger", icon="refresh", on_click=do_reload).props(
+                "flat color=grey-7"
+            ).classes("w-full q-mt-sm")
+
+        # ── Sélection brassins ───────────────────────────────────────
+        section_title("Sélection des brassins", "playlist_add_check")
+
+        brassin_options = {
+            b["idBrassin"]: _brassin_label(b)
+            for b in brassins
+        }
+        brassin_select = ui.select(
+            brassin_options,
+            multiple=True,
+            value=[],
+            label="Brassins à inclure",
+        ).classes("w-full").props("outlined use-chips")
+
+        # ── Conteneur dynamique ──────────────────────────────────────
+        content_container = ui.column().classes("w-full gap-5")
+
+        # Refs pour les KPI et le grid
+        kpi_container = None
+        grid_ref = None
+        actions_container = None
+
+        def on_brassins_changed(e=None):
+            """Reconstruit le tableau quand la sélection change."""
+            nonlocal kpi_container, grid_ref, actions_container
+
+            content_container.clear()
+
+            selected_ids = brassin_select.value or []
+            selected = [b for b in brassins if b["idBrassin"] in selected_ids]
+
+            if not selected:
+                with content_container:
+                    ui.label(
+                        "Sélectionne au moins un brassin pour construire la fiche."
+                    ).classes("text-grey-6 text-body1 q-pa-md")
+                return
+
+            # Construire les lignes
+            rows, meta_by_label = build_ramasse_lines(
+                selected, id_entrepot, cb_by_product, eb_weights
+            )
+
+            today_str = today_paris().strftime("%d/%m/%Y")
+            grid_rows = []
+            for r in rows:
+                label = r["Produit (goût + format)"]
+                meta = meta_by_label.get(label, {})
+                grid_row = {
+                    "ref": r["Référence"],
+                    "produit": label,
+                    "ddm": r["DDM"].strftime("%d/%m/%Y") if hasattr(r["DDM"], "strftime") else str(r["DDM"]),
+                    "date_ramasse": today_str,
+                    "cartons": r["Quantité cartons"],
+                    "poids_u": float(meta.get("_poids_carton", 0)),
+                    "pal_cap": int(meta.get("_palette_capacity", 0)),
+                    "palettes": 0,
+                    "poids": 0,
+                }
+                grid_row = _compute_row(grid_row, meta)
+                grid_rows.append(grid_row)
+
+            with content_container:
+                # ── KPIs ─────────────────────────────────────────────
+                active = [r for r in grid_rows if r["cartons"] > 0]
+                tot_c = sum(r["cartons"] for r in active)
+                tot_p = sum(r["palettes"] for r in active)
+                tot_w = sum(r["poids"] for r in active)
+
+                with ui.row().classes("w-full gap-4"):
+                    kpi_card("inventory_2", "Total cartons", f"{tot_c:,}".replace(",", " "), COLORS["green"])
+                    kpi_card("view_in_ar", "Total palettes", str(tot_p), COLORS["orange"])
+                    kpi_card("scale", "Poids total (kg)", f"{tot_w:,}".replace(",", " "), COLORS["blue"])
+
+                # ── AG Grid ──────────────────────────────────────────
+                section_title("Détail produits", "table_chart")
+
+                ui.label(
+                    "Modifie les colonnes Cartons et Date ramasse directement dans le tableau."
+                ).classes("text-caption text-grey-6 q-mb-xs")
+
+                grid = ui.aggrid({
+                    "defaultColDef": {
+                        "sortable": True,
+                        "resizable": True,
+                    },
+                    "columnDefs": [
+                        {
+                            "field": "ref", "headerName": "Réf.",
+                            "width": 90, "pinned": "left",
+                        },
+                        {
+                            "field": "produit", "headerName": "Produit (goût + format)",
+                            "flex": 2, "minWidth": 240,
+                        },
+                        {
+                            "field": "ddm", "headerName": "DDM",
+                            "width": 110,
+                        },
+                        {
+                            "field": "date_ramasse", "headerName": "Date ramasse",
+                            "width": 130, "editable": True,
+                        },
+                        {
+                            "field": "cartons", "headerName": "Cartons",
+                            "width": 100, "editable": True,
+                            "type": "numericColumn",
+                            "cellStyle": {"fontWeight": "bold"},
+                        },
+                        {
+                            "field": "palettes", "headerName": "Palettes",
+                            "width": 95, "type": "numericColumn",
+                            "cellStyle": {"color": COLORS["orange"], "fontWeight": "600"},
+                            "valueGetter": """
+                                var c = Number(params.data.cartons) || 0;
+                                var cap = Number(params.data.pal_cap) || 0;
+                                return (cap > 0 && c > 0) ? Math.ceil(c / cap) : 0;
+                            """,
+                        },
+                        {
+                            "field": "poids", "headerName": "Poids (kg)",
+                            "width": 110, "type": "numericColumn",
+                            "valueGetter": f"""
+                                var c = Number(params.data.cartons) || 0;
+                                var pu = Number(params.data.poids_u) || 0;
+                                var cap = Number(params.data.pal_cap) || 0;
+                                var pal = (cap > 0 && c > 0) ? Math.ceil(c / cap) : 0;
+                                return Math.round(c * pu + pal * {PALETTE_EMPTY_WEIGHT});
+                            """,
+                            "valueFormatter": "value ? value.toLocaleString('fr-FR') + ' kg' : '—'",
+                        },
+                        # Colonnes masquées (données pour calculs)
+                        {"field": "poids_u", "hide": True},
+                        {"field": "pal_cap", "hide": True},
+                    ],
+                    "rowData": grid_rows,
+                    "rowClassRules": {
+                        "text-grey-4": "data.cartons === 0",
+                    },
+                    "animateRows": True,
+                    "domLayout": "autoHeight",
+                }).classes("w-full")
+
+                # ── Actions : PDF + Email ────────────────────────────
+                section_title("Export et envoi", "send")
+
+                # Destinataire actuel
+                dest_obj = next((d for d in destinataires if d["name"] == dest_select.value), None)
+                default_emails = ", ".join(dest_obj.get("email_recipients", [])) if dest_obj else ""
+
+                email_input = ui.input(
+                    "Destinataires email",
+                    value=default_emails,
+                ).classes("w-full").props("outlined dense")
+
+                sender = os.environ.get("EMAIL_SENDER", "")
+                if sender:
+                    ui.label(f"Expéditeur : {sender}").classes("text-caption text-grey-6")
+
+                with ui.row().classes("w-full gap-3 q-mt-sm"):
+                    async def do_download_pdf():
+                        row_data = await grid.get_client_data()
+                        active = [r for r in row_data if int(r.get("cartons") or 0) > 0]
+                        if not active:
+                            ui.notify("Aucun carton renseigné.", type="warning")
+                            return
+                        try:
+                            import pandas as pd
+                            df = pd.DataFrame(active)
+                            df_export = df.rename(columns={
+                                "ref": "Référence",
+                                "produit": "Produit (goût + format)",
+                                "ddm": "DDM",
+                                "date_ramasse": "Date ramasse souhaitée",
+                                "cartons": "Quantité cartons",
+                                "palettes": "Quantité palettes",
+                                "poids": "Poids palettes (kg)",
+                            })
+                            # Recalculer palettes/poids
+                            for _, r in df_export.iterrows():
+                                c = int(r["Quantité cartons"])
+                                idx = df_export.index[df_export["Référence"] == r["Référence"]][0]
+                                row_orig = active[df.index.get_loc(idx)] if idx < len(active) else {}
+                                cap = int(row_orig.get("pal_cap") or 0)
+                                pu = float(row_orig.get("poids_u") or 0)
+                                pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
+                                df_export.at[idx, "Quantité palettes"] = pal
+                                df_export.at[idx, "Poids palettes (kg)"] = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
+
+                            cols = ["Référence", "Produit (goût + format)", "DDM",
+                                    "Date ramasse souhaitée", "Quantité cartons",
+                                    "Quantité palettes", "Poids palettes (kg)"]
+                            dest_title = dest_select.value
+                            dest_lines = dest_obj.get("address_lines", []) if dest_obj else []
+
+                            pdf_bytes = build_bl_enlevements_pdf(
+                                date_creation=today_paris(),
+                                date_ramasse=dt.date.fromisoformat(date_ramasse.value) if date_ramasse.value else today_paris(),
+                                destinataire_title=dest_title,
+                                destinataire_lines=dest_lines,
+                                df_lines=df_export[cols],
+                            )
+                            d = date_ramasse.value or today_paris().isoformat()
+                            ui.download(pdf_bytes, f"Fiche_de_ramasse_{d}.pdf")
+                            ui.notify("PDF généré !", type="positive", icon="check")
+                        except Exception as exc:
+                            ui.notify(f"Erreur PDF : {exc}", type="negative")
+
+                    ui.button(
+                        "Télécharger PDF",
+                        icon="picture_as_pdf",
+                        on_click=do_download_pdf,
+                    ).classes("flex-1").props("outline color=green-8")
+
+                    async def do_send_email():
+                        emails_raw = email_input.value or ""
+                        to_list = [e.strip() for e in emails_raw.split(",") if e.strip()]
+                        if not to_list:
+                            ui.notify("Indique au moins un destinataire.", type="warning")
+                            return
+
+                        row_data = await grid.get_client_data()
+                        active = [r for r in row_data if int(r.get("cartons") or 0) > 0]
+                        if not active:
+                            ui.notify("Aucun carton renseigné.", type="warning")
+                            return
+
+                        try:
+                            import pandas as pd
+                            df = pd.DataFrame(active)
+                            df_export = df.rename(columns={
+                                "ref": "Référence",
+                                "produit": "Produit (goût + format)",
+                                "ddm": "DDM",
+                                "date_ramasse": "Date ramasse souhaitée",
+                                "cartons": "Quantité cartons",
+                                "palettes": "Quantité palettes",
+                                "poids": "Poids palettes (kg)",
+                            })
+                            cols = ["Référence", "Produit (goût + format)", "DDM",
+                                    "Date ramasse souhaitée", "Quantité cartons",
+                                    "Quantité palettes", "Poids palettes (kg)"]
+                            dest_title = dest_select.value
+                            dest_lines = dest_obj.get("address_lines", []) if dest_obj else []
+                            d = dt.date.fromisoformat(date_ramasse.value) if date_ramasse.value else today_paris()
+
+                            pdf_bytes = build_bl_enlevements_pdf(
+                                date_creation=today_paris(),
+                                date_ramasse=d,
+                                destinataire_title=dest_title,
+                                destinataire_lines=dest_lines,
+                                df_lines=df_export[cols],
+                            )
+
+                            tot_palettes = sum(int(r.get("palettes") or 0) for r in active)
+                            filename = f"Fiche_de_ramasse_{d:%Y%m%d}.pdf"
+                            subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
+                            body = f"""
+                            <p>Bonjour,</p>
+                            <p>Nous aurions besoin d'une ramasse pour le {d:%d/%m/%Y}.<br>
+                            Pour <strong>{tot_palettes}</strong> palette{'s' if tot_palettes != 1 else ''}.</p>
+                            <p>Merci,<br>Bon après-midi.</p>
+                            <hr>
+                            <p><strong>Ferment Station</strong><br>
+                            Producteur de boissons fermentées<br>
+                            26 Rue Robert Witchitz – 94200 Ivry-sur-Seine</p>
+                            """
+
+                            sender_email = os.environ.get("EMAIL_SENDER") or ""
+                            recipients = list(to_list)
+                            if sender_email and sender_email not in recipients:
+                                recipients.append(sender_email)
+
+                            for rcpt in recipients:
+                                send_html_with_pdf(
+                                    to_email=rcpt,
+                                    subject=subject,
+                                    html_body=body,
+                                    attachments=[(filename, pdf_bytes)],
+                                )
+
+                            ui.notify(
+                                f"Demande envoyée à {len(to_list)} destinataire(s) !",
+                                type="positive", icon="email", position="top",
+                            )
+                        except Exception as exc:
+                            ui.notify(f"Erreur envoi : {exc}", type="negative")
+
+                    ui.button(
+                        "Envoyer la demande",
+                        icon="send",
+                        on_click=do_send_email,
+                    ).classes("flex-1").props("color=green-8 unelevated")
+
+        # Watcher sur la sélection
+        brassin_select.on_value_change(on_brassins_changed)
+
+        # Rendu initial
+        on_brassins_changed()

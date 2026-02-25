@@ -1,0 +1,1 @@
+# ui/ — NiceGUI frontend layer
