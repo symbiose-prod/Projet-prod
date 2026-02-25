@@ -40,6 +40,23 @@ WEIGHT_OVERRIDES_FALLBACK: dict[str, dict[str, float]] = {
     },
 }
 
+# ─── Config palettes ────────────────────────────────────────────────────────
+# Nombre de cartons par palette, par format.
+
+PALETTE_EMPTY_WEIGHT: float = 25.0  # kg
+
+PALETTE_CAPACITY: dict[str, int] = {
+    "12x33": 126,
+    "6x75":  96,   # Eaugazeuse (Verralia) par défaut
+    "4x75":  112,  # SAFT
+}
+
+PALETTE_CAPACITY_OVERRIDES: dict[str, dict[str, int]] = {
+    "6x75": {
+        "niko": 84,  # SAFT (Niko)
+    },
+}
+
 
 def get_carton_weight(
     fmt: str,
@@ -71,6 +88,23 @@ def get_carton_weight(
             return weight
 
     return CARTON_WEIGHTS_FALLBACK.get(fmt_key, 0.0)
+
+
+def get_palette_capacity(fmt: str, product_label: str) -> int:
+    """
+    Retourne le nombre de cartons par palette pour un format et produit donnes.
+
+    Logique identique a get_carton_weight :
+      - Overrides par mot-cle (ex: Niko -> SAFT -> 84)
+      - Sinon valeur par defaut du format
+    """
+    fmt_key = fmt.lower().replace("cl", "").replace(" ", "")
+    label_lower = _canon(product_label)
+    overrides = PALETTE_CAPACITY_OVERRIDES.get(fmt_key, {})
+    for keyword, cap in overrides.items():
+        if keyword in label_lower:
+            return cap
+    return PALETTE_CAPACITY.get(fmt_key, 0)
 
 
 # ─── Destinataires ───────────────────────────────────────────────────────────
@@ -316,12 +350,16 @@ def build_ramasse_lines(
                     id_produit=id_produit, eb_weights=eb_weights,
                 )
 
+                # Capacite palette (cartons/pal)
+                palette_cap = get_palette_capacity(fmt_str, clean_label)
+
                 # Quantite pre-remplie depuis productions existantes
                 qty = _existing_qty.get((prod_label.lower(), fmt_str), 0)
 
                 meta_by_label[label] = {
                     "_format": fmt_str,
                     "_poids_carton": poids_carton,
+                    "_palette_capacity": palette_cap,
                     "_reference": ref,
                 }
                 rows.append({

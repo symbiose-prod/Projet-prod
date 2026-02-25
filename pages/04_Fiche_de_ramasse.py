@@ -14,6 +14,7 @@ user_menu()
 
 import base64
 import datetime as dt
+import math
 import os
 
 import pandas as pd
@@ -37,6 +38,7 @@ from common.ramasse import (
     build_ramasse_lines,
     get_carton_weight,
     load_destinataires,
+    PALETTE_EMPTY_WEIGHT,
 )
 
 
@@ -197,7 +199,7 @@ display_cols = [
 base_df = pd.DataFrame(rows, columns=display_cols) if rows else pd.DataFrame(columns=display_cols)
 
 if not base_df.empty:
-    st.caption("Renseigne **Quantité cartons** et **Quantité palettes**. Le **poids** se calcule automatiquement.")
+    st.caption("Renseigne **Quantité cartons**. Les **palettes** et le **poids** se calculent automatiquement.")
     edited = st.data_editor(
         base_df,
         key="ramasse_editor_v2",
@@ -206,7 +208,7 @@ if not base_df.empty:
         column_config={
             "DDM": st.column_config.DateColumn(label="DDM", format="DD/MM/YYYY"),
             "Quantité cartons": st.column_config.NumberColumn(min_value=0, step=1),
-            "Quantité palettes": st.column_config.NumberColumn(min_value=0, step=1),
+            "Quantité palettes": st.column_config.NumberColumn(disabled=True, min_value=0, step=1),
             "Poids palettes (kg)": st.column_config.NumberColumn(disabled=True, format="%.0f"),
         },
     )
@@ -218,14 +220,25 @@ else:
 
 def _apply_calculs(df_disp: pd.DataFrame) -> pd.DataFrame:
     out = df_disp.copy()
-    poids = []
+    palettes_list = []
+    poids_list = []
     for _, r in out.iterrows():
         lab = str(r["Produit (goût + format)"]).replace(" - ", " — ")
         meta = meta_by_label.get(lab, meta_by_label.get(str(r["Produit (goût + format)"]), {}))
         pc = float(meta.get("_poids_carton", 0.0))
+        pal_cap = int(meta.get("_palette_capacity", 0))
         cartons = int(pd.to_numeric(r["Quantité cartons"], errors="coerce") or 0)
-        poids.append(int(round(cartons * pc, 0)))
-    out["Poids palettes (kg)"] = poids
+
+        # Nombre de palettes = arrondi supérieur
+        nb_pal = math.ceil(cartons / pal_cap) if pal_cap > 0 and cartons > 0 else 0
+
+        # Poids = (cartons × poids_carton) + (palettes × poids_palette_vide)
+        poids_total = int(round(cartons * pc + nb_pal * PALETTE_EMPTY_WEIGHT, 0))
+
+        palettes_list.append(nb_pal)
+        poids_list.append(poids_total)
+    out["Quantité palettes"] = palettes_list
+    out["Poids palettes (kg)"] = poids_list
     return out
 
 
