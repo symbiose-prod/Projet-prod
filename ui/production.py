@@ -250,6 +250,8 @@ def page_production():
 
         def do_compute():
             """Calcul complet : optimiseur + passe 2 + affichage."""
+            import traceback
+            print(f"[PROD] do_compute() called")
             main_container.clear()
 
             # Paramètres
@@ -297,6 +299,8 @@ def page_production():
                     exclude_list=excluded_gouts,
                 )
             except Exception as exc:
+                print(f"[PROD] compute_plan FAILED: {exc}")
+                traceback.print_exc()
                 with main_container:
                     ui.label(f"Erreur optimiseur : {exc}").classes("text-negative")
                 return
