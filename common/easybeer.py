@@ -226,7 +226,7 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
             except Exception:
                 pass
 
-            time.sleep(0.3)  # Respecter le rate-limit EasyBeer
+            time.sleep(1.0)  # Respecter le rate-limit EasyBeer (10 req/s max)
 
     return weights
 
