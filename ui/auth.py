@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from nicegui import ui, app
 
-from ui.theme import COLORS, apply_quasar_theme
+from ui.theme import COLORS, apply_quasar_theme, logo_svg
 from common.auth import authenticate, create_user, find_user_by_email
 
 
@@ -29,7 +29,7 @@ def page_login():
 
         # Logo / Titre
         with ui.column().classes("items-center gap-2 q-mb-md"):
-            ui.icon("science", size="xl").style(f"color: {COLORS['green']}")
+            ui.html(logo_svg(48, COLORS['green']))
             ui.label("Ferment Station").classes("text-h4 font-bold").style(
                 f"color: {COLORS['ink']}"
             )

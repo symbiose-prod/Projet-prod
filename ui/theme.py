@@ -12,6 +12,30 @@ from typing import Any
 
 from nicegui import ui, app
 
+# ─── Logo SVG (cuve + bouteille) ───────────────────────────────────────────
+
+def logo_svg(size: int = 32, color: str = "currentColor") -> str:
+    """Retourne le SVG inline du logo Ferment Station (cuve + bouteille)."""
+    return f'''<svg width="{size}" height="{size}" viewBox="0 0 48 48" fill="none"
+     stroke="{color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Cuve de fermentation -->
+  <path d="M6 16 C6 13, 9 10, 16 10 C23 10, 26 13, 26 16"/>
+  <rect x="6" y="16" width="20" height="22" rx="3"/>
+  <line x1="6" y1="20" x2="26" y2="20"/>
+  <circle cx="13" cy="30" r="1.5" fill="{color}" stroke="none"/>
+  <circle cx="18" cy="26" r="1" fill="{color}" stroke="none"/>
+  <circle cx="11" cy="34" r="1" fill="{color}" stroke="none"/>
+  <!-- Tuyau -->
+  <path d="M26 28 L32 28"/>
+  <!-- Bouteille -->
+  <rect x="32" y="26" width="10" height="14" rx="3"/>
+  <path d="M35 26 L35 20 L39 20 L39 26"/>
+  <line x1="34" y1="18" x2="40" y2="18"/>
+  <path d="M35 20 L35 18"/>
+  <path d="M39 20 L39 18"/>
+</svg>'''
+
+
 # ─── Couleurs Ferment Station ───────────────────────────────────────────────
 
 COLORS = {
@@ -198,7 +222,7 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
     # ─── Header ──────────────────────────────────────────────────────
     with ui.header().classes("items-center justify-between px-6"):
         with ui.row().classes("items-center gap-3"):
-            ui.icon("science", size="sm").classes("text-white")
+            ui.html(logo_svg(24, "white"))
             ui.label("Ferment Station").classes(
                 "text-white text-subtitle1"
             ).style("font-weight: 600")
