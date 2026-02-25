@@ -508,8 +508,7 @@ def page_production():
                         "rowData": grid_rows,
                         "rowClassRules": {"text-grey-4": "data.cartons === 0"},
                         "animateRows": True,
-                        "domLayout": "autoHeight",
-                    }).classes("w-full")
+                    }).classes("w-full").style("height: 400px")
 
                     with ui.row().classes("w-full gap-3 q-mt-sm"):
                         async def do_apply_overrides():
