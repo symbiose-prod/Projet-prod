@@ -615,37 +615,60 @@ def get_brassins_en_cours() -> list[dict[str, Any]]:
 
 def get_brassins_archives(
     nombre: int = 3,
-    etats: list[str] | None = None,
+    jours: int = 60,
 ) -> list[dict[str, Any]]:
     """
-    POST /brassin/archives
-    → Liste paginée des brassins archivés / terminés.
+    Retourne les *nombre* brassins les plus récents qui ne sont plus en cours.
 
-    Retourne les *nombre* brassins les plus récents correspondant aux états demandés.
-    Par défaut : ARCHIVE + TERMINE (les brassins récemment finis).
+    Stratégie :
+      1. GET /brassin/en-cours/liste  → IDs des brassins en cours
+      2. POST /brassin/liste (période = *jours* derniers jours) → tous les brassins
+      3. Exclut les en cours, trie par dateDebutFormulaire desc, prend les N premiers
 
     Chaque élément : ModeleBrassin (même format que get_brassins_en_cours).
     """
-    if etats is None:
-        etats = ["ARCHIVE", "TERMINE"]
+    import datetime as _dt
 
-    params = {
-        "colonneTri": "dateDebutFormulaire",
-        "nombreParPage": nombre,
-        "numeroPage": 0,
-    }
-    body = {"etats": etats}
+    # 1. IDs des brassins en cours
+    en_cours_ids: set[int] = set()
+    try:
+        for b in get_brassins_en_cours():
+            bid = b.get("idBrassin")
+            if bid:
+                en_cours_ids.add(bid)
+    except Exception:
+        pass
+
+    # 2. Tous les brassins sur la fenêtre
+    now = _dt.datetime.now(_dt.timezone.utc)
+    date_fin = now.strftime("%Y-%m-%dT23:59:59.999Z")
+    date_debut = (now - _dt.timedelta(days=jours)).strftime("%Y-%m-%dT00:00:00.000Z")
 
     r = requests.post(
-        f"{BASE}/brassin/archives",
-        params=params,
-        json=body,
+        f"{BASE}/brassin/liste",
+        json={
+            "dateDebut": date_debut,
+            "dateFin": date_fin,
+            "type": "PERIODE_LIBRE",
+        },
         auth=_auth(),
         timeout=TIMEOUT,
     )
     r.raise_for_status()
     data = r.json()
-    return data.get("liste", []) if isinstance(data, dict) else []
+    all_brassins = data if isinstance(data, list) else []
+
+    # 3. Exclure en cours, trier par date desc, garder les N premiers
+    archived = [b for b in all_brassins if b.get("idBrassin") not in en_cours_ids]
+
+    def _sort_key(b: dict) -> float:
+        raw = b.get("dateDebutFormulaire")
+        if isinstance(raw, (int, float)):
+            return raw
+        return 0
+
+    archived.sort(key=_sort_key, reverse=True)
+    return archived[:nombre]
 
 
 def get_brassin_detail(id_brassin: int) -> dict[str, Any]:

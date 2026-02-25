@@ -112,11 +112,12 @@ except Exception as e:
     _all_brassins = []
 
 # Ajouter les 3 derniers brassins archivés (sans doublons)
+_en_cours_ids = {b.get("idBrassin") for b in _all_brassins}
 try:
     _archives = _fetch_brassins_archives()
-    _existing_ids = {b.get("idBrassin") for b in _all_brassins}
     for b in _archives:
-        if b.get("idBrassin") not in _existing_ids:
+        if b.get("idBrassin") not in _en_cours_ids:
+            b["_is_archive"] = True  # flag interne pour le label
             _all_brassins.append(b)
 except Exception:
     pass  # pas bloquant si les archives échouent
@@ -170,11 +171,7 @@ def _brassin_label(b: dict) -> str:
     nom = b.get("nom", "?")
     prod = clean_product_label((b.get("produit") or {}).get("libelle", "?"))
     vol = b.get("volume", 0)
-    tag = ""
-    if b.get("archive"):
-        tag = " [archivé]"
-    elif b.get("termine"):
-        tag = " [terminé]"
+    tag = " [archivé]" if b.get("_is_archive") else ""
     return f"{nom} — {prod} — {vol:.0f}L{tag}"
 
 
