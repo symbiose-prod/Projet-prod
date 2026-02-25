@@ -658,14 +658,28 @@ def get_brassins_archives(
     data = r.json()
     all_brassins = data if isinstance(data, list) else []
 
-    # 3. Exclure en cours, trier par date desc, garder les N premiers
-    archived = [b for b in all_brassins if b.get("idBrassin") not in en_cours_ids]
+    # 3. Exclure en cours + petits brassins (< 100L = garde grains, tests…)
+    archived = [
+        b for b in all_brassins
+        if b.get("idBrassin") not in en_cours_ids
+        and float(b.get("volume") or 0) >= 100
+    ]
 
-    def _sort_key(b: dict) -> float:
+    # Tri par date desc — extraite du nom (ex: KGI13022026 → 13/02/2026)
+    import re as _re
+
+    def _sort_key(b: dict) -> str:
+        nom = b.get("nom") or ""
+        m = _re.search(r"(\d{8})$", nom)
+        if m:
+            ddmmyyyy = m.group(1)
+            # Convertir DDMMYYYY → YYYYMMDD pour tri lexicographique
+            return ddmmyyyy[4:8] + ddmmyyyy[2:4] + ddmmyyyy[0:2]
+        # Fallback : dateDebutFormulaire (timestamp ms)
         raw = b.get("dateDebutFormulaire")
         if isinstance(raw, (int, float)):
-            return raw
-        return 0
+            return str(int(raw))
+        return "0"
 
     archived.sort(key=_sort_key, reverse=True)
     return archived[:nombre]
