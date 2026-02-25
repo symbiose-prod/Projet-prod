@@ -437,7 +437,23 @@ def page_production():
                         COLORS["orange"],
                     )
 
-                # ── Tableau de production (AG Grid) ───────────────────
+                # ── Images produits EasyBeer ─────────────────────────
+                product_images: dict[str, str] = {}  # produit_name → image_url
+                try:
+                    from common.easybeer import is_configured as _eb_img_conf
+                    if _eb_img_conf():
+                        _eb_prods_img = _fetch_eb_products()
+                        for p in _eb_prods_img:
+                            lbl = p.get("libelle", "")
+                            urls = p.get("imagesUrl") or []
+                            uri = p.get("imageUri") or ""
+                            img = urls[0] if urls else uri
+                            if img and lbl:
+                                product_images[lbl] = img
+                except Exception:
+                    pass
+
+                # ── Tableau de production ──────────────────────────────
                 section_title("Plan de production", "assignment")
 
                 if nb_forcés:
@@ -446,24 +462,29 @@ def page_production():
                     ).classes("text-caption text-grey-6")
 
                 if not df_final.empty:
-                    table_rows = []
-
+                    # Construire les lignes + séparer Symbiose / Niko
+                    all_table_rows = []
                     for _, r in df_final.iterrows():
                         key = f"{r['GoutCanon']}|{r['Produit']}|{r['Stock']}"
-                        table_rows.append({
+                        produit_name = str(r["Produit"])
+                        is_niko = "NIKO" in produit_name.upper()
+                        all_table_rows.append({
                             "gout": str(r["GoutCanon"]),
-                            "produit": str(r["Produit"]),
+                            "produit": produit_name,
                             "stock": str(r["Stock"]),
                             "forcer": overrides.get(key, None),
                             "cartons": int(r["Cartons à produire (arrondi)"]),
                             "bouteilles": int(r["Bouteilles à produire (arrondi)"]),
                             "volume": f"{float(r['Volume produit arrondi (hL)']):.3f}",
                             "_key": key,
+                            "_niko": is_niko,
                         })
+
+                    symbiose_rows = [r for r in all_table_rows if not r["_niko"]]
+                    niko_rows = [r for r in all_table_rows if r["_niko"]]
 
                     columns = [
                         {"name": "gout", "label": "Goût", "field": "gout", "align": "left", "sortable": True},
-                        {"name": "produit", "label": "Produit", "field": "produit", "align": "left", "sortable": True},
                         {"name": "stock", "label": "Format", "field": "stock", "align": "left", "sortable": True},
                         {"name": "forcer", "label": "Forcer", "field": "forcer", "align": "right"},
                         {"name": "cartons", "label": "Cartons", "field": "cartons", "align": "right", "sortable": True},
@@ -471,42 +492,83 @@ def page_production():
                         {"name": "volume", "label": "Volume (hL)", "field": "volume", "align": "right", "sortable": True},
                     ]
 
-                    table = ui.table(
-                        columns=columns,
-                        rows=table_rows,
-                        row_key="_key",
-                    ).classes("w-full").props("flat bordered dense")
+                    # Tables référencées pour "Appliquer les forcés"
+                    brand_tables: list[ui.table] = []
 
-                    # Slot : colonne "Forcer" avec input inline
-                    table.add_slot("body-cell-forcer", r'''
-                        <q-td :props="props">
-                            <q-input
-                                v-model.number="props.row.forcer"
-                                type="number"
-                                dense
-                                borderless
-                                placeholder="auto"
-                                input-class="text-right text-bold"
-                                :input-style="{color: props.row.forcer != null ? '#F97316' : '#9CA3AF'}"
-                                style="max-width: 80px"
-                            />
-                        </q-td>
-                    ''')
+                    def _render_brand_block(brand_label: str, brand_rows: list[dict], brand_icon: str):
+                        """Affiche un bloc marque : images 33cl + tableau."""
+                        if not brand_rows:
+                            return
+
+                        with ui.card().classes("w-full").props("flat bordered"):
+                            with ui.card_section():
+                                with ui.row().classes("items-center gap-3"):
+                                    ui.icon(brand_icon, size="sm").style(f"color: {COLORS['green']}")
+                                    ui.label(brand_label).classes("text-h6")
+
+                            # Bandeau images des bouteilles 33cl
+                            seen_products: set[str] = set()
+                            img_items: list[tuple[str, str]] = []  # (gout, image_url)
+                            for row in brand_rows:
+                                prod = row["produit"]
+                                if prod in seen_products:
+                                    continue
+                                seen_products.add(prod)
+                                # Trouver l'image correspondante
+                                img_url = product_images.get(prod, "")
+                                if img_url:
+                                    img_items.append((row["gout"], img_url))
+
+                            if img_items:
+                                with ui.card_section().classes("q-pt-none"):
+                                    with ui.row().classes("items-end gap-4"):
+                                        for gout, url in img_items:
+                                            with ui.column().classes("items-center gap-1"):
+                                                ui.image(url).classes("rounded").style(
+                                                    "width: 60px; height: 90px; object-fit: contain"
+                                                )
+                                                ui.label(gout).classes("text-caption text-grey-6")
+
+                            with ui.card_section().classes("q-pt-none"):
+                                tbl = ui.table(
+                                    columns=columns,
+                                    rows=brand_rows,
+                                    row_key="_key",
+                                ).classes("w-full").props("flat dense")
+
+                                tbl.add_slot("body-cell-forcer", r'''
+                                    <q-td :props="props">
+                                        <q-input
+                                            v-model.number="props.row.forcer"
+                                            type="number"
+                                            dense
+                                            borderless
+                                            placeholder="auto"
+                                            input-class="text-right text-bold"
+                                            :input-style="{color: props.row.forcer != null ? '#F97316' : '#9CA3AF'}"
+                                            style="max-width: 80px"
+                                        />
+                                    </q-td>
+                                ''')
+                                brand_tables.append(tbl)
+
+                    _render_brand_block("Symbiose Kéfir", symbiose_rows, "local_drink")
+                    _render_brand_block("Niko", niko_rows, "spa")
 
                     with ui.row().classes("w-full gap-3 q-mt-sm"):
                         async def do_apply_overrides():
-                            """Lit les valeurs 'Forcer' depuis le tableau et recalcule."""
-                            data = table.rows
+                            """Lit les valeurs 'Forcer' depuis les tableaux et recalcule."""
                             new_ov = {}
-                            for r in data:
-                                v = r.get("forcer")
-                                if v is not None and v != "" and v != 0:
-                                    try:
-                                        vi = int(float(v))
-                                        if vi >= 0:
-                                            new_ov[r["_key"]] = vi
-                                    except (TypeError, ValueError):
-                                        pass
+                            for tbl in brand_tables:
+                                for r in tbl.rows:
+                                    v = r.get("forcer")
+                                    if v is not None and v != "" and v != 0:
+                                        try:
+                                            vi = int(float(v))
+                                            if vi >= 0:
+                                                new_ov[r["_key"]] = vi
+                                        except (TypeError, ValueError):
+                                            pass
                             overrides.clear()
                             overrides.update(new_ov)
                             app.storage.user["production_overrides"] = dict(overrides)
