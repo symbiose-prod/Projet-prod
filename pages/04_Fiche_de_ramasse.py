@@ -209,10 +209,16 @@ display_cols = [
     "Référence",
     "Produit (goût + format)",
     "DDM",
+    "Date ramasse souhaitée",
     "Quantité cartons",
     "Quantité palettes",
     "Poids palettes (kg)",
 ]
+
+# Ajouter la colonne date ramasse souhaitée (default = date sidebar)
+for row in rows:
+    row["Date ramasse souhaitée"] = date_ramasse
+
 base_df = pd.DataFrame(rows, columns=display_cols) if rows else pd.DataFrame(columns=display_cols)
 
 if not base_df.empty:
@@ -224,6 +230,7 @@ if not base_df.empty:
         hide_index=True,
         column_config={
             "DDM": st.column_config.DateColumn(label="DDM", format="DD/MM/YYYY"),
+            "Date ramasse souhaitée": st.column_config.DateColumn(format="DD/MM/YYYY"),
             "Quantité cartons": st.column_config.NumberColumn(min_value=0, step=1),
             "Quantité palettes": st.column_config.NumberColumn(disabled=True, min_value=0, step=1),
             "Poids palettes (kg)": st.column_config.NumberColumn(disabled=True, format="%.0f"),
@@ -261,11 +268,16 @@ def _apply_calculs(df_disp: pd.DataFrame) -> pd.DataFrame:
 
 df_calc = _apply_calculs(edited)
 
+# Filtrer les lignes à 0 cartons pour le récap / PDF / email
+df_filtered = df_calc[
+    pd.to_numeric(df_calc["Quantité cartons"], errors="coerce").fillna(0).astype(int) > 0
+].copy()
+
 # ================================ KPIs =======================================
 
-tot_cartons = int(pd.to_numeric(df_calc["Quantité cartons"], errors="coerce").fillna(0).sum())
-tot_palettes = int(pd.to_numeric(df_calc["Quantité palettes"], errors="coerce").fillna(0).sum())
-tot_poids = int(pd.to_numeric(df_calc["Poids palettes (kg)"], errors="coerce").fillna(0).sum())
+tot_cartons = int(pd.to_numeric(df_filtered["Quantité cartons"], errors="coerce").fillna(0).sum())
+tot_palettes = int(pd.to_numeric(df_filtered["Quantité palettes"], errors="coerce").fillna(0).sum())
+tot_poids = int(pd.to_numeric(df_filtered["Poids palettes (kg)"], errors="coerce").fillna(0).sum())
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -275,18 +287,22 @@ with c2:
 with c3:
     kpi("Poids total (kg)", f"{tot_poids:,}".replace(",", " "))
 
-st.dataframe(df_calc[display_cols], use_container_width=True, hide_index=True)
+if not df_filtered.empty:
+    st.dataframe(df_filtered[display_cols], use_container_width=True, hide_index=True)
+else:
+    st.info("Aucun produit avec des cartons renseignés.")
 
 # ================================ PDF ========================================
 
 
 def _generate_pdf() -> bytes:
-    """Genere le PDF BL a la demande."""
-    df_for_export = df_calc[display_cols].copy()
-    if not pd.api.types.is_string_dtype(df_for_export["DDM"]):
-        df_for_export["DDM"] = df_for_export["DDM"].apply(
-            lambda d: d.strftime("%d/%m/%Y") if hasattr(d, "strftime") else str(d)
-        )
+    """Genere le PDF BL a la demande (lignes > 0 cartons uniquement)."""
+    df_for_export = df_filtered[display_cols].copy()
+    for col_date in ["DDM", "Date ramasse souhaitée"]:
+        if col_date in df_for_export.columns and not pd.api.types.is_string_dtype(df_for_export[col_date]):
+            df_for_export[col_date] = df_for_export[col_date].apply(
+                lambda d: d.strftime("%d/%m/%Y") if hasattr(d, "strftime") else str(d)
+            )
     return build_bl_enlevements_pdf(
         date_creation=today_paris(),
         date_ramasse=date_ramasse,
