@@ -124,6 +124,19 @@ def apply_quasar_theme():
             background: {COLORS['border']} !important;
         }}
 
+        /* ── Drawer : texte et séparateurs en noir ──── */
+        .q-drawer .q-separator {{
+            background: {COLORS['ink']} !important;
+        }}
+        .q-drawer .q-btn {{
+            color: {COLORS['ink']} !important;
+        }}
+        .q-drawer .text-caption,
+        .q-drawer .text-subtitle2,
+        .q-drawer .text-body2 {{
+            color: {COLORS['ink']} !important;
+        }}
+
         /* ── Inputs : coins arrondis ────────────────── */
         .q-field--outlined .q-field__control {{
             border-radius: 6px !important;
@@ -247,7 +260,7 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
         if email:
             ui.label(f"Connecté : {email}").classes(
                 "text-caption q-mt-xs"
-            ).style(f"color: {COLORS['ink2']}")
+            ).style(f"color: {COLORS['ink']}")
 
     # ─── Contenu principal ───────────────────────────────────────────
     with ui.column().classes("w-full max-w-6xl mx-auto q-pa-lg gap-4"):
