@@ -181,12 +181,14 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
     Récupère les poids cartons depuis EasyBeer pour tous les produits finis.
 
     1. POST /stock/produits → arbre des stocks (1 appel)
-    2. GET /stock/produit/edition/{id} pour chaque stock (N appels)
+    2. GET /stock/produit/edition/{id} pour chaque stock (N appels, 0.3s entre chaque)
 
     Retourne :
         {(idProduit, fmt_str): poidsUnitaire_kg, ...}
         ex: {(42514, "12x33"): 6.741, (42514, "6x75"): 7.23, ...}
     """
+    import time
+
     payload = {"idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))}
     r = requests.post(
         f"{BASE}/stock/produits",
@@ -223,6 +225,8 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
                     weights[(id_produit, fmt_str)] = poids
             except Exception:
                 pass
+
+            time.sleep(0.3)  # Respecter le rate-limit EasyBeer
 
     return weights
 
