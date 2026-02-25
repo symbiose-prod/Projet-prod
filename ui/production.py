@@ -160,22 +160,15 @@ def page_production():
             return
 
         # ── Préparation des données ───────────────────────────────────
-        import sys, logging
-        logging.warning(f"[PROD] df_raw.shape={df_raw.shape}, window_days={window_days}")
-        logging.warning(f"[PROD] df_raw.columns={list(df_raw.columns)}")
         _, flavor_map_path, images_dir = get_paths()
-        logging.warning(f"[PROD] flavor_map_path={flavor_map_path}")
         fm = load_flavor_map_from_path(flavor_map_path)
-        logging.warning(f"[PROD] flavor_map loaded, {len(fm)} entries")
         try:
             df_in = apply_canonical_flavor(df_raw, fm)
         except KeyError as e:
-            logging.error(f"[PROD] apply_canonical_flavor FAILED: {e}")
             ui.notify(str(e), type="negative")
             return
         df_in["Produit"] = df_in["Produit"].astype(str)
         df_in = sanitize_gouts(df_in)
-        logging.warning(f"[PROD] df_in ready, shape={df_in.shape}")
 
         all_gouts = sorted(
             pd.Series(df_in.get("GoutCanon", pd.Series(dtype=str)))
@@ -257,8 +250,6 @@ def page_production():
 
         def do_compute():
             """Calcul complet : optimiseur + passe 2 + affichage."""
-            import traceback, logging
-            logging.warning("[PROD] do_compute() called")
             main_container.clear()
 
             # Paramètres
@@ -306,7 +297,6 @@ def page_production():
                     exclude_list=excluded_gouts,
                 )
             except Exception as exc:
-                logging.error(f"[PROD] compute_plan FAILED: {exc}", exc_info=True)
                 with main_container:
                     ui.label(f"Erreur optimiseur : {exc}").classes("text-negative")
                 return
@@ -396,13 +386,6 @@ def page_production():
 
             # ── Tableau final avec overrides ──────────────────────────
             df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
-            logging.warning(f"[PROD DEBUG] gouts_cibles={gouts_cibles}, df_all.shape={df_all.shape}, df_calc.shape={df_calc.shape}, df_final.shape={df_final.shape}")
-            if not df_final.empty:
-                logging.warning(f"[PROD DEBUG] df_final.columns={list(df_final.columns)}")
-                logging.warning(f"[PROD DEBUG] df_final.head()=\n{df_final.head()}")
-            else:
-                logging.warning(f"[PROD DEBUG] df_final is EMPTY")
-                logging.warning(f"[PROD DEBUG] df_all GoutCanon unique = {df_all['GoutCanon'].unique().tolist()[:10]}")
 
             # ── Affichage ─────────────────────────────────────────────
             with main_container:

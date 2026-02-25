@@ -105,6 +105,7 @@ def apply_quasar_theme():
 
         /* ── AG Grid : neutre et clean ──────────────── */
         .ag-theme-quartz {{
+            --ag-foreground-color: {COLORS['ink']};
             --ag-header-background-color: {COLORS['surface']};
             --ag-odd-row-background-color: {COLORS['bg']};
             --ag-row-hover-color: #F3F4F6;
