@@ -67,9 +67,9 @@ def apply_quasar_theme():
             box-shadow: none !important;
         }}
 
-        /* ── Sidebar : blanc pur ────────────────────── */
+        /* ── Sidebar : jaune citron ────────────────────── */
         .q-drawer {{
-            background: {COLORS['surface']} !important;
+            background: #FFF166 !important;
             border-right: 1px solid {COLORS['border']} !important;
         }}
 
