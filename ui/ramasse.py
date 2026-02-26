@@ -348,7 +348,7 @@ def page_ramasse():
                 section_title("Détail produits", "table_chart")
 
                 ui.label(
-                    "Modifie le nombre de cartons puis clique sur Recalculer."
+                    "Saisis le nombre de cartons — palettes et poids se mettent à jour automatiquement."
                 ).classes("text-caption text-grey-6 q-mb-xs")
 
                 table = ui.table(
@@ -428,32 +428,6 @@ def page_ramasse():
                     _update_kpis()
 
                 table.on("cartons_changed", on_cartons_changed)
-
-                # Bouton Recalculer — recalcule tout depuis table_ref["rows"]
-                def do_recalculate():
-                    for row in table_ref["rows"]:
-                        c = int(row.get("cartons") or 0)
-                        if c < 0:
-                            c = 0
-                        row["cartons"] = c
-                        cap = int(row.get("pal_cap") or 0)
-                        pu = float(row.get("poids_u") or 0)
-                        pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
-                        row["palettes"] = pal
-                        p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
-                        row["poids"] = p
-                        row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
-                    table.rows[:] = table_ref["rows"]
-                    table.update()
-                    _update_kpis()
-                    ui.notify("Recalculé !", type="positive", position="bottom", timeout=1500)
-
-                with ui.row().classes("w-full gap-3 q-mt-xs"):
-                    ui.button(
-                        "Recalculer",
-                        icon="calculate",
-                        on_click=do_recalculate,
-                    ).props("outline color=green-8")
 
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
