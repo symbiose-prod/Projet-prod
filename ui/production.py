@@ -1116,8 +1116,12 @@ def page_production():
                                 else _dt.date.today()
                             )
 
+                            # ── Titre visible pour la date ──
+                            ui.label("Date début fermentation").classes(
+                                "text-subtitle2 q-mb-xs"
+                            ).style(f"color: {COLORS['ink']}; font-weight: 600")
+
                             date_debut = ui.input(
-                                "Date début fermentation",
                                 value=default_debut.isoformat(),
                             ).props("outlined dense").classes("w-full")
                             with date_debut:
@@ -1159,66 +1163,62 @@ def page_production():
                                 }
                                 ui.notify("Production sauvegardée !", type="positive", icon="check")
 
+                            # ── Checkbox téléchargement (précochée) ──
+                            cb_download = ui.checkbox(
+                                "Télécharger la fiche Excel",
+                                value=True,
+                            ).classes("q-mt-sm").props("dense color=green-8")
+
+                            def _two_gouts(sp_obj):
+                                g_saved = sp_obj.get("gouts", [])
+                                uniq = []
+                                for g in g_saved:
+                                    if g and g not in uniq:
+                                        uniq.append(g)
+                                return (uniq + [None, None])[:2]
+
+                            def _download_xlsx():
+                                """Génère et télécharge la fiche Excel."""
+                                try:
+                                    _sp = app.storage.user.get("saved_production", {})
+                                    _df_min_dl = pd.read_json(_sp["df_min_json"], orient="split")
+                                    _df_calc_dl = pd.read_json(_sp["df_calc_json"], orient="split")
+                                    _semaine = _dt.date.fromisoformat(_sp["semaine_du"])
+                                    _ddm = _dt.date.fromisoformat(_sp["ddm"])
+                                    _g1, _g2 = _two_gouts(_sp)
+                                    _vd = (_sp.get("volume_details") or {}).get(_g1, {})
+
+                                    xlsx_bytes = fill_fiche_xlsx(
+                                        template_path=TEMPLATE_PATH,
+                                        semaine_du=_semaine,
+                                        ddm=_ddm,
+                                        gout1=_g1 or "",
+                                        gout2=_g2,
+                                        df_calc=_df_calc_dl,
+                                        df_min=_df_min_dl,
+                                        V_start=_vd.get("V_start", 0),
+                                        tank_capacity=_vd.get("capacity", 7200),
+                                        transfer_loss=_vd.get("transfer_loss", 400),
+                                        aromatisation_volume=_vd.get("V_aroma", 0),
+                                        is_infusion=_vd.get("is_infusion", False),
+                                        dilution_ingredients=_vd.get("dilution_ingredients"),
+                                    )
+                                    fname = f"Fiche de production - {_g1 or 'Multi'} - {_semaine.strftime('%d-%m-%Y')}.xlsx"
+                                    ui.download(xlsx_bytes, fname)
+                                    ui.notify("Fiche Excel générée !", type="positive")
+                                except Exception as exc:
+                                    ui.notify(f"Erreur Excel : {exc}", type="negative")
+
+                            def do_save_and_download():
+                                do_save()
+                                if cb_download.value:
+                                    _download_xlsx()
+
                             ui.button(
                                 "Sauvegarder",
                                 icon="save",
-                                on_click=do_save,
+                                on_click=do_save_and_download,
                             ).classes("w-full q-mt-sm").props("color=green-8 unelevated")
-
-                            # ── Téléchargement Excel ────────────────────
-                            sp = app.storage.user.get("saved_production")
-
-                            if sp:
-                                def _two_gouts(sp_obj):
-                                    g_saved = sp_obj.get("gouts", [])
-                                    uniq = []
-                                    for g in g_saved:
-                                        if g and g not in uniq:
-                                            uniq.append(g)
-                                    return (uniq + [None, None])[:2]
-
-                                g1, g2 = _two_gouts(sp)
-
-                                def do_download_xlsx():
-                                    try:
-                                        _sp = app.storage.user.get("saved_production", {})
-                                        _df_min_dl = pd.read_json(_sp["df_min_json"], orient="split")
-                                        _df_calc_dl = pd.read_json(_sp["df_calc_json"], orient="split")
-                                        _semaine = _dt.date.fromisoformat(_sp["semaine_du"])
-                                        _ddm = _dt.date.fromisoformat(_sp["ddm"])
-                                        _g1, _g2 = _two_gouts(_sp)
-                                        _vd = (_sp.get("volume_details") or {}).get(_g1, {})
-
-                                        xlsx_bytes = fill_fiche_xlsx(
-                                            template_path=TEMPLATE_PATH,
-                                            semaine_du=_semaine,
-                                            ddm=_ddm,
-                                            gout1=_g1 or "",
-                                            gout2=_g2,
-                                            df_calc=_df_calc_dl,
-                                            df_min=_df_min_dl,
-                                            V_start=_vd.get("V_start", 0),
-                                            tank_capacity=_vd.get("capacity", 7200),
-                                            transfer_loss=_vd.get("transfer_loss", 400),
-                                            aromatisation_volume=_vd.get("V_aroma", 0),
-                                            is_infusion=_vd.get("is_infusion", False),
-                                            dilution_ingredients=_vd.get("dilution_ingredients"),
-                                        )
-                                        fname = f"Fiche de production - {_g1 or 'Multi'} - {_semaine.strftime('%d-%m-%Y')}.xlsx"
-                                        ui.download(xlsx_bytes, fname)
-                                        ui.notify("Fiche Excel générée !", type="positive")
-                                    except Exception as exc:
-                                        ui.notify(f"Erreur Excel : {exc}", type="negative")
-
-                                ui.button(
-                                    "Télécharger (XLSX)",
-                                    icon="download",
-                                    on_click=do_download_xlsx,
-                                ).classes("w-full q-mt-xs").props("outline color=green-8")
-                            else:
-                                ui.label(
-                                    "Sauvegarde d'abord pour activer le téléchargement."
-                                ).classes("text-caption text-grey-6 q-mt-sm")
 
                     # ── Colonne droite : Créer dans EasyBeer ────────────
                     with ui.card().classes("flex-1").props("flat bordered").style("min-width: 320px"):
