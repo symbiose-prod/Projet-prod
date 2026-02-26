@@ -219,9 +219,9 @@ def page_ramasse():
         def _update_kpis():
             """Met à jour les KPI depuis table_ref['rows']."""
             active = [r for r in table_ref["rows"] if int(r.get("cartons") or 0) > 0]
-            tot_c = sum(int(r["cartons"]) for r in active)
-            tot_p = sum(int(r["palettes"]) for r in active)
-            tot_w = sum(int(r["poids"]) for r in active)
+            tot_c = sum(int(r.get("cartons") or 0) for r in active)
+            tot_p = sum(int(r.get("palettes") or 0) for r in active)
+            tot_w = sum(int(r.get("poids") or 0) for r in active)
             if kpi_labels["cartons"]:
                 kpi_labels["cartons"].text = f"{tot_c:,}".replace(",", " ")
             if kpi_labels["palettes"]:
@@ -278,16 +278,13 @@ def page_ramasse():
                     "ref": r["Référence"],
                     "produit": label,
                     "ddm": r["DDM"].strftime("%d/%m/%Y") if hasattr(r["DDM"], "strftime") else str(r["DDM"]),
-                    "cartons": r["Quantité cartons"],
+                    "cartons": None,
                     "poids_u": float(meta.get("_poids_carton", 0)),
                     "pal_cap": int(meta.get("_palette_capacity", 0)),
                     "palettes": 0,
                     "poids": 0,
                     "poids_display": "—",
                 }
-                grid_row = _compute_row(grid_row, meta)
-                p = grid_row["poids"]
-                grid_row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
                 grid_rows.append(grid_row)
 
             table_ref["rows"] = grid_rows
@@ -295,10 +292,10 @@ def page_ramasse():
             try:
               with content_container:
                 # ── KPIs ─────────────────────────────────────────────
-                active = [r for r in grid_rows if r["cartons"] > 0]
-                tot_c = sum(r["cartons"] for r in active)
-                tot_p = sum(r["palettes"] for r in active)
-                tot_w = sum(r["poids"] for r in active)
+                active = [r for r in grid_rows if (r["cartons"] or 0) > 0]
+                tot_c = sum(int(r["cartons"] or 0) for r in active)
+                tot_p = sum(int(r["palettes"] or 0) for r in active)
+                tot_w = sum(int(r["poids"] or 0) for r in active)
 
                 with ui.row().classes("w-full gap-4"):
                     with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
@@ -365,11 +362,11 @@ def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot body — v-model.number + @change pour sync serveur
+                # Slot body — même pattern que "Forcer" en production
                 ORANGE = COLORS["orange"]
                 table.add_slot("body", r'''
                     <q-tr :props="props"
-                          :style="props.row.cartons == 0 ? 'opacity: 0.45' : ''">
+                          :style="props.row.cartons == null || props.row.cartons == 0 ? 'opacity: 0.45' : ''">
                         <q-td v-for="col in props.cols" :key="col.name" :props="props"
                               :style="'text-align: ' + col.align">
                             <template v-if="col.name === 'cartons'">
@@ -378,13 +375,15 @@ def page_ramasse():
                                     type="number"
                                     dense
                                     borderless
+                                    placeholder="0"
                                     input-class="text-right text-bold"
+                                    :input-style="{color: props.row.cartons != null && props.row.cartons != 0 ? '#111827' : '#9CA3AF'}"
                                     style="max-width: 80px"
                                     @change="v => $parent.$emit('cartons_sync', {ref: props.row.ref, cartons: v})"
                                 />
                             </template>
                             <template v-else-if="col.name === 'produit'">
-                                <span :style="props.row.cartons > 0 ? 'font-weight: 600' : ''">
+                                <span :style="props.row.cartons != null && props.row.cartons > 0 ? 'font-weight: 600' : ''">
                                     {{ props.row[col.field] }}
                                 </span>
                             </template>
