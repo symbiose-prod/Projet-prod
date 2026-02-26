@@ -426,13 +426,37 @@ def _render_easybeer_section(
                         if _lbl and _pk.get("idLot") is not None:
                             _pkg_lookup[_lbl] = _pk["idLot"]
 
-                    _elements = []
+                    # ── Produits dérivés (NIKO, INTER…) ──
+                    _derive_map: dict[str, int] = {}
+                    for _d in _matrice.get("produitsDerives", []):
+                        _d_lbl = (_d.get("libelle") or "").lower()
+                        _d_id = _d.get("idProduit")
+                        if not _d_id:
+                            continue
+                        if "niko" in _d_lbl:
+                            _derive_map["niko"] = _d_id
+                        elif "inter" in _d_lbl:
+                            _derive_map["inter"] = _d_id
+                        elif "water" in _d_lbl:
+                            _derive_map["water"] = _d_id
+
+                    def _product_id_for_line(produit_str: str) -> int:
+                        """Retourne l'idProduit du dérivé si NIKO/INTER, sinon le principal."""
+                        p = produit_str.lower()
+                        for kw, pid in _derive_map.items():
+                            if kw in p:
+                                return pid
+                        return id_produit
+
+                    # ── Construire les éléments groupés par produit ──
+                    _elements_by_pid: dict[int, list[dict]] = {}
                     _df_min_eb_json = _sp_eb.get("df_min_json")
                     if _df_min_eb_json:
                         _df_min_eb = pd.read_json(_df_min_eb_json, orient="split")
                         _rows_gout = _df_min_eb[_df_min_eb["GoutCanon"].astype(str) == g]
                         for _, _r in _rows_gout.iterrows():
                             _stock = str(_r.get("Stock", "")).strip()
+                            _produit_col = str(_r.get("Produit", "")).strip()
                             _ct = int(_r.get("Cartons à produire (arrondi)", 0))
                             if _ct <= 0:
                                 continue
@@ -469,23 +493,30 @@ def _render_easybeer_section(
                                         _id_cont = _candidates[0].get("idContenant")
 
                             if _id_cont is not None and _id_lot is not None:
-                                _elements.append({
+                                _pid = _product_id_for_line(_produit_col)
+                                _elements_by_pid.setdefault(_pid, []).append({
                                     "idContenant": _id_cont,
                                     "idLot": _id_lot,
                                     "quantite": _ct,
                                 })
 
-                    if _elements:
-                        _ddm_iso = _sp_eb.get("ddm", "")
+                    # ── Créer une planification par produit (principal + dérivés) ──
+                    _ddm_iso = _sp_eb.get("ddm", "")
+                    for _pid, _elems in _elements_by_pid.items():
                         add_planification_conditionnement({
                             "idBrassin": brassin_id,
-                            "idProduit": id_produit,
+                            "idProduit": _pid,
                             "idEntrepot": _id_entrepot,
                             "date": f"{_date_embout_iso}T23:00:00.000Z",
                             "dateLimiteUtilisationOptimale": f"{_ddm_iso}T00:00:00.000Z" if _ddm_iso else "",
-                            "elements": _elements,
+                            "elements": _elems,
                         })
-                        ui.notify(f"Conditionnement « {g} » planifié", type="positive")
+                    if _elements_by_pid:
+                        _nb_planifs = len(_elements_by_pid)
+                        ui.notify(
+                            f"Conditionnement « {g} » planifié ({_nb_planifs} produit{'s' if _nb_planifs > 1 else ''})",
+                            type="positive",
+                        )
                 except Exception as _pe:
                     ui.notify(f"Planif. « {g} » : {_pe}", type="warning")
 
