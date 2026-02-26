@@ -38,15 +38,14 @@ from common.email import send_html_with_pdf
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
-def _load_brassins() -> list[dict]:
-    """Charge brassins en cours + 3 derniers archivés."""
-    import logging
-    log = logging.getLogger(__name__)
+def _load_brassins() -> tuple[list[dict], list[str]]:
+    """Charge brassins en cours + 3 derniers archivés. Retourne (brassins, erreurs)."""
+    errors: list[str] = []
 
     try:
         en_cours = get_brassins_en_cours()
     except Exception as exc:
-        log.warning("Erreur chargement brassins en cours : %s", exc)
+        errors.append(f"Brassins en cours : {exc}")
         en_cours = []
 
     en_cours_ids = {b.get("idBrassin") for b in en_cours}
@@ -57,8 +56,8 @@ def _load_brassins() -> list[dict]:
                 b["_is_archive"] = True
                 en_cours.append(b)
     except Exception as exc:
-        log.warning("Erreur chargement brassins archivés : %s", exc)
-    return [b for b in en_cours if not b.get("annule")]
+        errors.append(f"Brassins archivés : {exc}")
+    return [b for b in en_cours if not b.get("annule")], errors
 
 
 def _load_cb_matrix() -> dict[int, list[dict]] | None:
@@ -116,21 +115,16 @@ def page_ramasse():
     with page_layout("Fiche de ramasse", "local_shipping", "/ramasse") as sidebar:
 
         # ── Guards ───────────────────────────────────────────────────
-        print(f"[RAMASSE] is_configured={eb_configured()}, "
-              f"USER={bool(os.environ.get('EASYBEER_API_USER'))}, "
-              f"PASS={bool(os.environ.get('EASYBEER_API_PASS'))}", flush=True)
-
         if not eb_configured():
             ui.label("EasyBeer non configuré.").classes("text-negative")
             ui.label(
-                f"EASYBEER_API_USER={'✓' if os.environ.get('EASYBEER_API_USER') else '✗'}, "
-                f"EASYBEER_API_PASS={'✓' if os.environ.get('EASYBEER_API_PASS') else '✗'}"
+                f"EASYBEER_API_USER={'OK' if os.environ.get('EASYBEER_API_USER') else 'manquant'}, "
+                f"EASYBEER_API_PASS={'OK' if os.environ.get('EASYBEER_API_PASS') else 'manquant'}"
             ).classes("text-caption text-grey-6")
             return
 
         # ── Chargement données ────────────────────────────────────
-        brassins = _load_brassins()
-        print(f"[RAMASSE] brassins={len(brassins)}", flush=True)
+        brassins, load_errors = _load_brassins()
 
         cb_by_product = _load_cb_matrix()
         id_entrepot = _load_entrepot()
@@ -138,6 +132,10 @@ def page_ramasse():
 
         destinataires = load_destinataires()
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
+
+        if load_errors:
+            for err in load_errors:
+                ui.label(f"Erreur API : {err}").classes("text-negative text-caption")
 
         if not brassins:
             ui.label("Aucun brassin disponible dans EasyBeer.").classes("text-grey-6")
@@ -149,7 +147,7 @@ def page_ramasse():
 
             date_ramasse = ui.date(
                 value=today_paris().isoformat(),
-            ).props('label="Date de ramasse" outlined dense')
+            ).props('label="Date de ramasse" outlined dense first-day-of-week=1')
 
             dest_select = ui.select(
                 dest_names,
@@ -300,13 +298,13 @@ def page_ramasse():
                         {"field": "pal_cap", "hide": True},
                     ],
                     "rowData": grid_rows,
-                    "getRowStyle": """params => {
-                        if (params.data.cartons === 0) return {opacity: 0.45};
-                        return null;
-                    }""",
+                    "rowClassRules": {
+                        "opacity-50": "data.cartons === 0",
+                    },
                     "animateRows": True,
                     "domLayout": "autoHeight",
                 }).classes("w-full")
+                ui.add_css(".ag-row.opacity-50 { opacity: 0.45; }")
 
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
