@@ -362,7 +362,7 @@ def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot body — même pattern que "Forcer" en production
+                # Slot body — style Forcer + @change auto-recalcul
                 ORANGE = COLORS["orange"]
                 table.add_slot("body", r'''
                     <q-tr :props="props"
@@ -379,7 +379,7 @@ def page_ramasse():
                                     input-class="text-right text-bold"
                                     :input-style="{color: props.row.cartons != null && props.row.cartons != 0 ? '#111827' : '#9CA3AF'}"
                                     style="max-width: 80px"
-                                    @change="v => $parent.$emit('cartons_sync', {ref: props.row.ref, cartons: v})"
+                                    @change="() => $parent.$emit('cartons_changed', {ref: props.row.ref, cartons: props.row.cartons})"
                                 />
                             </template>
                             <template v-else-if="col.name === 'produit'">
@@ -399,9 +399,8 @@ def page_ramasse():
                     </q-tr>
                 ''')
 
-                # Sync silencieux : quand l'user quitte un champ cartons,
-                # on enregistre la nouvelle valeur côté serveur
-                def on_cartons_sync(e):
+                # Handler @change : sync + recalcul automatique
+                def on_cartons_changed(e):
                     data = e.args
                     ref = data.get("ref")
                     c = data.get("cartons")
@@ -409,34 +408,42 @@ def page_ramasse():
                         c = int(float(c)) if c is not None and c != "" else 0
                     except (TypeError, ValueError):
                         c = 0
+                    if c < 0:
+                        c = 0
+
                     for row in table_ref["rows"]:
                         if row["ref"] == ref:
                             row["cartons"] = c
+                            cap = int(row.get("pal_cap") or 0)
+                            pu = float(row.get("poids_u") or 0)
+                            pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
+                            row["palettes"] = pal
+                            p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
+                            row["poids"] = p
+                            row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
                             break
 
-                table.on("cartons_sync", on_cartons_sync)
+                    table.rows[:] = table_ref["rows"]
+                    table.update()
+                    _update_kpis()
 
-                # Bouton Recalculer — lit depuis table_ref["rows"] (synced)
+                table.on("cartons_changed", on_cartons_changed)
+
+                # Bouton Recalculer — recalcule tout depuis table_ref["rows"]
                 def do_recalculate():
-                    """Recalcule palettes/poids depuis les cartons synchronisés."""
-                    updated = []
                     for row in table_ref["rows"]:
                         c = int(row.get("cartons") or 0)
                         if c < 0:
                             c = 0
+                        row["cartons"] = c
                         cap = int(row.get("pal_cap") or 0)
                         pu = float(row.get("poids_u") or 0)
                         pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
+                        row["palettes"] = pal
                         p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
-                        updated.append({
-                            **row,
-                            "cartons": c,
-                            "palettes": pal,
-                            "poids": p,
-                            "poids_display": f"{p:,} kg".replace(",", " ") if p else "—",
-                        })
-                    table_ref["rows"] = updated
-                    table.rows[:] = updated
+                        row["poids"] = p
+                        row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
+                    table.rows[:] = table_ref["rows"]
                     table.update()
                     _update_kpis()
                     ui.notify("Recalculé !", type="positive", position="bottom", timeout=1500)
