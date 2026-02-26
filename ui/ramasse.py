@@ -287,7 +287,7 @@ def page_ramasse():
                     ],
                     "rowData": grid_rows,
                     "rowClassRules": {
-                        "text-grey-4": "data.cartons === 0",
+                        "opacity-50": "data.cartons === 0",
                     },
                     "animateRows": True,
                     "domLayout": "autoHeight",
