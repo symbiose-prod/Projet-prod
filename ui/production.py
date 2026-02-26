@@ -161,7 +161,7 @@ def _render_easybeer_section(
     ).props("outlined dense").classes("w-full")
     with date_embout_input:
         with ui.menu().props("no-parent-event") as embout_menu:
-            embout_picker = ui.date(value=_default_embout.isoformat()).props("dense")
+            embout_picker = ui.date(value=_default_embout.isoformat()).props("dense first-day-of-week=1")
             embout_picker.on_value_change(
                 lambda e: (date_embout_input.set_value(e.value), embout_menu.close())
             )
@@ -1126,7 +1126,7 @@ def page_production():
                             ).props("outlined dense").classes("w-full")
                             with date_debut:
                                 with ui.menu().props("no-parent-event") as date_menu:
-                                    date_picker = ui.date(value=default_debut.isoformat()).props("dense")
+                                    date_picker = ui.date(value=default_debut.isoformat()).props("dense first-day-of-week=1")
                                     date_picker.on_value_change(
                                         lambda e: (date_debut.set_value(e.value), date_menu.close())
                                     )

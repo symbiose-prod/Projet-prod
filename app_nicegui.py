@@ -77,5 +77,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         reload=os.environ.get("ENV") != "production",
         favicon="🧪",
         dark=False,
+        language="fr",
         storage_secret=os.environ.get("NICEGUI_SECRET", "ferment-station-dev-secret"),
     )
