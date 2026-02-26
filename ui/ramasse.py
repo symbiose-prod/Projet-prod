@@ -110,7 +110,6 @@ TABLE_COLUMNS = [
     {"name": "ref",           "label": "Réf.",                    "field": "ref",           "sortable": True,  "align": "left"},
     {"name": "produit",       "label": "Produit (goût + format)", "field": "produit",       "sortable": True,  "align": "left"},
     {"name": "ddm",           "label": "DDM",                     "field": "ddm",           "sortable": False, "align": "center"},
-    {"name": "date_ramasse",  "label": "Date ramasse",            "field": "date_ramasse",  "sortable": False, "align": "center"},
     {"name": "cartons",       "label": "Cartons",                 "field": "cartons",       "sortable": True,  "align": "right"},
     {"name": "palettes",      "label": "Palettes",                "field": "palettes",      "sortable": False, "align": "right"},
     {"name": "poids_display", "label": "Poids (kg)",              "field": "poids_display", "sortable": False, "align": "right"},
@@ -154,24 +153,12 @@ def page_ramasse():
             ui.label("Aucun brassin disponible dans EasyBeer.").classes("text-grey-6")
             return
 
-        # ── Sidebar : paramètres ─────────────────────────────────────
+        # ── Sidebar : juste le bouton recharger ──────────────────────
         with sidebar:
-            ui.label("Paramètres").classes("text-subtitle2 text-grey-7")
-
-            date_ramasse = ui.date(
-                value=today_paris().isoformat(),
-            ).props('label="Date de ramasse" outlined dense first-day-of-week=1')
-
-            dest_select = ui.select(
-                dest_names,
-                value=dest_names[0],
-                label="Destinataire",
-            ).props("outlined dense")
-
             def do_reload():
                 ui.navigate.to("/ramasse")
 
-            ui.button("Recharger", icon="refresh", on_click=do_reload).props(
+            ui.button("Recharger les données", icon="refresh", on_click=do_reload).props(
                 "flat color=grey-7"
             ).classes("w-full q-mt-sm")
 
@@ -189,8 +176,35 @@ def page_ramasse():
             label="Brassins à inclure",
         ).classes("w-full").props("outlined use-chips")
 
+        # ── Paramètres : date + destinataire (dans le contenu) ────────
+        with ui.row().classes("w-full items-end gap-4 q-mt-sm"):
+            date_ramasse = ui.input(
+                "Date de ramasse",
+                value=today_paris().strftime("%d/%m/%Y"),
+            ).classes("flex-1").props('outlined dense')
+            # Popup calendrier Quasar attaché à l'input
+            with date_ramasse.add_slot("append"):
+                ui.icon("event").classes("cursor-pointer").props("name=event")
+                with ui.menu().props("anchor='bottom right' self='top right'"):
+                    date_picker = ui.date(
+                        value=today_paris().isoformat(),
+                    ).props('first-day-of-week=1 minimal')
+
+                    def _sync_date(e=None):
+                        v = date_picker.value
+                        if v:
+                            d = dt.date.fromisoformat(v)
+                            date_ramasse.value = d.strftime("%d/%m/%Y")
+                    date_picker.on_value_change(_sync_date)
+
+            dest_select = ui.select(
+                dest_names,
+                value=dest_names[0],
+                label="Destinataire",
+            ).classes("flex-1").props("outlined dense")
+
         # ── Conteneur dynamique ──────────────────────────────────────
-        content_container = ui.column().classes("w-full gap-5")
+        content_container = ui.column().classes("w-full gap-5 q-mt-md")
 
         # ── Refs partagées ───────────────────────────────────────────
         table_ref = {"table": None, "rows": []}
@@ -250,7 +264,6 @@ def page_ramasse():
                 return
 
             # ── Préparer les données ──────────────────────────────
-            today_str = today_paris().strftime("%d/%m/%Y")
             grid_rows = []
             for r in rows:
                 label = r["Produit (goût + format)"]
@@ -259,7 +272,6 @@ def page_ramasse():
                     "ref": r["Référence"],
                     "produit": label,
                     "ddm": r["DDM"].strftime("%d/%m/%Y") if hasattr(r["DDM"], "strftime") else str(r["DDM"]),
-                    "date_ramasse": today_str,
                     "cartons": r["Quantité cartons"],
                     "poids_u": float(meta.get("_poids_carton", 0)),
                     "pal_cap": int(meta.get("_palette_capacity", 0)),
@@ -333,7 +345,7 @@ def page_ramasse():
                 section_title("Détail produits", "table_chart")
 
                 ui.label(
-                    "Clique sur une cellule Cartons ou Date ramasse pour la modifier."
+                    "Modifie le nombre de cartons directement dans le tableau."
                 ).classes("text-caption text-grey-6 q-mb-xs")
 
                 table = ui.table(
@@ -347,36 +359,38 @@ def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot pour le body : lignes éditables + opacity sur cartons=0
+                # Slot body : cartons éditable, produits en gras si cartons > 0
                 ORANGE = COLORS["orange"]
+                INK = COLORS["ink"]
                 table.add_slot("body", '''
                     <q-tr :props="props"
                           :style="props.row.cartons == 0 ? 'opacity: 0.45' : ''">
                         <q-td key="ref" :props="props">
                             {{ props.row.ref }}
                         </q-td>
-                        <q-td key="produit" :props="props">
+                        <q-td key="produit" :props="props"
+                               :style="props.row.cartons > 0 ? 'font-weight: 600' : ''">
                             {{ props.row.produit }}
                         </q-td>
                         <q-td key="ddm" :props="props" class="text-center">
                             {{ props.row.ddm }}
                         </q-td>
-                        <q-td key="date_ramasse" :props="props">
-                            <q-input
-                                v-model="props.row.date_ramasse"
-                                dense borderless
-                                input-class="text-center"
-                                style="max-width: 120px"
-                            />
-                        </q-td>
                         <q-td key="cartons" :props="props">
                             <q-input
                                 v-model.number="props.row.cartons"
                                 type="number"
-                                dense borderless
+                                dense
+                                borderless
                                 input-class="text-right text-bold"
-                                style="max-width: 80px"
-                                @change="() => $parent.$emit('row_changed', props.row)"
+                                input-style="min-width: 60px"
+                                @click.stop
+                                @update:model-value="val => {
+                                    props.row.cartons = Number(val) || 0;
+                                    $parent.$emit('row_changed', {
+                                        ref: props.row.ref,
+                                        cartons: Number(val) || 0
+                                    });
+                                }"
                             />
                         </q-td>
                         <q-td key="palettes" :props="props" class="text-right">
@@ -427,6 +441,21 @@ def page_ramasse():
                     ui.label(f"Expéditeur : {sender}").classes("text-caption text-grey-6")
 
                 with ui.row().classes("w-full gap-3 q-mt-sm"):
+                    def _get_date_ramasse() -> dt.date:
+                        """Parse la date depuis l'input ou le picker."""
+                        # Essayer l'input text (format dd/mm/yyyy)
+                        raw = date_ramasse.value or ""
+                        try:
+                            return dt.datetime.strptime(raw, "%d/%m/%Y").date()
+                        except ValueError:
+                            pass
+                        # Fallback sur le date picker (format yyyy-mm-dd)
+                        try:
+                            return dt.date.fromisoformat(date_picker.value)
+                        except (ValueError, AttributeError):
+                            pass
+                        return today_paris()
+
                     def do_download_pdf():
                         row_data = table_ref["rows"]
                         active_rows = [r for r in row_data if int(r.get("cartons") or 0) > 0]
@@ -435,11 +464,12 @@ def page_ramasse():
                             return
                         try:
                             import pandas as pd
+                            d = _get_date_ramasse()
                             df_export = pd.DataFrame([{
                                 "Référence": r["ref"],
                                 "Produit (goût + format)": r["produit"],
                                 "DDM": r["ddm"],
-                                "Date ramasse souhaitée": r["date_ramasse"],
+                                "Date ramasse souhaitée": d.strftime("%d/%m/%Y"),
                                 "Quantité cartons": int(r["cartons"]),
                                 "Quantité palettes": int(r["palettes"]),
                                 "Poids palettes (kg)": int(r["poids"]),
@@ -453,13 +483,12 @@ def page_ramasse():
 
                             pdf_bytes = build_bl_enlevements_pdf(
                                 date_creation=today_paris(),
-                                date_ramasse=dt.date.fromisoformat(date_ramasse.value) if date_ramasse.value else today_paris(),
+                                date_ramasse=d,
                                 destinataire_title=dest_title,
                                 destinataire_lines=dest_lines,
                                 df_lines=df_export[cols],
                             )
-                            d = date_ramasse.value or today_paris().isoformat()
-                            ui.download(pdf_bytes, f"Fiche_de_ramasse_{d}.pdf")
+                            ui.download(pdf_bytes, f"Fiche_de_ramasse_{d:%Y-%m-%d}.pdf")
                             ui.notify("PDF généré !", type="positive", icon="check")
                         except Exception as exc:
                             ui.notify(f"Erreur PDF : {exc}", type="negative")
@@ -485,11 +514,12 @@ def page_ramasse():
 
                         try:
                             import pandas as pd
+                            d = _get_date_ramasse()
                             df_export = pd.DataFrame([{
                                 "Référence": r["ref"],
                                 "Produit (goût + format)": r["produit"],
                                 "DDM": r["ddm"],
-                                "Date ramasse souhaitée": r["date_ramasse"],
+                                "Date ramasse souhaitée": d.strftime("%d/%m/%Y"),
                                 "Quantité cartons": int(r["cartons"]),
                                 "Quantité palettes": int(r["palettes"]),
                                 "Poids palettes (kg)": int(r["poids"]),
@@ -500,7 +530,6 @@ def page_ramasse():
                                     "Quantité palettes", "Poids palettes (kg)"]
                             dest_title = dest_select.value
                             dest_lines = dest_obj.get("address_lines", []) if dest_obj else []
-                            d = dt.date.fromisoformat(date_ramasse.value) if date_ramasse.value else today_paris()
 
                             pdf_bytes = build_bl_enlevements_pdf(
                                 date_creation=today_paris(),
