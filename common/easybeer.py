@@ -176,17 +176,61 @@ def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
     return r.json()
 
 
+_WEIGHTS_CACHE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", "_carton_weights_cache.json",
+)
+_WEIGHTS_CACHE_TTL = 24 * 3600  # 24 heures
+
+
+def _load_weights_cache() -> dict[tuple[int, str], float] | None:
+    """Charge le cache fichier des poids cartons si encore valide."""
+    import json
+    try:
+        with open(_WEIGHTS_CACHE_PATH, encoding="utf-8") as f:
+            cache = json.load(f)
+        ts = cache.get("ts", 0)
+        if datetime.datetime.now().timestamp() - ts > _WEIGHTS_CACHE_TTL:
+            return None  # expiré
+        weights: dict[tuple[int, str], float] = {}
+        for entry in cache.get("data", []):
+            weights[(entry["pid"], entry["fmt"])] = entry["w"]
+        return weights
+    except Exception:
+        return None
+
+
+def _save_weights_cache(weights: dict[tuple[int, str], float]) -> None:
+    """Sauvegarde le cache fichier des poids cartons."""
+    import json
+    data = [{"pid": pid, "fmt": fmt, "w": w} for (pid, fmt), w in weights.items()]
+    cache = {"ts": datetime.datetime.now().timestamp(), "data": data}
+    try:
+        os.makedirs(os.path.dirname(_WEIGHTS_CACHE_PATH), exist_ok=True)
+        with open(_WEIGHTS_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+    except Exception:
+        pass
+
+
 def fetch_carton_weights() -> dict[tuple[int, str], float]:
     """
     Récupère les poids cartons depuis EasyBeer pour tous les produits finis.
+    Utilise un cache fichier de 24h pour éviter les appels API lents.
 
     1. POST /stock/produits → arbre des stocks (1 appel)
-    2. GET /stock/produit/edition/{id} pour chaque stock (N appels, 0.3s entre chaque)
+    2. GET /stock/produit/edition/{id} pour chaque stock (N appels)
 
     Retourne :
         {(idProduit, fmt_str): poidsUnitaire_kg, ...}
         ex: {(42514, "12x33"): 6.741, (42514, "6x75"): 7.23, ...}
     """
+    # ── Cache ──
+    cached = _load_weights_cache()
+    if cached is not None:
+        return cached
+
+    # ── Fetch depuis l'API ──
     import time
 
     payload = {"idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))}
@@ -226,8 +270,9 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
             except Exception:
                 pass
 
-            time.sleep(1.0)  # Respecter le rate-limit EasyBeer (10 req/s max)
+            time.sleep(0.3)  # Rate-limit EasyBeer
 
+    _save_weights_cache(weights)
     return weights
 
 

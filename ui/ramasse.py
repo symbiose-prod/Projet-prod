@@ -116,14 +116,11 @@ def page_ramasse():
             ui.label("EasyBeer non configuré.").classes("text-negative")
             return
 
-        # ── Chargement données ───────────────────────────────────────
-        with ui.spinner("dots", size="lg"):
-            pass
-
+        # ── Chargement données (rapide : brassins + destinataires) ──
         brassins = _load_brassins()
         cb_by_product = _load_cb_matrix()
-        eb_weights = _load_eb_weights()
         id_entrepot = _load_entrepot()
+        eb_weights = _load_eb_weights()  # rapide si cache valide (24h)
 
         destinataires = load_destinataires()
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
