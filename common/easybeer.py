@@ -25,20 +25,22 @@ from typing import Any
 import requests
 
 # ─── Config (variables d'environnement) ────────────────────────────────────────
-EB_USER         = os.environ.get("EASYBEER_API_USER", "")
-EB_PASS         = os.environ.get("EASYBEER_API_PASS", "")
-EB_ID_BRASSERIE = int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013"))
+# NOTE : les credentials sont lus à chaque appel (pas au niveau module)
+# pour éviter les problèmes d'ordre de chargement du .env.
 BASE            = "https://api.easybeer.fr"
 TIMEOUT         = 30  # secondes
 
 
 def is_configured() -> bool:
     """True si les credentials Easy Beer sont présents."""
-    return bool(EB_USER and EB_PASS)
+    return bool(os.environ.get("EASYBEER_API_USER") and os.environ.get("EASYBEER_API_PASS"))
 
 
 def _auth() -> tuple[str, str]:
-    return (EB_USER, EB_PASS)
+    return (
+        os.environ.get("EASYBEER_API_USER", ""),
+        os.environ.get("EASYBEER_API_PASS", ""),
+    )
 
 
 def _dates(window_days: int) -> tuple[str, str]:
@@ -60,7 +62,7 @@ def _base_payload(window_days: int) -> dict[str, Any]:
     """
     debut, fin = _dates(window_days)
     return {
-        "idBrasserie": EB_ID_BRASSERIE,
+        "idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013")),
         "periode": {
             "dateDebut": debut,
             "dateFin":   fin,

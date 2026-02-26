@@ -40,9 +40,13 @@ from common.email import send_html_with_pdf
 
 def _load_brassins() -> list[dict]:
     """Charge brassins en cours + 3 derniers archivés."""
+    import logging
+    log = logging.getLogger(__name__)
+
     try:
         en_cours = get_brassins_en_cours()
-    except Exception:
+    except Exception as exc:
+        log.warning("Erreur chargement brassins en cours : %s", exc)
         en_cours = []
 
     en_cours_ids = {b.get("idBrassin") for b in en_cours}
@@ -52,8 +56,8 @@ def _load_brassins() -> list[dict]:
             if b.get("idBrassin") not in en_cours_ids:
                 b["_is_archive"] = True
                 en_cours.append(b)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("Erreur chargement brassins archivés : %s", exc)
     return [b for b in en_cours if not b.get("annule")]
 
 
