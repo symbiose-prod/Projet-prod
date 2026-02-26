@@ -153,35 +153,41 @@ def page_ramasse():
             ui.label("Aucun brassin disponible dans EasyBeer.").classes("text-grey-6")
             return
 
-        # ── Sidebar : juste le bouton recharger ──────────────────────
+        # ── Sidebar : vide (bouton recharger déplacé à droite) ─────────
         with sidebar:
-            def do_reload():
-                ui.navigate.to("/ramasse")
+            pass
 
-            ui.button("Recharger les données", icon="refresh", on_click=do_reload).props(
-                "flat color=grey-7"
-            ).classes("w-full q-mt-sm")
-
-        # ── Sélection brassins ───────────────────────────────────────
-        section_title("Sélection des brassins", "playlist_add_check")
+        # ── Sélection brassins + recharger ────────────────────────────
+        with ui.row().classes("w-full items-center gap-4"):
+            with ui.column().classes("flex-1 gap-0"):
+                section_title("Sélection des brassins", "playlist_add_check")
 
         brassin_options = {
             b["idBrassin"]: _brassin_label(b)
             for b in brassins
         }
-        brassin_select = ui.select(
-            brassin_options,
-            multiple=True,
-            value=[],
-            label="Brassins à inclure",
-        ).classes("w-full").props("outlined use-chips")
+
+        with ui.row().classes("w-full items-end gap-3"):
+            brassin_select = ui.select(
+                brassin_options,
+                multiple=True,
+                value=[],
+                label="Brassins à inclure",
+            ).classes("flex-1").props("outlined use-chips")
+
+            def do_reload():
+                ui.navigate.to("/ramasse")
+
+            ui.button(icon="refresh", on_click=do_reload).props(
+                "flat round color=grey-7"
+            ).tooltip("Recharger les données EasyBeer")
 
         # ── Paramètres : date + destinataire (dans le contenu) ────────
         with ui.row().classes("w-full items-end gap-4 q-mt-sm"):
             date_ramasse = ui.input(
                 "Date de ramasse",
                 value=today_paris().strftime("%d/%m/%Y"),
-            ).classes("flex-1").props('outlined dense')
+            ).props('outlined dense').style("max-width: 200px")
             # Popup calendrier Quasar attaché à l'input
             with date_ramasse.add_slot("append"):
                 ui.icon("event").classes("cursor-pointer").props("name=event")
@@ -201,7 +207,7 @@ def page_ramasse():
                 dest_names,
                 value=dest_names[0],
                 label="Destinataire",
-            ).classes("flex-1").props("outlined dense")
+            ).props("outlined dense").style("min-width: 200px")
 
         # ── Conteneur dynamique ──────────────────────────────────────
         content_container = ui.column().classes("w-full gap-5 q-mt-md")
@@ -345,7 +351,7 @@ def page_ramasse():
                 section_title("Détail produits", "table_chart")
 
                 ui.label(
-                    "Modifie le nombre de cartons directement dans le tableau."
+                    "Modifie le nombre de cartons puis clique sur Recalculer."
                 ).classes("text-caption text-grey-6 q-mb-xs")
 
                 table = ui.table(
@@ -359,71 +365,64 @@ def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot body : cartons éditable, produits en gras si cartons > 0
+                # Slot body — même pattern que la page Production :
+                # v-for col in props.cols + template switch par col.name
                 ORANGE = COLORS["orange"]
-                INK = COLORS["ink"]
-                table.add_slot("body", '''
+                table.add_slot("body", r'''
                     <q-tr :props="props"
                           :style="props.row.cartons == 0 ? 'opacity: 0.45' : ''">
-                        <q-td key="ref" :props="props">
-                            {{ props.row.ref }}
-                        </q-td>
-                        <q-td key="produit" :props="props"
-                               :style="props.row.cartons > 0 ? 'font-weight: 600' : ''">
-                            {{ props.row.produit }}
-                        </q-td>
-                        <q-td key="ddm" :props="props" class="text-center">
-                            {{ props.row.ddm }}
-                        </q-td>
-                        <q-td key="cartons" :props="props">
-                            <q-input
-                                v-model.number="props.row.cartons"
-                                type="number"
-                                dense
-                                borderless
-                                input-class="text-right text-bold"
-                                input-style="min-width: 60px"
-                                @click.stop
-                                @update:model-value="val => {
-                                    props.row.cartons = Number(val) || 0;
-                                    $parent.$emit('row_changed', {
-                                        ref: props.row.ref,
-                                        cartons: Number(val) || 0
-                                    });
-                                }"
-                            />
-                        </q-td>
-                        <q-td key="palettes" :props="props" class="text-right">
-                            <span style="color: ''' + ORANGE + '''; font-weight: 600">
-                                {{ props.row.palettes }}
-                            </span>
-                        </q-td>
-                        <q-td key="poids_display" :props="props" class="text-right">
-                            {{ props.row.poids_display }}
+                        <q-td v-for="col in props.cols" :key="col.name" :props="props"
+                              :style="'text-align: ' + col.align">
+                            <template v-if="col.name === 'cartons'">
+                                <q-input
+                                    v-model.number="props.row.cartons"
+                                    type="number"
+                                    dense
+                                    borderless
+                                    input-class="text-right text-bold"
+                                    style="max-width: 80px"
+                                />
+                            </template>
+                            <template v-else-if="col.name === 'produit'">
+                                <span :style="props.row.cartons > 0 ? 'font-weight: 600' : ''">
+                                    {{ props.row[col.field] }}
+                                </span>
+                            </template>
+                            <template v-else-if="col.name === 'palettes'">
+                                <span style="color: ''' + ORANGE + r'''; font-weight: 600">
+                                    {{ props.row[col.field] }}
+                                </span>
+                            </template>
+                            <template v-else>
+                                {{ props.row[col.field] }}
+                            </template>
                         </q-td>
                     </q-tr>
                 ''')
 
-                def on_row_changed(e):
-                    """Recalcule palettes/poids quand les cartons changent."""
-                    changed = e.args
-                    ref = changed.get("ref")
-                    for row in table_ref["rows"]:
-                        if row["ref"] == ref:
-                            c = int(changed.get("cartons") or 0)
-                            row["cartons"] = c
-                            cap = int(row.get("pal_cap") or 0)
-                            pu = float(row.get("poids_u") or 0)
-                            pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
-                            row["palettes"] = pal
-                            p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
-                            row["poids"] = p
-                            row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
-                            break
+                # Bouton Recalculer — lit les cartons depuis table.rows
+                def do_recalculate():
+                    """Relit les cartons depuis le tableau et recalcule palettes/poids."""
+                    for row in table.rows:
+                        c = int(row.get("cartons") or 0)
+                        row["cartons"] = c
+                        cap = int(row.get("pal_cap") or 0)
+                        pu = float(row.get("poids_u") or 0)
+                        pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
+                        row["palettes"] = pal
+                        p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
+                        row["poids"] = p
+                        row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
+                    table_ref["rows"] = list(table.rows)
                     table.update()
                     _update_kpis()
+                    ui.notify("Recalculé !", type="positive", position="bottom", timeout=1500)
 
-                table.on("row_changed", on_row_changed)
+                ui.button(
+                    "Recalculer",
+                    icon="calculate",
+                    on_click=do_recalculate,
+                ).props("outline color=green-8").classes("q-mt-xs")
 
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
