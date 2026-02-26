@@ -365,7 +365,7 @@ def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot body — même pattern exact que la page Production
+                # Slot body — v-model.number + @change pour sync serveur
                 ORANGE = COLORS["orange"]
                 table.add_slot("body", r'''
                     <q-tr :props="props"
@@ -380,6 +380,7 @@ def page_ramasse():
                                     borderless
                                     input-class="text-right text-bold"
                                     style="max-width: 80px"
+                                    @change="v => $parent.$emit('cartons_sync', {ref: props.row.ref, cartons: v})"
                                 />
                             </template>
                             <template v-else-if="col.name === 'produit'">
@@ -399,16 +400,29 @@ def page_ramasse():
                     </q-tr>
                 ''')
 
-                # Bouton Recalculer — même pattern que "Appliquer les forcés" en production
-                async def do_recalculate():
-                    """Lit les cartons depuis table.rows et recalcule palettes/poids."""
+                # Sync silencieux : quand l'user quitte un champ cartons,
+                # on enregistre la nouvelle valeur côté serveur
+                def on_cartons_sync(e):
+                    data = e.args
+                    ref = data.get("ref")
+                    c = data.get("cartons")
+                    try:
+                        c = int(float(c)) if c is not None and c != "" else 0
+                    except (TypeError, ValueError):
+                        c = 0
+                    for row in table_ref["rows"]:
+                        if row["ref"] == ref:
+                            row["cartons"] = c
+                            break
+
+                table.on("cartons_sync", on_cartons_sync)
+
+                # Bouton Recalculer — lit depuis table_ref["rows"] (synced)
+                def do_recalculate():
+                    """Recalcule palettes/poids depuis les cartons synchronisés."""
                     updated = []
-                    for row in table.rows:
-                        c = row.get("cartons")
-                        try:
-                            c = int(float(c)) if c is not None and c != "" else 0
-                        except (TypeError, ValueError):
-                            c = 0
+                    for row in table_ref["rows"]:
+                        c = int(row.get("cartons") or 0)
                         if c < 0:
                             c = 0
                         cap = int(row.get("pal_cap") or 0)
