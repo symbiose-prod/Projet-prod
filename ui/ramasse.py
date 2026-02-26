@@ -118,16 +118,45 @@ def page_ramasse():
         # ── Guards ───────────────────────────────────────────────────
         if not eb_configured():
             ui.label("EasyBeer non configuré.").classes("text-negative")
+            ui.label(
+                f"EASYBEER_API_USER={'✓' if os.environ.get('EASYBEER_API_USER') else '✗'}, "
+                f"EASYBEER_API_PASS={'✓' if os.environ.get('EASYBEER_API_PASS') else '✗'}"
+            ).classes("text-caption text-grey-6")
             return
 
         # ── Chargement données (rapide : brassins + destinataires) ──
-        brassins = _load_brassins()
-        cb_by_product = _load_cb_matrix()
-        id_entrepot = _load_entrepot()
-        eb_weights = _load_eb_weights()  # rapide si cache valide (24h)
+        _load_errors: list[str] = []
+
+        try:
+            brassins = _load_brassins()
+        except Exception as exc:
+            brassins = []
+            _load_errors.append(f"Brassins : {exc}")
+
+        try:
+            cb_by_product = _load_cb_matrix()
+        except Exception as exc:
+            cb_by_product = None
+            _load_errors.append(f"Matrice CB : {exc}")
+
+        try:
+            id_entrepot = _load_entrepot()
+        except Exception as exc:
+            id_entrepot = None
+            _load_errors.append(f"Entrepôt : {exc}")
+
+        try:
+            eb_weights = _load_eb_weights()
+        except Exception as exc:
+            eb_weights = None
+            _load_errors.append(f"Poids cartons : {exc}")
 
         destinataires = load_destinataires()
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
+
+        if _load_errors:
+            for err in _load_errors:
+                ui.label(f"⚠ {err}").classes("text-caption text-warning")
 
         if not brassins:
             ui.label("Aucun brassin disponible dans EasyBeer.").classes("text-grey-6")
@@ -290,9 +319,10 @@ def page_ramasse():
                         {"field": "pal_cap", "hide": True},
                     ],
                     "rowData": grid_rows,
-                    "rowClassRules": {
-                        "opacity-50": "data.cartons === 0",
-                    },
+                    "getRowStyle": """params => {
+                        if (params.data.cartons === 0) return {opacity: 0.45};
+                        return null;
+                    }""",
                     "animateRows": True,
                     "domLayout": "autoHeight",
                 }).classes("w-full")
