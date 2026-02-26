@@ -351,7 +351,7 @@ def page_ramasse():
                 section_title("Détail produits", "table_chart")
 
                 ui.label(
-                    "Modifie le nombre de cartons puis clique sur Recalculer."
+                    "Modifie le nombre de cartons — les palettes et le poids se mettent à jour automatiquement."
                 ).classes("text-caption text-grey-6 q-mb-xs")
 
                 table = ui.table(
@@ -365,8 +365,7 @@ def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot body — même pattern que la page Production :
-                # v-for col in props.cols + template switch par col.name
+                # Slot body — v-for col + @change qui émet vers Python
                 ORANGE = COLORS["orange"]
                 table.add_slot("body", r'''
                     <q-tr :props="props"
@@ -381,6 +380,7 @@ def page_ramasse():
                                     borderless
                                     input-class="text-right text-bold"
                                     style="max-width: 80px"
+                                    @change="() => $parent.$emit('cartons_changed', {ref: props.row.ref, cartons: props.row.cartons})"
                                 />
                             </template>
                             <template v-else-if="col.name === 'produit'">
@@ -400,29 +400,32 @@ def page_ramasse():
                     </q-tr>
                 ''')
 
-                # Bouton Recalculer — lit les cartons depuis table.rows
-                def do_recalculate():
-                    """Relit les cartons depuis le tableau et recalcule palettes/poids."""
-                    for row in table.rows:
-                        c = int(row.get("cartons") or 0)
-                        row["cartons"] = c
-                        cap = int(row.get("pal_cap") or 0)
-                        pu = float(row.get("poids_u") or 0)
-                        pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
-                        row["palettes"] = pal
-                        p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
-                        row["poids"] = p
-                        row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
-                    table_ref["rows"] = list(table.rows)
+                # Handler : quand l'utilisateur modifie un nombre de cartons
+                def on_cartons_changed(e):
+                    """Reçoit {ref, cartons} depuis le client, recalcule la ligne."""
+                    data = e.args
+                    ref = data.get("ref")
+                    new_cartons = int(data.get("cartons") or 0)
+                    if new_cartons < 0:
+                        new_cartons = 0
+
+                    for row in table_ref["rows"]:
+                        if row["ref"] == ref:
+                            row["cartons"] = new_cartons
+                            cap = int(row.get("pal_cap") or 0)
+                            pu = float(row.get("poids_u") or 0)
+                            pal = math.ceil(new_cartons / cap) if cap > 0 and new_cartons > 0 else 0
+                            row["palettes"] = pal
+                            p = int(round(new_cartons * pu + pal * PALETTE_EMPTY_WEIGHT))
+                            row["poids"] = p
+                            row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
+                            break
+
+                    table.rows[:] = table_ref["rows"]
                     table.update()
                     _update_kpis()
-                    ui.notify("Recalculé !", type="positive", position="bottom", timeout=1500)
 
-                ui.button(
-                    "Recalculer",
-                    icon="calculate",
-                    on_click=do_recalculate,
-                ).props("outline color=green-8").classes("q-mt-xs")
+                table.on("cartons_changed", on_cartons_changed)
 
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
