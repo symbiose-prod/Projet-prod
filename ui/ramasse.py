@@ -116,6 +116,10 @@ def page_ramasse():
     with page_layout("Fiche de ramasse", "local_shipping", "/ramasse") as sidebar:
 
         # ── Guards ───────────────────────────────────────────────────
+        print(f"[RAMASSE] is_configured={eb_configured()}, "
+              f"USER={bool(os.environ.get('EASYBEER_API_USER'))}, "
+              f"PASS={bool(os.environ.get('EASYBEER_API_PASS'))}", flush=True)
+
         if not eb_configured():
             ui.label("EasyBeer non configuré.").classes("text-negative")
             ui.label(
@@ -124,39 +128,16 @@ def page_ramasse():
             ).classes("text-caption text-grey-6")
             return
 
-        # ── Chargement données (rapide : brassins + destinataires) ──
-        _load_errors: list[str] = []
+        # ── Chargement données ────────────────────────────────────
+        brassins = _load_brassins()
+        print(f"[RAMASSE] brassins={len(brassins)}", flush=True)
 
-        try:
-            brassins = _load_brassins()
-        except Exception as exc:
-            brassins = []
-            _load_errors.append(f"Brassins : {exc}")
-
-        try:
-            cb_by_product = _load_cb_matrix()
-        except Exception as exc:
-            cb_by_product = None
-            _load_errors.append(f"Matrice CB : {exc}")
-
-        try:
-            id_entrepot = _load_entrepot()
-        except Exception as exc:
-            id_entrepot = None
-            _load_errors.append(f"Entrepôt : {exc}")
-
-        try:
-            eb_weights = _load_eb_weights()
-        except Exception as exc:
-            eb_weights = None
-            _load_errors.append(f"Poids cartons : {exc}")
+        cb_by_product = _load_cb_matrix()
+        id_entrepot = _load_entrepot()
+        eb_weights = _load_eb_weights()
 
         destinataires = load_destinataires()
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
-
-        if _load_errors:
-            for err in _load_errors:
-                ui.label(f"⚠ {err}").classes("text-caption text-warning")
 
         if not brassins:
             ui.label("Aucun brassin disponible dans EasyBeer.").classes("text-grey-6")
