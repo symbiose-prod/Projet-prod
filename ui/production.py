@@ -148,15 +148,30 @@ def _render_easybeer_section(
         return
 
     _prod_labels = [p.get("libelle", "") for p in _eb_products]
-    _prod_options = {i: lbl for i, lbl in enumerate(_prod_labels)}
 
-    ui.label(f"Date de début : {_semaine_du_eb}").classes("text-body2")
-    ui.label(f"Goûts : {', '.join(_gouts_eb)}").classes("text-body2 q-mb-sm")
+    # ── Résumé : date de début + goûts ───────────────────────
+    _date_debut_fmt = _dt.date.fromisoformat(_semaine_du_eb).strftime("%d/%m/%Y")
+    with ui.row().classes("w-full gap-6 q-mb-sm"):
+        with ui.column().classes("gap-0"):
+            ui.label("Début fermentation").classes("text-caption text-grey-6")
+            ui.label(_date_debut_fmt).classes("text-subtitle1").style(
+                f"color: {colors['ink']}; font-weight: 700"
+            )
+        with ui.column().classes("gap-0"):
+            ui.label("Goût(s)").classes("text-caption text-grey-6")
+            ui.label(", ".join(_gouts_eb)).classes("text-subtitle1").style(
+                f"color: {colors['green']}; font-weight: 700"
+            )
 
-    # Date d'embouteillage
+    ui.separator().classes("q-my-xs")
+
+    # ── Date d'embouteillage ──────────────────────────────────
+    ui.label("Date embouteillage").classes(
+        "text-subtitle2 q-mb-xs"
+    ).style(f"color: {colors['ink']}; font-weight: 600")
+
     _default_embout = _dt.date.fromisoformat(_semaine_du_eb) + _dt.timedelta(days=7)
     date_embout_input = ui.input(
-        "Date embouteillage",
         value=_default_embout.isoformat(),
     ).props("outlined dense").classes("w-full")
     with date_embout_input:
@@ -170,19 +185,18 @@ def _render_easybeer_section(
                 "click", lambda: embout_menu.open()
             )
 
-    # Sélection produit par goût
-    _product_selects: dict[str, ui.select] = {}
+    # ── Produit auto-matché par goût (affiché en lecture seule) ─
+    _product_indices: dict[str, int] = {}
     for g in _gouts_eb:
         vol_l = _vol_par_gout.get(g, 0)
-        with ui.row().classes("w-full items-center gap-4"):
+        matched_idx = _auto_match(g, _prod_labels)
+        _product_indices[g] = matched_idx
+        matched_label = _prod_labels[matched_idx] if _prod_labels else "—"
+        with ui.row().classes("w-full items-center gap-3 q-mt-xs"):
             with ui.column().classes("gap-0"):
-                ui.label(g).classes("text-subtitle2")
+                ui.label(g).classes("text-subtitle2").style(f"color: {colors['ink']}; font-weight: 600")
                 ui.label(f"{vol_l:.0f} L").classes("text-caption text-grey-6")
-            _product_selects[g] = ui.select(
-                _prod_options,
-                value=_auto_match(g, _prod_labels),
-                label=f"Produit « {g} »",
-            ).props("outlined dense").classes("flex-1")
+            ui.label(f"→ {matched_label}").classes("text-body2 text-grey-7")
 
     # ── Sélection cuves ──────────────────────────────────────────
     from common.easybeer import get_all_materiels
@@ -292,7 +306,7 @@ def _render_easybeer_section(
 
             for g in _gouts_eb:
                 vol_l = _vol_par_gout.get(g, 0)
-                _sel_idx = _product_selects[g].value
+                _sel_idx = _product_indices[g]
                 id_produit = _eb_products[_sel_idx]["idProduit"]
 
                 # Nom du brassin
