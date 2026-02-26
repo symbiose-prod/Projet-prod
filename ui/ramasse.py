@@ -1,7 +1,7 @@
 """
 ui/ramasse.py
 =============
-Page Fiche de ramasse — NiceGUI + AG Grid.
+Page Fiche de ramasse — NiceGUI + Quasar Table.
 
 Réutilise toute la logique métier de common/ramasse.py et common/easybeer.py.
 """
@@ -104,6 +104,19 @@ def _compute_row(row: dict, meta: dict) -> dict:
     return {**row, "palettes": nb_pal, "poids": poids}
 
 
+# ─── Colonnes Quasar Table ──────────────────────────────────────────────────
+
+TABLE_COLUMNS = [
+    {"name": "ref",           "label": "Réf.",                    "field": "ref",           "sortable": True,  "align": "left"},
+    {"name": "produit",       "label": "Produit (goût + format)", "field": "produit",       "sortable": True,  "align": "left"},
+    {"name": "ddm",           "label": "DDM",                     "field": "ddm",           "sortable": False, "align": "center"},
+    {"name": "date_ramasse",  "label": "Date ramasse",            "field": "date_ramasse",  "sortable": False, "align": "center"},
+    {"name": "cartons",       "label": "Cartons",                 "field": "cartons",       "sortable": True,  "align": "right"},
+    {"name": "palettes",      "label": "Palettes",                "field": "palettes",      "sortable": False, "align": "right"},
+    {"name": "poids_display", "label": "Poids (kg)",              "field": "poids_display", "sortable": False, "align": "right"},
+]
+
+
 # ─── Page ───────────────────────────────────────────────────────────────────
 
 @ui.page("/ramasse")
@@ -179,19 +192,32 @@ def page_ramasse():
         # ── Conteneur dynamique ──────────────────────────────────────
         content_container = ui.column().classes("w-full gap-5")
 
-        # Refs pour les KPI et le grid
-        kpi_container = None
-        grid_ref = None
-        actions_container = None
+        # ── Refs partagées ───────────────────────────────────────────
+        table_ref = {"table": None, "rows": []}
+        kpi_labels = {"cartons": None, "palettes": None, "poids": None}
+
+        def _update_kpis():
+            """Met à jour les KPI depuis table_ref['rows']."""
+            active = [r for r in table_ref["rows"] if int(r.get("cartons") or 0) > 0]
+            tot_c = sum(int(r["cartons"]) for r in active)
+            tot_p = sum(int(r["palettes"]) for r in active)
+            tot_w = sum(int(r["poids"]) for r in active)
+            if kpi_labels["cartons"]:
+                kpi_labels["cartons"].text = f"{tot_c:,}".replace(",", " ")
+            if kpi_labels["palettes"]:
+                kpi_labels["palettes"].text = str(tot_p)
+            if kpi_labels["poids"]:
+                kpi_labels["poids"].text = f"{tot_w:,}".replace(",", " ")
 
         def on_brassins_changed(e=None):
             """Reconstruit le tableau quand la sélection change."""
-            nonlocal kpi_container, grid_ref, actions_container
-
             content_container.clear()
+            table_ref["table"] = None
+            table_ref["rows"] = []
 
             selected_ids = brassin_select.value or []
-            selected = [b for b in brassins if b["idBrassin"] in selected_ids]
+            selected_ids_set = {int(x) for x in selected_ids if x is not None}
+            selected = [b for b in brassins if b["idBrassin"] in selected_ids_set]
 
             if not selected:
                 with content_container:
@@ -200,11 +226,30 @@ def page_ramasse():
                     ).classes("text-grey-6 text-body1 q-pa-md")
                 return
 
-            # Construire les lignes
-            rows, meta_by_label = build_ramasse_lines(
-                selected, id_entrepot, cb_by_product, eb_weights
-            )
+            try:
+                rows, meta_by_label = build_ramasse_lines(
+                    selected, id_entrepot, cb_by_product, eb_weights
+                )
+            except Exception as exc:
+                with content_container:
+                    ui.label(f"Erreur lors du chargement des lignes : {exc}").classes(
+                        "text-negative text-body1 q-pa-md"
+                    )
+                return
 
+            if not rows:
+                with content_container:
+                    ui.label(
+                        "Aucune ligne de produit trouvée pour ces brassins."
+                    ).classes("text-grey-6 text-body1 q-pa-md")
+                    if cb_by_product is None:
+                        ui.label(
+                            "La matrice codes-barres EasyBeer n'a pas pu être chargée. "
+                            "Vérifie la connexion à l'API."
+                        ).classes("text-negative text-caption q-pa-sm")
+                return
+
+            # ── Préparer les données ──────────────────────────────
             today_str = today_paris().strftime("%d/%m/%Y")
             grid_rows = []
             for r in rows:
@@ -220,11 +265,17 @@ def page_ramasse():
                     "pal_cap": int(meta.get("_palette_capacity", 0)),
                     "palettes": 0,
                     "poids": 0,
+                    "poids_display": "—",
                 }
                 grid_row = _compute_row(grid_row, meta)
+                p = grid_row["poids"]
+                grid_row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
                 grid_rows.append(grid_row)
 
-            with content_container:
+            table_ref["rows"] = grid_rows
+
+            try:
+              with content_container:
                 # ── KPIs ─────────────────────────────────────────────
                 active = [r for r in grid_rows if r["cartons"] > 0]
                 tot_c = sum(r["cartons"] for r in active)
@@ -232,84 +283,137 @@ def page_ramasse():
                 tot_w = sum(r["poids"] for r in active)
 
                 with ui.row().classes("w-full gap-4"):
-                    kpi_card("inventory_2", "Total cartons", f"{tot_c:,}".replace(",", " "), COLORS["green"])
-                    kpi_card("view_in_ar", "Total palettes", str(tot_p), COLORS["orange"])
-                    kpi_card("scale", "Poids total (kg)", f"{tot_w:,}".replace(",", " "), COLORS["blue"])
+                    with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
+                        with ui.card_section().classes("row items-center gap-3 q-pa-md"):
+                            with ui.element("div").classes("q-pa-xs").style(
+                                f"background: {COLORS['green']}10; border-radius: 6px"
+                            ):
+                                ui.icon("inventory_2", size="sm").style(f"color: {COLORS['green']}")
+                            with ui.column().classes("gap-0"):
+                                ui.label("Total cartons").classes("text-caption").style(
+                                    f"color: {COLORS['ink2']}; font-weight: 500"
+                                )
+                                kpi_labels["cartons"] = ui.label(
+                                    f"{tot_c:,}".replace(",", " ")
+                                ).classes("text-h6").style(
+                                    f"color: {COLORS['ink']}; font-weight: 600"
+                                )
 
-                # ── AG Grid ──────────────────────────────────────────
+                    with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
+                        with ui.card_section().classes("row items-center gap-3 q-pa-md"):
+                            with ui.element("div").classes("q-pa-xs").style(
+                                f"background: {COLORS['orange']}10; border-radius: 6px"
+                            ):
+                                ui.icon("view_in_ar", size="sm").style(f"color: {COLORS['orange']}")
+                            with ui.column().classes("gap-0"):
+                                ui.label("Total palettes").classes("text-caption").style(
+                                    f"color: {COLORS['ink2']}; font-weight: 500"
+                                )
+                                kpi_labels["palettes"] = ui.label(str(tot_p)).classes("text-h6").style(
+                                    f"color: {COLORS['ink']}; font-weight: 600"
+                                )
+
+                    with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
+                        with ui.card_section().classes("row items-center gap-3 q-pa-md"):
+                            with ui.element("div").classes("q-pa-xs").style(
+                                f"background: {COLORS['blue']}10; border-radius: 6px"
+                            ):
+                                ui.icon("scale", size="sm").style(f"color: {COLORS['blue']}")
+                            with ui.column().classes("gap-0"):
+                                ui.label("Poids total (kg)").classes("text-caption").style(
+                                    f"color: {COLORS['ink2']}; font-weight: 500"
+                                )
+                                kpi_labels["poids"] = ui.label(
+                                    f"{tot_w:,}".replace(",", " ")
+                                ).classes("text-h6").style(
+                                    f"color: {COLORS['ink']}; font-weight: 600"
+                                )
+
+                # ── Tableau Quasar ─────────────────────────────────
                 section_title("Détail produits", "table_chart")
 
                 ui.label(
-                    "Modifie les colonnes Cartons et Date ramasse directement dans le tableau."
+                    "Clique sur une cellule Cartons ou Date ramasse pour la modifier."
                 ).classes("text-caption text-grey-6 q-mb-xs")
 
-                grid = ui.aggrid({
-                    "defaultColDef": {
-                        "sortable": True,
-                        "resizable": True,
-                    },
-                    "columnDefs": [
-                        {
-                            "field": "ref", "headerName": "Réf.",
-                            "width": 90, "pinned": "left",
-                        },
-                        {
-                            "field": "produit", "headerName": "Produit (goût + format)",
-                            "flex": 2, "minWidth": 240,
-                        },
-                        {
-                            "field": "ddm", "headerName": "DDM",
-                            "width": 110,
-                        },
-                        {
-                            "field": "date_ramasse", "headerName": "Date ramasse",
-                            "width": 130, "editable": True,
-                        },
-                        {
-                            "field": "cartons", "headerName": "Cartons",
-                            "width": 100, "editable": True,
-                            "type": "numericColumn",
-                            "cellStyle": {"fontWeight": "bold"},
-                        },
-                        {
-                            "field": "palettes", "headerName": "Palettes",
-                            "width": 95, "type": "numericColumn",
-                            "cellStyle": {"color": COLORS["orange"], "fontWeight": "600"},
-                            "valueGetter": """
-                                var c = Number(params.data.cartons) || 0;
-                                var cap = Number(params.data.pal_cap) || 0;
-                                return (cap > 0 && c > 0) ? Math.ceil(c / cap) : 0;
-                            """,
-                        },
-                        {
-                            "field": "poids", "headerName": "Poids (kg)",
-                            "width": 110, "type": "numericColumn",
-                            "valueGetter": f"""
-                                var c = Number(params.data.cartons) || 0;
-                                var pu = Number(params.data.poids_u) || 0;
-                                var cap = Number(params.data.pal_cap) || 0;
-                                var pal = (cap > 0 && c > 0) ? Math.ceil(c / cap) : 0;
-                                return Math.round(c * pu + pal * {PALETTE_EMPTY_WEIGHT});
-                            """,
-                            "valueFormatter": "value ? value.toLocaleString('fr-FR') + ' kg' : '—'",
-                        },
-                        # Colonnes masquées (données pour calculs)
-                        {"field": "poids_u", "hide": True},
-                        {"field": "pal_cap", "hide": True},
-                    ],
-                    "rowData": grid_rows,
-                    "rowClassRules": {
-                        "opacity-50": "data.cartons === 0",
-                    },
-                    "animateRows": True,
-                    "domLayout": "autoHeight",
-                }).classes("w-full")
-                ui.add_css(".ag-row.opacity-50 { opacity: 0.45; }")
+                table = ui.table(
+                    columns=TABLE_COLUMNS,
+                    rows=grid_rows,
+                    row_key="ref",
+                    pagination={"rowsPerPage": 0},
+                ).classes("w-full").style(
+                    f"color: {COLORS['ink']}"
+                )
+                table.props("flat bordered dense")
+                table_ref["table"] = table
+
+                # Slot pour le body : lignes éditables + opacity sur cartons=0
+                ORANGE = COLORS["orange"]
+                table.add_slot("body", '''
+                    <q-tr :props="props"
+                          :style="props.row.cartons == 0 ? 'opacity: 0.45' : ''">
+                        <q-td key="ref" :props="props">
+                            {{ props.row.ref }}
+                        </q-td>
+                        <q-td key="produit" :props="props">
+                            {{ props.row.produit }}
+                        </q-td>
+                        <q-td key="ddm" :props="props" class="text-center">
+                            {{ props.row.ddm }}
+                        </q-td>
+                        <q-td key="date_ramasse" :props="props">
+                            <q-input
+                                v-model="props.row.date_ramasse"
+                                dense borderless
+                                input-class="text-center"
+                                style="max-width: 120px"
+                            />
+                        </q-td>
+                        <q-td key="cartons" :props="props">
+                            <q-input
+                                v-model.number="props.row.cartons"
+                                type="number"
+                                dense borderless
+                                input-class="text-right text-bold"
+                                style="max-width: 80px"
+                                @change="() => $parent.$emit('row_changed', props.row)"
+                            />
+                        </q-td>
+                        <q-td key="palettes" :props="props" class="text-right">
+                            <span style="color: ''' + ORANGE + '''; font-weight: 600">
+                                {{ props.row.palettes }}
+                            </span>
+                        </q-td>
+                        <q-td key="poids_display" :props="props" class="text-right">
+                            {{ props.row.poids_display }}
+                        </q-td>
+                    </q-tr>
+                ''')
+
+                def on_row_changed(e):
+                    """Recalcule palettes/poids quand les cartons changent."""
+                    changed = e.args
+                    ref = changed.get("ref")
+                    for row in table_ref["rows"]:
+                        if row["ref"] == ref:
+                            c = int(changed.get("cartons") or 0)
+                            row["cartons"] = c
+                            cap = int(row.get("pal_cap") or 0)
+                            pu = float(row.get("poids_u") or 0)
+                            pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
+                            row["palettes"] = pal
+                            p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
+                            row["poids"] = p
+                            row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
+                            break
+                    table.update()
+                    _update_kpis()
+
+                table.on("row_changed", on_row_changed)
 
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
 
-                # Destinataire actuel
                 dest_obj = next((d for d in destinataires if d["name"] == dest_select.value), None)
                 default_emails = ", ".join(dest_obj.get("email_recipients", [])) if dest_obj else ""
 
@@ -323,34 +427,23 @@ def page_ramasse():
                     ui.label(f"Expéditeur : {sender}").classes("text-caption text-grey-6")
 
                 with ui.row().classes("w-full gap-3 q-mt-sm"):
-                    async def do_download_pdf():
-                        row_data = await grid.get_client_data()
-                        active = [r for r in row_data if int(r.get("cartons") or 0) > 0]
-                        if not active:
+                    def do_download_pdf():
+                        row_data = table_ref["rows"]
+                        active_rows = [r for r in row_data if int(r.get("cartons") or 0) > 0]
+                        if not active_rows:
                             ui.notify("Aucun carton renseigné.", type="warning")
                             return
                         try:
                             import pandas as pd
-                            df = pd.DataFrame(active)
-                            df_export = df.rename(columns={
-                                "ref": "Référence",
-                                "produit": "Produit (goût + format)",
-                                "ddm": "DDM",
-                                "date_ramasse": "Date ramasse souhaitée",
-                                "cartons": "Quantité cartons",
-                                "palettes": "Quantité palettes",
-                                "poids": "Poids palettes (kg)",
-                            })
-                            # Recalculer palettes/poids
-                            for _, r in df_export.iterrows():
-                                c = int(r["Quantité cartons"])
-                                idx = df_export.index[df_export["Référence"] == r["Référence"]][0]
-                                row_orig = active[df.index.get_loc(idx)] if idx < len(active) else {}
-                                cap = int(row_orig.get("pal_cap") or 0)
-                                pu = float(row_orig.get("poids_u") or 0)
-                                pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
-                                df_export.at[idx, "Quantité palettes"] = pal
-                                df_export.at[idx, "Poids palettes (kg)"] = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
+                            df_export = pd.DataFrame([{
+                                "Référence": r["ref"],
+                                "Produit (goût + format)": r["produit"],
+                                "DDM": r["ddm"],
+                                "Date ramasse souhaitée": r["date_ramasse"],
+                                "Quantité cartons": int(r["cartons"]),
+                                "Quantité palettes": int(r["palettes"]),
+                                "Poids palettes (kg)": int(r["poids"]),
+                            } for r in active_rows])
 
                             cols = ["Référence", "Produit (goût + format)", "DDM",
                                     "Date ramasse souhaitée", "Quantité cartons",
@@ -377,31 +470,31 @@ def page_ramasse():
                         on_click=do_download_pdf,
                     ).classes("flex-1").props("outline color=green-8")
 
-                    async def do_send_email():
+                    def do_send_email():
                         emails_raw = email_input.value or ""
                         to_list = [e.strip() for e in emails_raw.split(",") if e.strip()]
                         if not to_list:
                             ui.notify("Indique au moins un destinataire.", type="warning")
                             return
 
-                        row_data = await grid.get_client_data()
-                        active = [r for r in row_data if int(r.get("cartons") or 0) > 0]
-                        if not active:
+                        row_data = table_ref["rows"]
+                        active_rows = [r for r in row_data if int(r.get("cartons") or 0) > 0]
+                        if not active_rows:
                             ui.notify("Aucun carton renseigné.", type="warning")
                             return
 
                         try:
                             import pandas as pd
-                            df = pd.DataFrame(active)
-                            df_export = df.rename(columns={
-                                "ref": "Référence",
-                                "produit": "Produit (goût + format)",
-                                "ddm": "DDM",
-                                "date_ramasse": "Date ramasse souhaitée",
-                                "cartons": "Quantité cartons",
-                                "palettes": "Quantité palettes",
-                                "poids": "Poids palettes (kg)",
-                            })
+                            df_export = pd.DataFrame([{
+                                "Référence": r["ref"],
+                                "Produit (goût + format)": r["produit"],
+                                "DDM": r["ddm"],
+                                "Date ramasse souhaitée": r["date_ramasse"],
+                                "Quantité cartons": int(r["cartons"]),
+                                "Quantité palettes": int(r["palettes"]),
+                                "Poids palettes (kg)": int(r["poids"]),
+                            } for r in active_rows])
+
                             cols = ["Référence", "Produit (goût + format)", "DDM",
                                     "Date ramasse souhaitée", "Quantité cartons",
                                     "Quantité palettes", "Poids palettes (kg)"]
@@ -417,7 +510,7 @@ def page_ramasse():
                                 df_lines=df_export[cols],
                             )
 
-                            tot_palettes = sum(int(r.get("palettes") or 0) for r in active)
+                            tot_palettes = sum(int(r["palettes"]) for r in active_rows)
                             filename = f"Fiche_de_ramasse_{d:%Y%m%d}.pdf"
                             subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
                             body = f"""
@@ -456,6 +549,12 @@ def page_ramasse():
                         icon="send",
                         on_click=do_send_email,
                     ).classes("flex-1").props("color=green-8 unelevated")
+
+            except Exception as exc:
+                with content_container:
+                    ui.label(f"Erreur lors de la construction du tableau : {exc}").classes(
+                        "text-negative text-body1 q-pa-md"
+                    )
 
         # Watcher sur la sélection
         brassin_select.on_value_change(on_brassins_changed)

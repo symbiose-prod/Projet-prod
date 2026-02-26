@@ -103,19 +103,16 @@ def apply_quasar_theme():
             box-shadow: none !important;
         }}
 
-        /* ── AG Grid : neutre et clean ──────────────── */
-        .ag-theme-quartz {{
-            --ag-foreground-color: {COLORS['ink']};
-            --ag-header-background-color: {COLORS['surface']};
-            --ag-odd-row-background-color: {COLORS['bg']};
-            --ag-row-hover-color: #F3F4F6;
-            --ag-selected-row-background-color: #EFF6FF;
-            --ag-font-family: 'Inter', system-ui, sans-serif;
-            --ag-font-size: 13px;
-            --ag-border-radius: 8px;
-            --ag-border-color: {COLORS['border']};
-            --ag-header-foreground-color: {COLORS['ink2']};
-            --ag-header-cell-hover-background-color: {COLORS['bg']};
+        /* ── Quasar Table : clean style ────────────── */
+        .q-table {{
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 13px;
+            color: {COLORS['ink']};
+        }}
+        .q-table thead th {{
+            color: {COLORS['ink2']} !important;
+            font-weight: 600;
+            font-size: 12px;
         }}
 
         /* ── KPI cards ──────────────────────────────── */
