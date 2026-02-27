@@ -19,10 +19,14 @@ Endpoints utilisés :
 from __future__ import annotations
 
 import datetime
+import logging
 import os
+import re
 from typing import Any
 
 import requests
+
+_log = logging.getLogger("ferment.easybeer")
 
 # ─── Config (variables d'environnement) ────────────────────────────────────────
 # NOTE : les credentials sont lus à chaque appel (pas au niveau module)
@@ -44,8 +48,8 @@ def _auth() -> tuple[str, str]:
 
 
 def _dates(window_days: int) -> tuple[str, str]:
-    """Retourne (date_debut_iso, date_fin_iso) pour une fenêtre de N jours jusqu'à aujourd'hui."""
-    fin   = datetime.datetime.utcnow()
+    """Retourne (date_debut_iso, date_fin_iso) pour une fenetre de N jours jusqu'a aujourd'hui."""
+    fin   = datetime.datetime.now(datetime.timezone.utc)
     debut = fin - datetime.timedelta(days=window_days)
     return (
         debut.strftime("%Y-%m-%dT00:00:00.000Z"),
@@ -192,7 +196,7 @@ def _load_weights_cache() -> dict[tuple[int, str], float] | None:
         with open(_WEIGHTS_CACHE_PATH, encoding="utf-8") as f:
             cache = json.load(f)
         ts = cache.get("ts", 0)
-        if datetime.datetime.now().timestamp() - ts > _WEIGHTS_CACHE_TTL:
+        if datetime.datetime.now(datetime.timezone.utc).timestamp() - ts > _WEIGHTS_CACHE_TTL:
             return None  # expiré
         weights: dict[tuple[int, str], float] = {}
         for entry in cache.get("data", []):
@@ -206,13 +210,13 @@ def _save_weights_cache(weights: dict[tuple[int, str], float]) -> None:
     """Sauvegarde le cache fichier des poids cartons."""
     import json
     data = [{"pid": pid, "fmt": fmt, "w": w} for (pid, fmt), w in weights.items()]
-    cache = {"ts": datetime.datetime.now().timestamp(), "data": data}
+    cache = {"ts": datetime.datetime.now(datetime.timezone.utc).timestamp(), "data": data}
     try:
         os.makedirs(os.path.dirname(_WEIGHTS_CACHE_PATH), exist_ok=True)
         with open(_WEIGHTS_CACHE_PATH, "w", encoding="utf-8") as f:
             json.dump(cache, f)
     except Exception:
-        pass
+        _log.warning("Impossible de sauvegarder le cache poids cartons", exc_info=True)
 
 
 def fetch_carton_weights() -> dict[tuple[int, str], float]:
@@ -230,9 +234,11 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
     # ── Cache ──
     cached = _load_weights_cache()
     if cached is not None:
+        _log.debug("Cache poids cartons valide (%d entrees)", len(cached))
         return cached
 
     # ── Fetch depuis l'API ──
+    _log.info("Fetch poids cartons depuis EasyBeer (cache expire ou absent)")
     import time
 
     payload = {"idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))}
@@ -270,10 +276,11 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
                 if poids > 0:
                     weights[(id_produit, fmt_str)] = poids
             except Exception:
-                pass
+                _log.warning("Erreur fetch detail stock %s", sid, exc_info=True)
 
             time.sleep(0.3)  # Rate-limit EasyBeer
 
+    _log.info("Fetch poids cartons termine : %d poids recuperes", len(weights))
     _save_weights_cache(weights)
     return weights
 
@@ -674,8 +681,6 @@ def get_brassins_archives(
 
     Chaque élément : ModeleBrassin (même format que get_brassins_en_cours).
     """
-    import datetime as _dt
-
     # 1. IDs des brassins en cours
     en_cours_ids: set[int] = set()
     try:
@@ -684,12 +689,12 @@ def get_brassins_archives(
             if bid:
                 en_cours_ids.add(bid)
     except Exception:
-        pass
+        _log.warning("Erreur fetch brassins en cours pour archives", exc_info=True)
 
-    # 2. Tous les brassins sur la fenêtre
-    now = _dt.datetime.now(_dt.timezone.utc)
+    # 2. Tous les brassins sur la fenetre
+    now = datetime.datetime.now(datetime.timezone.utc)
     date_fin = now.strftime("%Y-%m-%dT23:59:59.999Z")
-    date_debut = (now - _dt.timedelta(days=jours)).strftime("%Y-%m-%dT00:00:00.000Z")
+    date_debut = (now - datetime.timedelta(days=jours)).strftime("%Y-%m-%dT00:00:00.000Z")
 
     r = requests.post(
         f"{BASE}/brassin/liste",
@@ -712,12 +717,10 @@ def get_brassins_archives(
         and float(b.get("volume") or 0) >= 100
     ]
 
-    # Tri par date desc — extraite du nom (ex: KGI13022026 → 13/02/2026)
-    import re as _re
-
+    # Tri par date desc -- extraite du nom (ex: KGI13022026 -> 13/02/2026)
     def _sort_key(b: dict) -> str:
         nom = b.get("nom") or ""
-        m = _re.search(r"(\d{8})$", nom)
+        m = re.search(r"(\d{8})$", nom)
         if m:
             ddmmyyyy = m.group(1)
             # Convertir DDMMYYYY → YYYYMMDD pour tri lexicographique

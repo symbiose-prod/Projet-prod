@@ -266,24 +266,15 @@ def delete_snapshot(name: str) -> bool:
 
 
 def rename_snapshot(old: str, new: str) -> Tuple[bool, str]:
+    """Renomme une proposition de facon atomique (pas de race condition TOCTOU)."""
     new = (new or "").strip()
     if not new:
         return False, "Nouveau nom vide."
+    if old == new:
+        return True, "Aucun changement."
     t_id = _tenant_id()
 
-    # existe déjà ?
-    exists = run_sql(
-        """
-        SELECT 1
-        FROM production_proposals
-        WHERE tenant_id = :t AND payload->'_meta'->>'name' = :n
-        LIMIT 1
-        """,
-        {"t": t_id, "n": new},
-    )
-    if exists:
-        return False, "Ce nom existe déjà."
-
+    # UPDATE atomique : ne modifie QUE si le nouveau nom n'existe pas deja
     rows = run_sql(
         """
         UPDATE production_proposals
@@ -291,10 +282,26 @@ def rename_snapshot(old: str, new: str) -> Tuple[bool, str]:
             updated_at = NOW()
         WHERE tenant_id = :t
           AND payload->'_meta'->>'name' = :old_name
+          AND NOT EXISTS (
+              SELECT 1 FROM production_proposals pp2
+              WHERE pp2.tenant_id = :t
+                AND pp2.payload->'_meta'->>'name' = :new_name
+          )
         RETURNING id
         """,
         {"t": t_id, "old_name": old, "new_name": new},
     )
     if not rows:
-        return False, "Entrée introuvable."
-    return True, "Renommée."
+        # Distinguer : nom deja pris vs entree introuvable
+        exists = run_sql(
+            """
+            SELECT 1 FROM production_proposals
+            WHERE tenant_id = :t AND payload->'_meta'->>'name' = :new_name
+            LIMIT 1
+            """,
+            {"t": t_id, "new_name": new},
+        )
+        if exists:
+            return False, "Ce nom existe deja."
+        return False, "Entree introuvable."
+    return True, "Renommee."

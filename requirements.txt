@@ -1,12 +1,13 @@
-nicegui>=3.8.0
-pandas
-numpy
-openpyxl
-pillow
-pyyaml
-xlrd
-fpdf2
-python-dateutil
-requests>=2.31.0
-SQLAlchemy==2.0.32
-psycopg2-binary==2.9.9
+# Ferment Station — dependencies (pinned for reproducibility)
+nicegui>=3.8.0,<4.0
+pandas>=2.1,<3.0
+numpy>=1.26,<3.0
+openpyxl>=3.1,<4.0
+pillow>=10.0,<13.0
+pyyaml>=6.0,<7.0
+xlrd>=2.0,<3.0
+fpdf2>=2.8,<3.0
+python-dateutil>=2.9,<3.0
+requests>=2.31,<3.0
+SQLAlchemy>=2.0.32,<2.1
+psycopg2-binary>=2.9.9,<2.10
