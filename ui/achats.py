@@ -68,7 +68,15 @@ def page_achats():
         composants_container = ui.column().classes("w-full gap-4")
         commande_container = ui.column().classes("w-full gap-4")
 
+        # Spinner de chargement (masqué par défaut)
+        sync_spinner = ui.spinner("dots", size="xl", color="green-8").classes("self-center q-pa-md")
+        sync_spinner.set_visibility(False)
+
         async def do_sync():
+            # Feedback visuel : spinner + désactiver le bouton
+            sync_btn.disable()
+            sync_spinner.set_visibility(True)
+            sync_status.set_visibility(False)
             try:
                 from common.easybeer import (
                     get_autonomie_stocks,
@@ -276,8 +284,11 @@ def page_achats():
                 sync_status.classes("text-negative")
                 sync_status.set_visibility(True)
                 ui.notify(f"Erreur sync : {exc}", type="negative")
+            finally:
+                sync_spinner.set_visibility(False)
+                sync_btn.enable()
 
-        ui.button(
+        sync_btn = ui.button(
             "Synchroniser Easy Beer",
             icon="sync",
             on_click=do_sync,

@@ -47,6 +47,19 @@ def _auth() -> tuple[str, str]:
     )
 
 
+class EasyBeerError(RuntimeError):
+    """Erreur lors d'un appel à l'API EasyBeer."""
+
+
+def _check_response(r: requests.Response, endpoint: str) -> None:
+    """Vérifie la réponse HTTP et lève une erreur lisible."""
+    if r.ok:
+        return
+    raise EasyBeerError(
+        f"EasyBeer {endpoint} → HTTP {r.status_code} : {r.text[:300]}"
+    )
+
+
 def _dates(window_days: int) -> tuple[str, str]:
     """Retourne (date_debut_iso, date_fin_iso) pour une fenetre de N jours jusqu'a aujourd'hui."""
     fin   = datetime.datetime.now(datetime.timezone.utc)
@@ -388,6 +401,9 @@ def get_clients(
     return r.json()
 
 
+_MAX_PAGINATION_PAGES = 50  # garde-fou : jamais plus de 50 pages
+
+
 def get_all_clients(
     sort_by: str = "libelle",
     sort_mode: str = "ASC",
@@ -396,6 +412,7 @@ def get_all_clients(
 ) -> list[dict[str, Any]]:
     """
     Récupère TOUS les clients en gérant automatiquement la pagination.
+    Limité à _MAX_PAGINATION_PAGES pages (garde-fou contre boucle infinie).
 
     Exemple :
       clients = get_all_clients(filtre={"actif": True})
@@ -403,7 +420,7 @@ def get_all_clients(
     """
     all_clients: list[dict[str, Any]] = []
     page = 0
-    while True:
+    while page < _MAX_PAGINATION_PAGES:
         resp = get_clients(page=page, per_page=per_page, sort_by=sort_by,
                            sort_mode=sort_mode, filtre=filtre)
         liste = resp.get("liste") or []
@@ -412,6 +429,8 @@ def get_all_clients(
         page += 1
         if page >= total_pages or not liste:
             break
+    else:
+        _log.warning("get_all_clients : limite de %d pages atteinte", _MAX_PAGINATION_PAGES)
     return all_clients
 
 

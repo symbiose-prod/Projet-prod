@@ -19,14 +19,28 @@ PBKDF2_ITERS = 310_000
 SALT_BYTES = 16
 
 # ── Validation ────────────────────────────────────────────────────────────────
-_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+# Regex durcie : pas de dots consécutifs, pas de dot en début/fin de local part
+_EMAIL_RE = re.compile(
+    r"^[a-zA-Z0-9](?:[a-zA-Z0-9._%+\-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.\-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$"
+)
+_EMAIL_MAX_LENGTH = 254  # RFC 5321
+_EMAIL_LOCAL_MAX = 64    # RFC 5321
 MIN_PASSWORD_LENGTH = 8
 
 
 def validate_email(email: str) -> str:
-    """Valide et normalise l'email. Lève ValueError si invalide."""
+    """Valide et normalise l'email (RFC 5321 longueur + format). Lève ValueError si invalide."""
     e = (email or "").strip()
-    if not e or not _EMAIL_RE.match(e):
+    if not e:
+        raise ValueError("Adresse e-mail invalide.")
+    if len(e) > _EMAIL_MAX_LENGTH:
+        raise ValueError("Adresse e-mail trop longue (254 caractères max).")
+    local_part = e.split("@")[0] if "@" in e else e
+    if len(local_part) > _EMAIL_LOCAL_MAX:
+        raise ValueError("Partie locale de l'e-mail trop longue (64 caractères max).")
+    if ".." in e:
+        raise ValueError("Adresse e-mail invalide (points consécutifs).")
+    if not _EMAIL_RE.match(e):
         raise ValueError("Adresse e-mail invalide.")
     return e
 

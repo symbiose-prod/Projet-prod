@@ -107,6 +107,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # ── Process request ──
         response = await call_next(request)
 
+        # ── Headers de sécurité ──
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if os.environ.get("ENV") == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
         # ── Poser le cookie remember-me HttpOnly si pending ──
         try:
             pending_token = user_store.get("_pending_remember_token")
@@ -132,7 +140,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _handle_logout(request: Request) -> RedirectResponse:
-        """Logout: revoque le token DB + supprime le cookie + redirect /login."""
+        """Logout: revoque le token DB + vide la session NiceGUI + supprime le cookie."""
         fs_token = request.cookies.get("fs_session")
         if fs_token:
             try:
@@ -140,6 +148,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 revoke_session_token(fs_token)
             except Exception:
                 _log.warning("Erreur revocation token logout", exc_info=True)
+        # Vider le storage NiceGUI (supprime authenticated, tenant_id, etc.)
+        try:
+            app.storage.user.clear()
+        except Exception:
+            _log.debug("Impossible de vider storage user au logout", exc_info=True)
         resp = RedirectResponse(url="/login", status_code=302)
         resp.delete_cookie("fs_session", path="/")
         return resp

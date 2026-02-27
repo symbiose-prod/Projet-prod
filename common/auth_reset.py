@@ -167,24 +167,27 @@ def consume_token_and_set_password(reset_id: int, user_id: str, new_password: st
     pw_hash = hash_password(new_password)
 
     with get_engine().begin() as conn:
-        # 1) Mettre a jour le mot de passe (PBKDF2)
+        # 1) Marquer le token comme utilise (guard anti-race : AND used_at IS NULL)
+        result = conn.execute(
+            _text("""
+                UPDATE password_resets
+                SET used_at = now()
+                WHERE id = :rid AND user_id = :u AND used_at IS NULL
+            """),
+            {"rid": reset_id, "u": user_id},
+        )
+        if result.rowcount == 0:
+            raise ValueError("Ce lien de réinitialisation a déjà été utilisé.")
+
+        # 2) Mettre a jour le mot de passe (PBKDF2)
         conn.execute(
             _text("UPDATE users SET password_hash = :ph WHERE id = :uid"),
             {"ph": pw_hash, "uid": user_id},
         )
-        # 2) Revoquer toutes les sessions actives (force reconnexion)
+        # 3) Revoquer toutes les sessions actives (force reconnexion)
         conn.execute(
             _text("DELETE FROM user_sessions WHERE user_id = :u"),
             {"u": user_id},
-        )
-        # 3) Marquer le token comme utilise
-        conn.execute(
-            _text("""
-                UPDATE password_resets
-                SET used_at = now()
-                WHERE id = :rid AND user_id = :u
-            """),
-            {"rid": reset_id, "u": user_id},
         )
 
     return True
