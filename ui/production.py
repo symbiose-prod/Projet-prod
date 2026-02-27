@@ -590,6 +590,7 @@ def _render_easybeer_section(
                     )
                     ui.notify(f"Fiche « {g} » uploadée", type="positive")
                 except Exception as _ue:
+                    _log.exception("Échec upload fiche %s (brassin %s)", g, brassin_id)
                     ui.notify(f"Upload fiche « {g} » : {_ue}", type="warning")
 
             # Résultat
