@@ -157,8 +157,9 @@ def list_saved() -> List[Dict[str, Any]]:
         meta = payload.get("_meta", {})
         ts = meta.get("ts")
         if not ts and r.get("created_at"):
+            ca = r["created_at"]
             try:
-                ts = r["created_at"].isoformat()
+                ts = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
             except Exception:
                 ts = None
         out.append({

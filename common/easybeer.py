@@ -139,8 +139,7 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    _check_response(r, "autonomie-stocks")
     return r.json()
 
 
@@ -273,8 +272,7 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    _check_response(r, "stock/produits")
     data = r.json()
 
     weights: dict[tuple[int, str], float] = {}
@@ -343,8 +341,7 @@ def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    _check_response(r, "synthese-consommations-mp")
     return r.json()
 
 
@@ -396,8 +393,7 @@ def get_clients(
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    _check_response(r, "client/liste")
     return r.json()
 
 
@@ -663,8 +659,7 @@ def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    _check_response(r, "brassin/enregistrer")
     return r.json()
 
 
@@ -845,8 +840,7 @@ def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    _check_response(r, "planification-conditionnement/ajouter")
     try:
         return r.json()
     except Exception:
@@ -915,8 +909,7 @@ def upload_fichier_brassin(
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} — {r.text[:500]}")
+    _check_response(r, f"brassin/upload/{id_brassin}")
     try:
         return r.json()
     except Exception:

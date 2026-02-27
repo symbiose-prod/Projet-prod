@@ -249,18 +249,20 @@ def create_user(email: str, password: str, tenant_name_or_id: str, role: str = N
 
 import logging as _logging
 import time as _time
+import threading as _threading
 
 _auth_log = _logging.getLogger("ferment.auth")
 
 # Lockout progressif : {email_lower: (fail_count, last_fail_timestamp)}
 _LOGIN_FAILURES: Dict[str, tuple] = {}
+_LOGIN_FAILURES_LOCK = _threading.Lock()
 _MAX_FAILURES = 5
 _LOCKOUT_SECONDS = 300  # 5 min apres 5 echecs
 _MAX_TRACKED_EMAILS = 500  # plafond memoire
 
 
 def _purge_expired_failures() -> None:
-    """Supprime les entrees de lockout expirees (TTL = _LOCKOUT_SECONDS)."""
+    """Supprime les entrees de lockout expirees. Appelant doit tenir _LOGIN_FAILURES_LOCK."""
     now = _time.time()
     expired = [
         k for k, (_, ts) in _LOGIN_FAILURES.items()
@@ -270,6 +272,10 @@ def _purge_expired_failures() -> None:
         del _LOGIN_FAILURES[k]
 
 
+# Hash factice pour les emails inexistants (timing constant)
+_DUMMY_HASH = hash_password("dummy-timing-pad-x7k9")
+
+
 def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
     e = (email or "").strip()
     if not e or not password:
@@ -277,20 +283,21 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
 
     e_lower = e.lower()
 
-    # Nettoyage periodique des entrees expirees (plafond memoire)
-    if len(_LOGIN_FAILURES) > _MAX_TRACKED_EMAILS:
-        _purge_expired_failures()
+    with _LOGIN_FAILURES_LOCK:
+        # Nettoyage periodique des entrees expirees (plafond memoire)
+        if len(_LOGIN_FAILURES) > _MAX_TRACKED_EMAILS:
+            _purge_expired_failures()
 
-    # Verifier le lockout
-    fails = _LOGIN_FAILURES.get(e_lower)
-    if fails:
-        count, last_ts = fails
-        if count >= _MAX_FAILURES and (_time.time() - last_ts) < _LOCKOUT_SECONDS:
-            _auth_log.warning("Login bloque (lockout) pour %s (%d echecs)", e_lower, count)
-            return None
-        # Lockout expire -> reset le compteur
-        if count >= _MAX_FAILURES and (_time.time() - last_ts) >= _LOCKOUT_SECONDS:
-            del _LOGIN_FAILURES[e_lower]
+        # Verifier le lockout
+        fails = _LOGIN_FAILURES.get(e_lower)
+        if fails:
+            count, last_ts = fails
+            if count >= _MAX_FAILURES and (_time.time() - last_ts) < _LOCKOUT_SECONDS:
+                _auth_log.warning("Login bloque (lockout) pour %s (%d echecs)", e_lower, count)
+                return None
+            # Lockout expire -> reset le compteur
+            if count >= _MAX_FAILURES and (_time.time() - last_ts) >= _LOCKOUT_SECONDS:
+                del _LOGIN_FAILURES[e_lower]
 
     rows = run_sql(
         """
@@ -302,9 +309,11 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         {"e": e},
     )
     if not rows:
-        # Enregistrer l'echec meme si l'email n'existe pas (timing constant)
-        prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
-        _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
+        # Hash factice pour que le temps de reponse soit constant (anti timing-attack)
+        verify_password(password, _DUMMY_HASH)
+        with _LOGIN_FAILURES_LOCK:
+            prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
+            _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
         _auth_log.info("Echec login : email inconnu %s", e_lower)
         return None
 
@@ -315,13 +324,15 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
             _auth_log.warning("Login refuse : compte desactive pour %s", e_lower)
             return None
         # Reinitialiser le compteur en cas de succes
-        _LOGIN_FAILURES.pop(e_lower, None)
+        with _LOGIN_FAILURES_LOCK:
+            _LOGIN_FAILURES.pop(e_lower, None)
         _auth_log.info("Login reussi pour %s", e_lower)
         return user
 
     # Echec mot de passe
-    prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
-    _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
+    with _LOGIN_FAILURES_LOCK:
+        prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
+        _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
     _auth_log.warning("Echec login : mauvais mot de passe pour %s (tentative %d)", e_lower, prev[0] + 1)
     return None
 

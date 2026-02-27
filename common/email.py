@@ -38,19 +38,18 @@ def _post_brevo(path: str, payload: dict) -> dict:
     """POST JSON vers l'API Brevo et renvoie le JSON de reponse."""
     api_key, _, _ = _require_env()
     body = json.dumps(payload)
+    headers = {
+        "api-key": api_key,
+        "accept": "application/json",
+        "content-type": "application/json",
+    }
     try:
-        conn = http.client.HTTPSConnection("api.brevo.com", timeout=20)
-        try:
-            headers = {
-                "api-key": api_key,
-                "accept": "application/json",
-                "content-type": "application/json",
-            }
+        with http.client.HTTPSConnection("api.brevo.com", timeout=20) as conn:
             conn.request("POST", path, body=body, headers=headers)
             resp = conn.getresponse()
             raw = resp.read().decode("utf-8", errors="replace")
-        finally:
-            conn.close()
+    except EmailSendError:
+        raise
     except Exception as e:
         raise EmailSendError(f"Echec connexion Brevo: {e}") from e
 

@@ -83,11 +83,18 @@ def page_accueil():
                     status_label = ui.label("").classes("text-body2 q-mt-sm")
                     status_label.set_visibility(False)
 
-                    def do_import_eb():
+                    import_spinner = ui.spinner("dots", size="xl", color="green-8").classes("self-center q-pa-md")
+                    import_spinner.set_visibility(False)
+
+                    async def do_import_eb():
+                        import asyncio
+                        import_btn.disable()
+                        import_spinner.set_visibility(True)
+                        status_label.set_visibility(False)
                         try:
                             from common.easybeer import get_autonomie_stocks_excel
                             days = int(period_radio.value or 30)
-                            xls_bytes = get_autonomie_stocks_excel(days)
+                            xls_bytes = await asyncio.to_thread(get_autonomie_stocks_excel, days)
                             df, period = read_input_excel_and_period_from_bytes(xls_bytes)
                             state["imported"] = True
                             state["source"] = "EasyBeer"
@@ -104,8 +111,11 @@ def page_accueil():
                             status_label.text = "Erreur lors de l'import. Vérifiez la connexion EasyBeer."
                             status_label.classes("text-negative")
                             status_label.set_visibility(True)
+                        finally:
+                            import_spinner.set_visibility(False)
+                            import_btn.enable()
 
-                    ui.button(
+                    import_btn = ui.button(
                         "Importer depuis Easy Beer",
                         icon="cloud_download",
                         on_click=do_import_eb,
