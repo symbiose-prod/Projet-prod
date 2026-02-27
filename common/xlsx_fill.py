@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import re
 import unicodedata
@@ -11,6 +12,8 @@ from pathlib import Path
 
 import pandas as pd
 import openpyxl
+
+logger = logging.getLogger("ferment.xlsx_fill")
 from openpyxl.utils import coordinate_to_tuple, get_column_letter
 from openpyxl.drawing.image import Image as XLImage
 try:
@@ -23,7 +26,7 @@ def _add_logo(ws, path: Path | None, anchor_cell: str, max_w: int, max_h: int):
     """Ajoute un logo ancré sans déformer l'image (no-op si chemin invalide)."""
     try:
         if not path or not path.exists():
-            print(f"[xlsx_fill] Logo introuvable pour ancre {anchor_cell} -> {path}")
+            logger.debug("Logo introuvable pour ancre %s -> %s", anchor_cell, path)
             return
         from PIL import Image as PILImage
         from openpyxl.drawing.image import Image as XLImage
@@ -36,9 +39,9 @@ def _add_logo(ws, path: Path | None, anchor_cell: str, max_w: int, max_h: int):
         img.width  = max(1, int(round(ow * scale)))
         img.height = max(1, int(round(oh * scale)))
         ws.add_image(img, anchor_cell)
-        print(f"[xlsx_fill] Logo ajouté: {path.name} -> {anchor_cell} ({img.width}x{img.height}px)")
+        logger.debug("Logo ajouté: %s -> %s (%dx%dpx)", path.name, anchor_cell, img.width, img.height)
     except Exception as e:
-        print(f"[xlsx_fill] ERREUR ajout logo {path} @ {anchor_cell}: {e}")
+        logger.error("Erreur ajout logo %s @ %s: %s", path, anchor_cell, e)
 
 
 # ======================================================================
@@ -226,12 +229,12 @@ def _add_image_in_range(ws, img_path: Path, tl_addr: str, br_addr: str):
     """
     try:
         if not img_path or not img_path.exists():
-            print(f"[xlsx_fill] Image introuvable: {img_path}")
+            logger.debug("Image introuvable: %s", img_path)
             return
 
         # charge l'image (nécessite Pillow)
         img = XLImage(str(img_path))
-        print(f"[xlsx_fill] Image OK: {img_path.name}")
+        logger.debug("Image OK: %s", img_path.name)
 
         # ---------- 1) Tentative TwoCellAnchor (précise) ----------
         if AnchorMarker and TwoCellAnchor:
@@ -242,14 +245,14 @@ def _add_image_in_range(ws, img_path: Path, tl_addr: str, br_addr: str):
                 to  = AnchorMarker(col=br_col - 1, colOff=0, row=br_row - 1, rowOff=0)
                 img.anchor = TwoCellAnchor(_from=frm, _to=to, editAs='oneCell')
                 ws.add_image(img)
-                print("[xlsx_fill] Image ancrée via TwoCellAnchor.")
+                logger.debug("Image ancrée via TwoCellAnchor.")
                 return
             except Exception as e:
-                print(f"[xlsx_fill] TwoCellAnchor indisponible/échec: {e}")
+                logger.debug("TwoCellAnchor indisponible/échec: %s", e)
 
         # ---------- 2) Fallback: ancre en coin supérieur gauche ----------
         ws.add_image(img, tl_addr)
-        print(f"[xlsx_fill] Image ajoutée en {tl_addr} (fallback). Redimension approx...")
+        logger.debug("Image ajoutée en %s (fallback). Redimension approx...", tl_addr)
 
         # Redimension approx pour couvrir la plage (si possible)
         # Conversion approximative des largeurs/hauteurs Excel -> pixels :
@@ -274,9 +277,9 @@ def _add_image_in_range(ws, img_path: Path, tl_addr: str, br_addr: str):
         height_px = sum(_row_pixels(r) for r in range(tl_r, br_r + 1))
         if width_px > 0 and height_px > 0:
             img.width, img.height = width_px, height_px
-            print(f"[xlsx_fill] Redimension: {width_px}x{height_px}px")
+            logger.debug("Redimension: %dx%dpx", width_px, height_px)
     except Exception as e:
-        print(f"[xlsx_fill] ERREUR insertion image: {e}")
+        logger.error("Erreur insertion image: %s", e)
 
 # ======================================================================
 #                    Interpolation hauteur de règle

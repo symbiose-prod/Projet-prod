@@ -17,6 +17,27 @@ PBKDF2_ALGO = "sha256"
 PBKDF2_ITERS = 310_000
 SALT_BYTES = 16
 
+# ── Validation ────────────────────────────────────────────────────────────────
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+MIN_PASSWORD_LENGTH = 8
+
+
+def validate_email(email: str) -> str:
+    """Valide et normalise l'email. Lève ValueError si invalide."""
+    e = (email or "").strip()
+    if not e or not _EMAIL_RE.match(e):
+        raise ValueError("Adresse e-mail invalide.")
+    return e
+
+
+def validate_password(password: str) -> str:
+    """Vérifie les règles de complexité du mot de passe. Lève ValueError si invalide."""
+    if not password or len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Le mot de passe doit faire au moins {MIN_PASSWORD_LENGTH} caractères.")
+    if password.isdigit():
+        raise ValueError("Le mot de passe ne peut pas être uniquement des chiffres.")
+    return password
+
 
 def hash_password(password: str) -> str:
     if not isinstance(password, str) or not password:
@@ -102,8 +123,11 @@ def get_or_create_tenant(name: str) -> Dict[str, Any]:
 
     try:
         return create_tenant(n)
-    except Exception:
-        # Probable course → le tenant vient d'être créé par un autre worker
+    except Exception as exc:
+        # Probable course (UNIQUE violation) → le tenant vient d'être créé par un autre worker
+        from sqlalchemy.exc import IntegrityError
+        if not isinstance(exc.__cause__, IntegrityError) and not isinstance(exc, IntegrityError):
+            raise  # erreur inattendue, on la laisse remonter
         again = get_tenant_by_name(n)
         if again:
             return again
@@ -158,9 +182,8 @@ def create_user(email: str, password: str, tenant_name_or_id: str, role: str = N
     - Résout/crée le tenant.
     - Rôle = 'admin' si premier user du tenant, sinon 'user' (sauf override explicite).
     """
-    e = (email or "").strip()
-    if not e or not password:
-        raise ValueError("email et mot de passe requis.")
+    e = validate_email(email)
+    validate_password(password)
 
     tenant_id = ensure_tenant_id(tenant_name_or_id)
 
@@ -182,10 +205,32 @@ def create_user(email: str, password: str, tenant_name_or_id: str, role: str = N
     return created[0]
 
 
+import logging as _logging
+import time as _time
+
+_auth_log = _logging.getLogger("ferment.auth")
+
+# Lockout progressif : {email_lower: (fail_count, last_fail_timestamp)}
+_LOGIN_FAILURES: Dict[str, tuple] = {}
+_MAX_FAILURES = 5
+_LOCKOUT_SECONDS = 300  # 5 min après 5 échecs
+
+
 def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
     e = (email or "").strip()
     if not e or not password:
         return None
+
+    e_lower = e.lower()
+
+    # Vérifier le lockout
+    fails = _LOGIN_FAILURES.get(e_lower)
+    if fails:
+        count, last_ts = fails
+        if count >= _MAX_FAILURES and (_time.time() - last_ts) < _LOCKOUT_SECONDS:
+            _auth_log.warning("Login bloqué (lockout) pour %s (%d échecs)", e_lower, count)
+            return None
+
     rows = run_sql(
         """
         SELECT id, tenant_id, email, password_hash, role, is_active, created_at
@@ -196,9 +241,24 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         {"e": e},
     )
     if not rows:
+        # Enregistrer l'échec même si l'email n'existe pas (timing constant)
+        prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
+        _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
+        _auth_log.info("Échec login : email inconnu %s", e_lower)
         return None
+
     user = rows[0]
-    return user if verify_password(password, user["password_hash"]) else None
+    if verify_password(password, user["password_hash"]):
+        # Réinitialiser le compteur en cas de succès
+        _LOGIN_FAILURES.pop(e_lower, None)
+        _auth_log.info("Login réussi pour %s", e_lower)
+        return user
+
+    # Échec mot de passe
+    prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
+    _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
+    _auth_log.warning("Échec login : mauvais mot de passe pour %s (tentative %d)", e_lower, prev[0] + 1)
+    return None
 
 
 def change_password(user_id: str, new_password: str) -> None:
@@ -277,3 +337,23 @@ def revoke_session_token(token: str) -> None:
         "DELETE FROM user_sessions WHERE token_hash = :h",
         {"h": token_hash},
     )
+
+
+def cleanup_expired_sessions() -> int:
+    """Supprime les sessions expirées. Retourne le nombre de lignes supprimées."""
+    result = run_sql("DELETE FROM user_sessions WHERE expires_at < now() RETURNING id")
+    count = len(result) if isinstance(result, list) else result
+    if count:
+        _auth_log.info("Nettoyage : %d session(s) expirée(s) supprimée(s)", count)
+    return count
+
+
+def cleanup_expired_resets() -> int:
+    """Supprime les tokens de reset expirés et utilisés. Retourne le nombre de lignes supprimées."""
+    result = run_sql(
+        "DELETE FROM password_resets WHERE expires_at < now() OR used_at IS NOT NULL RETURNING id"
+    )
+    count = len(result) if isinstance(result, list) else result
+    if count:
+        _auth_log.info("Nettoyage : %d token(s) de reset supprimé(s)", count)
+    return count

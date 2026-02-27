@@ -29,6 +29,10 @@ if _env_file.exists():
 
 # ─── Auth middleware ─────────────────────────────────────────────────────────
 
+import logging as _logging
+
+_log = _logging.getLogger("ferment.auth")
+
 # Pages publiques (pas besoin d'être connecté)
 PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico"}
 
@@ -41,9 +45,33 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in PUBLIC_PATHS):
             return await call_next(request)
 
-        # Vérifier l'authentification
-        if not app.storage.user.get("authenticated"):
+        # Vérifier l'authentification côté storage
+        user_store = app.storage.user
+        if not user_store.get("authenticated"):
             return RedirectResponse(url="/login")
+
+        # Validation serveur périodique (toutes les 5 min max)
+        import time
+        now = time.time()
+        last_check = user_store.get("_server_validated_at", 0)
+        if now - last_check > 300:  # 5 minutes
+            try:
+                from common.auth import find_user_by_email
+                user_email = user_store.get("email", "")
+                db_user = find_user_by_email(user_email) if user_email else None
+                if not db_user or not db_user.get("is_active"):
+                    _log.warning("Session invalidée : user %s introuvable ou désactivé", user_email)
+                    user_store.clear()
+                    return RedirectResponse(url="/login")
+                # Resync tenant_id (protection contre falsification côté client)
+                user_store["tenant_id"] = str(db_user["tenant_id"])
+                user_store["role"] = db_user.get("role", "user")
+                user_store["_server_validated_at"] = now
+            except Exception:
+                _log.exception("Erreur validation session serveur")
+                # En cas d'erreur DB, on laisse passer (fail open) pour ne pas
+                # bloquer tous les utilisateurs si la DB est temporairement down
+                pass
 
         return await call_next(request)
 
@@ -59,6 +87,19 @@ from ui import production as _production  # /production
 from ui import achats as _achats       # /achats
 
 
+# ─── Nettoyage périodique (sessions / resets expirés) ────────────────────────
+
+@app.on_startup
+async def _startup_cleanup():
+    """Nettoie les sessions et tokens expirés au démarrage."""
+    try:
+        from common.auth import cleanup_expired_sessions, cleanup_expired_resets
+        cleanup_expired_sessions()
+        cleanup_expired_resets()
+    except Exception:
+        _log.exception("Erreur nettoyage au démarrage")
+
+
 # ─── Redirect racine ────────────────────────────────────────────────────────
 
 @ui.page("/")
@@ -67,6 +108,17 @@ def root():
 
 
 # ─── Lancement ──────────────────────────────────────────────────────────────
+
+def _get_storage_secret() -> str:
+    """Exige un vrai secret pour signer les cookies de session."""
+    secret = os.environ.get("NICEGUI_SECRET", "").strip()
+    if not secret:
+        raise RuntimeError(
+            "NICEGUI_SECRET manquant — génère-en un :\n"
+            '  python3 -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+    return secret
+
 
 if __name__ in {"__main__", "__mp_main__"}:
     port = int(os.environ.get("NICEGUI_PORT", "8502"))
@@ -78,5 +130,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🧪",
         dark=False,
         language="fr",
-        storage_secret=os.environ.get("NICEGUI_SECRET", "ferment-station-dev-secret"),
+        storage_secret=_get_storage_secret(),
     )

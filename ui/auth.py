@@ -10,7 +10,7 @@ from __future__ import annotations
 from nicegui import ui, app
 
 from ui.theme import COLORS, apply_quasar_theme, logo_svg
-from common.auth import authenticate, create_user, find_user_by_email
+from common.auth import authenticate, create_user, find_user_by_email, validate_email, validate_password
 
 
 # ─── Page Login ─────────────────────────────────────────────────────────────
@@ -127,6 +127,22 @@ def page_login():
                             signup_msg.classes("text-negative")
                             signup_msg.set_visibility(True)
                             return
+                        # Validation email
+                        try:
+                            validate_email(email)
+                        except ValueError as ve:
+                            signup_msg.text = str(ve)
+                            signup_msg.classes("text-negative")
+                            signup_msg.set_visibility(True)
+                            return
+                        # Validation mot de passe
+                        try:
+                            validate_password(pwd)
+                        except ValueError as ve:
+                            signup_msg.text = str(ve)
+                            signup_msg.classes("text-negative")
+                            signup_msg.set_visibility(True)
+                            return
                         if pwd != pwd2:
                             signup_msg.text = "Les mots de passe ne correspondent pas."
                             signup_msg.classes("text-negative")
@@ -148,8 +164,15 @@ def page_login():
                                 "role": user.get("role", "user"),
                             })
                             ui.navigate.to("/accueil")
-                        except Exception as e:
-                            signup_msg.text = f"Erreur : {e}"
+                        except ValueError as ve:
+                            # Erreurs de validation (email, mot de passe, etc.)
+                            signup_msg.text = str(ve)
+                            signup_msg.classes("text-negative")
+                            signup_msg.set_visibility(True)
+                        except Exception:
+                            import logging
+                            logging.getLogger("ferment.auth").exception("Erreur création compte")
+                            signup_msg.text = "Une erreur est survenue. Réessaie plus tard."
                             signup_msg.classes("text-negative")
                             signup_msg.set_visibility(True)
 
@@ -193,8 +216,10 @@ def page_login():
                             forgot_msg.text = "Si un compte existe, un email a été envoyé."
                             forgot_msg.classes("text-positive")
                             forgot_msg.set_visibility(True)
-                        except Exception as e:
-                            forgot_msg.text = f"Erreur : {e}"
+                        except Exception:
+                            import logging
+                            logging.getLogger("ferment.auth").exception("Erreur envoi reset email")
+                            forgot_msg.text = "Une erreur est survenue. Réessaie plus tard."
                             forgot_msg.classes("text-negative")
                             forgot_msg.set_visibility(True)
 

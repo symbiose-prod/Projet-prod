@@ -82,9 +82,9 @@ def create_password_reset(
         if last_created is None or r["created_at"] > last_created:
             last_created = r["created_at"]
 
-    if active_cnt >= 3:
+    if active_cnt >= 1:          # max 1 token actif (au lieu de 3)
         return None
-    if last_created and (now - last_created).total_seconds() < 60:
+    if last_created and (now - last_created).total_seconds() < 300:  # 5 min (au lieu de 60s)
         return None
 
     # 3) Générer token + stocker hash

@@ -71,8 +71,11 @@ def _ensure_tenant(tenant_name: str = DEFAULT_TENANT_NAME) -> str:
             {"n": n},
         )
         return created[0]["id"]
-    except Exception:
-        # Course possible → re-SELECT
+    except Exception as exc:
+        # Course possible (UNIQUE violation) → re-SELECT
+        from sqlalchemy.exc import IntegrityError
+        if not isinstance(exc.__cause__, IntegrityError) and not isinstance(exc, IntegrityError):
+            raise  # erreur inattendue
         again = run_sql(
             """
             SELECT id FROM tenants
@@ -207,27 +210,22 @@ def save_snapshot(name: str, sp: Dict[str, Any]) -> Tuple[bool, str]:
         )
         return True, "Proposition mise à jour."
 
-    # Vérifie la limite MAX_SLOTS sur NOM distinct
-    cnt_rows = run_sql(
-        """
-        SELECT COUNT(DISTINCT payload->'_meta'->>'name') AS c
-        FROM production_proposals
-        WHERE tenant_id = :t
-        """,
-        {"t": t_id},
-    )
-    count = int(cnt_rows[0]["c"]) if cnt_rows else 0
-    if count >= MAX_SLOTS:
-        return False, f"Limite atteinte ({MAX_SLOTS}). Supprime ou renomme une entrée."
-
-    # Insert (nouvelle entrée)
-    run_sql(
+    # Insert atomique avec vérification de la limite MAX_SLOTS (pas de race condition)
+    inserted = run_sql(
         """
         INSERT INTO production_proposals (tenant_id, created_by, payload, status, created_at, updated_at)
-        VALUES (:t, :u, CAST(:p AS JSONB), 'draft', now(), now())
+        SELECT :t, :u, CAST(:p AS JSONB), 'draft', now(), now()
+        WHERE (
+            SELECT COUNT(DISTINCT payload->'_meta'->>'name')
+            FROM production_proposals
+            WHERE tenant_id = :t
+        ) < :max_slots
+        RETURNING id
         """,
-        {"t": t_id, "u": u_id, "p": json.dumps(payload)},
+        {"t": t_id, "u": u_id, "p": json.dumps(payload), "max_slots": MAX_SLOTS},
     )
+    if not inserted:
+        return False, f"Limite atteinte ({MAX_SLOTS}). Supprime ou renomme une entrée."
 
     return True, "Proposition enregistrée."
 

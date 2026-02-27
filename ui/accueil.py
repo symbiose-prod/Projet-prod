@@ -98,8 +98,10 @@ def page_accueil():
                             status_label.classes("text-positive")
                             status_label.set_visibility(True)
                             ui.notify("Import EasyBeer réussi !", type="positive")
-                        except Exception as exc:
-                            status_label.text = f"Erreur : {exc}"
+                        except Exception:
+                            import logging
+                            logging.getLogger("ferment.accueil").exception("Erreur import EasyBeer")
+                            status_label.text = "Erreur lors de l'import. Vérifiez la connexion EasyBeer."
                             status_label.classes("text-negative")
                             status_label.set_visibility(True)
 
@@ -138,9 +140,16 @@ def page_accueil():
             upload_status = ui.label("").classes("text-body2")
             upload_status.set_visibility(False)
 
+            MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 Mo
+
             def handle_upload(e):
                 try:
                     content = e.content.read()
+                    if isinstance(content, bytes) and len(content) > MAX_UPLOAD_BYTES:
+                        upload_status.text = f"Fichier trop volumineux ({len(content) // (1024*1024)} Mo, max 50 Mo)."
+                        upload_status.classes("text-negative")
+                        upload_status.set_visibility(True)
+                        return
                     buf = BytesIO(content) if isinstance(content, bytes) else content
                     df, period = read_input_excel_and_period_from_bytes(buf)
                     state["imported"] = True
@@ -152,8 +161,10 @@ def page_accueil():
                     upload_status.classes("text-positive")
                     upload_status.set_visibility(True)
                     ui.notify(f"Fichier {e.name} importé !", type="positive")
-                except Exception as exc:
-                    upload_status.text = f"Erreur : {exc}"
+                except Exception:
+                    import logging
+                    logging.getLogger("ferment.accueil").exception("Erreur import fichier Excel")
+                    upload_status.text = "Erreur lors de l'import. Vérifiez le format du fichier."
                     upload_status.classes("text-negative")
                     upload_status.set_visibility(True)
 

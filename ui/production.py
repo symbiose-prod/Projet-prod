@@ -87,7 +87,7 @@ def _render_easybeer_section(
         ).classes("text-caption text-grey-6")
         return
 
-    _sp_eb = app.storage.user["saved_production"]
+    _sp_eb = app.storage.user.get("saved_production", {})
     _gouts_eb = _sp_eb.get("gouts", [])
 
     if not _gouts_eb:
@@ -771,8 +771,14 @@ def page_production():
             if mode_prod == "Manuel":
                 vol_ref = volume_input_ref["ref"]
                 nb_ref = nb_gouts_input_ref["ref"]
-                volume_cible = float(vol_ref.value) if vol_ref else 64.0
-                nb_gouts = int(nb_ref.value) if nb_ref else 1
+                try:
+                    volume_cible = float(vol_ref.value) if vol_ref else 64.0
+                except (TypeError, ValueError):
+                    volume_cible = 64.0
+                try:
+                    nb_gouts = int(nb_ref.value) if nb_ref else 1
+                except (TypeError, ValueError):
+                    nb_gouts = 1
             else:
                 _tank = TANK_CONFIGS[mode_prod]
                 nb_gouts = _tank["nb_gouts"]
