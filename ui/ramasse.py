@@ -8,10 +8,13 @@ Réutilise toute la logique métier de common/ramasse.py et common/easybeer.py.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import math
 import os
 
 from nicegui import ui
+
+_log = logging.getLogger("ferment.ramasse")
 
 from ui.auth import require_auth
 from ui.theme import page_layout, kpi_card, section_title, COLORS
@@ -65,6 +68,7 @@ def _load_cb_matrix() -> dict[int, list[dict]] | None:
         raw = get_code_barre_matrice()
         return parse_barcode_matrix(raw)
     except Exception:
+        _log.warning("Impossible de charger la matrice codes-barres", exc_info=True)
         return None
 
 
@@ -72,6 +76,7 @@ def _load_eb_weights() -> dict[tuple[int, str], float] | None:
     try:
         return fetch_carton_weights()
     except Exception:
+        _log.warning("Impossible de charger les poids cartons", exc_info=True)
         return None
 
 
@@ -83,6 +88,7 @@ def _load_entrepot() -> int | None:
                 return w.get("idEntrepot")
         return warehouses[0].get("idEntrepot") if warehouses else None
     except Exception:
+        _log.warning("Impossible de charger les entrepots", exc_info=True)
         return None
 
 

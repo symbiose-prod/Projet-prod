@@ -233,6 +233,8 @@ def page_login():
                             forgot_msg.classes("text-negative")
                             forgot_msg.set_visibility(True)
                             return
+                        forgot_btn.disable()
+                        forgot_msg.set_visibility(False)
                         try:
                             from common.auth_reset import create_password_reset
                             from common.email import send_reset_email
@@ -247,8 +249,12 @@ def page_login():
                             forgot_msg.text = "Une erreur est survenue. Réessaie plus tard."
                             forgot_msg.classes("text-negative")
                             forgot_msg.set_visibility(True)
+                            forgot_btn.enable()
+                            return
+                        # Réactiver le bouton après 30s (anti double-clic)
+                        ui.timer(30.0, lambda: forgot_btn.enable(), once=True)
 
-                    ui.button(
+                    forgot_btn = ui.button(
                         "Envoyer le lien",
                         icon="send",
                         on_click=do_forgot,

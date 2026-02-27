@@ -5,11 +5,14 @@ Page Accueil — Import des données (Easy Beer ou Excel).
 """
 from __future__ import annotations
 
+import logging
 import os
 from io import BytesIO
 
 import pandas as pd
 from nicegui import ui, app
+
+_log = logging.getLogger("ferment.accueil")
 
 from ui.auth import require_auth
 from ui.theme import page_layout, section_title, COLORS
@@ -94,7 +97,10 @@ def page_accueil():
                         try:
                             from common.easybeer import get_autonomie_stocks_excel
                             days = int(period_radio.value or 30)
-                            xls_bytes = await asyncio.to_thread(get_autonomie_stocks_excel, days)
+                            xls_bytes = await asyncio.wait_for(
+                                asyncio.to_thread(get_autonomie_stocks_excel, days),
+                                timeout=45,
+                            )
                             df, period = read_input_excel_and_period_from_bytes(xls_bytes)
                             state["imported"] = True
                             state["source"] = "EasyBeer"
@@ -106,8 +112,7 @@ def page_accueil():
                             status_label.set_visibility(True)
                             ui.notify("Import EasyBeer réussi !", type="positive")
                         except Exception:
-                            import logging
-                            logging.getLogger("ferment.accueil").exception("Erreur import EasyBeer")
+                            _log.exception("Erreur import EasyBeer")
                             status_label.text = "Erreur lors de l'import. Vérifiez la connexion EasyBeer."
                             status_label.classes("text-negative")
                             status_label.set_visibility(True)
@@ -160,6 +165,12 @@ def page_accueil():
                         upload_status.classes("text-negative")
                         upload_status.set_visibility(True)
                         return
+                    # Vérifier magic bytes ZIP (PK\x03\x04) — les .xlsx sont des archives ZIP
+                    if isinstance(content, bytes) and not content[:4].startswith(b"PK"):
+                        upload_status.text = "Fichier invalide — seuls les fichiers Excel (.xlsx) sont acceptés."
+                        upload_status.classes("text-negative")
+                        upload_status.set_visibility(True)
+                        return
                     buf = BytesIO(content) if isinstance(content, bytes) else content
                     df, period = read_input_excel_and_period_from_bytes(buf)
                     state["imported"] = True
@@ -172,8 +183,7 @@ def page_accueil():
                     upload_status.set_visibility(True)
                     ui.notify(f"Fichier {e.name} importé !", type="positive")
                 except Exception:
-                    import logging
-                    logging.getLogger("ferment.accueil").exception("Erreur import fichier Excel")
+                    _log.exception("Erreur import fichier Excel")
                     upload_status.text = "Erreur lors de l'import. Vérifiez le format du fichier."
                     upload_status.classes("text-negative")
                     upload_status.set_visibility(True)

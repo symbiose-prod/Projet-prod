@@ -1,9 +1,12 @@
 # common/auth_reset.py
 from __future__ import annotations
+import logging
 import os, secrets, hashlib, datetime
 from typing import Optional, Dict, Any, Tuple
 
 from db.conn import run_sql
+
+_log = logging.getLogger("ferment.auth_reset")
 
 # URL de base de l'app (OVH VPS)
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8502").rstrip("/")
@@ -80,8 +83,10 @@ def create_password_reset(
             last_created = r["created_at"]
 
     if active_cnt >= 1:          # max 1 token actif (au lieu de 3)
+        _log.info("Reset rate-limited pour user %s : token actif existant", user_id)
         return None
     if last_created and (now - last_created).total_seconds() < 300:  # 5 min (au lieu de 60s)
+        _log.info("Reset rate-limited pour user %s : demande trop recente (<5min)", user_id)
         return None
 
     # 3) Générer token + stocker hash

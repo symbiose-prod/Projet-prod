@@ -969,11 +969,14 @@ async def page_production():
 
             # ── Calcul lourd dans le thread pool ──────────────────────
             try:
-                _result = await asyncio.to_thread(
-                    _compute_production_sync,
-                    df_in_filtered, window_days, volume_cible,
-                    effective_nb_gouts, repartir_pro_rv,
-                    forced_gouts, excluded_gouts, mode_prod, overrides,
+                _result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        _compute_production_sync,
+                        df_in_filtered, window_days, volume_cible,
+                        effective_nb_gouts, repartir_pro_rv,
+                        forced_gouts, excluded_gouts, mode_prod, overrides,
+                    ),
+                    timeout=60,
                 )
             except Exception as exc:
                 main_container.clear()

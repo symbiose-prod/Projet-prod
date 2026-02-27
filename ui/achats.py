@@ -83,19 +83,35 @@ def page_achats():
                     get_mp_all,
                     get_synthese_consommations_mp,
                 )
-                days = int(window_input.value or 30)
-                horizon = int(horizon_input.value or 30)
+                try:
+                    days = max(1, int(window_input.value or 30))
+                except (ValueError, TypeError):
+                    days = 30
+                try:
+                    horizon = max(1, int(horizon_input.value or 30))
+                except (ValueError, TypeError):
+                    horizon = 30
 
-                # 1-2-3. Appels API en parallèle (ne bloque plus l'event loop)
-                autonomie, mp_all, conso = await asyncio.gather(
-                    asyncio.to_thread(get_autonomie_stocks, days),
-                    asyncio.to_thread(get_mp_all),
-                    asyncio.to_thread(get_synthese_consommations_mp, days),
+                # 1-2-3. Appels API en parallèle (timeout 45s > HTTP timeout 30s)
+                _API_TIMEOUT = 45
+                autonomie, mp_all, conso = await asyncio.wait_for(
+                    asyncio.gather(
+                        asyncio.to_thread(get_autonomie_stocks, days),
+                        asyncio.to_thread(get_mp_all),
+                        asyncio.to_thread(get_synthese_consommations_mp, days),
+                    ),
+                    timeout=_API_TIMEOUT,
                 )
                 produits = autonomie.get("produits", [])
 
-                seuil_r = int(seuil_rouge.value or 7)
-                seuil_o = int(seuil_orange.value or 21)
+                try:
+                    seuil_r = max(1, int(seuil_rouge.value or 7))
+                except (ValueError, TypeError):
+                    seuil_r = 7
+                try:
+                    seuil_o = max(1, int(seuil_orange.value or 21))
+                except (ValueError, TypeError):
+                    seuil_o = 21
 
                 # ── Section 1 : Produits finis ───────────────────────
                 produits_finis_container.clear()

@@ -55,8 +55,15 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
     """Vérifie la réponse HTTP et lève une erreur lisible."""
     if r.ok:
         return
+    # Détecter les pages d'erreur HTML (proxy, WAF, serveur en maintenance)
+    body = r.text[:500]
+    if "<!DOCTYPE" in body or "<html" in body.lower():
+        raise EasyBeerError(
+            f"EasyBeer {endpoint} → HTTP {r.status_code} : le serveur a renvoyé une page HTML "
+            f"(maintenance ou erreur proxy). Réessayez dans quelques minutes."
+        )
     raise EasyBeerError(
-        f"EasyBeer {endpoint} → HTTP {r.status_code} : {r.text[:300]}"
+        f"EasyBeer {endpoint} → HTTP {r.status_code} : {body[:300]}"
     )
 
 
