@@ -9,8 +9,11 @@ common/xlsx_fill.py. Seule la couche UI (NiceGUI) est spécifique ici.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
+
+_log = logging.getLogger("ferment.production")
 import time as _time
 import datetime as _dt
 from dateutil.relativedelta import relativedelta
@@ -438,6 +441,7 @@ def _render_easybeer_section(
                     created_ids.append(brassin_id)
                     ui.notify(f"Brassin « {g} » créé (ID {brassin_id})", type="positive")
                 except Exception as exc:
+                    _log.exception("Échec création brassin %s", g)
                     errors.append(f"{g} : {exc}")
                     continue
 
