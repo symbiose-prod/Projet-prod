@@ -164,10 +164,18 @@ class BatchLotTracker:
             result.append(ing_copy)
             allocated_total += alloc["quantite"]
 
-        # Quantité manquante (pas de lot dispo) — on NE crée PAS de ligne
-        # supplémentaire car EasyBeer rejette les ingrédients sans lot quand
-        # la MP est gérée par lots. Le manquant est loggé pour traçabilité.
+        # Quantité manquante → ligne supplémentaire SANS numéro de lot
+        # pour que la quantité totale de l'ingrédient soit correcte dans le brassin.
         shortfall = round(needed - allocated_total, 2)
+
+        if shortfall > 0.01:
+            shortfall_ing = {
+                k: v for k, v in ingredient.items()
+                if k not in ("quantite", "modeleNumerosLots")
+            }
+            shortfall_ing["quantite"] = shortfall
+            shortfall_ing["modeleNumerosLots"] = []
+            result.append(shortfall_ing)
 
         libelle = mp.get("libelle", f"MP#{id_mp}")
         etape = (ingredient.get("brassageEtape") or {}).get("nom", "?")
@@ -175,7 +183,7 @@ class BatchLotTracker:
             f"{a['quantite']:.2f} [{a['code']}]" for a in allocations
         )
         if shortfall > 0.01:
-            lots_desc += f" + {shortfall:.2f} [MANQUANT]"
+            lots_desc += f" + {shortfall:.2f} [SANS LOT]"
             _log.warning("FIFO %s (%s) : %s", libelle, etape, lots_desc)
         else:
             _log.info("FIFO %s (%s) : %s", libelle, etape, lots_desc)
