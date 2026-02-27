@@ -565,10 +565,32 @@ def _render_easybeer_section(
             for err in errors:
                 ui.notify(err, type="negative")
 
+        # Dialogue de confirmation (action irréversible dans l'ERP)
+        with ui.dialog() as _confirm_dlg, ui.card().classes("q-pa-lg"):
+            ui.label("Confirmer la création des brassins ?").classes("text-subtitle1").style(
+                f"color: {colors['ink']}; font-weight: 600"
+            )
+            ui.label(
+                f"{len(_gouts_eb)} brassin(s) seront créés dans EasyBeer. "
+                "Cette action est irréversible."
+            ).classes("text-body2 text-grey-7 q-mt-xs")
+            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                ui.button("Annuler", on_click=_confirm_dlg.close).props("flat color=grey-7")
+
+                async def _confirmed_create():
+                    _confirm_dlg.close()
+                    await do_create_brassins()
+
+                ui.button(
+                    "Créer",
+                    icon="rocket_launch",
+                    on_click=_confirmed_create,
+                ).props("color=green-8 unelevated")
+
         ui.button(
             "Créer les brassins",
             icon="rocket_launch",
-            on_click=do_create_brassins,
+            on_click=_confirm_dlg.open,
         ).classes("w-full q-mt-md").props("color=green-8 unelevated")
 
 

@@ -432,13 +432,24 @@ def page_ramasse():
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
 
-                dest_obj = next((d for d in destinataires if d["name"] == dest_select.value), None)
-                default_emails = ", ".join(dest_obj.get("email_recipients", [])) if dest_obj else ""
+                def _get_dest_obj():
+                    """Résout le destinataire sélectionné au moment de l'appel (pas au build)."""
+                    return next((d for d in destinataires if d["name"] == dest_select.value), None)
+
+                _init_dest = _get_dest_obj()
+                default_emails = ", ".join(_init_dest.get("email_recipients", [])) if _init_dest else ""
 
                 email_input = ui.input(
                     "Destinataires email",
                     value=default_emails,
                 ).classes("w-full").props("outlined dense")
+
+                def _on_dest_changed(e=None):
+                    """Met à jour les emails quand le destinataire change."""
+                    d = _get_dest_obj()
+                    email_input.value = ", ".join(d.get("email_recipients", [])) if d else ""
+
+                dest_select.on_value_change(_on_dest_changed)
 
                 sender = os.environ.get("EMAIL_SENDER", "")
                 if sender:
@@ -483,7 +494,8 @@ def page_ramasse():
                                     "Date ramasse souhaitée", "Quantité cartons",
                                     "Quantité palettes", "Poids palettes (kg)"]
                             dest_title = dest_select.value
-                            dest_lines = dest_obj.get("address_lines", []) if dest_obj else []
+                            _dest = _get_dest_obj()
+                            dest_lines = _dest.get("address_lines", []) if _dest else []
 
                             pdf_bytes = build_bl_enlevements_pdf(
                                 date_creation=today_paris(),
@@ -533,7 +545,8 @@ def page_ramasse():
                                     "Date ramasse souhaitée", "Quantité cartons",
                                     "Quantité palettes", "Poids palettes (kg)"]
                             dest_title = dest_select.value
-                            dest_lines = dest_obj.get("address_lines", []) if dest_obj else []
+                            _dest_email = _get_dest_obj()
+                            dest_lines = _dest_email.get("address_lines", []) if _dest_email else []
 
                             pdf_bytes = build_bl_enlevements_pdf(
                                 date_creation=today_paris(),

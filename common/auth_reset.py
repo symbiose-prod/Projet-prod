@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, Tuple
 from db.conn import run_sql
 from common.auth import change_password  # <- on réutilise ton hash PBKDF2
 
-# URL de base de ton app (Kinsta)
+# URL de base de l'app (OVH VPS)
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8501").rstrip("/")
 # Durée de validité du lien
 RESET_TTL_MINUTES = int(os.getenv("RESET_TTL_MINUTES", "60"))
@@ -160,12 +160,20 @@ def verify_reset_token(token: str) -> Tuple[bool, Any]:
 def consume_token_and_set_password(reset_id: int, user_id: str, new_password: str) -> bool:
     """
     - met à jour le mot de passe via common.auth.change_password (même algo que le reste)
+    - révoque toutes les sessions actives (force la reconnexion)
     - marque le token comme utilisé
     """
     # 1) mettre à jour le mot de passe avec ton système PBKDF2
     change_password(user_id, new_password)
 
-    # 2) marquer le token comme utilisé
+    # 2) révoquer toutes les sessions actives de cet utilisateur
+    #    → force la reconnexion avec le nouveau mot de passe
+    run_sql(
+        "DELETE FROM user_sessions WHERE user_id = :u",
+        {"u": user_id},
+    )
+
+    # 3) marquer le token comme utilisé
     run_sql(
         """
         UPDATE password_resets
