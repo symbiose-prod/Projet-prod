@@ -22,6 +22,7 @@ import datetime
 import logging
 import os
 import re
+import time as _time
 from typing import Any
 
 import requests
@@ -935,14 +936,27 @@ def upload_fichier_brassin(
     if commentaire:
         params["commentaire"] = commentaire
 
-    r = requests.post(
-        f"{BASE}/brassin/upload/{id_brassin}",
-        params=params,
-        files={"fichier": (filename, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-        auth=_auth(),
-        timeout=TIMEOUT,
-    )
-    _check_response(r, f"brassin/upload/{id_brassin}")
+    ep = f"brassin/upload/{id_brassin}"
+    _backoff = (3, 6, 12)  # délais entre retries (secondes)
+
+    for attempt in range(len(_backoff) + 1):
+        r = requests.post(
+            f"{BASE}/{ep}",
+            params=params,
+            files={"fichier": (filename, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            auth=_auth(),
+            timeout=60,  # timeout plus long pour les uploads
+        )
+        if r.status_code != 429 or attempt >= len(_backoff):
+            break
+        delay = _backoff[attempt]
+        _log.warning(
+            "Upload %s : HTTP 429 (tentative %d/%d) — retry dans %ds",
+            ep, attempt + 1, len(_backoff), delay,
+        )
+        _time.sleep(delay)
+
+    _check_response(r, ep)
     try:
         return r.json()
     except Exception:

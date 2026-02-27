@@ -558,6 +558,9 @@ def _render_easybeer_section(
                 except Exception as _pe:
                     ui.notify(f"Planif. « {g} » : {_pe}", type="warning")
 
+                # Pause avant upload pour éviter le rate-limit EasyBeer (HTTP 429)
+                await asyncio.sleep(2)
+
                 # Upload fiche Excel
                 try:
                     _semaine_dt = _dt.date.fromisoformat(_semaine_du_eb)

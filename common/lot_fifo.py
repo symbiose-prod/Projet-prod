@@ -11,6 +11,7 @@ sont créés d'affilée (EasyBeer ne décrémente le stock qu'à la validation).
 from __future__ import annotations
 
 import logging
+import time as _time
 from typing import Any, Callable
 
 _log = logging.getLogger("ferment.lot_fifo")
@@ -107,6 +108,9 @@ class BatchLotTracker:
 
     def _get_pool(self, id_mp: int) -> LotPool:
         if id_mp not in self._pools:
+            # Throttle entre les appels API pour éviter le rate-limit (429)
+            if self._pools:
+                _time.sleep(0.4)
             try:
                 lots = self._fetch(id_mp)
             except Exception:
