@@ -7,6 +7,8 @@ Réutilise common/easybeer.py pour les données stock et consommation.
 """
 from __future__ import annotations
 
+import asyncio
+
 import pandas as pd
 from nicegui import ui, app
 
@@ -66,7 +68,7 @@ def page_achats():
         composants_container = ui.column().classes("w-full gap-4")
         commande_container = ui.column().classes("w-full gap-4")
 
-        def do_sync():
+        async def do_sync():
             try:
                 from common.easybeer import (
                     get_autonomie_stocks,
@@ -76,15 +78,13 @@ def page_achats():
                 days = int(window_input.value or 30)
                 horizon = int(horizon_input.value or 30)
 
-                # 1. Produits finis
-                autonomie = get_autonomie_stocks(days)
+                # 1-2-3. Appels API en parallèle (ne bloque plus l'event loop)
+                autonomie, mp_all, conso = await asyncio.gather(
+                    asyncio.to_thread(get_autonomie_stocks, days),
+                    asyncio.to_thread(get_mp_all),
+                    asyncio.to_thread(get_synthese_consommations_mp, days),
+                )
                 produits = autonomie.get("produits", [])
-
-                # 2. Matières premières (composants)
-                mp_all = get_mp_all()
-
-                # 3. Consommations
-                conso = get_synthese_consommations_mp(days)
 
                 seuil_r = int(seuil_rouge.value or 7)
                 seuil_o = int(seuil_orange.value or 21)

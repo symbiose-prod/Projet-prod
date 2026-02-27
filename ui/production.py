@@ -8,8 +8,10 @@ common/xlsx_fill.py. Seule la couche UI (NiceGUI) est spécifique ici.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import time as _time
 import datetime as _dt
 from dateutil.relativedelta import relativedelta
 
@@ -54,9 +56,20 @@ TEMPLATE_PATH = "assets/Fiche_production.xlsx"
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
+_EB_PRODUCTS_CACHE: dict = {"data": None, "ts": 0.0}
+_EB_PRODUCTS_TTL = 300  # 5 minutes
+
+
 def _fetch_eb_products() -> list[dict]:
+    """Produits EasyBeer avec cache TTL 5 min (évite 3 appels HTTP par calcul)."""
+    now = _time.monotonic()
+    if _EB_PRODUCTS_CACHE["data"] is not None and (now - _EB_PRODUCTS_CACHE["ts"]) < _EB_PRODUCTS_TTL:
+        return _EB_PRODUCTS_CACHE["data"]
     from common.easybeer import get_all_products
-    return get_all_products()
+    data = get_all_products()
+    _EB_PRODUCTS_CACHE["data"] = data
+    _EB_PRODUCTS_CACHE["ts"] = now
+    return data
 
 
 def _auto_match(gout: str, prod_labels: list[str]) -> int:
@@ -264,10 +277,12 @@ def _render_easybeer_section(
             f"✅ Brassins déjà créés (IDs : {', '.join(str(i) for i in ids)})."
         ).classes("text-positive text-body2 q-mt-sm")
 
-        def do_recreate():
+        async def do_recreate():
             del app.storage.user["_eb_brassins_created"][_creation_key]
             if on_recreate:
-                on_recreate()
+                _r = on_recreate()
+                if asyncio.iscoroutine(_r):
+                    await _r
 
         ui.button("Recréer", icon="refresh", on_click=do_recreate).props("flat color=grey-7")
     else:
@@ -666,10 +681,136 @@ def _build_final_table(
     return pd.DataFrame(rows_out) if rows_out else pd.DataFrame()
 
 
+# ─── Calcul lourd (exécuté dans le thread pool) ─────────────────────────────
+
+def _compute_production_sync(
+    df_in_filtered: pd.DataFrame,
+    window_days: int,
+    volume_cible: float,
+    effective_nb_gouts: int,
+    repartir_pro_rv: bool,
+    forced_gouts: list[str],
+    excluded_gouts: list[str],
+    mode_prod: str,
+    overrides: dict,
+) -> dict:
+    """Passe 1 (optimiseur) + Passe 2 (EasyBeer) — aucun appel UI."""
+    # ── PASSE 1 : Optimiseur
+    (
+        df_min, cap_resume, gouts_cibles, synth_sel,
+        df_calc, df_all, note_msg,
+    ) = compute_plan(
+        df_in=df_in_filtered,
+        window_days=window_days,
+        volume_cible=volume_cible,
+        nb_gouts=effective_nb_gouts,
+        repartir_pro_rv=repartir_pro_rv,
+        manual_keep=forced_gouts or None,
+        exclude_list=excluded_gouts,
+    )
+
+    # ── PASSE 2 : Aromatisation (modes auto)
+    volume_details: dict = {}
+    if mode_prod != "Manuel" and gouts_cibles:
+        from common.easybeer import (
+            is_configured as _eb_conf_p2,
+            compute_aromatisation_volume,
+            compute_v_start_max,
+            compute_dilution_ingredients,
+        )
+        _tank_cfg = TANK_CONFIGS[mode_prod]
+        _C = _tank_cfg["capacity"]
+        _Lt = _tank_cfg["transfer_loss"]
+        _Lb = _tank_cfg["bottling_loss"]
+        _gout_p2 = gouts_cibles[0]
+        _A_R, _R = 0.0, 0.0
+        _id_prod_p2 = None
+
+        if _eb_conf_p2():
+            try:
+                _eb_prods_p2 = _fetch_eb_products()
+                _labels_p2 = [p.get("libelle", "") for p in _eb_prods_p2]
+                _matched_idx = _auto_match(_gout_p2, _labels_p2)
+                _id_prod_p2 = _eb_prods_p2[_matched_idx]["idProduit"]
+                _A_R, _R = compute_aromatisation_volume(_id_prod_p2)
+            except Exception:
+                _A_R, _R = 0.0, 0.0
+
+        _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
+        _volume_cible_recalc = _V_bottled / 100.0
+
+        _is_infusion_p2 = False
+        _dilution_p2: dict = {}
+        if _id_prod_p2 is not None:
+            try:
+                _prod_label_p2 = _eb_prods_p2[_matched_idx].get("libelle", "")
+                _is_infusion_p2 = (
+                    "infusion" in _prod_label_p2.lower()
+                    or _prod_label_p2.upper().startswith("EP")
+                )
+            except Exception:
+                pass
+            try:
+                _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
+            except Exception:
+                _dilution_p2 = {}
+
+        volume_details[_gout_p2] = {
+            "V_start": _V_start,
+            "A_R": _A_R,
+            "R": _R,
+            "V_aroma": _A_R * (_V_start / _R) if _R > 0 else 0.0,
+            "V_bottled": _V_bottled,
+            "capacity": _C,
+            "transfer_loss": _Lt,
+            "bottling_loss": _Lb,
+            "is_infusion": _is_infusion_p2,
+            "dilution_ingredients": _dilution_p2,
+            "id_produit": _id_prod_p2,
+        }
+
+        # Relance si le volume a changé
+        if abs(_volume_cible_recalc - volume_cible) > 0.01:
+            volume_cible = _volume_cible_recalc
+            try:
+                (
+                    df_min, cap_resume, gouts_cibles, synth_sel,
+                    df_calc, df_all, note_msg,
+                ) = compute_plan(
+                    df_in=df_in_filtered,
+                    window_days=window_days,
+                    volume_cible=volume_cible,
+                    nb_gouts=effective_nb_gouts,
+                    repartir_pro_rv=repartir_pro_rv,
+                    manual_keep=forced_gouts or None,
+                    exclude_list=excluded_gouts,
+                )
+            except Exception:
+                import logging
+                logging.getLogger("ferment.production").exception(
+                    "Erreur recalcul passe 2 (volume ajusté %.2f hL)", volume_cible
+                )
+
+    df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
+
+    return {
+        "df_min": df_min,
+        "cap_resume": cap_resume,
+        "gouts_cibles": gouts_cibles,
+        "synth_sel": synth_sel,
+        "df_calc": df_calc,
+        "df_all": df_all,
+        "note_msg": note_msg,
+        "volume_details": volume_details,
+        "volume_cible": volume_cible,
+        "df_final": df_final,
+    }
+
+
 # ─── Page ───────────────────────────────────────────────────────────────────
 
 @ui.page("/production")
-def page_production():
+async def page_production():
     user = require_auth()
     if not user:
         return
@@ -784,11 +925,13 @@ def page_production():
                         label="Nb goûts",
                     ).props("outlined dense").classes("w-full")
 
-        def do_compute():
-            """Calcul complet : optimiseur + passe 2 + affichage."""
+        async def do_compute():
+            """Calcul complet : optimiseur + passe 2 + affichage (async)."""
             main_container.clear()
+            with main_container:
+                ui.spinner("dots", size="xl", color="green-8").classes("self-center q-pa-lg")
 
-            # Paramètres
+            # Paramètres (lecture UI — rapide)
             mode_prod = mode.value
             excluded_gouts = excluded_gouts_sel.value or []
             excluded_products = excluded_products_sel.value or []
@@ -824,116 +967,31 @@ def page_production():
             else:
                 df_in_filtered = df_in.copy()
 
-            # ── PASSE 1 : Optimiseur ─────────────────────────────────
+            # ── Calcul lourd dans le thread pool ──────────────────────
             try:
-                (
-                    df_min, cap_resume, gouts_cibles, synth_sel,
-                    df_calc, df_all, note_msg,
-                ) = compute_plan(
-                    df_in=df_in_filtered,
-                    window_days=window_days,
-                    volume_cible=volume_cible,
-                    nb_gouts=effective_nb_gouts,
-                    repartir_pro_rv=repartir_pro_rv,
-                    manual_keep=forced_gouts or None,
-                    exclude_list=excluded_gouts,
+                _result = await asyncio.to_thread(
+                    _compute_production_sync,
+                    df_in_filtered, window_days, volume_cible,
+                    effective_nb_gouts, repartir_pro_rv,
+                    forced_gouts, excluded_gouts, mode_prod, overrides,
                 )
             except Exception as exc:
+                main_container.clear()
                 with main_container:
                     ui.label(f"Erreur optimiseur : {exc}").classes("text-negative")
                 return
 
-            # ── PASSE 2 : Aromatisation (modes auto) ─────────────────
-            volume_details: dict = {}
-
-            if mode_prod != "Manuel" and gouts_cibles:
-                from common.easybeer import (
-                    is_configured as _eb_conf_p2,
-                    compute_aromatisation_volume,
-                    compute_v_start_max,
-                    compute_dilution_ingredients,
-                )
-
-                _tank_cfg = TANK_CONFIGS[mode_prod]
-                _C = _tank_cfg["capacity"]
-                _Lt = _tank_cfg["transfer_loss"]
-                _Lb = _tank_cfg["bottling_loss"]
-                _gout_p2 = gouts_cibles[0]
-                _A_R, _R = 0.0, 0.0
-                _id_prod_p2 = None
-
-                if _eb_conf_p2():
-                    try:
-                        _eb_prods_p2 = _fetch_eb_products()
-                        _labels_p2 = [p.get("libelle", "") for p in _eb_prods_p2]
-                        _matched_idx = _auto_match(_gout_p2, _labels_p2)
-                        _id_prod_p2 = _eb_prods_p2[_matched_idx]["idProduit"]
-                        _A_R, _R = compute_aromatisation_volume(_id_prod_p2)
-                    except Exception:
-                        _A_R, _R = 0.0, 0.0
-
-                _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
-                _volume_cible_recalc = _V_bottled / 100.0
-
-                # Detect infusion
-                _is_infusion_p2 = False
-                _dilution_p2: dict = {}
-                if _id_prod_p2 is not None:
-                    try:
-                        _eb_prods_p2_local = _eb_prods_p2
-                        _prod_label_p2 = _eb_prods_p2_local[_matched_idx].get("libelle", "")
-                        _is_infusion_p2 = (
-                            "infusion" in _prod_label_p2.lower()
-                            or _prod_label_p2.upper().startswith("EP")
-                        )
-                    except Exception:
-                        pass
-                    try:
-                        _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
-                    except Exception:
-                        _dilution_p2 = {}
-
-                volume_details[_gout_p2] = {
-                    "V_start": _V_start,
-                    "A_R": _A_R,
-                    "R": _R,
-                    "V_aroma": _A_R * (_V_start / _R) if _R > 0 else 0.0,
-                    "V_bottled": _V_bottled,
-                    "capacity": _C,
-                    "transfer_loss": _Lt,
-                    "bottling_loss": _Lb,
-                    "is_infusion": _is_infusion_p2,
-                    "dilution_ingredients": _dilution_p2,
-                    "id_produit": _id_prod_p2,
-                }
-
-                # Relance si le volume a changé
-                if abs(_volume_cible_recalc - volume_cible) > 0.01:
-                    volume_cible = _volume_cible_recalc
-                    try:
-                        (
-                            df_min, cap_resume, gouts_cibles, synth_sel,
-                            df_calc, df_all, note_msg,
-                        ) = compute_plan(
-                            df_in=df_in_filtered,
-                            window_days=window_days,
-                            volume_cible=volume_cible,
-                            nb_gouts=effective_nb_gouts,
-                            repartir_pro_rv=repartir_pro_rv,
-                            manual_keep=forced_gouts or None,
-                            exclude_list=excluded_gouts,
-                        )
-                    except Exception:
-                        import logging
-                        logging.getLogger("ferment.production").exception(
-                            "Erreur recalcul passe 2 (volume ajusté %.2f hL)", volume_cible
-                        )
-                        # On continue avec les résultats de la passe 1
-
-            # ── Tableau final avec overrides ──────────────────────────
-            df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
+            df_min = _result["df_min"]
+            gouts_cibles = _result["gouts_cibles"]
+            df_calc = _result["df_calc"]
+            df_all = _result["df_all"]
+            note_msg = _result["note_msg"]
+            volume_details = _result["volume_details"]
+            volume_cible = _result["volume_cible"]
+            df_final = _result["df_final"]
 
             # ── Affichage ─────────────────────────────────────────────
+            main_container.clear()
             with main_container:
 
                 # Note d'ajustement
@@ -1143,7 +1201,7 @@ def page_production():
                             overrides.clear()
                             overrides.update(new_ov)
                             app.storage.user["production_overrides"] = dict(overrides)
-                            do_compute()
+                            await do_compute()
 
                         ui.button(
                             "Appliquer les forcés",
@@ -1151,10 +1209,10 @@ def page_production():
                             on_click=do_apply_overrides,
                         ).props("outline color=green-8")
 
-                        def do_reset_overrides():
+                        async def do_reset_overrides():
                             overrides.clear()
                             app.storage.user["production_overrides"] = {}
-                            do_compute()
+                            await do_compute()
 
                         ui.button(
                             "Réinitialiser",
@@ -1321,16 +1379,30 @@ def page_production():
                             )
 
         # ── Watchers sidebar ──────────────────────────────────────────
-        def _on_mode_change(e=None):
+        async def _on_mode_change(e=None):
             _build_manual_inputs()
-            do_compute()
+            await do_compute()
+
+        # ── Debounce 300ms pour les watchers sidebar (M15) ──────────
+        _debounce_task: dict = {"task": None}
+
+        async def _debounced_compute(_=None):
+            """Debounce : annule le recalcul précédent, attend 300ms."""
+            if _debounce_task["task"] is not None:
+                _debounce_task["task"].cancel()
+
+            async def _delayed():
+                await asyncio.sleep(0.3)
+                await do_compute()
+
+            _debounce_task["task"] = asyncio.ensure_future(_delayed())
 
         mode.on_value_change(_on_mode_change)
-        repartir_cb.on_value_change(lambda _: do_compute())
-        excluded_gouts_sel.on_value_change(lambda _: do_compute())
-        excluded_products_sel.on_value_change(lambda _: do_compute())
-        forced_gouts_sel.on_value_change(lambda _: do_compute())
+        repartir_cb.on_value_change(_debounced_compute)
+        excluded_gouts_sel.on_value_change(_debounced_compute)
+        excluded_products_sel.on_value_change(_debounced_compute)
+        forced_gouts_sel.on_value_change(_debounced_compute)
 
         # ── Rendu initial ─────────────────────────────────────────────
         _build_manual_inputs()
-        do_compute()
+        await do_compute()
