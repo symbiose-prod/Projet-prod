@@ -333,7 +333,10 @@ def interpolate_ruler_height(volume_L: float, tank_capacity: int) -> float:
 
     for i in range(len(volumes) - 1):
         if volumes[i] <= volume_L <= volumes[i + 1]:
-            t = (volume_L - volumes[i]) / (volumes[i + 1] - volumes[i])
+            dv = volumes[i + 1] - volumes[i]
+            if dv == 0:
+                return float(heights[i])
+            t = (volume_L - volumes[i]) / dv
             return round(heights[i] + t * (heights[i + 1] - heights[i]), 1)
 
     return float(heights[-1])

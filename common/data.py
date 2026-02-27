@@ -1,5 +1,11 @@
-import os, yaml, pandas as pd
+import logging
+import os
+
+import pandas as pd
+import yaml
 from functools import lru_cache
+
+_log = logging.getLogger("ferment.data")
 
 CONFIG_DEFAULT = {
     "data_files": {
@@ -49,9 +55,8 @@ def _read_table_cached():
                 return pd.read_excel(main_table, engine="openpyxl", header=None)
             except Exception:
                 return pd.read_excel(main_table, engine="xlrd", header=None)
-    except Exception:
-        import logging
-        logging.getLogger("ferment.data").exception("Erreur lecture %s", main_table)
+    except (OSError, ValueError, pd.errors.ParserError) as exc:
+        _log.exception("Erreur lecture %s", main_table)
         return pd.DataFrame()
 
 

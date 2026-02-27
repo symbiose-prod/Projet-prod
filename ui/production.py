@@ -61,14 +61,19 @@ _EB_PRODUCTS_TTL = 300  # 5 minutes
 
 
 def _fetch_eb_products() -> list[dict]:
-    """Produits EasyBeer avec cache TTL 5 min (évite 3 appels HTTP par calcul)."""
+    """Produits EasyBeer avec cache TTL 5 min (évite 3 appels HTTP par calcul).
+
+    Ne met PAS en cache les échecs (exception ou liste vide) pour que le
+    prochain appel retente l'API au lieu de servir un résultat vide pendant 5 min.
+    """
     now = _time.monotonic()
     if _EB_PRODUCTS_CACHE["data"] is not None and (now - _EB_PRODUCTS_CACHE["ts"]) < _EB_PRODUCTS_TTL:
         return _EB_PRODUCTS_CACHE["data"]
     from common.easybeer import get_all_products
     data = get_all_products()
-    _EB_PRODUCTS_CACHE["data"] = data
-    _EB_PRODUCTS_CACHE["ts"] = now
+    if data:  # ne cache que les résultats non-vides
+        _EB_PRODUCTS_CACHE["data"] = data
+        _EB_PRODUCTS_CACHE["ts"] = now
     return data
 
 

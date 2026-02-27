@@ -1,11 +1,13 @@
 # core/optimizer.py
-import io, re
+import io
+import re
+import unicodedata
 from pathlib import Path
 from typing import Optional, List, Tuple
+
 import numpy as np
 import pandas as pd
 
-import unicodedata
 
 def _norm_colname(s: str) -> str:
     s = str(s or "")
@@ -13,9 +15,8 @@ def _norm_colname(s: str) -> str:
     # enlève accents
     s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
     # remplace tout le reste par des espaces
-    import re as _re
-    s = _re.sub(r"[^a-z0-9]+", " ", s)
-    s = _re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 def _pick_column(df: pd.DataFrame, candidates_norm: list[str]) -> str | None:
