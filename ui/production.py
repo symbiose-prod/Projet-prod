@@ -418,7 +418,7 @@ def _render_easybeer_section(
 
                 payload = {
                     "nom": _code,
-                    "volume": vol_l,
+                    "volume": round(vol_l, 1),
                     "pourcentagePerte": round(_perte_litres / vol_l * 100, 2) if vol_l > 0 else 0,
                     "dateDebutFormulaire": f"{_semaine_du_eb}T07:30:00.000Z",
                     "dateConditionnementPrevue": f"{_date_embout_iso}T23:00:00.000Z",
