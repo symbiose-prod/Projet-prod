@@ -1,5 +1,6 @@
 # db/conn.py
 import os
+import threading
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote_plus
 from typing import Any, Mapping, Optional, Tuple
 
@@ -96,12 +97,17 @@ def _build_url() -> str:
 # Engine SQLAlchemy
 # ------------------------
 _ENGINE: Engine | None = None
+_ENGINE_LOCK = threading.Lock()
+
 
 def get_engine() -> Engine:
-    """Renvoie un Engine SQLAlchemy (singleton)."""
+    """Renvoie un Engine SQLAlchemy (singleton thread-safe)."""
     global _ENGINE
     if _ENGINE is None:
-        _ENGINE = create_engine(_build_url(), pool_pre_ping=True, future=True)
+        with _ENGINE_LOCK:
+            # Double-check apres acquisition du lock
+            if _ENGINE is None:
+                _ENGINE = create_engine(_build_url(), pool_pre_ping=True, future=True)
     return _ENGINE
 
 # Alias backward-compat si ailleurs tu fais `from db import engine`

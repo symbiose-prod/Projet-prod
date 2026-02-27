@@ -1,34 +1,48 @@
-# common/email.py — Brevo (transactionnel) + wrappers rétro-compatibles
+# common/email.py — Brevo (transactionnel) + wrappers retro-compatibles
 from __future__ import annotations
 import os, json, http.client, base64
 from typing import Optional, List, Tuple, Dict, Any
 
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-# Supporte les deux noms : EMAIL_SENDER (prod .env) et SENDER_EMAIL (legacy)
-SENDER_EMAIL  = os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL", "hello@symbiose-kefir.fr")
-SENDER_NAME   = os.getenv("EMAIL_SENDER_NAME") or os.getenv("SENDER_NAME", "Symbiose Kéfir")
 
 class EmailSendError(RuntimeError):
     pass
 
-def _require_env():
+
+# Lecture lazy a chaque appel (le .env peut etre charge apres l'import du module)
+def _get_api_key() -> str:
+    return os.getenv("BREVO_API_KEY", "")
+
+
+def _get_sender_email() -> str:
+    return os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL", "hello@symbiose-kefir.fr")
+
+
+def _get_sender_name() -> str:
+    return os.getenv("EMAIL_SENDER_NAME") or os.getenv("SENDER_NAME", "Symbiose Kefir")
+
+
+def _require_env() -> tuple[str, str, str]:
+    """Valide et retourne (api_key, sender_email, sender_name)."""
+    api_key = _get_api_key()
+    sender_email = _get_sender_email()
     missing = []
-    if not BREVO_API_KEY:
+    if not api_key:
         missing.append("BREVO_API_KEY")
-    if not SENDER_EMAIL:
+    if not sender_email:
         missing.append("SENDER_EMAIL")
     if missing:
         raise EmailSendError(f"Variables d'environnement manquantes: {', '.join(missing)}")
+    return api_key, sender_email, _get_sender_name()
 
 def _post_brevo(path: str, payload: dict) -> dict:
-    """POST JSON vers l'API Brevo et renvoie le JSON de réponse."""
-    _require_env()
+    """POST JSON vers l'API Brevo et renvoie le JSON de reponse."""
+    api_key, _, _ = _require_env()
     body = json.dumps(payload)
     try:
         conn = http.client.HTTPSConnection("api.brevo.com", timeout=20)
         try:
             headers = {
-                "api-key": BREVO_API_KEY,
+                "api-key": api_key,
                 "accept": "application/json",
                 "content-type": "application/json",
             }
@@ -41,7 +55,7 @@ def _post_brevo(path: str, payload: dict) -> dict:
         raise EmailSendError(f"Echec connexion Brevo: {e}") from e
 
     if resp.status not in (200, 201, 202):
-        raise EmailSendError(f"Brevo HTTP {resp.status} — réponse: {raw}")
+        raise EmailSendError(f"Brevo HTTP {resp.status} — reponse: {raw}")
 
     try:
         data = json.loads(raw) if raw else {}
@@ -72,10 +86,11 @@ def send_reset_email(to_email: str, reset_url: str) -> dict:
         "<p>Ce lien expire dans 60 minutes. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.</p>"
     )
 
+    _, sender_email, sender_name = _require_env()
     payload = {
-        "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+        "sender": {"name": sender_name, "email": sender_email},
         "to": [{"email": to_email}],
-        "subject": "Réinitialisation de votre mot de passe",
+        "subject": "Reinitialisation de votre mot de passe",
         "htmlContent": html,
         "textContent": text,
     }
@@ -89,12 +104,14 @@ def send_reset_email(to_email: str, reset_url: str) -> dict:
 #    - _get_ns(), _get(...)
 # ---------------------------------------------------------------------------
 def html_signature() -> str:
-    """Petit bloc signature HTML par défaut (tu peux le personnaliser)."""
+    """Petit bloc signature HTML par defaut."""
+    sender_email = _get_sender_email()
+    sender_name = _get_sender_name()
     return (
         "<br><br>"
         "<div style='font-size:12px;color:#666'>"
-        f"<strong>{SENDER_NAME}</strong><br>"
-        f"{SENDER_EMAIL}"
+        f"<strong>{sender_name}</strong><br>"
+        f"{sender_email}"
         "</div>"
     )
 
@@ -124,8 +141,9 @@ def send_html_with_pdf(
     Envoi générique HTML + pièces jointes (PDF ou autres).
     - attachments: liste [(filename, bytes), ...]
     """
+    _, sender_email, sender_name = _require_env()
     payload = {
-        "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+        "sender": {"name": sender_name, "email": sender_email},
         "to": [{"email": to_email}],
         "subject": subject,
         "htmlContent": html_body,

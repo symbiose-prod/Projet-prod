@@ -286,24 +286,45 @@ def _add_image_in_range(ws, img_path: Path, tl_addr: str, br_addr: str):
 #                    Interpolation hauteur de règle
 # ======================================================================
 
-def interpolate_ruler_height(volume_L: float, tank_capacity: int) -> float:
-    """
-    Interpole la hauteur de règle (cm) pour un volume donné dans une cuve.
-    Utilise la table data/regles_cuves.csv.
-    """
+# Cache module-level pour le CSV regles_cuves (fichier statique, lu une seule fois)
+_RULER_CACHE: dict[int, tuple[list[float], list[float]]] | None = None
+
+
+def _load_ruler_table() -> dict[int, tuple[list[float], list[float]]]:
+    """Charge et indexe le CSV regles_cuves par capacite de cuve."""
+    global _RULER_CACHE
+    if _RULER_CACHE is not None:
+        return _RULER_CACHE
+
     csv_path = _project_root() / "data" / "regles_cuves.csv"
     if not csv_path.exists():
-        return 0.0
+        _RULER_CACHE = {}
+        return _RULER_CACHE
 
     import pandas as _pd_ruler
     df = _pd_ruler.read_csv(csv_path)
-    df_tank = df[df["cuve"] == tank_capacity].sort_values("volume_L")
+    cache: dict[int, tuple[list[float], list[float]]] = {}
+    for cap, grp in df.groupby("cuve"):
+        grp_sorted = grp.sort_values("volume_L")
+        cache[int(cap)] = (
+            grp_sorted["volume_L"].tolist(),
+            grp_sorted["hauteur_cm"].tolist(),
+        )
+    _RULER_CACHE = cache
+    return _RULER_CACHE
 
-    if df_tank.empty:
+
+def interpolate_ruler_height(volume_L: float, tank_capacity: int) -> float:
+    """
+    Interpole la hauteur de regle (cm) pour un volume donne dans une cuve.
+    Utilise la table data/regles_cuves.csv (cachee en memoire apres 1er appel).
+    """
+    table = _load_ruler_table()
+    entry = table.get(tank_capacity)
+    if not entry:
         return 0.0
 
-    volumes = df_tank["volume_L"].tolist()
-    heights = df_tank["hauteur_cm"].tolist()
+    volumes, heights = entry
 
     if volume_L <= volumes[0]:
         return float(heights[0])

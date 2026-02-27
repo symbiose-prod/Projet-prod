@@ -15,20 +15,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-# ─── Chargement .env (local dev) ────────────────────────────────────────────
+# ─── Chargement .env (python-dotenv, ne surcharge pas les vars existantes) ───
 from pathlib import Path
+from dotenv import load_dotenv
 
 _env_file = Path(__file__).resolve().parent / ".env"
-if _env_file.exists():
-    for line in _env_file.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, val = line.partition("=")
-            val = val.strip()
-            # Supprimer les guillemets englobants (simple ou double)
-            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
-                val = val[1:-1]
-            os.environ.setdefault(key.strip(), val)
+load_dotenv(_env_file, override=False)
 
 
 # ─── Auth middleware ─────────────────────────────────────────────────────────
