@@ -41,7 +41,25 @@ def is_configured() -> bool:
     return bool(os.environ.get("EASYBEER_API_USER") and os.environ.get("EASYBEER_API_PASS"))
 
 
+# ─── Rate-limiter global ─────────────────────────────────────────────────────
+# EasyBeer interdit > 10 requêtes/seconde et BAN 5 min si dépassement (HTTP 400).
+# On espace chaque appel de min 200ms → max 5 req/s, bien en dessous de la limite.
+_API_MIN_INTERVAL = 0.2  # secondes
+_api_last_ts: float = 0.0
+
+
+def _throttle() -> None:
+    """Espace les appels API de min 200ms pour éviter le ban rate-limit."""
+    global _api_last_ts
+    now = _time.monotonic()
+    wait = _API_MIN_INTERVAL - (now - _api_last_ts)
+    if wait > 0:
+        _time.sleep(wait)
+    _api_last_ts = _time.monotonic()
+
+
 def _auth() -> tuple[str, str]:
+    _throttle()  # appliqué à chaque appel API (tous passent par _auth)
     return (
         os.environ.get("EASYBEER_API_USER", ""),
         os.environ.get("EASYBEER_API_PASS", ""),
@@ -937,7 +955,7 @@ def upload_fichier_brassin(
         params["commentaire"] = commentaire
 
     ep = f"brassin/upload/{id_brassin}"
-    _backoff = (3, 6, 12)  # délais entre retries (secondes)
+    _backoff = (5, 15, 30)  # délais entre retries (secondes)
 
     for attempt in range(len(_backoff) + 1):
         r = requests.post(
@@ -947,12 +965,17 @@ def upload_fichier_brassin(
             auth=_auth(),
             timeout=60,  # timeout plus long pour les uploads
         )
-        if r.status_code != 429 or attempt >= len(_backoff):
+        # Rate-limit EasyBeer : 429 classique OU 400 avec ban temporaire
+        _limited = (
+            r.status_code == 429
+            or (r.status_code == 400 and "banned" in (r.text or "")[:500].lower())
+        )
+        if not _limited or attempt >= len(_backoff):
             break
         delay = _backoff[attempt]
         _log.warning(
-            "Upload %s : HTTP 429 (tentative %d/%d) — retry dans %ds",
-            ep, attempt + 1, len(_backoff), delay,
+            "Upload %s : rate-limited HTTP %d (tentative %d/%d) — retry dans %ds",
+            ep, r.status_code, attempt + 1, len(_backoff), delay,
         )
         _time.sleep(delay)
 
