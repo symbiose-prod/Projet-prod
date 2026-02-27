@@ -1,6 +1,6 @@
 # db/conn.py
 import os
-from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote_plus
 from typing import Any, Mapping, Optional, Tuple
 
 from sqlalchemy import create_engine, text as _text
@@ -8,7 +8,7 @@ from sqlalchemy.engine import Engine, Result
 
 
 # ------------------------
-# Helpers URL / Kinsta
+# Helpers URL
 # ------------------------
 def _is_internal(host: str | None) -> bool:
     # Host interne Kubernetes chez Kinsta
@@ -42,42 +42,54 @@ def _with_param(url: str, key: str, value: str) -> str:
     return urlunparse((u.scheme, u.netloc, u.path, u.params, new_query, u.fragment))
 
 
+def _get_db_parts() -> tuple:
+    """Lit les variables d'env et retourne (host, port, name, user, pwd). Valide les requises."""
+    host = os.getenv("DB_HOST") or os.getenv("POSTGRES_HOST")
+    port = os.getenv("DB_PORT") or os.getenv("POSTGRES_PORT") or "5432"
+    name = os.getenv("DB_DATABASE") or os.getenv("DB_NAME") or os.getenv("POSTGRES_DB")
+    user = os.getenv("DB_USERNAME") or os.getenv("DB_USER") or os.getenv("POSTGRES_USER")
+    pwd  = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD") or ""
+
+    missing = []
+    if not host: missing.append("DB_HOST")
+    if not name: missing.append("DB_DATABASE")
+    if not user: missing.append("DB_USERNAME")
+    if missing:
+        raise RuntimeError(f"Variables DB manquantes : {', '.join(missing)}")
+
+    return host, port, name, user, pwd
+
+
+def _make_url(host: str, port: str, name: str, user: str, pwd: str, sslmode: str) -> str:
+    """Construit une URL PostgreSQL avec le mot de passe URL-encodé."""
+    pwd_enc = quote_plus(pwd) if pwd else ""
+    user_enc = quote_plus(user) if user else ""
+    return f"postgresql+psycopg2://{user_enc}:{pwd_enc}@{host}:{port}/{name}?sslmode={sslmode}"
+
+
 def _build_url() -> str:
-    # 0) Si l'admin force un sslmode via l'env, on ignore DB_URL et on reconstruit l'URL
+    # 0) Si l'admin force un sslmode via l'env, on reconstruit l'URL
     forced_ssl = os.getenv("DB_SSLMODE")
     if forced_ssl:
-        host = os.getenv("DB_HOST") or os.getenv("POSTGRES_HOST")
-        port = os.getenv("DB_PORT") or os.getenv("POSTGRES_PORT") or "5432"
-        name = os.getenv("DB_DATABASE") or os.getenv("DB_NAME") or os.getenv("POSTGRES_DB")
-        user = os.getenv("DB_USERNAME") or os.getenv("DB_USER") or os.getenv("POSTGRES_USER")
-        pwd  = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD")
-        return f"postgresql+psycopg2://{user}:{pwd}@{host}:{port}/{name}?sslmode={forced_ssl}"
+        host, port, name, user, pwd = _get_db_parts()
+        return _make_url(host, port, name, user, pwd, forced_ssl)
 
-    # 1) Sinon, si Kinsta fournit une URL complète
+    # 1) Si une URL complète est fournie
     raw = os.getenv("DB_URL") or os.getenv("DATABASE_URL")
     if raw:
         url = _normalize_scheme(raw)  # postgres:// -> postgresql+psycopg2://
         host = urlparse(url).hostname
         if _is_internal(host):
-            # Endpoint interne Kinsta -> pas d’SSL
             url = _with_param(url, "sslmode", "disable")
         else:
-            # Endpoint public -> SSL recommandé si non précisé
             if "sslmode=" not in url:
                 url = _with_param(url, "sslmode", "require")
         return url
 
     # 2) Fallback : reconstruire à partir des morceaux
-    host = os.getenv("DB_HOST") or os.getenv("POSTGRES_HOST")
-    port = os.getenv("DB_PORT") or os.getenv("POSTGRES_PORT") or "5432"
-    name = os.getenv("DB_DATABASE") or os.getenv("DB_NAME") or os.getenv("POSTGRES_DB")
-    user = os.getenv("DB_USERNAME") or os.getenv("DB_USER") or os.getenv("POSTGRES_USER")
-    pwd  = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD")
-
-    # Choix du sslmode par défaut selon interne/public
+    host, port, name, user, pwd = _get_db_parts()
     sslmode = "disable" if _is_internal(host) else "require"
-
-    return f"postgresql+psycopg2://{user}:{pwd}@{host}:{port}/{name}?sslmode={sslmode}"
+    return _make_url(host, port, name, user, pwd, sslmode)
 
 
 # ------------------------

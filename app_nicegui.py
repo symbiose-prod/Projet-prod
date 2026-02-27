@@ -69,9 +69,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user_store["_server_validated_at"] = now
             except Exception:
                 _log.exception("Erreur validation session serveur")
-                # En cas d'erreur DB, on laisse passer (fail open) pour ne pas
-                # bloquer tous les utilisateurs si la DB est temporairement down
-                pass
+                # Grace period : si la dernière validation réussie date de
+                # moins de 30 min, on laisse passer temporairement.
+                # Au-delà, fail-closed → déconnexion (la DB est down trop longtemps).
+                _GRACE_SECONDS = 1800  # 30 min
+                if last_check == 0 or (now - last_check) > _GRACE_SECONDS:
+                    _log.warning(
+                        "Grace period expirée (DB down), déconnexion de %s",
+                        user_store.get("email"),
+                    )
+                    user_store.clear()
+                    return RedirectResponse(url="/login")
 
         return await call_next(request)
 

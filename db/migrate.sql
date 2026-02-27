@@ -80,10 +80,15 @@ CREATE INDEX IF NOT EXISTS idx_pp_meta_name      ON production_proposals ((paylo
 -- Recherche par e-mail (déjà normalisé en lowercase par trigger)
 CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (lower(email));
 
--- Contrainte de rôle autorisé
-ALTER TABLE users
-  ADD CONSTRAINT users_role_check
-  CHECK (role IN ('user','admin'));
+-- Contrainte de rôle autorisé (idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check'
+  ) THEN
+    ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user','admin'));
+  END IF;
+END $$;
 
 -- =========================
 -- Password reset tokens
@@ -99,8 +104,9 @@ CREATE TABLE IF NOT EXISTS password_resets (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_password_resets_user  ON password_resets(user_id);
-CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user    ON password_resets(user_id);
+CREATE INDEX IF NOT EXISTS idx_password_resets_token   ON password_resets(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_resets_expires ON password_resets(expires_at);
 
 -- =========================
 -- Sessions persistantes ("Se souvenir de moi")
@@ -114,8 +120,6 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(token_hash);
-CREATE INDEX IF NOT EXISTS idx_user_sessions_user  ON user_sessions(user_id);
-
--- Nettoyage automatique des sessions expirées (optionnel, à lancer manuellement si besoin)
--- DELETE FROM user_sessions WHERE expires_at < now();
+CREATE INDEX IF NOT EXISTS idx_user_sessions_token   ON user_sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user    ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
