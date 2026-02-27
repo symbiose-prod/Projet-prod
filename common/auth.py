@@ -1,6 +1,7 @@
 # common/auth.py
 from __future__ import annotations
 import base64
+import os
 import secrets
 import hashlib
 import re
@@ -175,15 +176,42 @@ def count_users_in_tenant(tenant_id: str) -> int:
     return int(rows[0]["n"]) if rows else 0
 
 
+def get_allowed_tenants() -> Optional[list]:
+    """
+    Retourne la liste des tenants autorisés pour l’inscription, ou None si pas de restriction.
+    Variable d’env : ALLOWED_TENANTS (noms séparés par des virgules, insensible à la casse).
+    Ex : ALLOWED_TENANTS=Symbiose Kéfir,Ferment Station
+    """
+    raw = os.environ.get("ALLOWED_TENANTS", "").strip()
+    if not raw:
+        return None  # pas de restriction (dev local)
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
+def check_tenant_allowed(tenant_name: str) -> None:
+    """Lève ValueError si le tenant n’est pas dans la whitelist."""
+    allowed = get_allowed_tenants()
+    if allowed is None:
+        return  # pas de restriction configurée
+    t = _norm_tenant_name(tenant_name).lower()
+    if not any(t == a.lower() for a in allowed):
+        raise ValueError("Cette organisation n’accepte pas les inscriptions libres. Contactez un administrateur.")
+
+
 def create_user(email: str, password: str, tenant_name_or_id: str, role: str = None) -> Dict[str, Any]:
     """
     Crée un utilisateur actif.
     - Vérifie l’existence de l’e-mail (insensible à la casse).
+    - Vérifie que le tenant est dans la whitelist (ALLOWED_TENANTS).
     - Résout/crée le tenant.
-    - Rôle = 'admin' si premier user du tenant, sinon 'user' (sauf override explicite).
+    - Rôle = ‘admin’ si premier user du tenant, sinon ‘user’ (sauf override explicite).
     """
     e = validate_email(email)
     validate_password(password)
+
+    # Vérifier que le tenant est autorisé avant de le créer
+    if not _is_uuid(tenant_name_or_id):
+        check_tenant_allowed(tenant_name_or_id)
 
     tenant_id = ensure_tenant_id(tenant_name_or_id)
 
@@ -249,6 +277,10 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
 
     user = rows[0]
     if verify_password(password, user["password_hash"]):
+        # Vérifier que le compte est actif
+        if not user.get("is_active", True):
+            _auth_log.warning("Login refusé : compte désactivé pour %s", e_lower)
+            return None
         # Réinitialiser le compteur en cas de succès
         _LOGIN_FAILURES.pop(e_lower, None)
         _auth_log.info("Login réussi pour %s", e_lower)
@@ -262,6 +294,8 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
 
 
 def change_password(user_id: str, new_password: str) -> None:
+    """Change le mot de passe d'un utilisateur (avec validation des règles de complexité)."""
+    validate_password(new_password)
     run_sql(
         "UPDATE users SET password_hash = :ph WHERE id = :id",
         {"ph": hash_password(new_password), "id": user_id},

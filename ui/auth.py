@@ -10,7 +10,10 @@ from __future__ import annotations
 from nicegui import ui, app
 
 from ui.theme import COLORS, apply_quasar_theme, logo_svg
-from common.auth import authenticate, create_user, find_user_by_email, validate_email, validate_password
+from common.auth import (
+    authenticate, create_user, find_user_by_email,
+    validate_email, validate_password, check_tenant_allowed,
+)
 
 
 # ─── Page Login ─────────────────────────────────────────────────────────────
@@ -150,6 +153,14 @@ def page_login():
                             return
                         if find_user_by_email(email):
                             signup_msg.text = "Un compte existe déjà avec cet email."
+                            signup_msg.classes("text-negative")
+                            signup_msg.set_visibility(True)
+                            return
+                        # Vérifier que le tenant est autorisé
+                        try:
+                            check_tenant_allowed(tenant)
+                        except ValueError as ve:
+                            signup_msg.text = str(ve)
                             signup_msg.classes("text-negative")
                             signup_msg.set_visibility(True)
                             return

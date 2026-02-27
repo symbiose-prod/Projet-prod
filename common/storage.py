@@ -120,13 +120,14 @@ def _ensure_user(email: str, tenant_id: str) -> str:
 
 def _tenant_id() -> str:
     """
-    Utilise le tenant de l'utilisateur connecté si dispo, sinon fallback sur DEFAULT_TENANT_NAME.
+    Utilise le tenant de l'utilisateur connecté (NiceGUI storage) si dispo,
+    sinon fallback sur DEFAULT_TENANT_NAME (CLI, scripts, startup).
     """
     try:
-        from common.session import current_user  # import tardif pour éviter les cycles
-        u = current_user()
-        if u and u.get("tenant_id"):
-            return u["tenant_id"]
+        from nicegui import app  # import tardif pour éviter les cycles
+        tid = app.storage.user.get("tenant_id")
+        if tid:
+            return str(tid)
     except Exception:
         pass
     return _ensure_tenant(DEFAULT_TENANT_NAME)

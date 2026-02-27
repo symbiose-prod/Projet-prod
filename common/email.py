@@ -4,8 +4,9 @@ import os, json, http.client, base64
 from typing import Optional, List, Tuple, Dict, Any
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-SENDER_EMAIL  = os.getenv("SENDER_EMAIL", "station.ferment@gmail.com")
-SENDER_NAME   = os.getenv("SENDER_NAME", "Ferment Station")
+# Supporte les deux noms : EMAIL_SENDER (prod .env) et SENDER_EMAIL (legacy)
+SENDER_EMAIL  = os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL", "hello@symbiose-kefir.fr")
+SENDER_NAME   = os.getenv("EMAIL_SENDER_NAME") or os.getenv("SENDER_NAME", "Symbiose Kéfir")
 
 class EmailSendError(RuntimeError):
     pass
@@ -96,10 +97,6 @@ def html_signature() -> str:
         f"{SENDER_EMAIL}"
         "</div>"
     )
-
-def _get(key: str, default: Any = None) -> Any:
-    """Ancien helper de templating : renvoie simplement la valeur par défaut."""
-    return default
 
 def _encode_attachments(attachments: Optional[List[Tuple[str, bytes]]]) -> List[Dict[str, str]]:
     """
