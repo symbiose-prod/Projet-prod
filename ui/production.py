@@ -919,7 +919,11 @@ def page_production():
                             exclude_list=excluded_gouts,
                         )
                     except Exception:
-                        pass
+                        import logging
+                        logging.getLogger("ferment.production").exception(
+                            "Erreur recalcul passe 2 (volume ajusté %.2f hL)", volume_cible
+                        )
+                        # On continue avec les résultats de la passe 1
 
             # ── Tableau final avec overrides ──────────────────────────
             df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
@@ -1099,9 +1103,11 @@ def page_production():
                                         dense
                                         borderless
                                         placeholder="auto"
+                                        min="0"
                                         input-class="text-right text-bold"
                                         :input-style="{color: props.row.forcer != null ? '#F97316' : '#9CA3AF'}"
                                         style="max-width: 80px"
+                                        :rules="[v => v == null || v === '' || v >= 0 || 'Min 0']"
                                     />
                                 </template>
                                 <template v-else-if="col.name === 'cartons'">

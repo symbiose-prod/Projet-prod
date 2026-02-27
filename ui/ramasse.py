@@ -590,10 +590,42 @@ def page_ramasse():
                         except Exception as exc:
                             ui.notify(f"Erreur envoi : {exc}", type="negative")
 
+                    # Dialogue de confirmation avant envoi
+                    with ui.dialog() as _email_confirm_dlg, ui.card().classes("q-pa-lg"):
+                        ui.label("Confirmer l'envoi ?").classes("text-subtitle1").style(
+                            f"color: {COLORS['ink']}; font-weight: 600"
+                        )
+                        _email_confirm_msg = ui.label("").classes("text-body2 text-grey-7 q-mt-xs")
+
+                        with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                            ui.button("Annuler", on_click=_email_confirm_dlg.close).props("flat color=grey-7")
+
+                            def _confirmed_send():
+                                _email_confirm_dlg.close()
+                                do_send_email()
+
+                            ui.button(
+                                "Envoyer",
+                                icon="send",
+                                on_click=_confirmed_send,
+                            ).props("color=green-8 unelevated")
+
+                    def _open_email_confirm():
+                        emails_raw = email_input.value or ""
+                        to_list = [e.strip() for e in emails_raw.split(",") if e.strip()]
+                        if not to_list:
+                            ui.notify("Indique au moins un destinataire.", type="warning")
+                            return
+                        _email_confirm_msg.text = (
+                            f"L'email sera envoyé à {len(to_list)} destinataire(s) : "
+                            f"{', '.join(to_list)}"
+                        )
+                        _email_confirm_dlg.open()
+
                     ui.button(
                         "Envoyer la demande",
                         icon="send",
-                        on_click=do_send_email,
+                        on_click=_open_email_confirm,
                     ).classes("flex-1").props("color=green-8 unelevated")
 
             except Exception as exc:

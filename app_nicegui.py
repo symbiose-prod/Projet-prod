@@ -24,7 +24,11 @@ if _env_file.exists():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, _, val = line.partition("=")
-            os.environ.setdefault(key.strip(), val.strip())
+            val = val.strip()
+            # Supprimer les guillemets englobants (simple ou double)
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                val = val[1:-1]
+            os.environ.setdefault(key.strip(), val)
 
 
 # ─── Auth middleware ─────────────────────────────────────────────────────────
