@@ -285,8 +285,7 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
 
 
 def _logout():
-    """Deconnexion : revoque le token remember-me + clear session."""
-    # Supprimer le cookie remember-me cote navigateur
-    ui.run_javascript('document.cookie="fs_session=;path=/;max-age=0"')
+    """Deconnexion : clear session + redirect vers /api/logout (cookie HttpOnly)."""
     app.storage.user.clear()
-    ui.navigate.to("/login")
+    # /api/logout revoque le token DB, supprime le cookie, et redirige vers /login
+    ui.navigate.to("/api/logout")

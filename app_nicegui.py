@@ -37,13 +37,20 @@ import logging as _logging
 
 _log = _logging.getLogger("ferment.auth")
 
-# Pages publiques (pas besoin d'être connecté)
-PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico"}
+# Pages publiques (pas besoin d'etre connecte)
+PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset"}
+
+# Cookie remember-me : duree par defaut (30 jours)
+_REMEMBER_MAX_AGE = 30 * 86400
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+
+        # ── Logout endpoint : revoque token + clear cookie + redirect ──
+        if path == "/api/logout":
+            return self._handle_logout(request)
 
         # Laisser passer les assets NiceGUI et les pages publiques
         if any(path.startswith(p) for p in PUBLIC_PATHS):
@@ -67,7 +74,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             "role": remembered["role"],
                         })
                         _log.info("Session restauree via remember-me pour %s", remembered["email"])
-                        # On continue normalement (la validation serveur ci-dessous s'applique)
                     else:
                         return RedirectResponse(url="/login")
                 except Exception:
@@ -76,7 +82,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             else:
                 return RedirectResponse(url="/login")
 
-        # Validation serveur périodique (toutes les 5 min max)
+        # Validation serveur periodique (toutes les 5 min max)
         import time
         now = time.time()
         last_check = user_store.get("_server_validated_at", 0)
@@ -86,28 +92,65 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user_email = user_store.get("email", "")
                 db_user = find_user_by_email(user_email) if user_email else None
                 if not db_user or not db_user.get("is_active"):
-                    _log.warning("Session invalidée : user %s introuvable ou désactivé", user_email)
+                    _log.warning("Session invalidee : user %s introuvable ou desactive", user_email)
                     user_store.clear()
                     return RedirectResponse(url="/login")
-                # Resync tenant_id (protection contre falsification côté client)
+                # Resync tenant_id (protection contre falsification cote client)
                 user_store["tenant_id"] = str(db_user["tenant_id"])
                 user_store["role"] = db_user.get("role", "user")
                 user_store["_server_validated_at"] = now
             except Exception:
                 _log.exception("Erreur validation session serveur")
-                # Grace period : si la dernière validation réussie date de
+                # Grace period : si la derniere validation reussie date de
                 # moins de 30 min, on laisse passer temporairement.
-                # Au-delà, fail-closed → déconnexion (la DB est down trop longtemps).
                 _GRACE_SECONDS = 1800  # 30 min
                 if last_check == 0 or (now - last_check) > _GRACE_SECONDS:
                     _log.warning(
-                        "Grace period expirée (DB down), déconnexion de %s",
+                        "Grace period expiree (DB down), deconnexion de %s",
                         user_store.get("email"),
                     )
                     user_store.clear()
                     return RedirectResponse(url="/login")
 
-        return await call_next(request)
+        # ── Process request ──
+        response = await call_next(request)
+
+        # ── Poser le cookie remember-me HttpOnly si pending ──
+        try:
+            pending_token = user_store.get("_pending_remember_token")
+            if pending_token:
+                try:
+                    del user_store["_pending_remember_token"]
+                except KeyError:
+                    pass
+                _is_prod = os.environ.get("ENV") == "production"
+                response.set_cookie(
+                    "fs_session",
+                    pending_token,
+                    max_age=_REMEMBER_MAX_AGE,
+                    path="/",
+                    httponly=True,
+                    secure=_is_prod,
+                    samesite="lax",
+                )
+        except Exception:
+            _log.warning("Erreur pose cookie remember-me", exc_info=True)
+
+        return response
+
+    @staticmethod
+    def _handle_logout(request: Request) -> RedirectResponse:
+        """Logout: revoque le token DB + supprime le cookie + redirect /login."""
+        fs_token = request.cookies.get("fs_session")
+        if fs_token:
+            try:
+                from common.auth import revoke_session_token
+                revoke_session_token(fs_token)
+            except Exception:
+                _log.warning("Erreur revocation token logout", exc_info=True)
+        resp = RedirectResponse(url="/login", status_code=302)
+        resp.delete_cookie("fs_session", path="/")
+        return resp
 
 
 app.add_middleware(AuthMiddleware)

@@ -4,14 +4,11 @@ import os, secrets, hashlib, datetime
 from typing import Optional, Dict, Any, Tuple
 
 from db.conn import run_sql
-from common.auth import change_password  # <- on réutilise ton hash PBKDF2
 
 # URL de base de l'app (OVH VPS)
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8501").rstrip("/")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8502").rstrip("/")
 # Durée de validité du lien
 RESET_TTL_MINUTES = int(os.getenv("RESET_TTL_MINUTES", "60"))
-
-RESET_PAGE = "06_Reset_password"  # la page publique qu'on a créée
 
 
 def _now_utc() -> datetime.datetime:
@@ -106,8 +103,8 @@ def create_password_reset(
         },
     )
 
-    # 4) construire l'URL vers la page publique
-    reset_url = f"{BASE_URL}/?token={token}"
+    # 4) construire l'URL vers la page de reset (path param, pas query)
+    reset_url = f"{BASE_URL}/reset/{token}"
     return reset_url
 
 
@@ -159,28 +156,35 @@ def verify_reset_token(token: str) -> Tuple[bool, Any]:
 
 def consume_token_and_set_password(reset_id: int, user_id: str, new_password: str) -> bool:
     """
-    - met à jour le mot de passe via common.auth.change_password (même algo que le reste)
-    - révoque toutes les sessions actives (force la reconnexion)
-    - marque le token comme utilisé
+    Transaction atomique : change le mot de passe, revoque les sessions,
+    et marque le token comme utilise — tout ou rien.
     """
-    # 1) mettre à jour le mot de passe avec ton système PBKDF2
-    change_password(user_id, new_password)
+    from common.auth import validate_password, hash_password
+    from db.conn import get_engine
+    from sqlalchemy import text as _text
 
-    # 2) révoquer toutes les sessions actives de cet utilisateur
-    #    → force la reconnexion avec le nouveau mot de passe
-    run_sql(
-        "DELETE FROM user_sessions WHERE user_id = :u",
-        {"u": user_id},
-    )
+    validate_password(new_password)
+    pw_hash = hash_password(new_password)
 
-    # 3) marquer le token comme utilisé
-    run_sql(
-        """
-        UPDATE password_resets
-        SET used_at = now()
-        WHERE id = :rid AND user_id = :u
-        """,
-        {"rid": reset_id, "u": user_id},
-    )
+    with get_engine().begin() as conn:
+        # 1) Mettre a jour le mot de passe (PBKDF2)
+        conn.execute(
+            _text("UPDATE users SET password_hash = :ph WHERE id = :uid"),
+            {"ph": pw_hash, "uid": user_id},
+        )
+        # 2) Revoquer toutes les sessions actives (force reconnexion)
+        conn.execute(
+            _text("DELETE FROM user_sessions WHERE user_id = :u"),
+            {"u": user_id},
+        )
+        # 3) Marquer le token comme utilise
+        conn.execute(
+            _text("""
+                UPDATE password_resets
+                SET used_at = now()
+                WHERE id = :rid AND user_id = :u
+            """),
+            {"rid": reset_id, "u": user_id},
+        )
 
     return True

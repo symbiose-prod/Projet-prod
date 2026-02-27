@@ -4,7 +4,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from sqlalchemy import text
-from common.db import engine
+from db.conn import engine
 
 def run_file(path: str):
     with open(path, "r", encoding="utf-8") as f:

@@ -95,17 +95,15 @@ def page_login():
                             "email": user["email"],
                             "role": user.get("role", "user"),
                         })
-                        # "Se souvenir de moi" : token persistant en cookie
+                        # "Se souvenir de moi" : token stocke via middleware Set-Cookie
                         if remember.value:
                             try:
                                 token = create_session_token(
                                     str(user["id"]), str(user["tenant_id"]),
                                     days=SESSION_DEFAULT_DAYS,
                                 )
-                                max_age = SESSION_DEFAULT_DAYS * 86400
-                                ui.run_javascript(
-                                    f'document.cookie="fs_session={token};path=/;max-age={max_age};SameSite=Lax"'
-                                )
+                                # Le middleware posera le cookie HttpOnly sur la prochaine requete
+                                app.storage.user["_pending_remember_token"] = token
                             except Exception:
                                 _log.warning("Impossible de creer le token remember-me", exc_info=True)
                         ui.navigate.to("/accueil")
@@ -255,6 +253,106 @@ def page_login():
                         icon="send",
                         on_click=do_forgot,
                     ).classes("w-full").props("color=green-8 unelevated")
+
+
+# ─── Page Reset Password ────────────────────────────────────────────────────
+
+@ui.page("/reset/{token}")
+def page_reset(token: str):
+    """Page publique de reinitialisation du mot de passe."""
+    apply_quasar_theme()
+
+    from common.auth_reset import verify_reset_token
+
+    valid, data = verify_reset_token(token)
+
+    with ui.column().classes("absolute-center items-center gap-6").style("width: 400px"):
+
+        # Logo / Titre
+        with ui.column().classes("items-center gap-2 q-mb-md"):
+            ui.html(logo_svg(48, COLORS['green']))
+            ui.label("Ferment Station").classes("text-h4 font-bold").style(
+                f"color: {COLORS['ink']}"
+            )
+
+        if not valid:
+            ui.label(
+                "Ce lien de reinitialisation est invalide ou expire."
+            ).classes("text-body1 text-negative text-center")
+            ui.button(
+                "Retour a la connexion",
+                icon="arrow_back",
+                on_click=lambda: ui.navigate.to("/login"),
+            ).props("flat color=green-8")
+            return
+
+        user_email = data.get("email", "")
+        reset_id = data["reset_id"]
+        user_id = str(data["user_id"])
+
+        with ui.card().classes("w-full q-pa-lg").props("flat bordered").style(
+            "border-radius: 8px"
+        ):
+            ui.label("Nouveau mot de passe").classes("text-h6 q-mb-sm").style(
+                f"color: {COLORS['ink']}"
+            )
+            ui.label(f"Compte : {user_email}").classes(
+                "text-body2 text-grey-6 q-mb-md"
+            )
+
+            new_pwd = ui.input(
+                "Nouveau mot de passe",
+                password=True, password_toggle_button=True,
+            ).classes("w-full q-mb-sm").props("outlined dense")
+
+            confirm_pwd = ui.input(
+                "Confirmer le mot de passe",
+                password=True, password_toggle_button=True,
+            ).classes("w-full q-mb-md").props("outlined dense")
+
+            reset_msg = ui.label("").classes("text-body2")
+            reset_msg.set_visibility(False)
+
+            def do_reset():
+                pwd = new_pwd.value
+                pwd2 = confirm_pwd.value
+                if not pwd or not pwd2:
+                    reset_msg.text = "Renseigne les deux champs."
+                    reset_msg.classes("text-negative")
+                    reset_msg.set_visibility(True)
+                    return
+                if pwd != pwd2:
+                    reset_msg.text = "Les mots de passe ne correspondent pas."
+                    reset_msg.classes("text-negative")
+                    reset_msg.set_visibility(True)
+                    return
+                try:
+                    validate_password(pwd)
+                except ValueError as ve:
+                    reset_msg.text = str(ve)
+                    reset_msg.classes("text-negative")
+                    reset_msg.set_visibility(True)
+                    return
+                try:
+                    from common.auth_reset import consume_token_and_set_password
+                    consume_token_and_set_password(reset_id, user_id, pwd)
+                    reset_msg.text = "Mot de passe modifie ! Redirection..."
+                    reset_msg.classes("text-positive")
+                    reset_msg.set_visibility(True)
+                    ui.timer(2.0, lambda: ui.navigate.to("/login"), once=True)
+                except Exception:
+                    _log.exception("Erreur reset password")
+                    reset_msg.text = "Une erreur est survenue. Reessaie."
+                    reset_msg.classes("text-negative")
+                    reset_msg.set_visibility(True)
+
+            ui.button(
+                "Reinitialiser le mot de passe",
+                icon="lock_reset",
+                on_click=do_reset,
+            ).classes("w-full").props("color=green-8 unelevated")
+
+            confirm_pwd.on("keydown.enter", do_reset)
 
 
 # ─── Auth guard ─────────────────────────────────────────────────────────────
