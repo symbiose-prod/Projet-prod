@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import re
 import unicodedata
 from pathlib import Path
 from typing import Any
 
 from dateutil.tz import gettz
+
+_log = logging.getLogger("ferment.ramasse")
 
 from common.easybeer import (
     get_brassin_detail,

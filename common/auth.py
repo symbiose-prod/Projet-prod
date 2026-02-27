@@ -272,8 +272,16 @@ def _purge_expired_failures() -> None:
         del _LOGIN_FAILURES[k]
 
 
-# Hash factice pour les emails inexistants (timing constant)
-_DUMMY_HASH = hash_password("dummy-timing-pad-x7k9")
+# Hash factice pour les emails inexistants (timing constant) — lazy pour ne
+# pas bloquer le startup avec 310k itérations PBKDF2.
+_DUMMY_HASH: str | None = None
+
+
+def _get_dummy_hash() -> str:
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = hash_password("dummy-timing-pad-x7k9")
+    return _DUMMY_HASH
 
 
 def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
@@ -310,7 +318,7 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
     )
     if not rows:
         # Hash factice pour que le temps de reponse soit constant (anti timing-attack)
-        verify_password(password, _DUMMY_HASH)
+        verify_password(password, _get_dummy_hash())
         with _LOGIN_FAILURES_LOCK:
             prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
             _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())

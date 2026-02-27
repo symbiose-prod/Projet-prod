@@ -111,6 +111,11 @@ def page_accueil():
                             status_label.classes("text-positive")
                             status_label.set_visibility(True)
                             ui.notify("Import EasyBeer réussi !", type="positive")
+                        except asyncio.TimeoutError:
+                            status_label.text = "L'import a dépassé le délai (45 s). Réessayez."
+                            status_label.classes("text-negative")
+                            status_label.set_visibility(True)
+                            ui.notify("Délai dépassé (45 s). Réessayez.", type="warning")
                         except Exception:
                             _log.exception("Erreur import EasyBeer")
                             status_label.text = "Erreur lors de l'import. Vérifiez la connexion EasyBeer."

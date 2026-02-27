@@ -385,7 +385,7 @@ def fill_fiche_xlsx(
 
     # --- ouverture & sélection de la feuille ---
     wb = openpyxl.load_workbook(template_path, data_only=False, keep_vba=False)
-    targets = [sheet_name] if sheet_name else ["Fiche de production", "Fiche de production"]
+    targets = [sheet_name] if sheet_name else ["Fiche de production"]
     ws = None
     for nm in targets:
         if nm and nm in wb.sheetnames:

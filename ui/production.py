@@ -983,6 +983,11 @@ async def page_production():
                     ),
                     timeout=60,
                 )
+            except asyncio.TimeoutError:
+                main_container.clear()
+                with main_container:
+                    ui.label("Le calcul a dépassé le délai (60 s). Réessayez avec moins de goûts ou un volume plus petit.").classes("text-negative")
+                return
             except Exception as exc:
                 main_container.clear()
                 with main_container:

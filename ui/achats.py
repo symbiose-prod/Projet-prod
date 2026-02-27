@@ -295,6 +295,11 @@ def page_achats():
                 sync_status.set_visibility(True)
                 ui.notify("Données synchronisées !", type="positive")
 
+            except asyncio.TimeoutError:
+                sync_status.text = "La synchronisation a dépassé le délai (45 s). Réessayez."
+                sync_status.classes("text-negative")
+                sync_status.set_visibility(True)
+                ui.notify("Délai dépassé (45 s). Réessayez.", type="warning")
             except Exception as exc:
                 sync_status.text = f"Erreur : {exc}"
                 sync_status.classes("text-negative")

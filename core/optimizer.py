@@ -33,7 +33,7 @@ def _pick_column(df: pd.DataFrame, candidates_norm: list[str]) -> str | None:
             return norm_to_real[cand]
 
     # 2) startswith sur les mots-clés importants (ex: 'produit' → 'produit 1')
-    KEY_PREFIXES = ["produit", "designation", "desigation", "des", "libelle", "libelle", "product", "item", "sku"]
+    KEY_PREFIXES = ["produit", "designation", "desigation", "des", "libelle", "product", "item", "sku"]
     for key in KEY_PREFIXES:
         for n in norms:
             if n.startswith(key):
@@ -178,27 +178,6 @@ def parse_days_from_b2(value) -> Optional[int]:
         return None
     return None
 
-def read_input_excel_and_period_from_path(path_xlsx: str) -> Tuple[pd.DataFrame, int]:
-    with open(path_xlsx, "rb") as f:
-        file_bytes = f.read()
-    raw = pd.read_excel(io.BytesIO(file_bytes), header=None)
-    header_idx = detect_header_row(raw)
-    df = pd.read_excel(io.BytesIO(file_bytes), header=header_idx)
-    keep_mask = rows_to_keep_by_fill(file_bytes, header_idx)
-    if len(keep_mask) < len(df):
-        keep_mask = keep_mask + [True] * (len(df) - len(keep_mask))
-    df = df.iloc[[i for i, k in enumerate(keep_mask) if k]].reset_index(drop=True)
-    # lecture B2
-    try:
-        import openpyxl
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
-        ws = wb[wb.sheetnames[0]]
-        b2_val = ws["B2"].value
-        wd = parse_days_from_b2(b2_val)
-    except Exception:
-        wd = None
-    return df, (wd if wd and wd > 0 else DEFAULT_WINDOW_DAYS)
-
 # ======= flavor map
 def load_flavor_map_from_path(path_csv: str) -> pd.DataFrame:
     import csv
@@ -282,7 +261,7 @@ def parse_stock(text: str):
         m = re.search(pat, s, flags=re.IGNORECASE)
         if m:
             try: nb = int(m.group(1)); break
-            except: pass
+            except Exception: pass
     vol_l = None
     m_l = re.findall(r"(\d+(?:[.,]\d+)?)\s*[lL]", s)
     if m_l: vol_l = float(m_l[-1].replace(",", "."))
@@ -600,7 +579,3 @@ def read_input_excel_and_period_from_bytes(file_bytes: bytes):
         wd = None
     return df, (wd if wd and wd > 0 else DEFAULT_WINDOW_DAYS)
 
-def read_input_excel_and_period_from_upload(uploaded_file):
-    """Wrapper pratique pour st.file_uploader (obj upload Streamlit)."""
-    file_bytes = uploaded_file.read()
-    return read_input_excel_and_period_from_bytes(file_bytes)

@@ -7,6 +7,7 @@ Réutilise toute la logique métier de common/ramasse.py et common/easybeer.py.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import math
@@ -521,7 +522,7 @@ def page_ramasse():
                         on_click=do_download_pdf,
                     ).classes("flex-1").props("outline color=green-8")
 
-                    def do_send_email():
+                    async def do_send_email():
                         emails_raw = email_input.value or ""
                         to_list = [e.strip() for e in emails_raw.split(",") if e.strip()]
                         if not to_list:
@@ -534,6 +535,7 @@ def page_ramasse():
                             ui.notify("Aucun carton renseigné.", type="warning")
                             return
 
+                        send_btn_ref.disable()
                         try:
                             import pandas as pd
                             d = _get_date_ramasse()
@@ -581,20 +583,27 @@ def page_ramasse():
                             if sender_email and sender_email not in recipients:
                                 recipients.append(sender_email)
 
-                            for rcpt in recipients:
-                                send_html_with_pdf(
-                                    to_email=rcpt,
-                                    subject=subject,
-                                    html_body=body,
-                                    attachments=[(filename, pdf_bytes)],
-                                )
+                            # Envoi dans un thread pour ne pas bloquer l'event loop
+                            def _send_all():
+                                for rcpt in recipients:
+                                    send_html_with_pdf(
+                                        to_email=rcpt,
+                                        subject=subject,
+                                        html_body=body,
+                                        attachments=[(filename, pdf_bytes)],
+                                    )
+
+                            await asyncio.to_thread(_send_all)
 
                             ui.notify(
                                 f"Demande envoyée à {len(to_list)} destinataire(s) !",
                                 type="positive", icon="email", position="top",
                             )
                         except Exception as exc:
+                            _log.exception("Erreur envoi email ramasse")
                             ui.notify(f"Erreur envoi : {exc}", type="negative")
+                        finally:
+                            send_btn_ref.enable()
 
                     # Dialogue de confirmation avant envoi
                     with ui.dialog() as _email_confirm_dlg, ui.card().classes("q-pa-lg"):
@@ -606,11 +615,11 @@ def page_ramasse():
                         with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
                             ui.button("Annuler", on_click=_email_confirm_dlg.close).props("flat color=grey-7")
 
-                            def _confirmed_send():
+                            async def _confirmed_send():
                                 _email_confirm_dlg.close()
-                                do_send_email()
+                                await do_send_email()
 
-                            ui.button(
+                            send_btn_ref = ui.button(
                                 "Envoyer",
                                 icon="send",
                                 on_click=_confirmed_send,
