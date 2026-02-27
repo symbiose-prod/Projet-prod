@@ -105,6 +105,7 @@ def _load_asset_bytes(rel_path: str) -> bytes | None:
 # ======================================================================
 
 VOL_TOL = 0.02
+FILTRE_RATIO_KEFIR = 0.60  # proportion filtree pour le kefir (pas les infusions)
 
 def _is_close(a: float, b: float, tol: float = VOL_TOL) -> bool:
     try:
@@ -568,7 +569,7 @@ def fill_fiche_xlsx(
     # --- Phase 2 : Filtration (B42-B44) ---
     if V_start > 0 and transfer_loss >= 0:
         V_transferred = V_start - transfer_loss
-        filtre_ratio = 0.0 if is_infusion else 0.60
+        filtre_ratio = 0.0 if is_infusion else FILTRE_RATIO_KEFIR
 
         volume_filtre = V_transferred * filtre_ratio
         volume_non_filtre = V_transferred - volume_filtre
@@ -637,27 +638,39 @@ def fill_bl_enlevements_xlsx(
 
     def _find_header_run(ws):
         """
-        Trouve la **séquence contiguë et complète** des 6 en-têtes
+        Trouve la **sequence contigue et complete** des 6 en-tetes
         et renvoie (row, [c_ref,c_prod,c_ddm,c_qc,c_qp,c_poids]).
         On garde la **plus basse** de la feuille.
+        Optimise : pre-filtre les lignes contenant "reference" avant le scan complet.
         """
         SEQ = [
-            ["référence", "reference"],
+            ["reference"],
             ["produit", "produit (gout + format)", "produit gout format"],
-            ["ddm", "date de durabilite", "date de durabilité"],
-            ["quantité cartons", "quantite cartons", "n° cartons", "no cartons", "nb cartons"],
-            ["quantité palettes", "quantite palettes", "n° palettes", "no palettes", "nb palettes"],
+            ["ddm", "date de durabilite", "date de durabilite"],
+            ["quantite cartons", "quantite cartons", "n cartons", "no cartons", "nb cartons"],
+            ["quantite palettes", "quantite palettes", "n palettes", "no palettes", "nb palettes"],
             ["poids palettes (kg)", "poids palettes", "poids (kg)"],
         ]
-        SEQ = [[_norm(x) for x in alts] for alts in SEQ]
+        # Pre-normalise les alternatives (deja normalisees ci-dessus via _norm)
 
-        maxr = min(ws.max_row, 300)
-        maxc = min(ws.max_column, 120)
+        maxr = min(ws.max_row or 1, 100)  # en-tetes rarement au-dela de la ligne 100
+        maxc = min(ws.max_column or 1, 30)  # 30 colonnes suffisent largement
         best = None  # (row, cols)
 
         for r in range(1, maxr + 1):
-            # on parcourt les fenêtres contiguës de 6 cellules
-            for c0 in range(1, maxc - 6 + 2):
+            # Passe rapide : la 1ere colonne de la sequence doit etre "reference"
+            # Scan uniquement si au moins une cellule de la ligne contient "reference"
+            found_ref = False
+            for c0 in range(1, maxc - 4):
+                hv = _norm(ws.cell(row=r, column=c0).value)
+                if hv in SEQ[0]:
+                    found_ref = True
+                    break
+            if not found_ref:
+                continue
+
+            # Scan complet des fenetres contigues de 6 cellules sur cette ligne
+            for c0 in range(1, maxc - 4):
                 ok = True
                 cols = []
                 for k in range(6):
@@ -667,8 +680,8 @@ def fill_bl_enlevements_xlsx(
                         break
                     cols.append(c0 + k)
                 if ok:
-                    # on garde la plus basse (si plusieurs zones existent)
                     best = (r, cols)
+                    break  # un seul match par ligne suffit
         return best
 
     # ---------- 1) Dates ----------

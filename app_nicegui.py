@@ -49,10 +49,32 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in PUBLIC_PATHS):
             return await call_next(request)
 
-        # Vérifier l'authentification côté storage
+        # Verifier l'authentification cote storage
         user_store = app.storage.user
         if not user_store.get("authenticated"):
-            return RedirectResponse(url="/login")
+            # Tentative de restauration via cookie "Se souvenir de moi"
+            fs_token = request.cookies.get("fs_session")
+            if fs_token:
+                try:
+                    from common.auth import verify_session_token
+                    remembered = verify_session_token(fs_token)
+                    if remembered:
+                        user_store.update({
+                            "authenticated": True,
+                            "id": remembered["id"],
+                            "tenant_id": remembered["tenant_id"],
+                            "email": remembered["email"],
+                            "role": remembered["role"],
+                        })
+                        _log.info("Session restauree via remember-me pour %s", remembered["email"])
+                        # On continue normalement (la validation serveur ci-dessous s'applique)
+                    else:
+                        return RedirectResponse(url="/login")
+                except Exception:
+                    _log.warning("Erreur verification remember-me token", exc_info=True)
+                    return RedirectResponse(url="/login")
+            else:
+                return RedirectResponse(url="/login")
 
         # Validation serveur périodique (toutes les 5 min max)
         import time

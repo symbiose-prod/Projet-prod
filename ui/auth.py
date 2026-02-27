@@ -3,9 +3,11 @@ ui/auth.py
 ==========
 Pages d'authentification NiceGUI : login, signup, mot de passe oublié.
 
-Réutilise common/auth.py pour la logique métier.
+Reutilise common/auth.py pour la logique metier.
 """
 from __future__ import annotations
+
+import logging
 
 from nicegui import ui, app
 
@@ -13,7 +15,10 @@ from ui.theme import COLORS, apply_quasar_theme, logo_svg
 from common.auth import (
     authenticate, create_user, find_user_by_email,
     validate_email, validate_password, check_tenant_allowed,
+    create_session_token, SESSION_DEFAULT_DAYS,
 )
+
+_log = logging.getLogger("ferment.auth")
 
 
 # ─── Page Login ─────────────────────────────────────────────────────────────
@@ -90,6 +95,19 @@ def page_login():
                             "email": user["email"],
                             "role": user.get("role", "user"),
                         })
+                        # "Se souvenir de moi" : token persistant en cookie
+                        if remember.value:
+                            try:
+                                token = create_session_token(
+                                    str(user["id"]), str(user["tenant_id"]),
+                                    days=SESSION_DEFAULT_DAYS,
+                                )
+                                max_age = SESSION_DEFAULT_DAYS * 86400
+                                ui.run_javascript(
+                                    f'document.cookie="fs_session={token};path=/;max-age={max_age};SameSite=Lax"'
+                                )
+                            except Exception:
+                                _log.warning("Impossible de creer le token remember-me", exc_info=True)
                         ui.navigate.to("/accueil")
 
                     ui.button(
@@ -181,8 +199,7 @@ def page_login():
                             signup_msg.classes("text-negative")
                             signup_msg.set_visibility(True)
                         except Exception:
-                            import logging
-                            logging.getLogger("ferment.auth").exception("Erreur création compte")
+                            _log.exception("Erreur creation compte")
                             signup_msg.text = "Une erreur est survenue. Réessaie plus tard."
                             signup_msg.classes("text-negative")
                             signup_msg.set_visibility(True)
@@ -228,8 +245,7 @@ def page_login():
                             forgot_msg.classes("text-positive")
                             forgot_msg.set_visibility(True)
                         except Exception:
-                            import logging
-                            logging.getLogger("ferment.auth").exception("Erreur envoi reset email")
+                            _log.exception("Erreur envoi reset email")
                             forgot_msg.text = "Une erreur est survenue. Réessaie plus tard."
                             forgot_msg.classes("text-negative")
                             forgot_msg.set_visibility(True)

@@ -31,6 +31,11 @@ from core.optimizer import (
 )
 from common.xlsx_fill import fill_fiche_xlsx
 
+# ====== Constantes metier ======
+DEFAULT_LOSS_LARGE = 800   # perte totale (transfert+embouteillage) cuve 7200L
+DEFAULT_LOSS_SMALL = 400   # perte totale cuve 5200L
+DDM_DAYS = 365             # duree de vie par defaut (jours)
+
 # ====== Configurations cuves ======
 TANK_CONFIGS = {
     "Cuve de 7200L (1 goût)": {
@@ -97,9 +102,9 @@ def _render_easybeer_section(
     _df_calc_eb_json = _sp_eb.get("df_calc_json")
     _semaine_du_eb = _sp_eb.get("semaine_du", "")
     _nb_gouts_eb = len(_gouts_eb)
-    _perte_litres = 800
+    _perte_litres = DEFAULT_LOSS_LARGE
 
-    # ── Volume par goût ──────────────────────────────────────────
+    # ── Volume par gout ──────────────────────────────────────────
     _vol_par_gout: dict[str, float] = {}
 
     if mode_prod != "Manuel" and volume_details:
@@ -111,7 +116,7 @@ def _render_easybeer_section(
                 _vol_par_gout[g] = float(_tank_eb["capacity"])
         _perte_litres = tank_configs[mode_prod]["transfer_loss"] + tank_configs[mode_prod]["bottling_loss"]
     else:
-        _perte_litres = 800 if volume_cible > 50 else 400
+        _perte_litres = DEFAULT_LOSS_LARGE if volume_cible > 50 else DEFAULT_LOSS_SMALL
         if _nb_gouts_eb == 1:
             _vol_par_gout[_gouts_eb[0]] = volume_cible * 100 + _perte_litres
         else:
@@ -1220,7 +1225,7 @@ def page_production():
                                     sd_date = _dt.date.fromisoformat(sd)
                                 else:
                                     sd_date = sd
-                                ddm_date = sd_date + _dt.timedelta(days=365)
+                                ddm_date = sd_date + _dt.timedelta(days=DDM_DAYS)
 
                                 g_order = []
                                 if isinstance(df_min_override, pd.DataFrame) and "GoutCanon" in df_min_override.columns:
