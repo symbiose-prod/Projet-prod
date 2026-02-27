@@ -46,7 +46,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Laisser passer les assets NiceGUI et les pages publiques
         if any(path.startswith(p) for p in PUBLIC_PATHS):
-            return await call_next(request)
+            response = await call_next(request)
+            self._add_security_headers(response)
+            return response
 
         # Verifier l'authentification cote storage
         user_store = app.storage.user
@@ -108,12 +110,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         # ── Headers de sécurité ──
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if os.environ.get("ENV") == "production":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        self._add_security_headers(response)
 
         # ── Poser le cookie remember-me HttpOnly si pending ──
         try:
@@ -137,6 +134,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             _log.warning("Erreur pose cookie remember-me", exc_info=True)
 
         return response
+
+    @staticmethod
+    def _add_security_headers(response) -> None:
+        """Ajoute les headers de sécurité sur toutes les réponses (publiques et authentifiées)."""
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if os.environ.get("ENV") == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     @staticmethod
     def _handle_logout(request: Request) -> RedirectResponse:
