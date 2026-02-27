@@ -329,6 +329,11 @@ def _render_easybeer_section(
             created_ids = []
             errors = []
 
+            # Tracker FIFO des lots — persiste entre goûts pour la conso virtuelle
+            from common.lot_fifo import BatchLotTracker
+            from common.easybeer import get_mp_lots
+            _lot_tracker = BatchLotTracker(fetch_lots_fn=get_mp_lots)
+
             for g in _gouts_eb:
                 vol_l = _vol_par_gout.get(g, 0)
                 _sel_idx = _product_indices[g]
@@ -355,7 +360,7 @@ def _render_easybeer_section(
                         vol_recette = recette.get("volumeRecette", 0)
                         ratio = vol_l / vol_recette if vol_recette > 0 else 1
                         for ing in recette.get("ingredients") or []:
-                            _ingredients.append({
+                            base_ing = {
                                 "idProduitIngredient": ing.get("idProduitIngredient"),
                                 "matierePremiere": ing.get("matierePremiere"),
                                 "quantite": round(ing.get("quantite", 0) * ratio, 2),
@@ -363,7 +368,11 @@ def _render_easybeer_section(
                                 "unite": ing.get("unite"),
                                 "brassageEtape": ing.get("brassageEtape"),
                                 "modeleNumerosLots": [],
-                            })
+                            }
+                            # Distribution FIFO des lots
+                            _ingredients.extend(
+                                _lot_tracker.distribute_ingredient(base_ing)
+                            )
 
                     for et in etapes:
                         _etape_nom = _norm_etape(

@@ -181,6 +181,32 @@ def get_mp_all(status: str = "actif") -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
+    """
+    GET /stock/matieres-premieres/numero-lot/liste/{idMatierePremiere}
+    → Liste des numéros de lot d'une matière première.
+
+    Chaque élément : ModeleMatierePremiereNumeroLot
+      {
+        "idMatierePremiereNumeroLot": 123,
+        "idMatierePremiere": 42,
+        "numeroLot": "AAA2026",
+        "quantite": 20.0,
+        "dateLimiteUtilisationOptimale": 1703980800000,
+        "unite": {...}
+      }
+    """
+    ep = f"matieres-premieres/numero-lot/liste/{id_matiere_premiere}"
+    r = requests.get(
+        f"{BASE}/stock/{ep}",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    data = r.json()
+    return data if isinstance(data, list) else []
+
+
 def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
     """
     GET /stock/produit/edition/{idStockProduit}
