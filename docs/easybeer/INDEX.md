@@ -19,9 +19,6 @@ Spec OpenAPI 2.4MB découpée en **35 fichiers par tag** + un fichier de schéma
 
 ```
 POST /indicateur/autonomie-stocks/export/excel    → Excel ventes+stock (page 01_Accueil)
-POST /indicateur/autonomie-stocks                 → JSON autonomie produits finis (page 05_Achats)
-GET  /stock/matieres-premieres/all                → Stock tous composants (page 05_Achats)
-POST /indicateur/synthese-consommations-mp        → Conso MP sur période (page 05_Achats)
 ```
 
 ---

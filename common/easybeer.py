@@ -170,37 +170,6 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     return r.json()
 
 
-def get_mp_all(status: str = "actif") -> list[dict[str, Any]]:
-    """
-    GET /stock/matieres-premieres/all
-    → Liste de TOUTES les matières premières (ingrédients + conditionnements + divers).
-
-    Chaque élément : ModeleMatierePremiere
-      {
-        "idMatierePremiere": 42,
-        "libelle": "Carton 12×33cl",
-        "quantite": 1200.0,           ← stock physique
-        "quantiteVirtuelle": 1200.0,  ← stock virtuel
-        "seuilBas": 500.0,
-        "seuilHaut": 2000.0,
-        "type": {"code": "CONDITIONNEMENT", "libelle": "...", "icone": "...", "uri": "..."},
-        "unite": {"idUnite": 1, "nom": "unité", "symbole": "u", "coefficient": 1.0},
-        "actif": true
-      }
-
-    Paramètre status : "actif" | "inactif" | "all"
-    """
-    r = requests.get(
-        f"{BASE}/stock/matieres-premieres/all",
-        params={"status": status},
-        auth=_auth(),
-        timeout=TIMEOUT,
-    )
-    r.raise_for_status()
-    data = r.json()
-    return data if isinstance(data, list) else []
-
-
 def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
     """
     GET /stock/matieres-premieres/numero-lot/liste/{idMatierePremiere}
@@ -359,43 +328,6 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
     _log.info("Fetch poids cartons termine : %d poids recuperes", len(weights))
     _save_weights_cache(weights)
     return weights
-
-
-def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
-    """
-    POST /indicateur/synthese-consommations-mp
-    → Synthèse des consommations de matières premières sur la période.
-
-    Réponse : ModeleSyntheseConsoMP
-      {
-        "codeRetour": "OK",
-        "syntheseConditionnement": {          ← PACKAGING (cartons, capsules, étiquettes)
-          "cout": 1234.56,
-          "quantite": 5000,
-          "elements": [                       ← ModeleSyntheseConsoMPElement[]
-            {
-              "libelle": "Carton 12×33cl",
-              "quantite": 1500.0,             ← qty consommée sur la période
-              "unite": "carton",
-              "idMatierePremiere": 42,
-              "cout": 750.0
-            }
-          ]
-        },
-        "syntheseContenant": {...},           ← bouteilles vides
-        "syntheseIngredient": {...},          ← levures, houblon, etc.
-        "syntheseDivers": {...}
-      }
-    """
-    r = requests.post(
-        f"{BASE}/indicateur/synthese-consommations-mp",
-        params={"forceRefresh": False},
-        json=_indicator_payload(window_days),
-        auth=_auth(),
-        timeout=TIMEOUT,
-    )
-    _check_response(r, "synthese-consommations-mp")
-    return r.json()
 
 
 # ─── Historique stock contenants ──────────────────────────────────────────────

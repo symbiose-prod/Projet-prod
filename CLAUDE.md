@@ -39,7 +39,6 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md
 | `02_Production.py` | Production planning |
 | `03_Optimisation.py` | Loss optimization |
 | `04_Fiche_de_ramasse.py` | Harvest/collection sheet + PDF export |
-| `05_Achats_conditionnements.py` | Purchases & packaging |
 | `06_Reset_password.py` | Password reset flow |
 | `98_Run_Migration.py` | Manual DB migration runner |
 | `99_Debug.py` | Debug utilities |
@@ -224,9 +223,6 @@ ssh ubuntu@92.222.229.87 "cd /home/ubuntu/app && git pull && sudo systemctl rest
 | Méthode | Endpoint | Usage | Fichier |
 |---------|----------|-------|---------|
 | `POST` | `/indicateur/autonomie-stocks/export/excel` | Excel ventes+stock → page Accueil | `01_Accueil.py` |
-| `POST` | `/indicateur/autonomie-stocks` | JSON autonomie (jours de stock) produits finis | `05_Achats_conditionnements.py` |
-| `GET`  | `/stock/matieres-premieres/all` | Stock tous composants (MP, conditionnements) | `05_Achats_conditionnements.py` |
-| `POST` | `/indicateur/synthese-consommations-mp` | Consommation MP sur période | `05_Achats_conditionnements.py` |
 
 ### Format payload (CRITIQUE)
 

@@ -16,8 +16,7 @@ ui/
 ├── accueil.py              # Page Accueil (upload fichier)
 ├── production.py           # Page Production
 ├── optimisation.py         # Page Optimisation
-├── ramasse.py              # Page Fiche de ramasse
-└── achats.py               # Page Achats conditionnements
+└── ramasse.py              # Page Fiche de ramasse
 common/                     # INCHANGÉ — logique métier
 core/                       # INCHANGÉ
 db/                         # INCHANGÉ
@@ -86,12 +85,6 @@ COLORS = {
 
 - Optimisation pertes
 - Réutilise : `core/` algorithmes
-
-### Étape 7 — Achats (`ui/achats.py`)
-
-- Stocks EasyBeer, consommations MP
-- Calcul durée de stock composants
-- Réutilise : `common/easybeer.py`
 
 ---
 

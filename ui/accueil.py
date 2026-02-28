@@ -58,7 +58,7 @@ def page_accueil():
             with ui.card_section().classes("q-pa-md"):
                 ui.label(
                     "Chargez vos données de ventes pour alimenter les pages "
-                    "Production et Achats. Le fichier contient les volumes vendus "
+                    "Production. Le fichier contient les volumes vendus "
                     "par produit sur la période choisie — il sert à calculer le plan "
                     "de production optimal et les besoins en emballages."
                 ).classes("text-body2").style(f"color: {COLORS['ink2']}; line-height: 1.6")

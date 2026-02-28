@@ -173,7 +173,6 @@ from ui import auth as _auth           # /login
 from ui import accueil as _accueil     # /accueil
 from ui import ramasse as _ramasse     # /ramasse
 from ui import production as _production  # /production
-from ui import achats as _achats       # /achats
 
 
 # ─── Nettoyage périodique (sessions / resets expirés) ────────────────────────
