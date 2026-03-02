@@ -72,7 +72,7 @@ def verify_password(password: str, stored: str) -> bool:
         expected = base64.b64decode(hash_b64)
         dk = hashlib.pbkdf2_hmac(PBKDF2_ALGO, password.encode("utf-8"), salt, iters)
         return secrets.compare_digest(dk, expected)
-    except Exception:
+    except (ValueError, IndexError, TypeError):
         return False
 
 
@@ -88,7 +88,7 @@ def _is_uuid(v: str) -> bool:
     try:
         uuid.UUID(str(v))
         return True
-    except Exception:
+    except (ValueError, AttributeError):
         return False
 
 

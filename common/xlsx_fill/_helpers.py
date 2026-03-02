@@ -5,10 +5,13 @@ Shared constants, normalization, path utilities.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import unicodedata
 from pathlib import Path
+
+_log = logging.getLogger("ferment.xlsx_fill")
 
 
 # ======= Normalisation & mapping gouts =======================================
@@ -49,6 +52,7 @@ def _project_root() -> Path:
     try:
         return Path(__file__).resolve().parents[2]
     except Exception:
+        _log.debug("Erreur detection racine projet, fallback cwd", exc_info=True)
         return Path(os.getcwd())
 
 
@@ -61,7 +65,7 @@ def _load_asset_bytes(rel_path: str) -> bytes | None:
             if p.exists() and p.is_file():
                 return p.read_bytes()
         except Exception:
-            pass
+            _log.debug("Erreur lecture asset %s", p, exc_info=True)
     return None
 
 
@@ -74,5 +78,5 @@ FILTRE_RATIO_KEFIR = 0.60  # proportion filtree pour le kefir (pas les infusions
 def _is_close(a: float, b: float, tol: float = VOL_TOL) -> bool:
     try:
         return abs(float(a) - float(b)) <= tol
-    except Exception:
+    except (OSError, ValueError, KeyError):
         return False

@@ -5,9 +5,12 @@ Flavor map loading, canonical flavor mapping, label sanitization.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
+
+_log = logging.getLogger("ferment.optimizer.flavors")
 
 from .normalization import fix_text, _norm_colname, _pick_column
 
@@ -33,6 +36,7 @@ def load_flavor_map_from_path(path_csv: str) -> pd.DataFrame:
                     fm = fm[(fm["name"] != "") & (fm["canonical"] != "")]
                     return fm
             except Exception:
+                _log.debug("Erreur lecture ligne flavor_map", exc_info=True)
                 continue
     return pd.DataFrame(columns=["name", "canonical"])
 
@@ -79,7 +83,7 @@ def apply_canonical_flavor(df: pd.DataFrame, fm: pd.DataFrame) -> pd.DataFrame:
                 if close:
                     return m_exact[close[0]]
             except Exception:
-                pass
+                _log.debug("Erreur application canonical flavor pour %s", prod, exc_info=True)
             return str(prod).strip()
 
         out["GoutCanon"] = out["Produit_norm"].map(to_canonical)

@@ -6,11 +6,14 @@ Fill production sheet (Fiche_production.xlsx).
 from __future__ import annotations
 
 import io
+import logging
 import re
 from datetime import date
 from typing import Optional, Dict
 
 import pandas as pd
+
+_log = logging.getLogger("ferment.xlsx_fill")
 
 from ._helpers import _project_root, _to_excel_label, FILTRE_RATIO_KEFIR
 from ._excel_ops import _safe_set_cell, _set, _add_logo
@@ -64,7 +67,7 @@ def fill_fiche_xlsx(
         ws.page_setup.scale = 100
         ws.page_setup.horizontalCentered = True
     except Exception:
-        pass
+        _log.debug("Erreur mise en forme cellule", exc_info=True)
 
     # --- Logos ---
     root = _project_root()
@@ -97,7 +100,7 @@ def fill_fiche_xlsx(
             ws["C1"].font = _Font(name="Aptos Narrow", size=20, bold=True)
             ws["C1"].alignment = _Align(horizontal="center", vertical="center")
         except Exception:
-            pass
+            _log.debug("Erreur mise en forme DDM", exc_info=True)
 
     # --- A21 : date de debut de production ---
     _set(ws, "A21", semaine_du, number_format="DD/MM/YYYY")
@@ -115,10 +118,11 @@ def fill_fiche_xlsx(
         _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
         ws["B10"].alignment = Alignment(vertical="center", horizontal="left")
     except Exception:
+        _log.debug("Erreur merge_cells, tentative alternative", exc_info=True)
         try:
             ws.merge_cells("B10:C10")
         except Exception:
-            pass
+            _log.debug("Erreur merge_cells alternative", exc_info=True)
         _safe_set_cell(ws, 10, 2, ddm, number_format="DD/MM/YYYY")
 
     # --- Rows 15-16 : bouteilles et cartons par format ---
