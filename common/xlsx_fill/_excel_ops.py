@@ -13,7 +13,7 @@ from openpyxl.drawing.image import Image as XLImage
 
 try:
     from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
-except Exception:
+except ImportError:
     AnchorMarker = TwoCellAnchor = None
 
 logger = logging.getLogger("ferment.xlsx_fill")

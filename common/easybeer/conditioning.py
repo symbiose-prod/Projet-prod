@@ -37,6 +37,7 @@ def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
     try:
         return r.json()
     except Exception:
+        _log.debug("Erreur parsing reponse planification", exc_info=True)
         return {"status": "ok"}
 
 
@@ -96,4 +97,5 @@ def upload_fichier_brassin(
     try:
         return r.json()
     except Exception:
+        _log.debug("Erreur parsing reponse code-barres", exc_info=True)
         return {"status": "ok"}

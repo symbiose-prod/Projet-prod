@@ -93,6 +93,7 @@ def _load_weights_cache() -> dict[tuple[int, str], float] | None:
             weights[(entry["pid"], entry["fmt"])] = entry["w"]
         return weights
     except Exception:
+        _log.debug("Erreur chargement cache poids cartons", exc_info=True)
         return None
 
 

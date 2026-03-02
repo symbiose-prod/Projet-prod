@@ -53,7 +53,7 @@ def build_bl_enlevements_pdf(
     def _ival(x):
         try:
             return int(round(float(x)))
-        except Exception:
+        except (ValueError, TypeError):
             return 0
 
     # ---------- PDF ----------

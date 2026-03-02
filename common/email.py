@@ -58,7 +58,7 @@ def _post_brevo(path: str, payload: dict) -> dict:
 
     try:
         data = json.loads(raw) if raw else {}
-    except Exception:
+    except (ValueError, TypeError, KeyError):
         data = {"raw": raw}
     return data
 

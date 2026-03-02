@@ -1,8 +1,11 @@
 # common/storage.py — VERSION DB (run_sql -> list[dict] compatible)
 from __future__ import annotations
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Any, Optional
+
+_log = logging.getLogger("ferment.storage")
 
 import pandas as pd  # utilisé pour encoder/décoder les DataFrame dans le JSON
 from db.conn import run_sql
@@ -129,7 +132,7 @@ def _tenant_id() -> str:
         if tid:
             return str(tid)
     except Exception:
-        pass
+        _log.debug("Erreur lecture tenant depuis session, fallback default", exc_info=True)
     return _ensure_tenant(DEFAULT_TENANT_NAME)
 
 
@@ -160,7 +163,7 @@ def list_saved() -> List[Dict[str, Any]]:
             ca = r["created_at"]
             try:
                 ts = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
-            except Exception:
+            except (ValueError, TypeError):
                 ts = None
         out.append({
             "name": meta.get("name"),

@@ -6,6 +6,7 @@ Fill BL enlevements Excel template.
 from __future__ import annotations
 
 import io
+import logging
 import os
 import re
 import unicodedata
@@ -15,6 +16,8 @@ from typing import List
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Alignment
+
+_log = logging.getLogger("ferment.xlsx_fill")
 
 
 def fill_bl_enlevements_xlsx(
@@ -124,7 +127,7 @@ def fill_bl_enlevements_xlsx(
             try:
                 ws.merge_cells(start_row=rr, start_column=cc, end_row=rr_end, end_column=cc_end)
             except Exception:
-                pass
+                _log.debug("Erreur formatage cellule BL", exc_info=True)
 
         text = "\n".join([destinataire_title] + [x for x in (destinataire_lines or []) if str(x).strip()])
         _safe_write(ws, rr, cc, text)
@@ -165,14 +168,14 @@ def fill_bl_enlevements_xlsx(
             if "-" in s and len(s.split("-")[0]) == 4:
                 return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
             return datetime.strptime(s, "%d/%m/%Y").strftime("%d/%m/%Y")
-        except Exception:
+        except (ValueError, TypeError):
             return s
 
     def _as_int(v) -> int:
         try:
             f = float(v)
             return int(round(f))
-        except Exception:
+        except (ValueError, TypeError):
             return 0
 
     # ---------- 5) Ecriture des lignes ----------

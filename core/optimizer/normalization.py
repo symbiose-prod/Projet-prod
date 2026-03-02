@@ -5,8 +5,11 @@ Text normalization: accent removal, column name matching, fix_text.
 """
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
+
+_log = logging.getLogger("ferment.optimizer.normalization")
 
 
 def _norm_colname(s: str) -> str:
@@ -53,7 +56,7 @@ def _pick_column(df, candidates_norm: list[str]) -> str | None:
         if match:
             return norm_to_real[match[0]]
     except Exception:
-        pass
+        _log.debug("Colonne %s non trouvee dans les colonnes disponibles", candidates_norm[0] if candidates_norm else "?")
     return None
 
 
@@ -84,7 +87,7 @@ def fix_text(s) -> str:
         if _looks_better(s0, s1):
             s0 = s1
     except Exception:
-        pass
+        _log.debug("Erreur normalisation texte: %r", s0, exc_info=True)
     if s0 in CUSTOM_REPLACEMENTS:
         return CUSTOM_REPLACEMENTS[s0]
     if "\uFFFD" in s0:

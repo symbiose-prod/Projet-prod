@@ -6,11 +6,14 @@ Stock format parsing, header detection, period parsing.
 from __future__ import annotations
 
 import io
+import logging
 import re
 from typing import Optional, List
 
 import numpy as np
 import pandas as pd
+
+_log = logging.getLogger("ferment.optimizer.parsing")
 
 
 # ======= constantes formats =================================================
@@ -36,7 +39,7 @@ def parse_stock(text: str):
                 nb = int(m.group(1))
                 break
             except Exception:
-                pass
+                _log.debug("Erreur parsing volume pour %r", s, exc_info=True)
     vol_l = None
     m_l = re.findall(r"(\d+(?:[.,]\d+)?)\s*[lL]", s)
     if m_l:
@@ -61,7 +64,7 @@ def parse_stock(text: str):
                 if vol_l is None:
                     vol_l = vol2
             except Exception:
-                pass
+                _log.debug("Erreur parsing nb bouteilles pour %r", s, exc_info=True)
     if (nb is None or np.isnan(nb)) and vol_l is not None and abs(vol_l - 0.75) <= VOL_TOL:
         if re.search(r"(?:\b4\s*[x\u00d7]\b|Carton\s+de\s*4\b|4\s+Bouteilles?)", s, flags=re.IGNORECASE):
             nb = 4
@@ -147,6 +150,6 @@ def parse_days_from_b2(value) -> Optional[int]:
         if m3:
             v = int(m3.group(1))
             return v if v > 0 else None
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         return None
     return None

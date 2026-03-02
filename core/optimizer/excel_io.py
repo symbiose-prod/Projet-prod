@@ -6,8 +6,11 @@ Read Excel input from uploaded bytes (Streamlit/NiceGUI upload).
 from __future__ import annotations
 
 import io
+import logging
 
 import pandas as pd
+
+_log = logging.getLogger("ferment.optimizer.excel_io")
 
 from .parsing import detect_header_row, rows_to_keep_by_fill, parse_days_from_b2
 
@@ -32,5 +35,6 @@ def read_input_excel_and_period_from_bytes(file_bytes: bytes):
         b2_val = ws["B2"].value
         wd = parse_days_from_b2(b2_val)
     except Exception:
+        _log.debug("Erreur parsing periode depuis B2", exc_info=True)
         wd = None
     return df, (wd if wd and wd > 0 else DEFAULT_WINDOW_DAYS)

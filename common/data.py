@@ -49,11 +49,13 @@ def _read_table_cached():
             try:
                 return pd.read_csv(main_table, sep=";", engine="python", header=None)
             except Exception:
+                _log.debug("Erreur lecture CSV avec header, tentative sans header", exc_info=True)
                 return pd.read_csv(main_table, sep=",", engine="python", header=None)
         else:
             try:
                 return pd.read_excel(main_table, engine="openpyxl", header=None)
             except Exception:
+                _log.debug("Erreur lecture xlsx, tentative xlrd", exc_info=True)
                 return pd.read_excel(main_table, engine="xlrd", header=None)
     except (OSError, ValueError, pd.errors.ParserError) as exc:
         _log.exception("Erreur lecture %s", main_table)
@@ -74,6 +76,7 @@ def _read_flavor_map_cached():
     try:
         return pd.read_csv(flavor_map, encoding="utf-8")
     except Exception:
+        _log.debug("Erreur lecture flavor_map, tentative sep=;", exc_info=True)
         return pd.read_csv(flavor_map, encoding="utf-8", sep=";")
 
 
