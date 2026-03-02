@@ -13,7 +13,7 @@ import os
 from nicegui import ui, app
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse
 
 # ─── Chargement .env (python-dotenv, ne surcharge pas les vars existantes) ───
 from pathlib import Path
@@ -30,7 +30,7 @@ import logging as _logging
 _log = _logging.getLogger("ferment.auth")
 
 # Pages publiques (pas besoin d'etre connecte)
-PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset"}
+PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset", "/health"}
 
 # Cookie remember-me : duree par defaut (30 jours)
 _REMEMBER_MAX_AGE = 30 * 86400
@@ -175,11 +175,49 @@ from ui import ramasse as _ramasse     # /ramasse
 from ui import production as _production  # /production
 
 
+# ─── Health check ────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def _health_check():
+    """Endpoint de santé : vérifie la connexion DB et renvoie un statut JSON."""
+    from db.conn import ping
+    ok, msg = ping()
+    return JSONResponse(
+        {"status": "ok" if ok else "error", "db": msg},
+        status_code=200 if ok else 503,
+    )
+
+
 # ─── Nettoyage périodique (sessions / resets expirés) ────────────────────────
+
+_CLEANUP_INTERVAL = 3600  # 1 heure
+
+
+def _do_cleanup() -> None:
+    """Purge les sessions, tokens et lockouts expirés."""
+    try:
+        from common.auth import cleanup_expired_sessions, cleanup_expired_resets, cleanup_expired_failures
+        cleanup_expired_sessions()
+        cleanup_expired_resets()
+        cleanup_expired_failures()
+        _log.debug("Nettoyage périodique OK")
+    except Exception:
+        _log.exception("Erreur nettoyage sessions/resets")
+
+
+async def _periodic_cleanup() -> None:
+    """Boucle infinie : relance le nettoyage toutes les _CLEANUP_INTERVAL secondes."""
+    import asyncio
+    while True:
+        await asyncio.sleep(_CLEANUP_INTERVAL)
+        _do_cleanup()
+
 
 @app.on_startup
 async def _startup_cleanup():
-    """Nettoie les sessions, tokens et lockouts expirés au démarrage + vérifications de sécurité."""
+    """Vérifications de sécurité + nettoyage initial + démarrage du timer périodique."""
+    import asyncio
+
     # ── Vérification : ALLOWED_TENANTS obligatoire en production ──
     if os.environ.get("ENV") == "production":
         if not os.environ.get("ALLOWED_TENANTS", "").strip():
@@ -188,13 +226,11 @@ async def _startup_cleanup():
                 "Définissez ALLOWED_TENANTS dans le .env (ex: ALLOWED_TENANTS=Symbiose Kéfir)"
             )
 
-    try:
-        from common.auth import cleanup_expired_sessions, cleanup_expired_resets, cleanup_expired_failures
-        cleanup_expired_sessions()
-        cleanup_expired_resets()
-        cleanup_expired_failures()
-    except Exception:
-        _log.exception("Erreur nettoyage au démarrage")
+    # Nettoyage initial
+    _do_cleanup()
+
+    # Démarrer le timer périodique (toutes les heures)
+    asyncio.ensure_future(_periodic_cleanup())
 
 
 # ─── Redirect racine ────────────────────────────────────────────────────────
