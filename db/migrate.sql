@@ -134,3 +134,15 @@ CREATE TABLE IF NOT EXISTS login_failures (
 );
 
 CREATE INDEX IF NOT EXISTS idx_login_failures_last ON login_failures(last_fail);
+
+-- =========================
+-- Permissions (user applicatif "shark")
+-- =========================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'shark') THEN
+    GRANT ALL ON TABLE tenants, users, production_proposals,
+                       password_resets, user_sessions, login_failures TO shark;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
+  END IF;
+END $$;
