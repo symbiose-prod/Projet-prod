@@ -11,11 +11,6 @@ from sqlalchemy.engine import Engine, Result
 # ------------------------
 # Helpers URL
 # ------------------------
-def _is_internal(host: str | None) -> bool:
-    # Host interne Kubernetes chez Kinsta
-    return bool(host) and host.endswith(".svc.cluster.local")
-
-
 def _normalize_scheme(db_url: str) -> str:
     """
     - Remplace postgres:// par postgresql:// (SQLAlchemy 2.x)
@@ -79,18 +74,13 @@ def _build_url() -> str:
     raw = os.getenv("DB_URL") or os.getenv("DATABASE_URL")
     if raw:
         url = _normalize_scheme(raw)  # postgres:// -> postgresql+psycopg2://
-        host = urlparse(url).hostname
-        if _is_internal(host):
-            url = _with_param(url, "sslmode", "disable")
-        else:
-            if "sslmode=" not in url:
-                url = _with_param(url, "sslmode", "require")
+        if "sslmode=" not in url:
+            url = _with_param(url, "sslmode", "require")
         return url
 
     # 2) Fallback : reconstruire à partir des morceaux
     host, port, name, user, pwd = _get_db_parts()
-    sslmode = "disable" if _is_internal(host) else "require"
-    return _make_url(host, port, name, user, pwd, sslmode)
+    return _make_url(host, port, name, user, pwd, "require")
 
 
 # ------------------------
@@ -107,7 +97,18 @@ def get_engine() -> Engine:
         with _ENGINE_LOCK:
             # Double-check apres acquisition du lock
             if _ENGINE is None:
-                _ENGINE = create_engine(_build_url(), pool_pre_ping=True, future=True)
+                _ENGINE = create_engine(
+                    _build_url(),
+                    pool_pre_ping=True,
+                    pool_size=10,
+                    max_overflow=5,
+                    pool_recycle=1800,        # recycle les connexions toutes les 30 min
+                    connect_args={
+                        "connect_timeout": 10,
+                        "options": "-c statement_timeout=60000",  # timeout requête 60s
+                    },
+                    future=True,
+                )
     return _ENGINE
 
 # Alias backward-compat si ailleurs tu fais `from db import engine`
@@ -118,12 +119,7 @@ def engine() -> Engine:  # noqa: N802 - garder le nom historique
 # ------------------------
 # Exécution SQL
 # ------------------------
-# db/conn.py — patch run_sql
-
-from typing import Any, Mapping, Optional, List, Dict, Union
-from sqlalchemy import text as _text
-
-def run_sql(sql: Any, params: Optional[Mapping[str, Any]] = None) -> Union[int, list[dict]]:
+def run_sql(sql: Any, params: Optional[Mapping[str, Any]] = None) -> int | list[dict]:
     """
     Exécute une requête SQL (str ou sqlalchemy TextClause).
     - Si la requête retourne des lignes (SELECT...), renvoie une liste de dicts.
