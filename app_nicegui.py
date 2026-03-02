@@ -179,11 +179,20 @@ from ui import production as _production  # /production
 
 @app.on_startup
 async def _startup_cleanup():
-    """Nettoie les sessions et tokens expirés au démarrage."""
+    """Nettoie les sessions, tokens et lockouts expirés au démarrage + vérifications de sécurité."""
+    # ── Vérification : ALLOWED_TENANTS obligatoire en production ──
+    if os.environ.get("ENV") == "production":
+        if not os.environ.get("ALLOWED_TENANTS", "").strip():
+            raise RuntimeError(
+                "ALLOWED_TENANTS manquant en production — n'importe qui pourrait créer un tenant.\n"
+                "Définissez ALLOWED_TENANTS dans le .env (ex: ALLOWED_TENANTS=Symbiose Kéfir)"
+            )
+
     try:
-        from common.auth import cleanup_expired_sessions, cleanup_expired_resets
+        from common.auth import cleanup_expired_sessions, cleanup_expired_resets, cleanup_expired_failures
         cleanup_expired_sessions()
         cleanup_expired_resets()
+        cleanup_expired_failures()
     except Exception:
         _log.exception("Erreur nettoyage au démarrage")
 

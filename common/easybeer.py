@@ -23,6 +23,7 @@ import datetime
 import logging
 import os
 import re
+import threading as _threading
 import time as _time
 from typing import Any
 
@@ -42,21 +43,24 @@ def is_configured() -> bool:
     return bool(os.environ.get("EASYBEER_API_USER") and os.environ.get("EASYBEER_API_PASS"))
 
 
-# ─── Rate-limiter global ─────────────────────────────────────────────────────
+# ─── Rate-limiter global (thread-safe) ───────────────────────────────────────
 # EasyBeer interdit > 10 requêtes/seconde et BAN 5 min si dépassement (HTTP 400).
 # On espace chaque appel de min 200ms → max 5 req/s, bien en dessous de la limite.
+# Le lock garantit qu'en cas d'appels concurrents, chaque thread attend son tour.
 _API_MIN_INTERVAL = 0.2  # secondes
 _api_last_ts: float = 0.0
+_api_lock = _threading.Lock()
 
 
 def _throttle() -> None:
-    """Espace les appels API de min 200ms pour éviter le ban rate-limit."""
+    """Espace les appels API de min 200ms pour éviter le ban rate-limit (thread-safe)."""
     global _api_last_ts
-    now = _time.monotonic()
-    wait = _API_MIN_INTERVAL - (now - _api_last_ts)
-    if wait > 0:
-        _time.sleep(wait)
-    _api_last_ts = _time.monotonic()
+    with _api_lock:
+        now = _time.monotonic()
+        wait = _API_MIN_INTERVAL - (now - _api_last_ts)
+        if wait > 0:
+            _time.sleep(wait)
+        _api_last_ts = _time.monotonic()
 
 
 def _auth() -> tuple[str, str]:

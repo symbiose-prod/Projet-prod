@@ -123,3 +123,14 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token   ON user_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user    ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);
+
+-- =========================
+-- Brute-force lockout (persiste au redémarrage)
+-- =========================
+CREATE TABLE IF NOT EXISTS login_failures (
+  email       TEXT PRIMARY KEY,
+  fail_count  INTEGER NOT NULL DEFAULT 0,
+  last_fail   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_failures_last ON login_failures(last_fail);

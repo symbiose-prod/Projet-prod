@@ -248,28 +248,72 @@ def create_user(email: str, password: str, tenant_name_or_id: str, role: str = N
 
 
 import logging as _logging
-import time as _time
-import threading as _threading
 
 _auth_log = _logging.getLogger("ferment.auth")
 
-# Lockout progressif : {email_lower: (fail_count, last_fail_timestamp)}
-_LOGIN_FAILURES: Dict[str, tuple] = {}
-_LOGIN_FAILURES_LOCK = _threading.Lock()
+# Lockout progressif — persisté en base (table login_failures)
 _MAX_FAILURES = 5
-_LOCKOUT_SECONDS = 300  # 5 min apres 5 echecs
-_MAX_TRACKED_EMAILS = 500  # plafond memoire
+_LOCKOUT_SECONDS = 300  # 5 min après 5 échecs
 
 
-def _purge_expired_failures() -> None:
-    """Supprime les entrees de lockout expirees. Appelant doit tenir _LOGIN_FAILURES_LOCK."""
-    now = _time.time()
-    expired = [
-        k for k, (_, ts) in _LOGIN_FAILURES.items()
-        if (now - ts) >= _LOCKOUT_SECONDS
-    ]
-    for k in expired:
-        del _LOGIN_FAILURES[k]
+def _check_lockout(email_lower: str) -> bool:
+    """Retourne True si l'email est en lockout (trop de tentatives récentes)."""
+    try:
+        rows = run_sql(
+            """
+            SELECT fail_count, last_fail
+            FROM login_failures
+            WHERE email = :e
+              AND fail_count >= :max
+              AND last_fail > now() - make_interval(secs => :secs)
+            LIMIT 1
+            """,
+            {"e": email_lower, "max": _MAX_FAILURES, "secs": _LOCKOUT_SECONDS},
+        )
+        return bool(rows)
+    except Exception:
+        _auth_log.warning("Erreur check lockout DB pour %s, on laisse passer", email_lower, exc_info=True)
+        return False
+
+
+def _record_failure(email_lower: str) -> int:
+    """Enregistre un échec de login en DB. Retourne le nouveau fail_count."""
+    try:
+        rows = run_sql(
+            """
+            INSERT INTO login_failures (email, fail_count, last_fail)
+            VALUES (:e, 1, now())
+            ON CONFLICT (email) DO UPDATE
+              SET fail_count = login_failures.fail_count + 1,
+                  last_fail  = now()
+            RETURNING fail_count
+            """,
+            {"e": email_lower},
+        )
+        return rows[0]["fail_count"] if rows else 0
+    except Exception:
+        _auth_log.warning("Erreur record failure DB pour %s", email_lower, exc_info=True)
+        return 0
+
+
+def _clear_failures(email_lower: str) -> None:
+    """Supprime le compteur d'échecs après un login réussi."""
+    try:
+        run_sql("DELETE FROM login_failures WHERE email = :e", {"e": email_lower})
+    except Exception:
+        _auth_log.warning("Erreur clear failures DB pour %s", email_lower, exc_info=True)
+
+
+def cleanup_expired_failures() -> int:
+    """Supprime les entrées de lockout expirées. Retourne le nombre de lignes supprimées."""
+    result = run_sql(
+        "DELETE FROM login_failures WHERE last_fail < now() - make_interval(secs => :secs) RETURNING email",
+        {"secs": _LOCKOUT_SECONDS},
+    )
+    count = len(result) if isinstance(result, list) else result
+    if count:
+        _auth_log.info("Nettoyage : %d lockout(s) expiré(s) supprimé(s)", count)
+    return count
 
 
 # Hash factice pour les emails inexistants (timing constant) — lazy pour ne
@@ -291,21 +335,10 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
 
     e_lower = e.lower()
 
-    with _LOGIN_FAILURES_LOCK:
-        # Nettoyage periodique des entrees expirees (plafond memoire)
-        if len(_LOGIN_FAILURES) > _MAX_TRACKED_EMAILS:
-            _purge_expired_failures()
-
-        # Verifier le lockout
-        fails = _LOGIN_FAILURES.get(e_lower)
-        if fails:
-            count, last_ts = fails
-            if count >= _MAX_FAILURES and (_time.time() - last_ts) < _LOCKOUT_SECONDS:
-                _auth_log.warning("Login bloque (lockout) pour %s (%d echecs)", e_lower, count)
-                return None
-            # Lockout expire -> reset le compteur
-            if count >= _MAX_FAILURES and (_time.time() - last_ts) >= _LOCKOUT_SECONDS:
-                del _LOGIN_FAILURES[e_lower]
+    # Vérifier le lockout (persisté en DB)
+    if _check_lockout(e_lower):
+        _auth_log.warning("Login bloqué (lockout DB) pour %s", e_lower)
+        return None
 
     rows = run_sql(
         """
@@ -317,31 +350,26 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         {"e": e},
     )
     if not rows:
-        # Hash factice pour que le temps de reponse soit constant (anti timing-attack)
+        # Hash factice pour que le temps de réponse soit constant (anti timing-attack)
         verify_password(password, _get_dummy_hash())
-        with _LOGIN_FAILURES_LOCK:
-            prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
-            _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
+        _record_failure(e_lower)
         _auth_log.info("Echec login : email inconnu %s", e_lower)
         return None
 
     user = rows[0]
     if verify_password(password, user["password_hash"]):
-        # Verifier que le compte est actif
+        # Vérifier que le compte est actif
         if not user.get("is_active", True):
-            _auth_log.warning("Login refuse : compte desactive pour %s", e_lower)
+            _auth_log.warning("Login refusé : compte désactivé pour %s", e_lower)
             return None
-        # Reinitialiser le compteur en cas de succes
-        with _LOGIN_FAILURES_LOCK:
-            _LOGIN_FAILURES.pop(e_lower, None)
-        _auth_log.info("Login reussi pour %s", e_lower)
+        # Réinitialiser le compteur en cas de succès
+        _clear_failures(e_lower)
+        _auth_log.info("Login réussi pour %s", e_lower)
         return user
 
-    # Echec mot de passe
-    with _LOGIN_FAILURES_LOCK:
-        prev = _LOGIN_FAILURES.get(e_lower, (0, 0))
-        _LOGIN_FAILURES[e_lower] = (prev[0] + 1, _time.time())
-    _auth_log.warning("Echec login : mauvais mot de passe pour %s (tentative %d)", e_lower, prev[0] + 1)
+    # Échec mot de passe
+    new_count = _record_failure(e_lower)
+    _auth_log.warning("Echec login : mauvais mot de passe pour %s (tentative %d)", e_lower, new_count)
     return None
 
 
