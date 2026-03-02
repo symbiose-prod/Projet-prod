@@ -34,6 +34,7 @@ from core.optimizer import (
     compute_plan,
     parse_stock as _parse_stock,
 )
+from common.session_store import store_df, load_df
 from common.xlsx_fill import fill_fiche_xlsx
 
 # ====== Constantes metier ======
@@ -142,7 +143,7 @@ def _render_easybeer_section(
             _vol_par_gout[_gouts_eb[0]] = volume_cible * 100 + _perte_litres
         else:
             if _df_calc_eb_json:
-                _df_calc_eb_parsed = pd.read_json(_df_calc_eb_json, orient="split")
+                _df_calc_eb_parsed = load_df(_df_calc_eb_json)
                 _proportions = {}
                 _total_x = 0.0
                 if "X_adj (hL)" in _df_calc_eb_parsed.columns:
@@ -490,7 +491,7 @@ def _render_easybeer_section(
                     _elements_by_pid: dict[int, list[dict]] = {}
                     _df_min_eb_json = _sp_eb.get("df_min_json")
                     if _df_min_eb_json:
-                        _df_min_eb = pd.read_json(_df_min_eb_json, orient="split")
+                        _df_min_eb = load_df(_df_min_eb_json)
                         _rows_gout = _df_min_eb[_df_min_eb["GoutCanon"].astype(str) == g]
                         for _, _r in _rows_gout.iterrows():
                             _stock = str(_r.get("Stock", "")).strip()
@@ -567,8 +568,8 @@ def _render_easybeer_section(
                     _ddm_dt = _dt.date.fromisoformat(_sp_eb.get("ddm", ""))
                     _sp_vd_eb = _sp_eb.get("volume_details") or {}
                     _vd_eb = _sp_vd_eb.get(g, {})
-                    _df_min_dl = pd.read_json(_sp_eb["df_min_json"], orient="split")
-                    _df_calc_dl = pd.read_json(_sp_eb["df_calc_json"], orient="split")
+                    _df_min_dl = load_df(_sp_eb["df_min_json"])
+                    _df_calc_dl = load_df(_sp_eb["df_calc_json"])
                     _fiche_bytes = fill_fiche_xlsx(
                         template_path=template_path,
                         semaine_du=_semaine_dt,
@@ -1322,8 +1323,8 @@ async def page_production():
                                             g_order.append(g)
 
                                 app.storage.user["saved_production"] = {
-                                    "df_min_json": df_min_override.to_json(orient="split"),
-                                    "df_calc_json": df_calc.to_json(orient="split"),
+                                    "df_min_json": store_df(df_min_override),
+                                    "df_calc_json": store_df(df_calc),
                                     "gouts": g_order,
                                     "semaine_du": sd_date.isoformat(),
                                     "ddm": ddm_date.isoformat(),
@@ -1353,8 +1354,8 @@ async def page_production():
                                 """Génère et télécharge la fiche Excel."""
                                 try:
                                     _sp = app.storage.user.get("saved_production", {})
-                                    _df_min_dl = pd.read_json(_sp["df_min_json"], orient="split")
-                                    _df_calc_dl = pd.read_json(_sp["df_calc_json"], orient="split")
+                                    _df_min_dl = load_df(_sp["df_min_json"])
+                                    _df_calc_dl = load_df(_sp["df_calc_json"])
                                     _semaine = _dt.date.fromisoformat(_sp["semaine_du"])
                                     _ddm = _dt.date.fromisoformat(_sp["ddm"])
                                     _g1, _g2 = _two_gouts(_sp)

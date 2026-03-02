@@ -17,6 +17,7 @@ _log = logging.getLogger("ferment.accueil")
 from ui.auth import require_auth
 from ui.theme import page_layout, section_title, COLORS
 from common.easybeer import is_configured as eb_configured
+from common.session_store import store_df, load_df
 from core.optimizer import read_input_excel_and_period_from_bytes
 
 
@@ -33,7 +34,7 @@ def get_df_raw() -> tuple[pd.DataFrame | None, int]:
     raw_json = state.get("df_json")
     if not raw_json:
         return None, 0
-    df = pd.read_json(raw_json, orient="split")
+    df = load_df(raw_json)
     return df, state.get("window_days", 30)
 
 
@@ -106,7 +107,7 @@ def page_accueil():
                             state["source"] = "EasyBeer"
                             state["rows"] = len(df)
                             state["window_days"] = days
-                            state["df_json"] = df.to_json(orient="split")
+                            state["df_json"] = store_df(df)
                             status_label.text = f"Importé : {len(df)} lignes depuis EasyBeer ({days}j)"
                             status_label.classes("text-positive")
                             status_label.set_visibility(True)
@@ -182,7 +183,7 @@ def page_accueil():
                     state["source"] = e.name
                     state["rows"] = len(df)
                     state["window_days"] = period
-                    state["df_json"] = df.to_json(orient="split")
+                    state["df_json"] = store_df(df)
                     upload_status.text = f"Importé : {len(df)} lignes depuis {e.name}"
                     upload_status.classes("text-positive")
                     upload_status.set_visibility(True)
