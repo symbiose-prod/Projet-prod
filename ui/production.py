@@ -9,49 +9,39 @@ common/xlsx_fill.py. Seule la couche UI (NiceGUI) est spécifique ici.
 from __future__ import annotations
 
 import asyncio
-import logging
 import datetime as _dt
+import logging
 
 import pandas as pd
-from nicegui import ui, app
+from nicegui import app, ui
 
-from ui.auth import require_auth
-from ui.theme import page_layout, kpi_card, section_title, COLORS
-from ui.accueil import get_df_raw
-
-from common.data import get_paths
+from common.data import get_business_config, get_paths
+from common.session_store import load_df, store_df
+from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import (
-    load_flavor_map_from_path,
     apply_canonical_flavor,
+    load_flavor_map_from_path,
     sanitize_gouts,
 )
-from common.session_store import store_df, load_df
-from common.xlsx_fill import fill_fiche_xlsx
 from ui._production_calc import (
-    _fetch_eb_products,
     _compute_production_sync,
+    _fetch_eb_products,
 )
 from ui._production_easybeer import _render_easybeer_section
+from ui.accueil import get_df_raw
+from ui.auth import require_auth
+from ui.theme import COLORS, date_picker_field, kpi_card, page_layout, section_title
 
 _log = logging.getLogger("ferment.production")
 
-# ====== Constantes metier ======
-DEFAULT_LOSS_LARGE = 800   # perte totale (transfert+embouteillage) cuve 7200L
-DEFAULT_LOSS_SMALL = 400   # perte totale cuve 5200L
-DDM_DAYS = 365             # duree de vie par defaut (jours)
+# ====== Constantes metier (chargées depuis config.yaml) ======
+_biz = get_business_config()
+DEFAULT_LOSS_LARGE = _biz["default_loss_large"]
+DEFAULT_LOSS_SMALL = _biz["default_loss_small"]
+DDM_DAYS = _biz["ddm_days"]
 
 # ====== Configurations cuves ======
-TANK_CONFIGS = {
-    "Cuve de 7200L (1 goût)": {
-        "capacity": 7200, "transfer_loss": 400, "bottling_loss": 400,
-        "nb_gouts": 1, "nominal_hL": 64.0,
-    },
-    "Cuve de 5200L (1 goût)": {
-        "capacity": 5200, "transfer_loss": 200, "bottling_loss": 200,
-        "nb_gouts": 1, "nominal_hL": 48.0,
-    },
-    "Manuel": None,
-}
+TANK_CONFIGS = {**_biz["tanks"], "Manuel": None}
 
 TEMPLATE_PATH = "assets/Fiche_production.xlsx"
 
@@ -231,7 +221,7 @@ async def page_production():
                     ),
                     timeout=60,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 main_container.clear()
                 with main_container:
                     ui.label("Le calcul a dépassé le délai (60 s). Réessayez avec moins de goûts ou un volume plus petit.").classes("text-negative")
@@ -519,24 +509,11 @@ async def page_production():
                                 else _dt.date.today()
                             )
 
-                            # ── Titre visible pour la date ──
-                            ui.label("Date début fermentation").classes(
-                                "text-subtitle2 q-mb-xs"
-                            ).style(f"color: {COLORS['ink']}; font-weight: 600")
-
-                            date_debut = ui.input(
-                                value=default_debut.isoformat(),
-                            ).props("outlined dense").classes("w-full")
-                            with date_debut:
-                                with ui.menu().props("no-parent-event") as date_menu:
-                                    date_picker = ui.date(value=default_debut.isoformat()).props("dense first-day-of-week=1")
-                                    date_picker.on_value_change(
-                                        lambda e: (date_debut.set_value(e.value), date_menu.close())
-                                    )
-                                with date_debut.add_slot("append"):
-                                    ui.icon("event", size="xs").classes("cursor-pointer").on(
-                                        "click", lambda: date_menu.open()
-                                    )
+                            # ── Date début fermentation ──
+                            date_debut = date_picker_field(
+                                default_debut.isoformat(),
+                                label="Date début fermentation",
+                            )
 
                             def do_save():
                                 sd = date_debut.value
@@ -564,6 +541,17 @@ async def page_production():
                                     },
                                     "mode_prod": mode_prod,
                                 }
+                                # Audit trail
+                                try:
+                                    from common.audit import ACTION_PRODUCTION_SAVED, log_event
+                                    log_event(
+                                        tenant_id=app.storage.user.get("tenant_id"),
+                                        user_email=app.storage.user.get("email"),
+                                        action=ACTION_PRODUCTION_SAVED,
+                                        details={"gouts": g_order, "semaine_du": sd_date.isoformat(), "mode": mode_prod},
+                                    )
+                                except Exception:
+                                    _log.debug("Audit log_event production_saved failed", exc_info=True)
                                 ui.notify("Production sauvegardée !", type="positive", icon="check")
 
                             # ── Checkbox téléchargement (précochée) ──

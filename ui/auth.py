@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import logging
 
-from nicegui import ui, app
+from nicegui import app, ui
 
-from ui.theme import COLORS, apply_quasar_theme, logo_svg
 from common.auth import (
-    authenticate, create_user, find_user_by_email,
-    validate_email, validate_password, check_tenant_allowed,
-    create_session_token, SESSION_DEFAULT_DAYS,
+    SESSION_DEFAULT_DAYS,
+    authenticate,
+    check_tenant_allowed,
+    create_session_token,
+    create_user,
+    find_user_by_email,
+    validate_email,
+    validate_password,
 )
+from ui.theme import COLORS, apply_quasar_theme, logo_svg, password_strength_bar
 
 _log = logging.getLogger("ferment.auth")
 
@@ -128,8 +133,9 @@ def page_login():
                 # ── Tab Inscription ──────────────────────────────────
                 with ui.tab_panel(tab_signup):
                     su_email = ui.input("Email").classes("w-full q-mb-sm").props("outlined dense")
-                    su_pwd = ui.input("Mot de passe", password=True, password_toggle_button=True).classes("w-full q-mb-sm").props("outlined dense")
-                    su_pwd2 = ui.input("Confirmer le mot de passe", password=True, password_toggle_button=True).classes("w-full q-mb-sm").props("outlined dense")
+                    su_pwd = ui.input("Mot de passe", password=True, password_toggle_button=True).classes("w-full").props("outlined dense")
+                    password_strength_bar(su_pwd)
+                    su_pwd2 = ui.input("Confirmer le mot de passe", password=True, password_toggle_button=True).classes("w-full q-mb-sm q-mt-sm").props("outlined dense")
                     su_tenant = ui.input("Organisation (tenant)", placeholder="Ferment Station").classes("w-full q-mb-md").props("outlined dense")
 
                     signup_msg = ui.label("").classes("text-body2")

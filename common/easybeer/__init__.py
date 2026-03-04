@@ -10,54 +10,54 @@ from __future__ import annotations
 from ._client import (
     BASE,
     TIMEOUT,
-    is_configured,
     EasyBeerError,
-)
-
-# --- stocks ---
-from .stocks import (
-    get_autonomie_stocks_excel,
-    get_autonomie_stocks,
-    get_mp_lots,
-    get_stock_produit_detail,
-    fetch_carton_weights,
-)
-
-# --- history ---
-from .history import get_contenant_historique
-
-# --- clients ---
-from .clients import get_clients, get_all_clients
-
-# --- products ---
-from .products import (
-    get_all_products,
-    get_warehouses,
-    get_product_detail,
-    get_all_materiels,
-)
-
-# --- recipes ---
-from .recipes import (
-    compute_aromatisation_volume,
-    compute_v_start_max,
-    compute_dilution_ingredients,
+    is_configured,
 )
 
 # --- brassins ---
 from .brassins import (
     create_brassin,
-    get_brassins_en_cours,
-    get_brassins_archives,
     get_brassin_detail,
+    get_brassins_archives,
+    get_brassins_en_cours,
 )
+
+# --- clients ---
+from .clients import get_all_clients, get_clients
 
 # --- conditioning ---
 from .conditioning import (
-    get_planification_matrice,
     add_planification_conditionnement,
     get_code_barre_matrice,
+    get_planification_matrice,
     upload_fichier_brassin,
+)
+
+# --- history ---
+from .history import get_contenant_historique
+
+# --- products ---
+from .products import (
+    get_all_materiels,
+    get_all_products,
+    get_product_detail,
+    get_warehouses,
+)
+
+# --- recipes ---
+from .recipes import (
+    compute_aromatisation_volume,
+    compute_dilution_ingredients,
+    compute_v_start_max,
+)
+
+# --- stocks ---
+from .stocks import (
+    fetch_carton_weights,
+    get_autonomie_stocks,
+    get_autonomie_stocks_excel,
+    get_mp_lots,
+    get_stock_produit_detail,
 )
 
 __all__ = [

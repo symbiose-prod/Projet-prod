@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .parsing import parse_stock, safe_num, is_allowed_format
+from .parsing import is_allowed_format, parse_stock, safe_num
 
 # ======= constantes ==========================================================
 ROUND_TO_CARTON = True

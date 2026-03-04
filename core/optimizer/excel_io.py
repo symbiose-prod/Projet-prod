@@ -12,7 +12,7 @@ import pandas as pd
 
 _log = logging.getLogger("ferment.optimizer.excel_io")
 
-from .parsing import detect_header_row, rows_to_keep_by_fill, parse_days_from_b2
+from .parsing import detect_header_row, parse_days_from_b2, rows_to_keep_by_fill
 
 DEFAULT_WINDOW_DAYS = 60
 

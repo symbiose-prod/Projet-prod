@@ -6,10 +6,10 @@ Re-exports all public symbols so that existing imports keep working:
 """
 from __future__ import annotations
 
-from .fiche_production import fill_fiche_xlsx
+from ._tank_ruler import interpolate_ruler_height
 from .bl_excel import fill_bl_enlevements_xlsx
 from .bl_pdf import build_bl_enlevements_pdf
-from ._tank_ruler import interpolate_ruler_height
+from .fiche_production import fill_fiche_xlsx
 
 __all__ = [
     "fill_fiche_xlsx",

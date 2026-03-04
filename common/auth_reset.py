@@ -1,8 +1,12 @@
 # common/auth_reset.py
 from __future__ import annotations
+
+import datetime
+import hashlib
 import logging
-import os, secrets, hashlib, datetime
-from typing import Optional, Dict, Any, Tuple
+import os
+import secrets
+from typing import Any
 
 from db.conn import run_sql
 
@@ -15,7 +19,7 @@ RESET_TTL_MINUTES = int(os.getenv("RESET_TTL_MINUTES", "60"))
 
 
 def _now_utc() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
 
 
 def _hash_token(t: str) -> str:
@@ -41,10 +45,10 @@ def _recent_requests_for_user(user_id: str):
 
 def create_password_reset(
     email: str,
-    meta: Optional[Dict[str, Any]] = None,
-    request_ip: Optional[str] = None,
-    request_ua: Optional[str] = None,
-) -> Optional[str]:
+    meta: dict[str, Any] | None = None,
+    request_ip: str | None = None,
+    request_ua: str | None = None,
+) -> str | None:
     """
     Crée une demande de réinitialisation et renvoie l'URL complète.
     Compatible avec :
@@ -113,7 +117,7 @@ def create_password_reset(
     return reset_url
 
 
-def verify_token(token: str) -> Optional[Dict[str, Any]]:
+def verify_token(token: str) -> dict[str, Any] | None:
     """
     Ancien nom — on le garde pour compat.
     Vérifie que le token est valide et non utilisé.
@@ -148,7 +152,7 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
     return r
 
 
-def verify_reset_token(token: str) -> Tuple[bool, Any]:
+def verify_reset_token(token: str) -> tuple[bool, Any]:
     """
     Nouveau nom, utilisé par la page pages/06_Reset_password.py
     Renvoie (True, {...}) ou (False, "message d'erreur")
@@ -164,9 +168,10 @@ def consume_token_and_set_password(reset_id: int, user_id: str, new_password: st
     Transaction atomique : change le mot de passe, revoque les sessions,
     et marque le token comme utilise — tout ou rien.
     """
-    from common.auth import validate_password, hash_password
-    from db.conn import get_engine
     from sqlalchemy import text as _text
+
+    from common.auth import hash_password, validate_password
+    from db.conn import get_engine
 
     validate_password(new_password)
     pw_hash = hash_password(new_password)

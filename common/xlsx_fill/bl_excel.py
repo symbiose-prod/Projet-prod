@@ -11,10 +11,9 @@ import os
 import re
 import unicodedata
 from datetime import date, datetime
-from typing import List
 
-import pandas as pd
 import openpyxl
+import pandas as pd
 from openpyxl.styles import Alignment
 
 _log = logging.getLogger("ferment.xlsx_fill")
@@ -25,7 +24,7 @@ def fill_bl_enlevements_xlsx(
     date_creation: date,
     date_ramasse: date,
     destinataire_title: str,
-    destinataire_lines: List[str],
+    destinataire_lines: list[str],
     df_lines: pd.DataFrame,
 ) -> bytes:
     """
@@ -150,7 +149,10 @@ def fill_bl_enlevements_xlsx(
     # ---------- 3) Localisation en-tetes ----------
     header = _find_header_run(ws)
     if not header:
-        raise KeyError("Impossible de localiser la rang\u00e9e d'en-t\u00eates (s\u00e9quence compl\u00e8te non trouv\u00e9e).")
+        raise KeyError(
+            "Impossible de localiser la rang\u00e9e d'en-t\u00eates"
+            " (s\u00e9quence compl\u00e8te non trouv\u00e9e)."
+        )
     hdr_row, (c_ref, c_prod, c_ddm, c_qc, c_qp, c_poids) = header
 
     # ---------- 4) DataFrame normalisation ----------

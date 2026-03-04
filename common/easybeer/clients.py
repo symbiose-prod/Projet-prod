@@ -24,7 +24,7 @@ def get_clients(
     """POST /parametres/client/liste → Page de clients (paginee)."""
     r = requests.post(
         f"{BASE}/parametres/client/liste",
-        params={
+        params={  # type: ignore[arg-type]
             "colonneTri": sort_by,
             "mode": sort_mode,
             "nombreParPage": per_page,

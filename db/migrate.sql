@@ -136,13 +136,32 @@ CREATE TABLE IF NOT EXISTS login_failures (
 CREATE INDEX IF NOT EXISTS idx_login_failures_last ON login_failures(last_fail);
 
 -- =========================
+-- Journal d'audit (traçabilité des actions métier)
+-- =========================
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          BIGSERIAL PRIMARY KEY,
+  tenant_id   UUID REFERENCES tenants(id) ON DELETE SET NULL,
+  user_email  VARCHAR(254),
+  action      VARCHAR(50) NOT NULL,
+  details     JSONB DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_tenant_created ON audit_log(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_action         ON audit_log(action, created_at DESC);
+
+-- Index composite pour la recherche de propositions par tenant + statut
+CREATE INDEX IF NOT EXISTS idx_pp_tenant_status ON production_proposals(tenant_id, status);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'shark') THEN
     GRANT ALL ON TABLE tenants, users, production_proposals,
-                       password_resets, user_sessions, login_failures TO shark;
+                       password_resets, user_sessions, login_failures,
+                       audit_log TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

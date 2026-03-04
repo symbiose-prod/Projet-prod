@@ -1,17 +1,20 @@
 # common/storage.py — VERSION DB (run_sql -> list[dict] compatible)
 from __future__ import annotations
+
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Dict, List, Tuple, Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 _log = logging.getLogger("ferment.storage")
 
 import pandas as pd  # utilisé pour encoder/décoder les DataFrame dans le JSON
+
+# Limite "mémoire longue" par tenant (chargée depuis config.yaml)
+from common.data import get_business_config as _get_biz
 from db.conn import run_sql
 
-# Limite "mémoire longue" par tenant (nombre max de NOMS distincts)
-MAX_SLOTS = 6
+MAX_SLOTS: int = _get_biz()["max_slots"]
 
 # Identité par défaut (tu peux changer via variables d'env si tu veux)
 DEFAULT_TENANT_NAME = "default"
@@ -19,7 +22,7 @@ SYSTEM_EMAIL = "system@symbiose.local"
 
 
 # ---------- Helpers encodage DataFrame ----------
-def _encode_sp(sp: Dict[str, Any]) -> Dict[str, Any]:
+def _encode_sp(sp: dict[str, Any]) -> dict[str, Any]:
     def _df(x):
         return x.to_json(orient="split") if isinstance(x, pd.DataFrame) else None
     return {
@@ -31,7 +34,7 @@ def _encode_sp(sp: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _decode_sp(obj: Dict[str, Any]) -> Dict[str, Any]:
+def _decode_sp(obj: dict[str, Any]) -> dict[str, Any]:
     def _df(s):
         return pd.read_json(s, orient="split") if isinstance(s, str) and s.strip() else None
     return {
@@ -141,7 +144,7 @@ def _system_user_id(tenant_id: str) -> str:
 
 
 # ---------- API publique (identique à l’ancienne) ----------
-def list_saved() -> List[Dict[str, Any]]:
+def list_saved() -> list[dict[str, Any]]:
     """Retourne [{name, ts, gouts, semaine_du}] triés du plus récent au plus ancien (DB)."""
     t_id = _tenant_id()
     rows = run_sql(
@@ -154,7 +157,7 @@ def list_saved() -> List[Dict[str, Any]]:
         {"t": t_id},
     )
 
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for r in rows or []:
         payload = r.get("payload") or {}
         meta = payload.get("_meta", {})
@@ -176,7 +179,7 @@ def list_saved() -> List[Dict[str, Any]]:
     return out
 
 
-def save_snapshot(name: str, sp: Dict[str, Any]) -> Tuple[bool, str]:
+def save_snapshot(name: str, sp: dict[str, Any]) -> tuple[bool, str]:
     """Crée / remplace une proposition (MAX_SLOTS par tenant basé sur les NOMS distincts)."""
     name = (name or "").strip()
     if not name:
@@ -187,7 +190,7 @@ def save_snapshot(name: str, sp: Dict[str, Any]) -> Tuple[bool, str]:
 
     # construit le payload applicatif + meta horodatée
     payload = _encode_sp(sp)
-    ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    ts = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     payload["_meta"] = {"name": name, "ts": ts, "source": "app-db"}
 
     # Existe déjà ? (match sur _meta.name)
@@ -235,7 +238,7 @@ def save_snapshot(name: str, sp: Dict[str, Any]) -> Tuple[bool, str]:
     return True, "Proposition enregistrée."
 
 
-def load_snapshot(name: str) -> Optional[Dict[str, Any]]:
+def load_snapshot(name: str) -> dict[str, Any] | None:
     t_id = _tenant_id()
     rows = run_sql(
         """
@@ -269,7 +272,7 @@ def delete_snapshot(name: str) -> bool:
     return bool(rows)
 
 
-def rename_snapshot(old: str, new: str) -> Tuple[bool, str]:
+def rename_snapshot(old: str, new: str) -> tuple[bool, str]:
     """Renomme une proposition de facon atomique (pas de race condition TOCTOU)."""
     new = (new or "").strip()
     if not new:

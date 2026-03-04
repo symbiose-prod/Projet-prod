@@ -3,3 +3,47 @@ data_files:
   flavor_map: "data/flavor_map.csv"    # mapping nom → goût canonique
 images_dir: "assets"                   # dossier des visuels produit
 
+# ─── Constantes métier ──────────────────────────────────────────────────────
+business:
+
+  # Pertes par type de cuve (litres) — transfert + embouteillage
+  default_loss_large: 800    # cuve 7200L
+  default_loss_small: 400    # cuve 5200L
+
+  # DDM par défaut (jours)
+  ddm_days: 365
+
+  # Prix de référence pour le calcul de perte économique (€/hL)
+  # Utilisé dans core/optimizer/planning.py pour le ranking des goûts
+  price_ref_hl: 400.0
+
+  # Nombre max de propositions sauvegardées par tenant
+  max_slots: 6
+
+  # Fenêtre de données par défaut (jours) — fallback si non détectée dans l'Excel
+  default_window_days: 60
+
+  # Configurations cuves
+  tanks:
+    "Cuve de 7200L (1 goût)":
+      capacity: 7200
+      transfer_loss: 400
+      bottling_loss: 400
+      nb_gouts: 1
+      nominal_hL: 64.0
+    "Cuve de 5200L (1 goût)":
+      capacity: 5200
+      transfer_loss: 200
+      bottling_loss: 200
+      nb_gouts: 1
+      nominal_hL: 48.0
+
+# ─── Sécurité ─────────────────────────────────────────────────────────────────
+security:
+  min_password_length: 10
+
+  # Lockout exponentiel : chaque palier prolonge la durée de blocage
+  lockout_thresholds:
+    - { failures: 5, seconds: 300 }     # 5 échecs  → 5 min
+    - { failures: 10, seconds: 1800 }   # 10 échecs → 30 min
+    - { failures: 15, seconds: 7200 }   # 15 échecs → 2 h

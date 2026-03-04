@@ -12,7 +12,7 @@ import pandas as pd
 
 _log = logging.getLogger("ferment.optimizer.flavors")
 
-from .normalization import fix_text, _norm_colname, _pick_column
+from .normalization import _norm_colname, _pick_column, fix_text
 
 
 # ======= flavor map =========================================================

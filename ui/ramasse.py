@@ -13,32 +13,34 @@ import logging
 import math
 import os
 
+import requests
 from nicegui import ui
 
 _log = logging.getLogger("ferment.ramasse")
 
-from ui.auth import require_auth
-from ui.theme import page_layout, kpi_card, section_title, COLORS
-
-from common.ramasse import (
-    today_paris,
-    clean_product_label,
-    parse_barcode_matrix,
-    build_ramasse_lines,
-    load_destinataires,
-    PALETTE_EMPTY_WEIGHT,
+from common.easybeer import (
+    EasyBeerError,
+    fetch_carton_weights,
+    get_brassins_archives,
+    get_brassins_en_cours,
+    get_code_barre_matrice,
+    get_warehouses,
 )
 from common.easybeer import (
     is_configured as eb_configured,
-    get_brassins_en_cours,
-    get_brassins_archives,
-    get_code_barre_matrice,
-    get_warehouses,
-    fetch_carton_weights,
+)
+from common.email import EmailSendError, send_html_with_pdf
+from common.ramasse import (
+    PALETTE_EMPTY_WEIGHT,
+    build_ramasse_lines,
+    clean_product_label,
+    load_destinataires,
+    parse_barcode_matrix,
+    today_paris,
 )
 from common.xlsx_fill import build_bl_enlevements_pdf
-from common.email import send_html_with_pdf
-
+from ui.auth import require_auth
+from ui.theme import COLORS, page_layout, section_title
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -48,7 +50,7 @@ def _load_brassins() -> tuple[list[dict], list[str]]:
 
     try:
         en_cours = get_brassins_en_cours()
-    except Exception as exc:
+    except (EasyBeerError, requests.RequestException) as exc:
         errors.append(f"Brassins en cours : {exc}")
         en_cours = []
 
@@ -59,7 +61,7 @@ def _load_brassins() -> tuple[list[dict], list[str]]:
             if b.get("idBrassin") not in en_cours_ids:
                 b["_is_archive"] = True
                 en_cours.append(b)
-    except Exception as exc:
+    except (EasyBeerError, requests.RequestException) as exc:
         errors.append(f"Brassins archivés : {exc}")
     return [b for b in en_cours if not b.get("annule")], errors
 
@@ -68,7 +70,7 @@ def _load_cb_matrix() -> dict[int, list[dict]] | None:
     try:
         raw = get_code_barre_matrice()
         return parse_barcode_matrix(raw)
-    except Exception:
+    except (EasyBeerError, requests.RequestException):
         _log.warning("Impossible de charger la matrice codes-barres", exc_info=True)
         return None
 
@@ -76,7 +78,7 @@ def _load_cb_matrix() -> dict[int, list[dict]] | None:
 def _load_eb_weights() -> dict[tuple[int, str], float] | None:
     try:
         return fetch_carton_weights()
-    except Exception:
+    except (EasyBeerError, requests.RequestException):
         _log.warning("Impossible de charger les poids cartons", exc_info=True)
         return None
 
@@ -88,7 +90,7 @@ def _load_entrepot() -> int | None:
             if w.get("principal"):
                 return w.get("idEntrepot")
         return warehouses[0].get("idEntrepot") if warehouses else None
-    except Exception:
+    except (EasyBeerError, requests.RequestException):
         _log.warning("Impossible de charger les entrepots", exc_info=True)
         return None
 
@@ -257,7 +259,7 @@ def page_ramasse():
                 rows, meta_by_label = build_ramasse_lines(
                     selected, id_entrepot, cb_by_product, eb_weights
                 )
-            except Exception as exc:
+            except (ValueError, KeyError, TypeError) as exc:
                 with content_container:
                     ui.label(f"Erreur lors du chargement des lignes : {exc}").classes(
                         "text-negative text-body1 q-pa-md"
@@ -513,7 +515,7 @@ def page_ramasse():
                             )
                             ui.download(pdf_bytes, f"Fiche_de_ramasse_{d:%Y-%m-%d}.pdf")
                             ui.notify("PDF généré !", type="positive", icon="check")
-                        except Exception as exc:
+                        except (OSError, ValueError, KeyError) as exc:
                             ui.notify(f"Erreur PDF : {exc}", type="negative")
 
                     ui.button(
@@ -599,7 +601,7 @@ def page_ramasse():
                                 f"Demande envoyée à {len(to_list)} destinataire(s) !",
                                 type="positive", icon="email", position="top",
                             )
-                        except Exception as exc:
+                        except (EmailSendError, OSError, ValueError, KeyError) as exc:
                             _log.exception("Erreur envoi email ramasse")
                             ui.notify(f"Erreur envoi : {exc}", type="negative")
                         finally:
@@ -643,7 +645,7 @@ def page_ramasse():
                         on_click=_open_email_confirm,
                     ).classes("flex-1").props("color=green-8 unelevated")
 
-            except Exception as exc:
+            except Exception as exc:  # broad catch: UI error boundary — inner blocks are narrowed
                 with content_container:
                     ui.label(f"Erreur lors de la construction du tableau : {exc}").classes(
                         "text-negative text-body1 q-pa-md"

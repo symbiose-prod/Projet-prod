@@ -285,7 +285,10 @@ def build_ramasse_lines(
         try:
             detail = get_brassin_detail(id_brassin)
         except Exception:
-            _log.warning("Impossible de charger le détail du brassin %s, fallback sur le résumé", id_brassin, exc_info=True)
+            _log.warning(
+                "Impossible de charger le détail du brassin %s, fallback sur le résumé",
+                id_brassin, exc_info=True,
+            )
             detail = brassin_summary
 
         # DDM calculee = date debut fermentation + 365 jours
@@ -318,7 +321,10 @@ def build_ramasse_lines(
                 matrice = get_planification_matrice(id_brassin, id_entrepot)
                 produits_derives = matrice.get("produitsDerives", [])
             except Exception:
-                _log.warning("Impossible de charger la matrice planification pour brassin %s", id_brassin, exc_info=True)
+                _log.warning(
+                    "Impossible de charger la matrice planification pour brassin %s",
+                    id_brassin, exc_info=True,
+                )
 
         # --- Tous les produits : principal + derives ---
         all_products: list[dict] = [brassin_produit]

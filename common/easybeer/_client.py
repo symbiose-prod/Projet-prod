@@ -13,6 +13,13 @@ import time as _time
 from typing import Any
 
 import requests
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 _log = logging.getLogger("ferment.easybeer")
 
@@ -72,7 +79,7 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
 
 def _dates(window_days: int) -> tuple[str, str]:
     """Retourne (date_debut_iso, date_fin_iso) pour une fenetre de N jours."""
-    fin = datetime.datetime.now(datetime.timezone.utc)
+    fin = datetime.datetime.now(datetime.UTC)
     debut = fin - datetime.timedelta(days=window_days)
     return (
         debut.strftime("%Y-%m-%dT00:00:00.000Z"),
@@ -96,3 +103,28 @@ def _base_payload(window_days: int) -> dict[str, Any]:
 # Alias pour compatibilite interne
 _excel_payload = _base_payload
 _indicator_payload = _base_payload
+
+
+# ─── Retry decorator for transient API errors ───────────────────────────────
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Return True for transient network/server errors worth retrying."""
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        resp = getattr(exc, "response", None)
+        if resp is not None and resp.status_code in (429, 500, 502, 503, 504):
+            return True
+    if isinstance(exc, EasyBeerError):
+        msg = str(exc)
+        return any(f" {c}" in msg for c in ("429", "500", "502", "503", "504"))
+    return False
+
+
+retry_api = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception(_is_retryable),
+    before_sleep=before_sleep_log(_log, logging.WARNING),
+    reraise=True,
+)

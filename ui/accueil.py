@@ -6,20 +6,18 @@ Page Accueil — Import des données (Easy Beer ou Excel).
 from __future__ import annotations
 
 import logging
-import os
 from io import BytesIO
 
 import pandas as pd
-from nicegui import ui, app
+from nicegui import app, ui
 
 _log = logging.getLogger("ferment.accueil")
 
-from ui.auth import require_auth
-from ui.theme import page_layout, section_title, COLORS
 from common.easybeer import is_configured as eb_configured
-from common.session_store import store_df, load_df
+from common.session_store import load_df, store_df
 from core.optimizer import read_input_excel_and_period_from_bytes
-
+from ui.auth import require_auth
+from ui.theme import COLORS, page_layout
 
 # ─── State helpers ──────────────────────────────────────────────────────────
 
@@ -112,7 +110,7 @@ def page_accueil():
                             status_label.classes("text-positive")
                             status_label.set_visibility(True)
                             ui.notify("Import EasyBeer réussi !", type="positive")
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             status_label.text = "L'import a dépassé le délai (45 s). Réessayez."
                             status_label.classes("text-negative")
                             status_label.set_visibility(True)
@@ -161,9 +159,17 @@ def page_accueil():
             upload_status = ui.label("").classes("text-body2")
             upload_status.set_visibility(False)
 
+            # Loading indicator (visible pendant le parsing)
+            with ui.row().classes("items-center gap-2") as upload_loading:
+                ui.spinner("dots", size="sm", color="green-8")
+                ui.label("Analyse du fichier en cours…").classes("text-body2").style(f"color: {COLORS['ink2']}")
+            upload_loading.set_visibility(False)
+
             MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 Mo
 
             def handle_upload(e):
+                upload_loading.set_visibility(True)
+                upload_status.set_visibility(False)
                 try:
                     content = e.content.read()
                     if isinstance(content, bytes) and len(content) > MAX_UPLOAD_BYTES:
@@ -193,6 +199,8 @@ def page_accueil():
                     upload_status.text = "Erreur lors de l'import. Vérifiez le format du fichier."
                     upload_status.classes("text-negative")
                     upload_status.set_visibility(True)
+                finally:
+                    upload_loading.set_visibility(False)
 
             ui.upload(
                 on_upload=handle_upload,

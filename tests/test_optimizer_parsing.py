@@ -3,19 +3,15 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from core.optimizer import (
-    parse_stock,
-    is_allowed_format,
     detect_header_row,
+    is_allowed_format,
     parse_days_from_b2,
+    parse_stock,
     safe_num,
-    ALLOWED_FORMATS,
 )
-
 
 # ─── parse_stock ──────────────────────────────────────────────────────────────
 

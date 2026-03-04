@@ -6,7 +6,6 @@ Parse bottle format from Stock column, aggregate cartons/bottles from df_min.
 from __future__ import annotations
 
 import re
-from typing import Dict
 
 import pandas as pd
 
@@ -25,7 +24,7 @@ def _parse_format_from_stock(stock: str):
     return nb, vol
 
 
-def _agg_from_dfmin(df_min: pd.DataFrame, gout: str) -> Dict[str, Dict[str, int]]:
+def _agg_from_dfmin(df_min: pd.DataFrame, gout: str) -> dict[str, dict[str, int]]:
     out = {
         "33_fr":   {"cartons": 0, "bouteilles": 0},
         "33_niko": {"cartons": 0, "bouteilles": 0},

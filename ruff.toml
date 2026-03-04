@@ -1,0 +1,32 @@
+# Ferment Station — Ruff linter configuration
+target-version = "py311"
+line-length = 120
+
+exclude = [
+    "data/",
+    "assets/",
+    ".venv/",
+    "__pycache__/",
+    "docs/",
+]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E402",  # module-level import not at top (needed for NiceGUI lazy loading)
+    "E741",  # ambiguous variable name (l, O, I) — used in math/optimizer
+    "F841",  # local variable assigned but never used — some intentional in UI
+]
+
+[lint.per-file-ignores]
+"ui/*.py" = ["E402", "E501"]  # UI modules: late imports + Quasar template strings
+"app_nicegui.py" = ["E402"]   # Late imports after dotenv loading
+"scripts/*.py" = ["E402"]     # Script-specific imports
+
+[lint.isort]
+known-first-party = ["common", "core", "db", "ui"]

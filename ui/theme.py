@@ -8,9 +8,8 @@ Composants réutilisables : page_layout(), kpi_card(), section_title()
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Any
 
-from nicegui import ui, app
+from nicegui import app, ui
 
 # ─── Logo SVG (cuve + bouteille) ───────────────────────────────────────────
 
@@ -189,6 +188,101 @@ def kpi_card(
                 ui.label(value).classes("text-h6").style(
                     f"color: {COLORS['ink']}; font-weight: 600"
                 )
+
+
+def date_picker_field(default_value: str, label: str | None = None) -> ui.input:
+    """
+    Composant réutilisable : input date + menu popup + date picker Quasar.
+
+    Retourne le ui.input (sa .value contient la date ISO sélectionnée).
+    """
+    if label:
+        ui.label(label).classes("text-subtitle2 q-mb-xs").style(
+            f"color: {COLORS['ink']}; font-weight: 600"
+        )
+    date_input = ui.input(value=default_value).props("outlined dense").classes("w-full")
+    with date_input:
+        with ui.menu().props("no-parent-event") as menu:
+            picker = ui.date(value=default_value).props("dense first-day-of-week=1")
+            picker.on_value_change(
+                lambda e: (date_input.set_value(e.value), menu.close())
+            )
+        with date_input.add_slot("append"):
+            ui.icon("event", size="xs").classes("cursor-pointer").on("click", lambda: menu.open())
+    return date_input
+
+
+@contextmanager
+def loading_overlay(container, message: str = "Chargement…"):
+    """Affiche un overlay semi-transparent + spinner + message dans un conteneur NiceGUI.
+
+    Usage ::
+
+        with loading_overlay(my_card, "Analyse du fichier en cours…"):
+            await asyncio.to_thread(heavy_task)
+        # L'overlay est automatiquement retiré à la sortie du context manager.
+    """
+    overlay = None
+    with container:
+        overlay = ui.element("div").style(
+            "position: absolute; inset: 0; z-index: 10; "
+            "background: rgba(255,255,255,0.8); "
+            "display: flex; flex-direction: column; "
+            "align-items: center; justify-content: center; gap: 12px; "
+            "border-radius: 8px"
+        )
+        with overlay:
+            ui.spinner("dots", size="lg", color="green-8")
+            ui.label(message).classes("text-body2").style(f"color: {COLORS['ink2']}")
+    try:
+        yield overlay
+    finally:
+        if overlay:
+            try:
+                overlay.delete()
+            except Exception:
+                pass
+
+
+def password_strength_bar(password_input: ui.input) -> ui.element:
+    """Ajoute un indicateur de force de mot de passe sous un champ NiceGUI.
+
+    Retourne le conteneur de l'indicateur (pour le positionner).
+    Met à jour en live à chaque frappe.
+    """
+    from common.auth import MIN_PASSWORD_LENGTH
+
+    container = ui.column().classes("w-full gap-0 q-mt-none")
+    with container:
+        bar = ui.linear_progress(value=0, show_value=False, size="6px").props("rounded color=grey-4").classes("w-full")
+        rules_row = ui.row().classes("w-full gap-4 q-mt-xs")
+        with rules_row:
+            lbl_len = ui.label(f"✗ {MIN_PASSWORD_LENGTH}+ caractères").classes("text-caption").style("color: #EF4444")
+            lbl_letter = ui.label("✗ Contient une lettre").classes("text-caption").style("color: #EF4444")
+            lbl_digit = ui.label("✗ Contient un chiffre").classes("text-caption").style("color: #EF4444")
+
+    def _update(e):
+        pwd = e.value or ""
+        ok_len = len(pwd) >= MIN_PASSWORD_LENGTH
+        ok_letter = any(c.isalpha() for c in pwd)
+        ok_digit = any(c.isdigit() for c in pwd)
+        score = sum([ok_len, ok_letter, ok_digit])
+
+        # Barre de progression + couleur
+        bar.set_value(score / 3)
+        color_map = {0: "grey-4", 1: "red-6", 2: "orange-6", 3: "green-7"}
+        bar.props(f'color={color_map[score]}')
+
+        # Labels
+        lbl_len.text = f"{'✓' if ok_len else '✗'} {MIN_PASSWORD_LENGTH}+ caractères"
+        lbl_len.style(f"color: {'#16A34A' if ok_len else '#EF4444'}")
+        lbl_letter.text = f"{'✓' if ok_letter else '✗'} Contient une lettre"
+        lbl_letter.style(f"color: {'#16A34A' if ok_letter else '#EF4444'}")
+        lbl_digit.text = f"{'✓' if ok_digit else '✗'} Contient un chiffre"
+        lbl_digit.style(f"color: {'#16A34A' if ok_digit else '#EF4444'}")
+
+    password_input.on("update:model-value", _update)
+    return container
 
 
 def section_title(title: str, icon: str = ""):

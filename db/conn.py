@@ -1,11 +1,17 @@
 # db/conn.py
+import logging
 import os
 import threading
-from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse, quote_plus
-from typing import Any, Mapping, Optional, Tuple
+from collections.abc import Mapping
+from typing import Any
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse, urlunparse
 
-from sqlalchemy import create_engine, text as _text
-from sqlalchemy.engine import Engine, Result
+from sqlalchemy import create_engine
+from sqlalchemy import text as _text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
+
+_log = logging.getLogger("ferment.db")
 
 
 # ------------------------
@@ -38,7 +44,7 @@ def _with_param(url: str, key: str, value: str) -> str:
     return urlunparse((u.scheme, u.netloc, u.path, u.params, new_query, u.fragment))
 
 
-def _get_db_parts() -> tuple:
+def _get_db_parts() -> tuple[str, str, str, str, str]:
     """Lit les variables d'env et retourne (host, port, name, user, pwd). Valide les requises."""
     host = os.getenv("DB_HOST") or os.getenv("POSTGRES_HOST")
     port = os.getenv("DB_PORT") or os.getenv("POSTGRES_PORT") or "5432"
@@ -47,12 +53,19 @@ def _get_db_parts() -> tuple:
     pwd  = os.getenv("DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD") or ""
 
     missing = []
-    if not host: missing.append("DB_HOST")
-    if not name: missing.append("DB_DATABASE")
-    if not user: missing.append("DB_USERNAME")
+    if not host:
+        missing.append("DB_HOST")
+    if not name:
+        missing.append("DB_DATABASE")
+    if not user:
+        missing.append("DB_USERNAME")
     if missing:
         raise RuntimeError(f"Variables DB manquantes : {', '.join(missing)}")
 
+    # Type narrowing: host, name, user are guaranteed non-None after validation above
+    assert host is not None  # noqa: S101
+    assert name is not None  # noqa: S101
+    assert user is not None  # noqa: S101
     return host, port, name, user, pwd
 
 
@@ -91,7 +104,19 @@ _ENGINE_LOCK = threading.Lock()
 
 
 def get_engine() -> Engine:
-    """Renvoie un Engine SQLAlchemy (singleton thread-safe)."""
+    """Renvoie un Engine SQLAlchemy (singleton thread-safe).
+
+    Pool sizing (VPS OVH 2 vCPU / 4 GB) :
+    - pool_size=10  : connexions permanentes — suffisant pour ~5 requêtes
+      concurrentes (NiceGUI est mono-worker, mais les background tasks et
+      le cleanup tournent en parallèle).
+    - max_overflow=5 : 5 connexions additionnelles en cas de pic ponctuel
+      (import Excel, batch EasyBeer). Fermées après utilisation.
+    - pool_recycle=1800 : renouvelle les connexions toutes les 30 min pour
+      éviter les connexions stale (PG idle_in_transaction_session_timeout).
+    - pool_pre_ping=True : vérifie chaque connexion avant utilisation
+      (résilience aux redémarrages PostgreSQL).
+    """
     global _ENGINE
     if _ENGINE is None:
         with _ENGINE_LOCK:
@@ -102,7 +127,7 @@ def get_engine() -> Engine:
                     pool_pre_ping=True,
                     pool_size=10,
                     max_overflow=5,
-                    pool_recycle=1800,        # recycle les connexions toutes les 30 min
+                    pool_recycle=1800,
                     connect_args={
                         "connect_timeout": 10,
                         "options": "-c statement_timeout=60000",  # timeout requête 60s
@@ -119,7 +144,7 @@ def engine() -> Engine:  # noqa: N802 - garder le nom historique
 # ------------------------
 # Exécution SQL
 # ------------------------
-def run_sql(sql: Any, params: Optional[Mapping[str, Any]] = None) -> int | list[dict]:
+def run_sql(sql: Any, params: Mapping[str, Any] | None = None) -> int | list[dict]:
     """
     Exécute une requête SQL (str ou sqlalchemy TextClause).
     - Si la requête retourne des lignes (SELECT...), renvoie une liste de dicts.
@@ -137,12 +162,13 @@ def run_sql(sql: Any, params: Optional[Mapping[str, Any]] = None) -> int | list[
             return result.rowcount
 
 
-def ping() -> Tuple[bool, str]:
+def ping() -> tuple[bool, str]:
     """Test de santé : SELECT 1."""
     try:
         _ = run_sql("SELECT 1;")
         return True, "✅ DB OK (SELECT 1)"
-    except Exception as e:
+    except (SQLAlchemyError, OSError) as e:
+        _log.warning("Health check DB échoué: %s", e)
         return False, f"❌ Erreur de connexion : {e}"
 
 

@@ -8,24 +8,28 @@ Extrait de ui/production.py pour maintenabilité.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import logging
 import re
-import datetime as _dt
 
-import pandas as pd
-from nicegui import ui, app
+import requests
+from nicegui import app, ui
 
+from common.easybeer import EasyBeerError
 from common.session_store import load_df
 from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import parse_stock as _parse_stock
-from ui._production_calc import _fetch_eb_products, _auto_match
+from ui._production_calc import _auto_match, _fetch_eb_products
+from ui.theme import date_picker_field
 
 _log = logging.getLogger("ferment.production")
 
-# Constantes importées à la demande depuis production.py pour éviter
-# une dépendance circulaire au niveau module.
-DEFAULT_LOSS_LARGE = 800
-DEFAULT_LOSS_SMALL = 400
+# Constantes métier chargées depuis config.yaml (source unique de vérité)
+from common.data import get_business_config as _get_biz
+
+_biz_eb = _get_biz()
+DEFAULT_LOSS_LARGE = _biz_eb["default_loss_large"]
+DEFAULT_LOSS_SMALL = _biz_eb["default_loss_small"]
 
 
 def _render_easybeer_section(
@@ -104,7 +108,7 @@ def _render_easybeer_section(
     # ── Charger les produits EasyBeer ────────────────────────────
     try:
         _eb_products = _fetch_eb_products()
-    except Exception as exc:
+    except (EasyBeerError, requests.RequestException) as exc:
         ui.notify(f"Erreur EasyBeer : {exc}", type="negative")
         _eb_products = []
 
@@ -131,24 +135,11 @@ def _render_easybeer_section(
     ui.separator().classes("q-my-xs")
 
     # ── Date d'embouteillage ──────────────────────────────────
-    ui.label("Date embouteillage").classes(
-        "text-subtitle2 q-mb-xs"
-    ).style(f"color: {colors['ink']}; font-weight: 600")
-
     _default_embout = _dt.date.fromisoformat(_semaine_du_eb) + _dt.timedelta(days=7)
-    date_embout_input = ui.input(
-        value=_default_embout.isoformat(),
-    ).props("outlined dense").classes("w-full")
-    with date_embout_input:
-        with ui.menu().props("no-parent-event") as embout_menu:
-            embout_picker = ui.date(value=_default_embout.isoformat()).props("dense first-day-of-week=1")
-            embout_picker.on_value_change(
-                lambda e: (date_embout_input.set_value(e.value), embout_menu.close())
-            )
-        with date_embout_input.add_slot("append"):
-            ui.icon("event", size="xs").classes("cursor-pointer").on(
-                "click", lambda: embout_menu.open()
-            )
+    date_embout_input = date_picker_field(
+        _default_embout.isoformat(),
+        label="Date embouteillage",
+    )
 
     # ── Produit auto-matché par goût (affiché en lecture seule) ─
     _product_indices: dict[str, int] = {}
@@ -168,7 +159,7 @@ def _render_easybeer_section(
     _materiels: list[dict] = []
     try:
         _materiels = get_all_materiels()
-    except Exception:
+    except (EasyBeerError, requests.RequestException):
         _log.debug("Erreur chargement materiels EasyBeer", exc_info=True)
 
     _tank_cap_eb = 0
@@ -198,7 +189,10 @@ def _render_easybeer_section(
         ui.label("Affectation des cuves").classes("text-subtitle2")
 
         _cuve_options = {
-            i: f"{m.get('identifiant', '')} ({m.get('volume', 0):.0f}L) — {m.get('etatCourant', {}).get('libelle', '?')}"
+            i: (
+                f"{m.get('identifiant', '')} ({m.get('volume', 0):.0f}L)"
+                f" — {m.get('etatCourant', {}).get('libelle', '?')}"
+            )
             for i, m in enumerate(_cuves_fermentation)
         }
 
@@ -234,17 +228,23 @@ def _render_easybeer_section(
         ui.button("Recréer", icon="refresh", on_click=do_recreate).props("flat color=grey-7")
     else:
         async def do_create_brassins():
+            from common.brassin_builder import (
+                build_brassin_payload,
+                build_etape_planification,
+                generate_brassin_code,
+                match_contenant_id,
+                parse_derive_map,
+                parse_packaging_lookup,
+                scale_recipe_ingredients,
+            )
             from common.easybeer import (
-                create_brassin, get_product_detail, get_warehouses,
-                get_planification_matrice, add_planification_conditionnement,
+                add_planification_conditionnement,
+                create_brassin,
+                get_planification_matrice,
+                get_product_detail,
+                get_warehouses,
                 upload_fichier_brassin,
             )
-            import unicodedata as _ud_etape
-
-            def _norm_etape(s: str) -> str:
-                s = _ud_etape.normalize("NFKD", s)
-                s = "".join(ch for ch in s if not _ud_etape.combining(ch))
-                return s.lower()
 
             # Entrepôt principal
             _id_entrepot = None
@@ -256,7 +256,7 @@ def _render_easybeer_section(
                         break
                 if not _id_entrepot and _warehouses:
                     _id_entrepot = _warehouses[0].get("idEntrepot")
-            except Exception:
+            except (EasyBeerError, requests.RequestException):
                 _log.debug("Erreur chargement entrepôts EasyBeer", exc_info=True)
 
             _selected_cuve_a_id = (
@@ -267,29 +267,25 @@ def _render_easybeer_section(
                 _cuves_fermentation[cuve_b_sel.value].get("idMateriel")
                 if cuve_b_sel and _cuves_fermentation else None
             )
+            _cuve_dilution_id = _cuve_dilution.get("idMateriel") if _cuve_dilution else None
 
             created_ids = []
             errors = []
 
             # Tracker FIFO des lots — persiste entre goûts pour la conso virtuelle
-            from common.lot_fifo import BatchLotTracker
             from common.easybeer import get_mp_lots
+            from common.lot_fifo import BatchLotTracker
             _lot_tracker = BatchLotTracker(fetch_lots_fn=get_mp_lots)
 
             for g in _gouts_eb:
                 vol_l = _vol_par_gout.get(g, 0)
                 _sel_idx = _product_indices[g]
                 id_produit = _eb_products[_sel_idx]["idProduit"]
-
-                # Nom du brassin
-                _date_obj = _dt.date.fromisoformat(_semaine_du_eb)
                 _prod_label = _eb_products[_sel_idx].get("libelle", "")
-                if "infusion" in _prod_label.lower():
-                    _code = "IP" + g[:1].upper() + _date_obj.strftime("%d%m%Y")
-                else:
-                    _code = "K" + g[:2].upper() + _date_obj.strftime("%d%m%Y")
 
-                # Recette + étapes
+                _code = generate_brassin_code(g, _semaine_du_eb, _prod_label)
+
+                # Recette + étapes (via brassin_builder)
                 _ingredients = []
                 _planif_etapes = []
                 try:
@@ -298,88 +294,39 @@ def _render_easybeer_section(
                     etapes = prod_detail.get("etapes") or []
 
                     if recettes:
-                        recette = recettes[0]
-                        vol_recette = recette.get("volumeRecette", 0)
-                        ratio = vol_l / vol_recette if vol_recette > 0 else 1
-                        for ing in recette.get("ingredients") or []:
-                            base_ing = {
-                                "idProduitIngredient": ing.get("idProduitIngredient"),
-                                "matierePremiere": ing.get("matierePremiere"),
-                                "quantite": round(ing.get("quantite", 0) * ratio, 2),
-                                "ordre": ing.get("ordre", 0),
-                                "unite": ing.get("unite"),
-                                "brassageEtape": ing.get("brassageEtape"),
-                                "modeleNumerosLots": [],
-                            }
-                            # Distribution FIFO des lots
+                        base_ings = scale_recipe_ingredients(recettes[0], vol_l)
+                        for base_ing in base_ings:
                             _ingredients.extend(
                                 _lot_tracker.distribute_ingredient(base_ing)
                             )
 
-                    for et in etapes:
-                        _etape_nom = _norm_etape(
-                            (et.get("brassageEtape") or {}).get("nom", "")
-                        )
-                        _mat = {}
-                        if _selected_cuve_a_id and (
-                            "fermentation" in _etape_nom
-                            or "aromatisation" in _etape_nom
-                            or "filtration" in _etape_nom
-                        ):
-                            _mat = {"idMateriel": _selected_cuve_a_id}
-                        elif _selected_cuve_b_id and (
-                            "transfert" in _etape_nom or "garde" in _etape_nom
-                        ):
-                            _mat = {"idMateriel": _selected_cuve_b_id}
-                        elif _cuve_dilution and (
-                            "preparation" in _etape_nom or "sirop" in _etape_nom
-                        ):
-                            _mat = {"idMateriel": _cuve_dilution.get("idMateriel")}
-
-                        _planif_etapes.append({
-                            "produitEtape": {
-                                "idProduitEtape": et.get("idProduitEtape"),
-                                "brassageEtape": et.get("brassageEtape"),
-                                "ordre": et.get("ordre"),
-                                "duree": et.get("duree"),
-                                "unite": et.get("unite"),
-                                "etapeTerminee": False,
-                                "etapeEnCours": False,
-                            },
-                            "materiel": _mat,
-                        })
-                except Exception as exc:
+                    _planif_etapes = build_etape_planification(
+                        etapes, _selected_cuve_a_id, _selected_cuve_b_id, _cuve_dilution_id,
+                    )
+                except (EasyBeerError, requests.RequestException, KeyError, ValueError) as exc:
                     ui.notify(f"Recette « {g} » : {exc}", type="warning")
 
                 # Date embouteillage
                 _date_embout = date_embout_input.value
-                if isinstance(_date_embout, str):
-                    _date_embout_iso = _date_embout
-                else:
-                    _date_embout_iso = _date_embout.isoformat()
+                _date_embout_iso = _date_embout if isinstance(_date_embout, str) else _date_embout.isoformat()
 
-                payload = {
-                    "nom": _code,
-                    "volume": round(vol_l, 1),
-                    "pourcentagePerte": round(_perte_litres / vol_l * 100, 2) if vol_l > 0 else 0,
-                    "dateDebutFormulaire": f"{_semaine_du_eb}T07:30:00.000Z",
-                    "dateConditionnementPrevue": f"{_date_embout_iso}T23:00:00.000Z",
-                    "produit": {"idProduit": id_produit},
-                    "type": {"code": "LOCALE"},
-                    "deduireMatierePremiere": True,
-                    "changementEtapeAutomatique": True,
-                }
-                if _ingredients:
-                    payload["ingredients"] = _ingredients
-                if _planif_etapes:
-                    payload["planificationsEtapes"] = _planif_etapes
+                payload = build_brassin_payload(
+                    code=_code,
+                    vol_l=vol_l,
+                    perte_litres=_perte_litres,
+                    semaine_du=_semaine_du_eb,
+                    date_embout_iso=_date_embout_iso,
+                    id_produit=id_produit,
+                    ingredients=_ingredients,
+                    planif_etapes=_planif_etapes,
+                )
 
                 try:
                     result = create_brassin(payload)
                     brassin_id = result.get("id", "?")
                     created_ids.append(brassin_id)
                     ui.notify(f"Brassin « {g} » créé (ID {brassin_id})", type="positive")
-                except Exception as exc:
+                except (EasyBeerError, requests.RequestException) as exc:
                     _log.exception("Échec création brassin %s", g)
                     errors.append(f"{g} : {exc}")
                     continue
@@ -397,25 +344,8 @@ def _render_easybeer_section(
                         if _cap is not None:
                             _cont_by_vol.setdefault(round(float(_cap), 2), []).append(_mod)
 
-                    _pkg_lookup: dict[str, int] = {}
-                    for _pk in _matrice.get("packagings", []):
-                        _lbl = (_pk.get("libelle") or "").strip().lower()
-                        if _lbl and _pk.get("idLot") is not None:
-                            _pkg_lookup[_lbl] = _pk["idLot"]
-
-                    # ── Produits dérivés (NIKO, INTER…) ──
-                    _derive_map: dict[str, int] = {}
-                    for _d in _matrice.get("produitsDerives", []):
-                        _d_lbl = (_d.get("libelle") or "").lower()
-                        _d_id = _d.get("idProduit")
-                        if not _d_id:
-                            continue
-                        if "niko" in _d_lbl:
-                            _derive_map["niko"] = _d_id
-                        elif "inter" in _d_lbl:
-                            _derive_map["inter"] = _d_id
-                        elif "water" in _d_lbl:
-                            _derive_map["water"] = _d_id
+                    _pkg_lookup = parse_packaging_lookup(_matrice)
+                    _derive_map = parse_derive_map(_matrice)
 
                     def _product_id_for_line(produit_str: str) -> int:
                         """Retourne l'idProduit du dérivé si NIKO/INTER, sinon le principal."""
@@ -450,24 +380,7 @@ def _render_easybeer_section(
                                     break
 
                             _, _vol_btl = _parse_stock(_stock)
-                            _id_cont = None
-                            if _vol_btl is not None and not pd.isna(_vol_btl):
-                                _vol_key = round(float(_vol_btl), 2)
-                                _candidates = _cont_by_vol.get(_vol_key, [])
-                                if len(_candidates) == 1:
-                                    _id_cont = _candidates[0].get("idContenant")
-                                elif len(_candidates) > 1:
-                                    _is_pack = "pack" in _pkg_name
-                                    for _c in _candidates:
-                                        _c_lbl = (_c.get("libelleAvecContenance") or _c.get("libelle") or "").lower()
-                                        if _is_pack and "saft" in _c_lbl:
-                                            _id_cont = _c.get("idContenant")
-                                            break
-                                        elif not _is_pack and "saft" not in _c_lbl:
-                                            _id_cont = _c.get("idContenant")
-                                            break
-                                    if _id_cont is None:
-                                        _id_cont = _candidates[0].get("idContenant")
+                            _id_cont = match_contenant_id(_stock, _vol_btl, _cont_by_vol)
 
                             if _id_cont is not None and _id_lot is not None:
                                 _pid = _product_id_for_line(_produit_col)
@@ -494,7 +407,7 @@ def _render_easybeer_section(
                             f"Conditionnement « {g} » planifié ({_nb_planifs} produit{'s' if _nb_planifs > 1 else ''})",
                             type="positive",
                         )
-                except Exception as _pe:
+                except (EasyBeerError, requests.RequestException, KeyError, ValueError) as _pe:
                     ui.notify(f"Planif. « {g} » : {_pe}", type="warning")
 
                 # Pause avant upload pour éviter le rate-limit EasyBeer (HTTP 429)
@@ -531,7 +444,7 @@ def _render_easybeer_section(
                         commentaire=f"Fiche de production {g}",
                     )
                     ui.notify(f"Fiche « {g} » uploadée", type="positive")
-                except Exception as _ue:
+                except (EasyBeerError, requests.RequestException, OSError, KeyError, ValueError) as _ue:
                     _log.exception("Échec upload fiche %s (brassin %s)", g, brassin_id)
                     ui.notify(f"Upload fiche « {g} » : {_ue}", type="warning")
 
@@ -539,6 +452,17 @@ def _render_easybeer_section(
             if created_ids:
                 _created = app.storage.user.setdefault("_eb_brassins_created", {})
                 _created[_creation_key] = created_ids
+                # Audit trail
+                try:
+                    from common.audit import ACTION_BRASSIN_CREATED, log_event
+                    log_event(
+                        tenant_id=app.storage.user.get("tenant_id"),
+                        user_email=app.storage.user.get("email"),
+                        action=ACTION_BRASSIN_CREATED,
+                        details={"brassin_ids": created_ids, "gouts": _gouts_eb},
+                    )
+                except Exception:
+                    _log.debug("Audit log_event brassin_created failed", exc_info=True)
                 ui.notify(
                     f"{len(created_ids)} brassin(s) créé(s) !",
                     type="positive", icon="check",

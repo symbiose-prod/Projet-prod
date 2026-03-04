@@ -1,8 +1,6 @@
 """Tests for common/lot_fifo.py — FIFO lot allocation."""
 from __future__ import annotations
 
-import pytest
-
 from common.lot_fifo import LotPool
 
 

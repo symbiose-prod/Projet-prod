@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from openpyxl.utils import coordinate_to_tuple, get_column_letter
 from openpyxl.drawing.image import Image as XLImage
+from openpyxl.utils import coordinate_to_tuple, get_column_letter
 
 try:
     from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor

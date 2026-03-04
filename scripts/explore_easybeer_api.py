@@ -12,9 +12,13 @@ Usage:
 Résultat : affiche tous les endpoints qui répondent avec le statut + aperçu JSON.
 """
 from __future__ import annotations
-import os, json, sys
-import requests
+
+import json
+import os
+import sys
 from datetime import datetime, timedelta
+
+import requests
 
 USER         = os.environ.get("EASYBEER_API_USER", "")
 PASS         = os.environ.get("EASYBEER_API_PASS", "")
@@ -38,7 +42,7 @@ def _preview(r: requests.Response, max_chars: int = 800) -> str:
     if "json" in ct:
         try:
             return json.dumps(r.json(), indent=2, ensure_ascii=False)[:max_chars]
-        except Exception:
+        except (ValueError, TypeError):
             pass
     if "text" in ct or "html" in ct:
         return r.text[:max_chars]
@@ -54,7 +58,7 @@ def GET(path: str) -> requests.Response | None:
             print(_preview(r))
             print()
         return r
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"❌ GET  {path}  →  ERREUR: {e}")
         return None
 
@@ -68,7 +72,7 @@ def POST(path: str, payload: dict) -> requests.Response | None:
             print(_preview(r))
             print()
         return r
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"❌ POST {path}  →  ERREUR: {e}")
         return None
 

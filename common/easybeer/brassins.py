@@ -11,9 +11,10 @@ from typing import Any
 
 import requests
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log
+from ._client import BASE, TIMEOUT, EasyBeerError, _auth, _check_response, _log, retry_api
 
 
+@retry_api
 def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     """POST /brassin/enregistrer → Cree un nouveau brassin."""
     r = requests.post(
@@ -26,6 +27,7 @@ def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     return r.json()
 
 
+@retry_api
 def get_brassins_en_cours() -> list[dict[str, Any]]:
     """GET /brassin/en-cours/liste → Brassins actuellement en cours."""
     r = requests.get(
@@ -50,11 +52,11 @@ def get_brassins_archives(
             bid = b.get("idBrassin")
             if bid:
                 en_cours_ids.add(bid)
-    except Exception:
+    except (EasyBeerError, requests.RequestException):
         _log.warning("Erreur fetch brassins en cours pour archives", exc_info=True)
 
     # 2. Tous les brassins sur la fenetre
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     date_fin = now.strftime("%Y-%m-%dT23:59:59.999Z")
     date_debut = (now - datetime.timedelta(days=jours)).strftime("%Y-%m-%dT00:00:00.000Z")
 
@@ -94,6 +96,7 @@ def get_brassins_archives(
     return archived[:nombre]
 
 
+@retry_api
 def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     """GET /brassin/{id} → Detail complet d'un brassin."""
     r = requests.get(

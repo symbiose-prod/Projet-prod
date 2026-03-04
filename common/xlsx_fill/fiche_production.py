@@ -9,14 +9,13 @@ import io
 import logging
 import re
 from datetime import date
-from typing import Optional, Dict
 
 import pandas as pd
 
 _log = logging.getLogger("ferment.xlsx_fill")
 
-from ._helpers import _project_root, _to_excel_label, FILTRE_RATIO_KEFIR
-from ._excel_ops import _safe_set_cell, _set, _add_logo
+from ._excel_ops import _add_logo, _safe_set_cell, _set
+from ._helpers import FILTRE_RATIO_KEFIR, _project_root, _to_excel_label
 from ._stock_parse import _parse_format_from_stock
 from ._tank_ruler import interpolate_ruler_height
 
@@ -26,7 +25,7 @@ def fill_fiche_xlsx(
     semaine_du: date,
     ddm: date,
     gout1: str,
-    gout2: Optional[str] = None,
+    gout2: str | None = None,
     df_calc=None,
     sheet_name: str | None = None,
     df_min=None,
@@ -36,7 +35,7 @@ def fill_fiche_xlsx(
     transfer_loss: float = 400.0,
     aromatisation_volume: float = 0.0,
     is_infusion: bool = False,
-    dilution_ingredients: Dict[str, float] | None = None,
+    dilution_ingredients: dict[str, float] | None = None,
 ) -> bytes:
     """
     Remplit la fiche de production unique (Fiche_production.xlsx).
@@ -94,7 +93,8 @@ def fill_fiche_xlsx(
 
     # --- Titre "Cuve de xxxxL" ---
     if tank_capacity > 0:
-        from openpyxl.styles import Font as _Font, Alignment as _Align
+        from openpyxl.styles import Alignment as _Align
+        from openpyxl.styles import Font as _Font
         _set(ws, "C1", f"Cuve de {tank_capacity}L")
         try:
             ws["C1"].font = _Font(name="Aptos Narrow", size=20, bold=True)

@@ -1,16 +1,13 @@
 """Tests for common/ramasse.py — format detection, label parsing, barcode matrix."""
 from __future__ import annotations
 
-import pytest
-
 from common.ramasse import (
-    format_from_stock,
-    extract_gout,
-    clean_product_label,
-    parse_barcode_matrix,
     _canon,
+    clean_product_label,
+    extract_gout,
+    format_from_stock,
+    parse_barcode_matrix,
 )
-
 
 # ─── format_from_stock ────────────────────────────────────────────────────────
 

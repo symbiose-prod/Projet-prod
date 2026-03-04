@@ -1,7 +1,21 @@
 # common/email.py — Brevo (transactionnel) + wrappers retro-compatibles
 from __future__ import annotations
-import os, json, http.client, base64
-from typing import Optional, List, Tuple, Dict, Any
+
+import base64
+import http.client
+import json
+import logging
+import os
+
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+_log = logging.getLogger("ferment.email")
 
 
 class EmailSendError(RuntimeError):
@@ -14,11 +28,11 @@ def _get_api_key() -> str:
 
 
 def _get_sender_email() -> str:
-    return os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL", "hello@symbiose-kefir.fr")
+    return os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL") or "hello@symbiose-kefir.fr"
 
 
 def _get_sender_name() -> str:
-    return os.getenv("EMAIL_SENDER_NAME") or os.getenv("SENDER_NAME", "Symbiose Kefir")
+    return os.getenv("EMAIL_SENDER_NAME") or os.getenv("SENDER_NAME") or "Symbiose Kefir"
 
 
 def _require_env() -> tuple[str, str, str]:
@@ -34,6 +48,25 @@ def _require_env() -> tuple[str, str, str]:
         raise EmailSendError(f"Variables d'environnement manquantes: {', '.join(missing)}")
     return api_key, sender_email, _get_sender_name()
 
+def _is_brevo_retryable(exc: BaseException) -> bool:
+    """Return True for transient Brevo API errors worth retrying."""
+    if isinstance(exc, (ConnectionError, OSError, http.client.HTTPException)):
+        return True
+    if isinstance(exc, EmailSendError) and "429" in str(exc):
+        return True
+    return False
+
+
+_retry_brevo = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=30),
+    retry=retry_if_exception(_is_brevo_retryable),
+    before_sleep=before_sleep_log(_log, logging.WARNING),
+    reraise=True,
+)
+
+
+@_retry_brevo
 def _post_brevo(path: str, payload: dict) -> dict:
     """POST JSON vers l'API Brevo et renvoie le JSON de reponse."""
     api_key, _, _ = _require_env()
@@ -44,16 +77,21 @@ def _post_brevo(path: str, payload: dict) -> dict:
         "content-type": "application/json",
     }
     try:
-        with http.client.HTTPSConnection("api.brevo.com", timeout=20) as conn:
+        with http.client.HTTPSConnection("api.brevo.com", timeout=20) as conn:  # type: ignore[attr-defined]
             conn.request("POST", path, body=body, headers=headers)
             resp = conn.getresponse()
             raw = resp.read().decode("utf-8", errors="replace")
     except EmailSendError:
         raise
-    except Exception as e:
+    except (ConnectionError, OSError, http.client.HTTPException) as e:
+        _log.error("Echec connexion Brevo: %s", e)
         raise EmailSendError(f"Echec connexion Brevo: {e}") from e
 
+    if resp.status == 429:
+        _log.warning("Brevo rate-limit atteint (HTTP 429)")
+        raise EmailSendError("Brevo rate-limit atteint. Réessayez dans quelques instants.")
     if resp.status not in (200, 201, 202):
+        _log.error("Brevo HTTP %d — reponse: %s", resp.status, raw[:200])
         raise EmailSendError(f"Brevo HTTP {resp.status} — reponse: {raw}")
 
     try:
@@ -94,6 +132,7 @@ def send_reset_email(to_email: str, reset_url: str) -> dict:
         "textContent": text,
     }
     data = _post_brevo("/v3/smtp/email", payload)
+    _log.info("Email reset envoyé à %s (msg_id=%s)", to_email, data.get("messageId"))
     return {"status": "sent", "provider_msg_id": data.get("messageId"), "response": data}
 
 # ---------------------------------------------------------------------------
@@ -114,12 +153,12 @@ def html_signature() -> str:
         "</div>"
     )
 
-def _encode_attachments(attachments: Optional[List[Tuple[str, bytes]]]) -> List[Dict[str, str]]:
+def _encode_attachments(attachments: list[tuple[str, bytes]] | None) -> list[dict[str, str]]:
     """
     Convertit [(filename, bytes), ...] en format Brevo:
     {"name": "file.pdf", "content": "<base64>"}
     """
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     if not attachments:
         return out
     for name, content in attachments:
@@ -133,8 +172,8 @@ def send_html_with_pdf(
     to_email: str,
     subject: str,
     html_body: str,
-    attachments: Optional[List[Tuple[str, bytes]]] = None,
-    reply_to: Optional[str] = None,
+    attachments: list[tuple[str, bytes]] | None = None,
+    reply_to: str | None = None,
 ) -> dict:
     """
     Envoi générique HTML + pièces jointes (PDF ou autres).
@@ -160,6 +199,7 @@ def send_html_with_pdf(
         payload["replyTo"] = {"email": reply_to}
 
     data = _post_brevo("/v3/smtp/email", payload)
+    _log.info("Email envoyé à %s — sujet=%s (msg_id=%s)", to_email, subject, data.get("messageId"))
     return {"status": "sent", "provider_msg_id": data.get("messageId"), "response": data}
 
 def _strip_html_to_text(html: str) -> str:

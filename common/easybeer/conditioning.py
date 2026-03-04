@@ -10,9 +10,10 @@ from typing import Any
 
 import requests
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, retry_api
 
 
+@retry_api
 def get_planification_matrice(id_brassin: int, id_entrepot: int) -> dict[str, Any]:
     """GET /brassin/planification-conditionnement/matrice → Matrice contenants x packagings."""
     r = requests.get(
@@ -25,6 +26,7 @@ def get_planification_matrice(id_brassin: int, id_entrepot: int) -> dict[str, An
     return r.json()
 
 
+@retry_api
 def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
     """POST /brassin/planification-conditionnement/ajouter → Ajoute une planification."""
     r = requests.post(
@@ -36,11 +38,12 @@ def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
     _check_response(r, "planification-conditionnement/ajouter")
     try:
         return r.json()
-    except Exception:
+    except (ValueError, TypeError):
         _log.debug("Erreur parsing reponse planification", exc_info=True)
         return {"status": "ok"}
 
 
+@retry_api
 def get_code_barre_matrice() -> dict[str, Any]:
     """GET /parametres/code-barre/matrice → Matrice complete des codes-barres."""
     r = requests.get(
@@ -96,6 +99,6 @@ def upload_fichier_brassin(
     _check_response(r, ep)
     try:
         return r.json()
-    except Exception:
+    except (ValueError, TypeError):
         _log.debug("Erreur parsing reponse code-barres", exc_info=True)
         return {"status": "ok"}

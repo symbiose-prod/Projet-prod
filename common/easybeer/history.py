@@ -30,7 +30,7 @@ def get_contenant_historique(
         filtre["periode"] = {
             "dateDebut": date_debut or "2020-01-01T00:00:00.000Z",
             "dateFin": date_fin or datetime.datetime.now(
-                datetime.timezone.utc
+                datetime.UTC
             ).strftime("%Y-%m-%dT23:59:59.999Z"),
             "type": "PERIODE_LIBRE",
         }
@@ -47,7 +47,7 @@ def get_contenant_historique(
     while True:
         r = requests.post(
             f"{BASE}/{ep}",
-            params={
+            params={  # type: ignore[arg-type]
                 "numeroPage": page,
                 "nombreParPage": per_page,
                 "colonneTri": "-date",

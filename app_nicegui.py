@@ -8,26 +8,53 @@ Lance avec :  python3 app_nicegui.py
 """
 from __future__ import annotations
 
+import logging as _logging
+import logging.config as _logging_config
 import os
-
-from nicegui import ui, app
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse
+import time as _time
+import uuid as _uuid
 
 # ─── Chargement .env (python-dotenv, ne surcharge pas les vars existantes) ───
 from pathlib import Path
+
 from dotenv import load_dotenv
+from nicegui import app, ui
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, RedirectResponse
 
 _env_file = Path(__file__).resolve().parent / ".env"
 load_dotenv(_env_file, override=False)
 
 
-# ─── Auth middleware ─────────────────────────────────────────────────────────
+# ─── Logging structuré ──────────────────────────────────────────────────────
 
-import logging as _logging
+_IS_PRODUCTION = os.environ.get("ENV") == "production"
+
+if _IS_PRODUCTION:
+    _logging_config.dictConfig({
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "json": {
+                "()": "logging.Formatter",
+                "format": '{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
+                "datefmt": "%Y-%m-%dT%H:%M:%S",
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "json",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "root": {"level": "INFO", "handlers": ["console"]},
+    })
 
 _log = _logging.getLogger("ferment.auth")
+_log_http = _logging.getLogger("ferment.http")
 
 # Pages publiques (pas besoin d'etre connecte)
 PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset", "/health"}
@@ -70,7 +97,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         _log.info("Session restauree via remember-me pour %s", remembered["email"])
                     else:
                         return RedirectResponse(url="/login")
-                except Exception:
+                except (SQLAlchemyError, OSError, ValueError):
                     _log.warning("Erreur verification remember-me token", exc_info=True)
                     return RedirectResponse(url="/login")
             else:
@@ -93,7 +120,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user_store["tenant_id"] = str(db_user["tenant_id"])
                 user_store["role"] = db_user.get("role", "user")
                 user_store["_server_validated_at"] = now
-            except Exception:
+            except (SQLAlchemyError, OSError):
                 _log.exception("Erreur validation session serveur")
                 # Grace period : si la derniere validation reussie date de
                 # moins de 30 min, on laisse passer temporairement.
@@ -130,7 +157,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     secure=_is_prod,
                     samesite="lax",
                 )
-        except Exception:
+        except (KeyError, TypeError, RuntimeError):
             _log.warning("Erreur pose cookie remember-me", exc_info=True)
 
         return response
@@ -142,7 +169,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if os.environ.get("ENV") == "production":
+        # CSP : NiceGUI nécessite 'unsafe-inline' + 'unsafe-eval' pour Quasar/Vue3 + WebSocket
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self' wss: ws:; "
+            "font-src 'self' data:; "
+            "frame-ancestors 'none'"
+        )
+        if _IS_PRODUCTION:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     @staticmethod
@@ -153,12 +190,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             try:
                 from common.auth import revoke_session_token
                 revoke_session_token(fs_token)
-            except Exception:
+            except (SQLAlchemyError, OSError):
                 _log.warning("Erreur revocation token logout", exc_info=True)
         # Vider le storage NiceGUI (supprime authenticated, tenant_id, etc.)
         try:
             app.storage.user.clear()
-        except Exception:
+        except (KeyError, RuntimeError):
             _log.debug("Impossible de vider storage user au logout", exc_info=True)
         resp = RedirectResponse(url="/login", status_code=302)
         resp.delete_cookie("fs_session", path="/")
@@ -167,24 +204,62 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(AuthMiddleware)
 
+
+# ─── Request logging middleware ──────────────────────────────────────────────
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Logue méthode, path, statut et durée de chaque requête HTTP — avec request_id."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = str(_uuid.uuid4())[:8]
+        request.state.request_id = request_id
+        start = _time.monotonic()
+        response = await call_next(request)
+        duration_ms = (_time.monotonic() - start) * 1000
+        response.headers["X-Request-ID"] = request_id
+        path = request.url.path
+        # Ignorer les assets statiques NiceGUI (trop bruyant)
+        if not path.startswith("/_nicegui"):
+            _log_http.info(
+                "[%s] %s %s → %d (%.0fms)",
+                request_id, request.method, path, response.status_code, duration_ms,
+            )
+        return response
+
+
+app.add_middleware(RequestLoggingMiddleware)
+
+
 # ─── Import des pages (les @ui.page sont enregistrés à l'import) ────────────
 
-from ui import auth as _auth           # /login
-from ui import accueil as _accueil     # /accueil
-from ui import ramasse as _ramasse     # /ramasse
-from ui import production as _production  # /production
 
 
 # ─── Health check ────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def _health_check():
-    """Endpoint de santé : vérifie la connexion DB et renvoie un statut JSON."""
+    """Endpoint de santé enrichi : DB + espace disque."""
+    import shutil
+
+    checks: dict[str, str] = {}
+
+    # 1. Database
     from db.conn import ping
-    ok, msg = ping()
+    db_ok, db_msg = ping()
+    checks["db"] = "ok" if db_ok else db_msg
+
+    # 2. Espace disque (> 100 MB requis)
+    try:
+        usage = shutil.disk_usage("/")
+        free_mb = usage.free / (1024 * 1024)
+        checks["disk"] = "ok" if free_mb > 100 else f"low ({free_mb:.0f} MB)"
+    except OSError:
+        checks["disk"] = "error"
+
+    all_ok = all(v == "ok" for v in checks.values())
     return JSONResponse(
-        {"status": "ok" if ok else "error", "db": msg},
-        status_code=200 if ok else 503,
+        {"status": "ok" if all_ok else "degraded", "checks": checks},
+        status_code=200 if all_ok else 503,
     )
 
 
@@ -196,12 +271,12 @@ _CLEANUP_INTERVAL = 3600  # 1 heure
 def _do_cleanup() -> None:
     """Purge les sessions, tokens et lockouts expirés."""
     try:
-        from common.auth import cleanup_expired_sessions, cleanup_expired_resets, cleanup_expired_failures
+        from common.auth import cleanup_expired_failures, cleanup_expired_resets, cleanup_expired_sessions
         cleanup_expired_sessions()
         cleanup_expired_resets()
         cleanup_expired_failures()
         _log.debug("Nettoyage périodique OK")
-    except Exception:
+    except (SQLAlchemyError, OSError):
         _log.exception("Erreur nettoyage sessions/resets")
 
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 import io
 import logging
 import re
-from typing import Optional, List
 
 import numpy as np
 import pandas as pd
@@ -105,12 +104,12 @@ def detect_header_row(df_raw: pd.DataFrame) -> int:
     return 0
 
 
-def rows_to_keep_by_fill(excel_bytes: bytes, header_idx: int) -> List[bool]:
+def rows_to_keep_by_fill(excel_bytes: bytes, header_idx: int) -> list[bool]:
     import openpyxl
     wb = openpyxl.load_workbook(io.BytesIO(excel_bytes), data_only=True)
     ws = wb[wb.sheetnames[0]]
     start_row = header_idx + 2
-    keep: List[bool] = []
+    keep: list[bool] = []
     for r in range(start_row, ws.max_row + 1):
         is_black = False
         for cell in ws[r]:
@@ -127,7 +126,7 @@ def rows_to_keep_by_fill(excel_bytes: bytes, header_idx: int) -> List[bool]:
     return keep
 
 
-def parse_days_from_b2(value) -> Optional[int]:
+def parse_days_from_b2(value) -> int | None:
     try:
         if isinstance(value, (int, float)) and not pd.isna(value):
             v = int(round(float(value)))

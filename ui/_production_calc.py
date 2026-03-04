@@ -10,25 +10,29 @@ from __future__ import annotations
 import logging
 import time as _time
 
-import numpy as np
 import pandas as pd
 
 from core.optimizer import compute_plan
-from common.session_store import load_df
 
 _log = logging.getLogger("ferment.production")
 
 # ─── Cache produits EasyBeer ─────────────────────────────────────────────────
 
 _EB_PRODUCTS_CACHE: dict = {"data": None, "ts": 0.0}
-_EB_PRODUCTS_TTL = 300  # 5 minutes
+_EB_PRODUCTS_TTL = 3600  # 60 minutes — les produits changent rarement
+
+
+def invalidate_eb_products_cache() -> None:
+    """Invalide le cache produits (appelé manuellement via bouton « Rafraîchir »)."""
+    _EB_PRODUCTS_CACHE["data"] = None
+    _EB_PRODUCTS_CACHE["ts"] = 0.0
 
 
 def _fetch_eb_products() -> list[dict]:
-    """Produits EasyBeer avec cache TTL 5 min (évite 3 appels HTTP par calcul).
+    """Produits EasyBeer avec cache TTL 60 min (évite les appels HTTP redondants).
 
     Ne met PAS en cache les échecs (exception ou liste vide) pour que le
-    prochain appel retente l'API au lieu de servir un résultat vide pendant 5 min.
+    prochain appel retente l'API au lieu de servir un résultat vide.
     """
     now = _time.monotonic()
     if _EB_PRODUCTS_CACHE["data"] is not None and (now - _EB_PRODUCTS_CACHE["ts"]) < _EB_PRODUCTS_TTL:
@@ -155,10 +159,12 @@ def _compute_production_sync(
     volume_details: dict = {}
     if mode_prod != "Manuel" and gouts_cibles:
         from common.easybeer import (
-            is_configured as _eb_conf_p2,
             compute_aromatisation_volume,
-            compute_v_start_max,
             compute_dilution_ingredients,
+            compute_v_start_max,
+        )
+        from common.easybeer import (
+            is_configured as _eb_conf_p2,
         )
         _tank_cfg = TANK_CONFIGS[mode_prod]
         _C = _tank_cfg["capacity"]

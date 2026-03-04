@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 from datetime import date
-from typing import List
 
 import pandas as pd
 
@@ -18,12 +17,12 @@ def build_bl_enlevements_pdf(
     date_creation: date,
     date_ramasse: date,
     destinataire_title: str,
-    destinataire_lines: List[str],
+    destinataire_lines: list[str],
     df_lines: pd.DataFrame,
     *,
     logo_path: str | None = "assets/signature/logo_symbiose.png",
     issuer_name: str = "FERMENT STATION",
-    issuer_lines: List[str] | None = None,
+    issuer_lines: list[str] | None = None,
     issuer_footer: str | None = "Produits issus de l'Agriculture Biologique certifi\u00e9 par FR-BIO-01",
 ) -> bytes:
     """PDF BL au look Excel : encadre, tableau gris, totaux. (Helvetica/latin-1)."""
@@ -110,7 +109,7 @@ def build_bl_enlevements_pdf(
         pdf.cell(w_lbl, 8, _txt(label), border=1)
         pdf.cell(w_val, 8, _txt(value), border=1, ln=1, align="R")
 
-    def _row_dest(label: str, title: str, lines: List[str]):
+    def _row_dest(label: str, title: str, lines: list[str]):
         val_text = "\n".join([title] + (lines or []))
         n_lines = len(pdf.multi_cell(w_val, 6, _txt(val_text), split_only=True)) or 1
         row_h = max(8, 6 * n_lines)

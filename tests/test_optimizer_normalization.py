@@ -1,11 +1,7 @@
 """Tests for core/optimizer.py — text normalization functions."""
 from __future__ import annotations
 
-import pandas as pd
-import pytest
-
-from core.optimizer import fix_text, _norm_colname
-
+from core.optimizer import _norm_colname, fix_text
 
 # ─── fix_text ─────────────────────────────────────────────────────────────────
 

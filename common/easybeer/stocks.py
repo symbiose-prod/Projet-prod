@@ -6,17 +6,27 @@ Stock-related endpoints: autonomie, MP lots, stock detail, carton weights.
 from __future__ import annotations
 
 import datetime
-import logging
 import os
 import time
 from typing import Any
 
 import requests
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _excel_payload, _indicator_payload, _log
+from ._client import (
+    BASE,
+    TIMEOUT,
+    EasyBeerError,
+    _auth,
+    _check_response,
+    _excel_payload,
+    _indicator_payload,
+    _log,
+    retry_api,
+)
 
 # ─── Autonomie stocks ────────────────────────────────────────────────────────
 
+@retry_api
 def get_autonomie_stocks_excel(window_days: int) -> bytes:
     """POST /indicateur/autonomie-stocks/export/excel → Bytes du fichier Excel."""
     r = requests.post(
@@ -29,6 +39,7 @@ def get_autonomie_stocks_excel(window_days: int) -> bytes:
     return r.content
 
 
+@retry_api
 def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     """POST /indicateur/autonomie-stocks → JSON avec autonomie par produit fini."""
     r = requests.post(
@@ -44,6 +55,7 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
 
 # ─── Lots matieres premieres ─────────────────────────────────────────────────
 
+@retry_api
 def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
     """GET /stock/matieres-premieres/numero-lot/liste/{id} → Liste des lots."""
     ep = f"matieres-premieres/numero-lot/liste/{id_matiere_premiere}"
@@ -59,6 +71,7 @@ def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
 
 # ─── Detail stock produit ────────────────────────────────────────────────────
 
+@retry_api
 def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
     """GET /stock/produit/edition/{id} → Detail complet d'un stock produit."""
     r = requests.get(
@@ -86,13 +99,13 @@ def _load_weights_cache() -> dict[tuple[int, str], float] | None:
         with open(_WEIGHTS_CACHE_PATH, encoding="utf-8") as f:
             cache = json.load(f)
         ts = cache.get("ts", 0)
-        if datetime.datetime.now(datetime.timezone.utc).timestamp() - ts > _WEIGHTS_CACHE_TTL:
+        if datetime.datetime.now(datetime.UTC).timestamp() - ts > _WEIGHTS_CACHE_TTL:
             return None
         weights: dict[tuple[int, str], float] = {}
         for entry in cache.get("data", []):
             weights[(entry["pid"], entry["fmt"])] = entry["w"]
         return weights
-    except Exception:
+    except (OSError, ValueError, KeyError):
         _log.debug("Erreur chargement cache poids cartons", exc_info=True)
         return None
 
@@ -102,7 +115,7 @@ def _save_weights_cache(weights: dict[tuple[int, str], float]) -> None:
     import json
     import tempfile
     data = [{"pid": pid, "fmt": fmt, "w": w} for (pid, fmt), w in weights.items()]
-    cache = {"ts": datetime.datetime.now(datetime.timezone.utc).timestamp(), "data": data}
+    cache = {"ts": datetime.datetime.now(datetime.UTC).timestamp(), "data": data}
     try:
         cache_dir = os.path.dirname(_WEIGHTS_CACHE_PATH)
         os.makedirs(cache_dir, exist_ok=True)
@@ -117,7 +130,7 @@ def _save_weights_cache(weights: dict[tuple[int, str], float]) -> None:
             except OSError:
                 pass
             raise
-    except Exception:
+    except (OSError, ValueError):
         _log.warning("Impossible de sauvegarder le cache poids cartons", exc_info=True)
 
 
@@ -163,7 +176,7 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
                 poids = float(detail.get("poidsUnitaire", 0) or 0)
                 if poids > 0:
                     weights[(id_produit, fmt_str)] = poids
-            except Exception:
+            except (EasyBeerError, requests.RequestException) as _e:
                 _log.warning("Erreur fetch detail stock %s", sid, exc_info=True)
 
             time.sleep(0.3)

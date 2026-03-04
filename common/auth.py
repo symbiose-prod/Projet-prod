@@ -1,15 +1,17 @@
 # common/auth.py
 from __future__ import annotations
+
 import base64
-import os
-import secrets
 import hashlib
+import os
 import re
+import secrets
 import uuid
-from typing import Optional, Dict, Any
+from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from db.conn import run_sql  # helper SQL qui renvoie list[dict] pour SELECT
-
 
 # ------------------------------------------------------------------------------
 # PBKDF2 (format: pbkdf2_sha256$<iters>$<salt_b64>$<hash_b64>)
@@ -25,7 +27,11 @@ _EMAIL_RE = re.compile(
 )
 _EMAIL_MAX_LENGTH = 254  # RFC 5321
 _EMAIL_LOCAL_MAX = 64    # RFC 5321
-MIN_PASSWORD_LENGTH = 8
+
+# Longueur minimum chargée depuis config.yaml (section security)
+from common.data import get_security_config as _get_sec
+
+MIN_PASSWORD_LENGTH: int = _get_sec().get("min_password_length", 10)
 
 
 def validate_email(email: str) -> str:
@@ -49,8 +55,10 @@ def validate_password(password: str) -> str:
     """Vérifie les règles de complexité du mot de passe. Lève ValueError si invalide."""
     if not password or len(password) < MIN_PASSWORD_LENGTH:
         raise ValueError(f"Le mot de passe doit faire au moins {MIN_PASSWORD_LENGTH} caractères.")
-    if password.isdigit():
-        raise ValueError("Le mot de passe ne peut pas être uniquement des chiffres.")
+    has_letter = any(c.isalpha() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    if not has_letter or not has_digit:
+        raise ValueError("Le mot de passe doit contenir au moins une lettre et un chiffre.")
     return password
 
 
@@ -92,7 +100,7 @@ def _is_uuid(v: str) -> bool:
         return False
 
 
-def get_tenant_by_name(name: str) -> Optional[Dict[str, Any]]:
+def get_tenant_by_name(name: str) -> dict[str, Any] | None:
     """Recherche insensible à la casse."""
     n = _norm_tenant_name(name)
     rows = run_sql(
@@ -107,7 +115,7 @@ def get_tenant_by_name(name: str) -> Optional[Dict[str, Any]]:
     return rows[0] if rows else None
 
 
-def create_tenant(name: str) -> Dict[str, Any]:
+def create_tenant(name: str) -> dict[str, Any]:
     """Crée le tenant et renvoie (id, name, created_at)."""
     n = _norm_tenant_name(name)
     created = run_sql(
@@ -121,7 +129,7 @@ def create_tenant(name: str) -> Dict[str, Any]:
     return created[0]
 
 
-def get_or_create_tenant(name: str) -> Dict[str, Any]:
+def get_or_create_tenant(name: str) -> dict[str, Any]:
     """
     Idempotent et sûr en concurrence :
     - SELECT (lower)
@@ -138,10 +146,10 @@ def get_or_create_tenant(name: str) -> Dict[str, Any]:
 
     try:
         return create_tenant(n)
-    except Exception as exc:
+    except SQLAlchemyError as exc:
         # Probable course (UNIQUE violation) → le tenant vient d'être créé par un autre worker
         from sqlalchemy.exc import IntegrityError
-        if not isinstance(exc.__cause__, IntegrityError) and not isinstance(exc, IntegrityError):
+        if not isinstance(exc, IntegrityError):
             raise  # erreur inattendue, on la laisse remonter
         again = get_tenant_by_name(n)
         if again:
@@ -166,7 +174,7 @@ def ensure_tenant_id(tenant_name_or_id: str) -> str:
 # ------------------------------------------------------------------------------
 # Users
 # ------------------------------------------------------------------------------
-def find_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+def find_user_by_email(email: str) -> dict[str, Any] | None:
     e = (email or "").strip()
     if not e:
         return None
@@ -190,7 +198,7 @@ def count_users_in_tenant(tenant_id: str) -> int:
     return int(rows[0]["n"]) if rows else 0
 
 
-def get_allowed_tenants() -> Optional[list]:
+def get_allowed_tenants() -> list | None:
     """
     Retourne la liste des tenants autorisés pour l’inscription, ou None si pas de restriction.
     Variable d’env : ALLOWED_TENANTS (noms séparés par des virgules, insensible à la casse).
@@ -212,7 +220,7 @@ def check_tenant_allowed(tenant_name: str) -> None:
         raise ValueError("Cette organisation n’accepte pas les inscriptions libres. Contactez un administrateur.")
 
 
-def create_user(email: str, password: str, tenant_name_or_id: str, role: str = None) -> Dict[str, Any]:
+def create_user(email: str, password: str, tenant_name_or_id: str, role: str = None) -> dict[str, Any]:
     """
     Crée un utilisateur actif.
     - Vérifie l’existence de l’e-mail (insensible à la casse).
@@ -251,27 +259,51 @@ import logging as _logging
 
 _auth_log = _logging.getLogger("ferment.auth")
 
-# Lockout progressif — persisté en base (table login_failures)
-_MAX_FAILURES = 5
-_LOCKOUT_SECONDS = 300  # 5 min après 5 échecs
+# Lockout exponentiel — paliers chargés depuis config.yaml (section security)
+_LOCKOUT_THRESHOLDS: list[dict] = _get_sec().get("lockout_thresholds", [
+    {"failures": 5, "seconds": 300},
+    {"failures": 10, "seconds": 1800},
+    {"failures": 15, "seconds": 7200},
+])
+
+
+def _lockout_seconds_for(fail_count: int) -> int:
+    """Retourne la durée de lockout (secondes) pour un nombre d'échecs donné.
+
+    Parcourt les paliers du plus sévère au plus laxiste.
+    Retourne 0 si aucun palier n'est atteint.
+    """
+    for threshold in sorted(_LOCKOUT_THRESHOLDS, key=lambda t: t["failures"], reverse=True):
+        if fail_count >= threshold["failures"]:
+            return int(threshold["seconds"])
+    return 0
 
 
 def _check_lockout(email_lower: str) -> bool:
     """Retourne True si l'email est en lockout (trop de tentatives récentes)."""
     try:
         rows = run_sql(
+            "SELECT fail_count, last_fail FROM login_failures WHERE email = :e LIMIT 1",
+            {"e": email_lower},
+        )
+        if not rows:
+            return False
+        fail_count = int(rows[0]["fail_count"])
+        lockout_secs = _lockout_seconds_for(fail_count)
+        if lockout_secs <= 0:
+            return False
+        # Vérifier si le dernier échec est dans la fenêtre de lockout
+        in_window = run_sql(
             """
-            SELECT fail_count, last_fail
-            FROM login_failures
+            SELECT 1 FROM login_failures
             WHERE email = :e
-              AND fail_count >= :max
               AND last_fail > now() - make_interval(secs => :secs)
             LIMIT 1
             """,
-            {"e": email_lower, "max": _MAX_FAILURES, "secs": _LOCKOUT_SECONDS},
+            {"e": email_lower, "secs": lockout_secs},
         )
-        return bool(rows)
-    except Exception:
+        return bool(in_window)
+    except (SQLAlchemyError, OSError):
         _auth_log.warning("Erreur check lockout DB pour %s, on laisse passer", email_lower, exc_info=True)
         return False
 
@@ -291,7 +323,7 @@ def _record_failure(email_lower: str) -> int:
             {"e": email_lower},
         )
         return rows[0]["fail_count"] if rows else 0
-    except Exception:
+    except (SQLAlchemyError, OSError):
         _auth_log.warning("Erreur record failure DB pour %s", email_lower, exc_info=True)
         return 0
 
@@ -300,15 +332,19 @@ def _clear_failures(email_lower: str) -> None:
     """Supprime le compteur d'échecs après un login réussi."""
     try:
         run_sql("DELETE FROM login_failures WHERE email = :e", {"e": email_lower})
-    except Exception:
+    except (SQLAlchemyError, OSError):
         _auth_log.warning("Erreur clear failures DB pour %s", email_lower, exc_info=True)
 
 
 def cleanup_expired_failures() -> int:
-    """Supprime les entrées de lockout expirées. Retourne le nombre de lignes supprimées."""
+    """Supprime les entrées de lockout expirées (batch de 1000 max). Retourne le nombre de lignes supprimées."""
+    # Utilise le palier le plus long pour le nettoyage
+    max_secs = max((t["seconds"] for t in _LOCKOUT_THRESHOLDS), default=7200)
     result = run_sql(
-        "DELETE FROM login_failures WHERE last_fail < now() - make_interval(secs => :secs) RETURNING email",
-        {"secs": _LOCKOUT_SECONDS},
+        "DELETE FROM login_failures WHERE email IN "
+        "(SELECT email FROM login_failures WHERE last_fail < now() - make_interval(secs => :secs) LIMIT 1000) "
+        "RETURNING email",
+        {"secs": max_secs},
     )
     count = len(result) if isinstance(result, list) else result
     if count:
@@ -328,7 +364,7 @@ def _get_dummy_hash() -> str:
     return _DUMMY_HASH
 
 
-def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
+def authenticate(email: str, password: str) -> dict[str, Any] | None:
     e = (email or "").strip()
     if not e or not password:
         return None
@@ -354,6 +390,7 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         verify_password(password, _get_dummy_hash())
         _record_failure(e_lower)
         _auth_log.info("Echec login : email inconnu %s", e_lower)
+        _audit_login_failed(e_lower, reason="unknown_email")
         return None
 
     user = rows[0]
@@ -361,15 +398,18 @@ def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
         # Vérifier que le compte est actif
         if not user.get("is_active", True):
             _auth_log.warning("Login refusé : compte désactivé pour %s", e_lower)
+            _audit_login_failed(e_lower, reason="account_disabled", tenant_id=str(user.get("tenant_id", "")))
             return None
         # Réinitialiser le compteur en cas de succès
         _clear_failures(e_lower)
         _auth_log.info("Login réussi pour %s", e_lower)
+        _audit_login_ok(user)
         return user
 
     # Échec mot de passe
     new_count = _record_failure(e_lower)
     _auth_log.warning("Echec login : mauvais mot de passe pour %s (tentative %d)", e_lower, new_count)
+    _audit_login_failed(e_lower, reason="bad_password", tenant_id=str(user.get("tenant_id", "")))
     return None
 
 
@@ -386,7 +426,6 @@ def change_password(user_id: str, new_password: str) -> None:
 # Sessions persistantes ("Se souvenir de moi") — tokens stockés en base
 # ------------------------------------------------------------------------------
 import datetime as _dt
-from datetime import timezone as _tz
 
 SESSION_COOKIE = "fs_session"
 SESSION_DEFAULT_DAYS = 30
@@ -400,7 +439,7 @@ def create_session_token(user_id: str, tenant_id: str, days: int = SESSION_DEFAU
     """
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    expires_at = _dt.datetime.now(_tz.utc) + _dt.timedelta(days=days)
+    expires_at = _dt.datetime.now(_dt.UTC) + _dt.timedelta(days=days)
     run_sql(
         """
         INSERT INTO user_sessions (id, user_id, tenant_id, token_hash, expires_at)
@@ -411,7 +450,7 @@ def create_session_token(user_id: str, tenant_id: str, days: int = SESSION_DEFAU
     return token
 
 
-def verify_session_token(token: str) -> Optional[Dict[str, Any]]:
+def verify_session_token(token: str) -> dict[str, Any] | None:
     """
     Vérifie le token de session persistante.
     Retourne le user dict si valide (non expiré, utilisateur actif), None sinon.
@@ -454,8 +493,12 @@ def revoke_session_token(token: str) -> None:
 
 
 def cleanup_expired_sessions() -> int:
-    """Supprime les sessions expirées. Retourne le nombre de lignes supprimées."""
-    result = run_sql("DELETE FROM user_sessions WHERE expires_at < now() RETURNING id")
+    """Supprime les sessions expirées (batch de 1000 max). Retourne le nombre de lignes supprimées."""
+    result = run_sql(
+        "DELETE FROM user_sessions WHERE id IN "
+        "(SELECT id FROM user_sessions WHERE expires_at < now() LIMIT 1000) "
+        "RETURNING id"
+    )
     count = len(result) if isinstance(result, list) else result
     if count:
         _auth_log.info("Nettoyage : %d session(s) expirée(s) supprimée(s)", count)
@@ -463,11 +506,37 @@ def cleanup_expired_sessions() -> int:
 
 
 def cleanup_expired_resets() -> int:
-    """Supprime les tokens de reset expirés et utilisés. Retourne le nombre de lignes supprimées."""
+    """Supprime les tokens de reset expirés et utilisés (batch de 1000 max). Retourne le nombre de lignes supprimées."""
     result = run_sql(
-        "DELETE FROM password_resets WHERE expires_at < now() OR used_at IS NOT NULL RETURNING id"
+        "DELETE FROM password_resets WHERE id IN "
+        "(SELECT id FROM password_resets WHERE expires_at < now() OR used_at IS NOT NULL LIMIT 1000) "
+        "RETURNING id"
     )
     count = len(result) if isinstance(result, list) else result
     if count:
         _auth_log.info("Nettoyage : %d token(s) de reset supprimé(s)", count)
     return count
+
+
+# ------------------------------------------------------------------------------
+# Audit helpers (fire-and-forget, ne bloquent jamais l'appelant)
+# ------------------------------------------------------------------------------
+
+
+def _audit_login_ok(user: dict[str, Any]) -> None:
+    from common.audit import ACTION_LOGIN, log_event
+    log_event(
+        tenant_id=str(user.get("tenant_id", "")),
+        user_email=user.get("email", ""),
+        action=ACTION_LOGIN,
+    )
+
+
+def _audit_login_failed(email: str, *, reason: str, tenant_id: str | None = None) -> None:
+    from common.audit import ACTION_LOGIN_FAILED, log_event
+    log_event(
+        tenant_id=tenant_id,
+        user_email=email,
+        action=ACTION_LOGIN_FAILED,
+        details={"reason": reason},
+    )

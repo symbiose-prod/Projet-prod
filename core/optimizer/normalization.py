@@ -56,7 +56,10 @@ def _pick_column(df, candidates_norm: list[str]) -> str | None:
         if match:
             return norm_to_real[match[0]]
     except Exception:
-        _log.debug("Colonne %s non trouvee dans les colonnes disponibles", candidates_norm[0] if candidates_norm else "?")
+        _log.debug(
+            "Colonne %s non trouvee dans les colonnes disponibles",
+            candidates_norm[0] if candidates_norm else "?",
+        )
     return None
 
 

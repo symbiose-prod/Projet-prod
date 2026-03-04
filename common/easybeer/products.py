@@ -9,9 +9,10 @@ from typing import Any
 
 import requests
 
-from ._client import BASE, TIMEOUT, _auth
+from ._client import BASE, TIMEOUT, _auth, retry_api
 
 
+@retry_api
 def get_all_products() -> list[dict[str, Any]]:
     """GET /parametres/produit/liste/all → Liste complete des produits."""
     r = requests.get(
@@ -24,6 +25,7 @@ def get_all_products() -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+@retry_api
 def get_warehouses() -> list[dict[str, Any]]:
     """GET /parametres/entrepot/liste → Liste de tous les entrepots."""
     r = requests.get(
@@ -36,6 +38,7 @@ def get_warehouses() -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+@retry_api
 def get_product_detail(id_produit: int) -> dict[str, Any]:
     """GET /parametres/produit/edition/{id} → Detail complet d'un produit."""
     r = requests.get(
@@ -47,6 +50,7 @@ def get_product_detail(id_produit: int) -> dict[str, Any]:
     return r.json()
 
 
+@retry_api
 def get_all_materiels() -> list[dict[str, Any]]:
     """GET /parametres/materiel/liste/all → Liste complete du materiel."""
     r = requests.get(

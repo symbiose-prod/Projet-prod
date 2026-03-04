@@ -1,60 +1,54 @@
-# Ferment Station — Streamlit (multi-pages)
+# Ferment Station
 
-L'app lit **uniquement** les fichiers du repo (`/data`, `/assets`).  
-Aucune importation locale n'est nécessaire.
+Application web multi-tenant de gestion de production de fermentation (kéfir, infusions).
 
-## Structure
-- `app.py` (accueil)
-- `pages/02_Production.py`, `pages/03_Optimisation.py`, `pages/04_Fiche_de_ramasse.py`
-- `common/design.py` (thème & UI)
-- `common/data.py` (config & chemins)
-- `core/optimizer.py` (algorithmes)
-- `data/production.xlsx`, `data/flavor_map.csv`
-- `assets/` (images produits & modèles)
+**Framework:** NiceGUI (Python 3.11+)
+**Base de données:** PostgreSQL 16
+**Déploiement:** OVH VPS — https://prod.symbiose-kefir.fr
 
-## Lancer en local (optionnel)
+## Fonctionnalités
+
+- **Planning de production** — algorithme d'optimisation (égalisation des jours d'épuisement)
+- **Intégration EasyBeer** — création automatique de brassins, planification conditionnement
+- **Fiche de ramasse** — génération PDF/Excel pour les enlèvements
+- **Fiche de production** — remplissage automatique du template Excel
+- **Multi-tenancy** — isolation complète des données par organisation
+- **Authentification** — PBKDF2-SHA256, sessions persistantes, protection brute-force
+
+## Lancer en local
+
 ```bash
+# 1. Installer les dépendances
 pip install -r requirements.txt
-streamlit run app.py
 
---
+# 2. Configurer l'environnement
+cp ops/env.sample .env
+# Éditer .env avec vos valeurs (DB, Brevo, EasyBeer, NICEGUI_SECRET)
 
-## 🚀 Déploiement sur Kinsta
-### Fichiers requis
-- `Procfile` (à la racine) :
-web: streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT
+# 3. Lancer les migrations DB
+python scripts/app_bootstrap.py
 
-- `requirements.txt` (dépendances Python)
+# 4. Démarrer l'application
+python app_nicegui.py
+# → http://localhost:8502
+```
 
-### Étapes (sans environnement local)
-1. Aller sur **my.kinsta.com** → **Applications** → **Créer une application**  
-2. Source **GitHub** → autoriser l’accès à l’organisation `symbiose-prod`  
-3. Sélectionner le dépôt `symbiose-prod/Projet-prod` et la branche `main`  
-4. Laisser Kinsta détecter Python et la commande du `Procfile`  
-5. Déployer
+## Structure du projet
 
-À la fin du build, Kinsta fournit une URL du type :  
-`https://projet-prod-XXXX.kinsta.app`
+```
+app_nicegui.py          # Point d'entrée + middleware auth
+ui/                     # Pages NiceGUI (auth, accueil, production, ramasse)
+common/                 # Utilitaires partagés (auth, email, storage, EasyBeer)
+core/                   # Logique métier / algorithmes (optimiseur)
+db/                     # Couche base de données (SQLAlchemy)
+config.yaml             # Constantes métier centralisées
+```
 
-### Variables d’environnement (Kinsta → Settings → Environment variables)
-> Ne jamais commiter de secrets. Les mettre uniquement ici.
+## Déploiement (OVH VPS)
 
-| Nom            | Exemple / Description                                  |
-|----------------|---------------------------------------------------------|
-| ENV            | `production`                                           |
-| PORT           | `8080` (fourni par Kinsta)                             |
-| GH_REPO        | `symbiose-prod/Projet-prod`                            |
-| GH_BRANCH      | `main`                                                 |
-| GH_PATH_MEMOIRE| `data/memoire_longue.json` (temporaire sans DB)        |
-| GH_TOKEN       | (si l’app lit/écrit le repo)                           |
-| SMTP_HOST      | `smtp-relay.brevo.com`                                 |
-| SMTP_PORT      | `587`                                                  |
-| SMTP_USER      | (compte service)                                       |
-| SMTP_PASS      | (mot de passe SMTP)                                    |
-| EMAIL_FROM     | `no-reply@symbiose.internal`                           |
-| BREVO_API_KEY  | (si envoi via API Brevo)                               |
+```bash
+ssh ubuntu@92.222.229.87
+cd /home/ubuntu/app && git pull && sudo systemctl restart ferment
+```
 
-### Vérifications rapides après déploiement
-- L’URL Kinsta affiche bien l’interface Streamlit ✅  
-- Pas d’erreur d’import / de port (le `Procfile` force l’usage de `$PORT`)  
-- Test d’envoi d’email (si configuré)  
+Voir `CLAUDE.md` pour la documentation complète (architecture, conventions, API EasyBeer).

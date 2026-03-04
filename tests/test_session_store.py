@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
-from common.session_store import store_df, load_df
+from common.session_store import load_df, store_df
 
 
 class TestSessionStore:
@@ -37,7 +36,7 @@ class TestSessionStore:
         df = pd.DataFrame({
             "Produit": [f"Kéfir Goût {i}" for i in range(200)],
             "Volume": list(range(200)),
-            "Stock": [f"Carton de 12 - 33cl" for _ in range(200)],
+            "Stock": ["Carton de 12 - 33cl" for _ in range(200)],
         })
         raw_json = df.to_json(orient="split")
         stored = store_df(df)
