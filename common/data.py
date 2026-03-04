@@ -100,13 +100,13 @@ def _read_table_cached() -> pd.DataFrame:
         elif lower.endswith((".csv", ".txt")):
             try:
                 return pd.read_csv(main_table, sep=";", engine="python", header=None)
-            except Exception:
-                _log.debug("Erreur lecture CSV avec header, tentative sans header", exc_info=True)
+            except (pd.errors.ParserError, ValueError, UnicodeDecodeError):
+                _log.debug("Erreur lecture CSV sep=;, tentative sep=,", exc_info=True)
                 return pd.read_csv(main_table, sep=",", engine="python", header=None)
         else:
             try:
                 return pd.read_excel(main_table, engine="openpyxl", header=None)
-            except Exception:
+            except (ValueError, KeyError, OSError):
                 _log.debug("Erreur lecture xlsx, tentative xlrd", exc_info=True)
                 return pd.read_excel(main_table, engine="xlrd", header=None)
     except (OSError, ValueError, pd.errors.ParserError) as exc:
@@ -127,7 +127,7 @@ def _read_flavor_map_cached() -> pd.DataFrame:
         return pd.DataFrame(columns=["name", "canonical"])
     try:
         return pd.read_csv(flavor_map, encoding="utf-8")
-    except Exception:
+    except (pd.errors.ParserError, ValueError, UnicodeDecodeError):
         _log.debug("Erreur lecture flavor_map, tentative sep=;", exc_info=True)
         return pd.read_csv(flavor_map, encoding="utf-8", sep=";")
 

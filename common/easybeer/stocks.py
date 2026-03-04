@@ -21,6 +21,8 @@ from ._client import (
     _excel_payload,
     _indicator_payload,
     _log,
+    _safe_json,
+    get_session,
     retry_api,
 )
 
@@ -29,20 +31,20 @@ from ._client import (
 @retry_api
 def get_autonomie_stocks_excel(window_days: int) -> bytes:
     """POST /indicateur/autonomie-stocks/export/excel → Bytes du fichier Excel."""
-    r = requests.post(
+    r = get_session().post(
         f"{BASE}/indicateur/autonomie-stocks/export/excel",
         json=_excel_payload(window_days),
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    r.raise_for_status()
+    _check_response(r, "autonomie-stocks/export/excel")
     return r.content
 
 
 @retry_api
 def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     """POST /indicateur/autonomie-stocks → JSON avec autonomie par produit fini."""
-    r = requests.post(
+    r = get_session().post(
         f"{BASE}/indicateur/autonomie-stocks",
         params={"forceRefresh": False},
         json=_indicator_payload(window_days),
@@ -50,7 +52,7 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
         timeout=TIMEOUT,
     )
     _check_response(r, "autonomie-stocks")
-    return r.json()
+    return _safe_json(r, "autonomie-stocks")
 
 
 # ─── Lots matieres premieres ─────────────────────────────────────────────────
@@ -59,13 +61,13 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
 def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
     """GET /stock/matieres-premieres/numero-lot/liste/{id} → Liste des lots."""
     ep = f"matieres-premieres/numero-lot/liste/{id_matiere_premiere}"
-    r = requests.get(
+    r = get_session().get(
         f"{BASE}/stock/{ep}",
         auth=_auth(),
         timeout=TIMEOUT,
     )
     _check_response(r, ep)
-    data = r.json()
+    data = _safe_json(r, ep)
     return data if isinstance(data, list) else []
 
 
@@ -74,13 +76,14 @@ def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
 @retry_api
 def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
     """GET /stock/produit/edition/{id} → Detail complet d'un stock produit."""
-    r = requests.get(
+    ep = f"stock/produit/edition/{id_stock_produit}"
+    r = get_session().get(
         f"{BASE}/stock/produit/edition/{id_stock_produit}",
         auth=_auth(),
         timeout=10,
     )
-    r.raise_for_status()
-    return r.json()
+    _check_response(r, ep)
+    return _safe_json(r, ep)
 
 
 # ─── Poids cartons (avec cache fichier) ──────────────────────────────────────
@@ -144,14 +147,14 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
     _log.info("Fetch poids cartons depuis EasyBeer (cache expire ou absent)")
 
     payload = {"idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))}
-    r = requests.post(
+    r = get_session().post(
         f"{BASE}/stock/produits",
         json=payload,
         auth=_auth(),
         timeout=TIMEOUT,
     )
     _check_response(r, "stock/produits")
-    data = r.json()
+    data = _safe_json(r, "stock/produits")
 
     weights: dict[tuple[int, str], float] = {}
     for prod in data.get("consolidationsFilles", []):

@@ -35,7 +35,7 @@ def load_flavor_map_from_path(path_csv: str) -> pd.DataFrame:
                     fm["canonical"] = fm["canonical"].astype(str).str.strip().map(fix_text)
                     fm = fm[(fm["name"] != "") & (fm["canonical"] != "")]
                     return fm
-            except Exception:
+            except (pd.errors.ParserError, ValueError, UnicodeDecodeError, KeyError):
                 _log.debug("Erreur lecture ligne flavor_map", exc_info=True)
                 continue
     return pd.DataFrame(columns=["name", "canonical"])
@@ -82,7 +82,7 @@ def apply_canonical_flavor(df: pd.DataFrame, fm: pd.DataFrame) -> pd.DataFrame:
                 close = _difflib.get_close_matches(s, keys, n=1, cutoff=0.92)
                 if close:
                     return m_exact[close[0]]
-            except Exception:
+            except (ValueError, TypeError):
                 _log.debug("Erreur application canonical flavor pour %s", prod, exc_info=True)
             return str(prod).strip()
 

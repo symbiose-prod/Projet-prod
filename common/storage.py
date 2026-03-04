@@ -36,7 +36,10 @@ def _encode_sp(sp: dict[str, Any]) -> dict[str, Any]:
 
 def _decode_sp(obj: dict[str, Any]) -> dict[str, Any]:
     def _df(s):
-        return pd.read_json(s, orient="split") if isinstance(s, str) and s.strip() else None
+        if not isinstance(s, str) or not s.strip():
+            return None
+        import io
+        return pd.read_json(io.StringIO(s), orient="split")
     return {
         "semaine_du": obj.get("semaine_du"),
         "ddm": obj.get("ddm"),

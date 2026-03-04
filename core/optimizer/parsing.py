@@ -37,7 +37,7 @@ def parse_stock(text: str):
             try:
                 nb = int(m.group(1))
                 break
-            except Exception:
+            except (ValueError, TypeError):
                 _log.debug("Erreur parsing volume pour %r", s, exc_info=True)
     vol_l = None
     m_l = re.findall(r"(\d+(?:[.,]\d+)?)\s*[lL]", s)
@@ -62,7 +62,7 @@ def parse_stock(text: str):
                     nb = nb2
                 if vol_l is None:
                     vol_l = vol2
-            except Exception:
+            except (ValueError, TypeError):
                 _log.debug("Erreur parsing nb bouteilles pour %r", s, exc_info=True)
     if (nb is None or np.isnan(nb)) and vol_l is not None and abs(vol_l - 0.75) <= VOL_TOL:
         if re.search(r"(?:\b4\s*[x\u00d7]\b|Carton\s+de\s*4\b|4\s+Bouteilles?)", s, flags=re.IGNORECASE):

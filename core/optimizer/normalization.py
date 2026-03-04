@@ -55,7 +55,7 @@ def _pick_column(df, candidates_norm: list[str]) -> str | None:
         match = difflib.get_close_matches(candidates_norm[0], norms, n=1, cutoff=0.85)
         if match:
             return norm_to_real[match[0]]
-    except Exception:
+    except (ImportError, ValueError, TypeError):
         _log.debug(
             "Colonne %s non trouvee dans les colonnes disponibles",
             candidates_norm[0] if candidates_norm else "?",
@@ -89,7 +89,7 @@ def fix_text(s) -> str:
         s1 = s0.encode("latin1").decode("utf-8")
         if _looks_better(s0, s1):
             s0 = s1
-    except Exception:
+    except (UnicodeDecodeError, UnicodeEncodeError):
         _log.debug("Erreur normalisation texte: %r", s0, exc_info=True)
     if s0 in CUSTOM_REPLACEMENTS:
         return CUSTOM_REPLACEMENTS[s0]

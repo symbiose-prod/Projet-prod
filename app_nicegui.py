@@ -170,13 +170,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         # CSP : NiceGUI nécessite 'unsafe-inline' + 'unsafe-eval' pour Quasar/Vue3 + WebSocket
+        # Google Fonts (Inter) : fonts.googleapis.com (CSS) + fonts.gstatic.com (woff2)
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "img-src 'self' data:; "
             "connect-src 'self' wss: ws:; "
-            "font-src 'self' data:; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
             "frame-ancestors 'none'"
         )
         if _IS_PRODUCTION:
@@ -232,7 +233,10 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # ─── Import des pages (les @ui.page sont enregistrés à l'import) ────────────
 
-
+import ui.accueil  # noqa: F401 — /accueil
+import ui.auth  # noqa: F401 — /login, /reset/{token}
+import ui.production  # noqa: F401 — /production
+import ui.ramasse  # noqa: F401 — /ramasse
 
 # ─── Health check ────────────────────────────────────────────────────────────
 

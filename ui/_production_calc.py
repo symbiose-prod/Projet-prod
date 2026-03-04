@@ -181,8 +181,8 @@ def _compute_production_sync(
                 _matched_idx = _auto_match(_gout_p2, _labels_p2)
                 _id_prod_p2 = _eb_prods_p2[_matched_idx]["idProduit"]
                 _A_R, _R = compute_aromatisation_volume(_id_prod_p2)
-            except Exception:
-                _log.warning("Erreur calcul aromatisation pour %s", _gout_p2, exc_info=True)
+            except (ValueError, TypeError, KeyError, IndexError) as exc:
+                _log.warning("Erreur calcul aromatisation pour %s: %s", _gout_p2, exc, exc_info=True)
                 _A_R, _R = 0.0, 0.0
 
         _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
@@ -197,12 +197,12 @@ def _compute_production_sync(
                     "infusion" in _prod_label_p2.lower()
                     or _prod_label_p2.upper().startswith("EP")
                 )
-            except Exception:
+            except (IndexError, KeyError, AttributeError):
                 _log.debug("Erreur détection infusion pour %s", _gout_p2, exc_info=True)
             try:
                 _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
-            except Exception:
-                _log.warning("Erreur calcul dilution p2 pour %s", _gout_p2, exc_info=True)
+            except (ValueError, TypeError, KeyError) as exc:
+                _log.warning("Erreur calcul dilution p2 pour %s: %s", _gout_p2, exc, exc_info=True)
                 _dilution_p2 = {}
 
         volume_details[_gout_p2] = {
@@ -235,8 +235,8 @@ def _compute_production_sync(
                     manual_keep=forced_gouts or None,
                     exclude_list=excluded_gouts,
                 )
-            except Exception:
-                _log.exception("Erreur compute_plan")
+            except (ValueError, KeyError, pd.errors.MergeError) as exc:
+                _log.exception("Erreur compute_plan: %s", exc)
 
     df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
 

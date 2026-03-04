@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import requests
-
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session
 
 _MAX_PAGINATION_PAGES = 50
 
@@ -22,8 +20,9 @@ def get_clients(
     filtre: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """POST /parametres/client/liste → Page de clients (paginee)."""
-    r = requests.post(
-        f"{BASE}/parametres/client/liste",
+    ep = "parametres/client/liste"
+    r = get_session().post(
+        f"{BASE}/{ep}",
         params={  # type: ignore[arg-type]
             "colonneTri": sort_by,
             "mode": sort_mode,
@@ -34,8 +33,8 @@ def get_clients(
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    _check_response(r, "client/liste")
-    return r.json()
+    _check_response(r, ep)
+    return _safe_json(r, ep)
 
 
 def get_all_clients(

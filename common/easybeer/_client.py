@@ -33,6 +33,29 @@ def is_configured() -> bool:
     return bool(os.environ.get("EASYBEER_API_USER") and os.environ.get("EASYBEER_API_PASS"))
 
 
+# ─── Session réutilisable (connection pooling + keep-alive) ──────────────────
+_session: requests.Session | None = None
+_session_lock = _threading.Lock()
+
+
+def get_session() -> requests.Session:
+    """Singleton requests.Session thread-safe avec connection pooling."""
+    global _session
+    if _session is None:
+        with _session_lock:
+            if _session is None:
+                s = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(
+                    pool_connections=4,
+                    pool_maxsize=8,
+                    max_retries=0,  # retries gérés par tenacity
+                )
+                s.mount("https://", adapter)
+                s.mount("http://", adapter)
+                _session = s
+    return _session
+
+
 # ─── Rate-limiter global (thread-safe) ───────────────────────────────────────
 _API_MIN_INTERVAL = 0.2  # secondes
 _api_last_ts: float = 0.0
@@ -75,6 +98,16 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
     raise EasyBeerError(
         f"EasyBeer {endpoint} \u2192 HTTP {r.status_code} : {body[:300]}"
     )
+
+
+def _safe_json(r: requests.Response, endpoint: str) -> Any:
+    """Parse JSON en toute sécurité. Lève EasyBeerError si le body n'est pas du JSON."""
+    try:
+        return r.json()
+    except (ValueError, TypeError) as exc:
+        raise EasyBeerError(
+            f"EasyBeer {endpoint} : réponse non-JSON (HTTP {r.status_code}) — {r.text[:200]}"
+        ) from exc
 
 
 def _dates(window_days: int) -> tuple[str, str]:

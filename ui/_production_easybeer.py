@@ -484,7 +484,14 @@ def _render_easybeer_section(
 
                 async def _confirmed_create():
                     _confirm_dlg.close()
-                    await do_create_brassins()
+                    # Disable le bouton principal + afficher spinner pendant la création
+                    _create_btn.disable()
+                    _create_spinner.set_visibility(True)
+                    try:
+                        await do_create_brassins()
+                    finally:
+                        _create_btn.enable()
+                        _create_spinner.set_visibility(False)
 
                 ui.button(
                     "Créer",
@@ -492,8 +499,11 @@ def _render_easybeer_section(
                     on_click=_confirmed_create,
                 ).props("color=green-8 unelevated")
 
-        ui.button(
-            "Créer les brassins",
-            icon="rocket_launch",
-            on_click=_confirm_dlg.open,
-        ).classes("w-full q-mt-md").props("color=green-8 unelevated")
+        with ui.row().classes("w-full items-center gap-3 q-mt-md"):
+            _create_btn = ui.button(
+                "Créer les brassins",
+                icon="rocket_launch",
+                on_click=_confirm_dlg.open,
+            ).classes("flex-1").props("color=green-8 unelevated")
+            _create_spinner = ui.spinner("dots", size="md", color="green-8")
+            _create_spinner.set_visibility(False)

@@ -128,7 +128,7 @@ TABLE_COLUMNS = [
 # ─── Page ───────────────────────────────────────────────────────────────────
 
 @ui.page("/ramasse")
-def page_ramasse():
+async def page_ramasse():
     user = require_auth()
     if not user:
         return
@@ -144,12 +144,18 @@ def page_ramasse():
             ).classes("text-caption text-grey-6")
             return
 
-        # ── Chargement données ────────────────────────────────────
-        brassins, load_errors = _load_brassins()
+        # ── Chargement données (dans un thread pour ne pas bloquer l'event loop) ──
+        def _load_all_eb_data():
+            return (
+                _load_brassins(),
+                _load_cb_matrix(),
+                _load_entrepot(),
+                _load_eb_weights(),
+            )
 
-        cb_by_product = _load_cb_matrix()
-        id_entrepot = _load_entrepot()
-        eb_weights = _load_eb_weights()
+        (brassins, load_errors), cb_by_product, id_entrepot, eb_weights = (
+            await asyncio.to_thread(_load_all_eb_data)
+        )
 
         destinataires = load_destinataires()
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]

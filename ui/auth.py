@@ -7,6 +7,7 @@ Reutilise common/auth.py pour la logique metier.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from nicegui import app, ui
@@ -80,14 +81,15 @@ def page_login():
                     login_error = ui.label("").classes("text-negative text-body2")
                     login_error.set_visibility(False)
 
-                    def do_login():
+                    async def do_login():
                         email = email_input.value.strip()
                         pwd = pwd_input.value
                         if not email or not pwd:
                             login_error.text = "Renseigne email et mot de passe."
                             login_error.set_visibility(True)
                             return
-                        user = authenticate(email, pwd)
+                        # PBKDF2 est CPU-bound → thread pour ne pas bloquer l'event loop
+                        user = await asyncio.to_thread(authenticate, email, pwd)
                         if not user:
                             login_error.text = "Identifiants invalides."
                             login_error.set_visibility(True)
@@ -141,7 +143,7 @@ def page_login():
                     signup_msg = ui.label("").classes("text-body2")
                     signup_msg.set_visibility(False)
 
-                    def do_signup():
+                    async def do_signup():
                         email = su_email.value.strip()
                         pwd = su_pwd.value
                         pwd2 = su_pwd2.value
@@ -173,7 +175,9 @@ def page_login():
                             signup_msg.classes("text-negative")
                             signup_msg.set_visibility(True)
                             return
-                        if find_user_by_email(email):
+                        # DB calls (find_user, check_tenant, create_user) dans un thread
+                        existing = await asyncio.to_thread(find_user_by_email, email)
+                        if existing:
                             signup_msg.text = "Un compte existe déjà avec cet email."
                             signup_msg.classes("text-negative")
                             signup_msg.set_visibility(True)
@@ -188,7 +192,8 @@ def page_login():
                             return
 
                         try:
-                            user = create_user(email, pwd, tenant)
+                            # create_user appelle PBKDF2 → thread
+                            user = await asyncio.to_thread(create_user, email, pwd, tenant)
                             app.storage.user.update({
                                 "authenticated": True,
                                 "id": str(user["id"]),
@@ -325,7 +330,7 @@ def page_reset(token: str):
             reset_msg = ui.label("").classes("text-body2")
             reset_msg.set_visibility(False)
 
-            def do_reset():
+            async def do_reset():
                 pwd = new_pwd.value
                 pwd2 = confirm_pwd.value
                 if not pwd or not pwd2:
@@ -347,7 +352,8 @@ def page_reset(token: str):
                     return
                 try:
                     from common.auth_reset import consume_token_and_set_password
-                    consume_token_and_set_password(reset_id, user_id, pwd)
+                    # PBKDF2 hash + DB write → thread
+                    await asyncio.to_thread(consume_token_and_set_password, reset_id, user_id, pwd)
                     reset_msg.text = "Mot de passe modifie ! Redirection..."
                     reset_msg.classes("text-positive")
                     reset_msg.set_visibility(True)

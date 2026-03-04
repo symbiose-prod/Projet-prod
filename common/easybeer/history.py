@@ -8,9 +8,7 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-import requests
-
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session
 
 
 def get_contenant_historique(
@@ -45,7 +43,7 @@ def get_contenant_historique(
     page = 0
 
     while True:
-        r = requests.post(
+        r = get_session().post(
             f"{BASE}/{ep}",
             params={  # type: ignore[arg-type]
                 "numeroPage": page,
@@ -57,7 +55,7 @@ def get_contenant_historique(
             timeout=TIMEOUT,
         )
         _check_response(r, ep)
-        data = r.json()
+        data = _safe_json(r, ep)
 
         items = data.get("liste") or []
         all_items.extend(items)

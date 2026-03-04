@@ -8,16 +8,19 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from common.data import get_business_config as _get_biz
+
 from .parsing import is_allowed_format, parse_stock, safe_num
 
 # ======= constantes ==========================================================
 ROUND_TO_CARTON = True
 EPS = 1e-9
+PRICE_REF_HL: float = _get_biz().get("price_ref_hl", 400.0)
 
 
 # ---------- Helpers selection et egalisation ----------
 
-def _weekly_perte(stock_hl: float, vitesse_hl_j: float, price_hL: float = 400.0) -> float:
+def _weekly_perte(stock_hl: float, vitesse_hl_j: float, price_hL: float = PRICE_REF_HL) -> float:
     """Perte euro sur 7 jours si on ne produit pas : max(demande7 - stock, 0) * prix."""
     dem7 = 7.0 * max(float(vitesse_hl_j), 0.0)
     manque = max(dem7 - max(float(stock_hl), 0.0), 0.0)
@@ -134,9 +137,8 @@ def compute_plan(df_in, window_days, volume_cible, nb_gouts, repartir_pro_rv, ma
         np.inf,
     )
 
-    PRICE_REF = 400.0
     agg["rupture_semaine"] = agg["manque_7j"] > 1e-9
-    agg["perte_7j"] = agg["manque_7j"] * PRICE_REF
+    agg["perte_7j"] = agg["manque_7j"] * PRICE_REF_HL
 
     agg = agg.sort_values(
         by=["rupture_semaine", "perte_7j", "autonomie_j"],

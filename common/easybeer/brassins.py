@@ -11,35 +11,38 @@ from typing import Any
 
 import requests
 
-from ._client import BASE, TIMEOUT, EasyBeerError, _auth, _check_response, _log, retry_api
+from ._client import BASE, TIMEOUT, EasyBeerError, _auth, _check_response, _log, _safe_json, get_session, retry_api
 
 
 @retry_api
 def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     """POST /brassin/enregistrer → Cree un nouveau brassin."""
-    r = requests.post(
-        f"{BASE}/brassin/enregistrer",
+    ep = "brassin/enregistrer"
+    r = get_session().post(
+        f"{BASE}/{ep}",
         json=payload,
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    _check_response(r, "brassin/enregistrer")
-    return r.json()
+    _check_response(r, ep)
+    return _safe_json(r, ep)
 
 
 @retry_api
 def get_brassins_en_cours() -> list[dict[str, Any]]:
     """GET /brassin/en-cours/liste → Brassins actuellement en cours."""
-    r = requests.get(
-        f"{BASE}/brassin/en-cours/liste",
+    ep = "brassin/en-cours/liste"
+    r = get_session().get(
+        f"{BASE}/{ep}",
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    r.raise_for_status()
-    data = r.json()
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
     return data if isinstance(data, list) else []
 
 
+@retry_api
 def get_brassins_archives(
     nombre: int = 3,
     jours: int = 60,
@@ -60,8 +63,9 @@ def get_brassins_archives(
     date_fin = now.strftime("%Y-%m-%dT23:59:59.999Z")
     date_debut = (now - datetime.timedelta(days=jours)).strftime("%Y-%m-%dT00:00:00.000Z")
 
-    r = requests.post(
-        f"{BASE}/brassin/liste",
+    ep = "brassin/liste"
+    r = get_session().post(
+        f"{BASE}/{ep}",
         json={
             "dateDebut": date_debut,
             "dateFin": date_fin,
@@ -70,8 +74,8 @@ def get_brassins_archives(
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    r.raise_for_status()
-    data = r.json()
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
     all_brassins = data if isinstance(data, list) else []
 
     # 3. Exclure en cours + petits brassins (< 100L)
@@ -99,10 +103,11 @@ def get_brassins_archives(
 @retry_api
 def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     """GET /brassin/{id} → Detail complet d'un brassin."""
-    r = requests.get(
-        f"{BASE}/brassin/{id_brassin}",
+    ep = f"brassin/{id_brassin}"
+    r = get_session().get(
+        f"{BASE}/{ep}",
         auth=_auth(),
         timeout=TIMEOUT,
     )
-    r.raise_for_status()
-    return r.json()
+    _check_response(r, ep)
+    return _safe_json(r, ep)
