@@ -285,22 +285,30 @@ def rename_snapshot(old: str, new: str) -> tuple[bool, str]:
     t_id = _tenant_id()
 
     # UPDATE atomique : ne modifie QUE si le nouveau nom n'existe pas deja
-    rows = run_sql(
-        """
-        UPDATE production_proposals
-        SET payload = jsonb_set(payload, '{_meta,name}', to_jsonb(:new_name::text), true),
-            updated_at = NOW()
-        WHERE tenant_id = :t
-          AND payload->'_meta'->>'name' = :old_name
-          AND NOT EXISTS (
-              SELECT 1 FROM production_proposals pp2
-              WHERE pp2.tenant_id = :t
-                AND pp2.payload->'_meta'->>'name' = :new_name
-          )
-        RETURNING id
-        """,
-        {"t": t_id, "old_name": old, "new_name": new},
-    )
+    try:
+        rows = run_sql(
+            """
+            UPDATE production_proposals
+            SET payload = jsonb_set(payload, '{_meta,name}', to_jsonb(:new_name::text), true),
+                updated_at = NOW()
+            WHERE tenant_id = :t
+              AND payload->'_meta'->>'name' = :old_name
+              AND NOT EXISTS (
+                  SELECT 1 FROM production_proposals pp2
+                  WHERE pp2.tenant_id = :t
+                    AND pp2.payload->'_meta'->>'name' = :new_name
+              )
+            RETURNING id
+            """,
+            {"t": t_id, "old_name": old, "new_name": new},
+        )
+    except Exception as exc:
+        # L'index unique idx_pp_unique_name_per_tenant intercepte les race conditions
+        from sqlalchemy.exc import IntegrityError
+        cause = getattr(exc, "__cause__", exc)
+        if isinstance(exc, IntegrityError) or isinstance(cause, IntegrityError):
+            return False, "Ce nom existe déjà."
+        raise
     if not rows:
         # Distinguer : nom deja pris vs entree introuvable
         exists = run_sql(

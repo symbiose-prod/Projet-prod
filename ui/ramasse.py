@@ -40,7 +40,7 @@ from common.ramasse import (
 )
 from common.xlsx_fill import build_bl_enlevements_pdf
 from ui.auth import require_auth
-from ui.theme import COLORS, page_layout, section_title
+from ui.theme import COLORS, confirm_dialog, page_layout, section_title
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -194,7 +194,7 @@ async def page_ramasse():
                 ui.navigate.to("/ramasse")
 
             ui.button(icon="refresh", on_click=do_reload).props(
-                "flat round color=grey-7"
+                'flat round color=grey-7 aria-label="Recharger les données EasyBeer"'
             ).tooltip("Recharger les données EasyBeer")
 
         # ── Paramètres : date + destinataire (dans le contenu) ────────
@@ -327,7 +327,7 @@ async def page_ramasse():
                                     f"{tot_c:,}".replace(",", " ")
                                 ).classes("text-h6").style(
                                     f"color: {COLORS['ink']}; font-weight: 600"
-                                )
+                                ).props('aria-live="polite"')
 
                     with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
                         with ui.card_section().classes("row items-center gap-3 q-pa-md"):
@@ -341,7 +341,7 @@ async def page_ramasse():
                                 )
                                 kpi_labels["palettes"] = ui.label(str(tot_p)).classes("text-h6").style(
                                     f"color: {COLORS['ink']}; font-weight: 600"
-                                )
+                                ).props('aria-live="polite"')
 
                     with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
                         with ui.card_section().classes("row items-center gap-3 q-pa-md"):
@@ -357,7 +357,7 @@ async def page_ramasse():
                                     f"{tot_w:,}".replace(",", " ")
                                 ).classes("text-h6").style(
                                     f"color: {COLORS['ink']}; font-weight: 600"
-                                )
+                                ).props('aria-live="polite"')
 
                 # ── Tableau Quasar ─────────────────────────────────
                 section_title("Détail produits", "table_chart")
@@ -614,24 +614,19 @@ async def page_ramasse():
                             send_btn_ref.enable()
 
                     # Dialogue de confirmation avant envoi
-                    with ui.dialog() as _email_confirm_dlg, ui.card().classes("q-pa-lg"):
-                        ui.label("Confirmer l'envoi ?").classes("text-subtitle1").style(
-                            f"color: {COLORS['ink']}; font-weight: 600"
-                        )
-                        _email_confirm_msg = ui.label("").classes("text-body2 text-grey-7 q-mt-xs")
+                    _email_confirm_dlg, _email_confirm_msg, _email_send_action = confirm_dialog(
+                        title="Confirmer l'envoi ?",
+                        message="",
+                        action_label="Envoyer",
+                        action_icon="send",
+                    )
 
-                        with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
-                            ui.button("Annuler", on_click=_email_confirm_dlg.close).props("flat color=grey-7")
+                    async def _confirmed_send():
+                        _email_confirm_dlg.close()
+                        await do_send_email()
 
-                            async def _confirmed_send():
-                                _email_confirm_dlg.close()
-                                await do_send_email()
-
-                            send_btn_ref = ui.button(
-                                "Envoyer",
-                                icon="send",
-                                on_click=_confirmed_send,
-                            ).props("color=green-8 unelevated")
+                    _email_send_action.on_click(_confirmed_send)
+                    send_btn_ref = _email_send_action
 
                     def _open_email_confirm():
                         emails_raw = email_input.value or ""

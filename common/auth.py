@@ -283,7 +283,7 @@ def _check_lockout(email_lower: str) -> bool:
     """Retourne True si l'email est en lockout (trop de tentatives récentes)."""
     try:
         rows = run_sql(
-            "SELECT fail_count, last_fail FROM login_failures WHERE email = :e LIMIT 1",
+            "SELECT fail_count, last_fail FROM login_failures WHERE lower(email) = lower(:e) LIMIT 1",
             {"e": email_lower},
         )
         if not rows:
@@ -296,7 +296,7 @@ def _check_lockout(email_lower: str) -> bool:
         in_window = run_sql(
             """
             SELECT 1 FROM login_failures
-            WHERE email = :e
+            WHERE lower(email) = lower(:e)
               AND last_fail > now() - make_interval(secs => :secs)
             LIMIT 1
             """,
@@ -314,7 +314,7 @@ def _record_failure(email_lower: str) -> int:
         rows = run_sql(
             """
             INSERT INTO login_failures (email, fail_count, last_fail)
-            VALUES (:e, 1, now())
+            VALUES (lower(:e), 1, now())
             ON CONFLICT (email) DO UPDATE
               SET fail_count = login_failures.fail_count + 1,
                   last_fail  = now()
@@ -331,7 +331,7 @@ def _record_failure(email_lower: str) -> int:
 def _clear_failures(email_lower: str) -> None:
     """Supprime le compteur d'échecs après un login réussi."""
     try:
-        run_sql("DELETE FROM login_failures WHERE email = :e", {"e": email_lower})
+        run_sql("DELETE FROM login_failures WHERE lower(email) = lower(:e)", {"e": email_lower})
     except (SQLAlchemyError, OSError):
         _auth_log.warning("Erreur clear failures DB pour %s", email_lower, exc_info=True)
 

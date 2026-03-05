@@ -153,6 +153,14 @@ CREATE INDEX IF NOT EXISTS idx_audit_action         ON audit_log(action, created
 -- Index composite pour la recherche de propositions par tenant + statut
 CREATE INDEX IF NOT EXISTS idx_pp_tenant_status ON production_proposals(tenant_id, status);
 
+-- Index unique sur le nom de proposition par tenant (previent les race conditions rename)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pp_unique_name_per_tenant
+  ON production_proposals (tenant_id, (payload->'_meta'->>'name'))
+  WHERE payload->'_meta'->>'name' IS NOT NULL;
+
+-- Index fonctionnel pour les requetes lower() sur login_failures
+CREATE INDEX IF NOT EXISTS idx_login_failures_email_lower ON login_failures(lower(email));
+
 -- =========================
 -- Permissions (user applicatif "shark")
 -- =========================

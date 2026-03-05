@@ -176,6 +176,31 @@ class TestClearFailures:
         _clear_failures("a@b.com")  # should not raise
 
 
+class TestLockoutCaseSensitivity:
+    """Verify lockout SQL queries use lower() for case-insensitive matching."""
+
+    @patch("common.auth.run_sql")
+    def test_check_lockout_uses_lower(self, mock_sql: MagicMock):
+        mock_sql.return_value = []
+        _check_lockout("User@Example.COM")
+        sql_str = str(mock_sql.call_args_list[0][0][0])
+        assert "lower(email)" in sql_str.lower() or "lower( email)" in sql_str.lower()
+
+    @patch("common.auth.run_sql")
+    def test_record_failure_uses_lower(self, mock_sql: MagicMock):
+        mock_sql.return_value = [{"fail_count": 1}]
+        _record_failure("User@Example.COM")
+        sql_str = str(mock_sql.call_args_list[0][0][0])
+        assert "lower(:e)" in sql_str.lower() or "lower( :e)" in sql_str.lower()
+
+    @patch("common.auth.run_sql")
+    def test_clear_failures_uses_lower(self, mock_sql: MagicMock):
+        mock_sql.return_value = 1
+        _clear_failures("User@Example.COM")
+        sql_str = str(mock_sql.call_args_list[0][0][0])
+        assert "lower(email)" in sql_str.lower() or "lower( email)" in sql_str.lower()
+
+
 # ─── Authenticate ─────────────────────────────────────────────────────────────
 
 

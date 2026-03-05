@@ -88,10 +88,28 @@ def page_accueil():
                     import_spinner = ui.spinner("dots", size="xl", color="green-8").classes("self-center q-pa-md")
                     import_spinner.set_visibility(False)
 
+                    cancel_btn = ui.button(
+                        "Annuler", icon="cancel",
+                    ).classes("w-full q-mt-xs").props("flat color=grey-7")
+                    cancel_btn.set_visibility(False)
+
                     async def do_import_eb():
                         import asyncio
+                        _cancelled = {"v": False}
+
+                        def _do_cancel():
+                            _cancelled["v"] = True
+                            cancel_btn.set_visibility(False)
+                            import_spinner.set_visibility(False)
+                            import_btn.enable()
+                            status_label.text = "Import annulé."
+                            status_label.classes("text-grey-6")
+                            status_label.set_visibility(True)
+
+                        cancel_btn.on("click", _do_cancel)
                         import_btn.disable()
                         import_spinner.set_visibility(True)
+                        cancel_btn.set_visibility(True)
                         status_label.set_visibility(False)
                         try:
                             from common.easybeer import get_autonomie_stocks_excel
@@ -100,6 +118,8 @@ def page_accueil():
                                 asyncio.to_thread(get_autonomie_stocks_excel, days),
                                 timeout=45,
                             )
+                            if _cancelled["v"]:
+                                return
                             df, period = read_input_excel_and_period_from_bytes(xls_bytes)
                             state["imported"] = True
                             state["source"] = "EasyBeer"
@@ -111,17 +131,22 @@ def page_accueil():
                             status_label.set_visibility(True)
                             ui.notify("Import EasyBeer réussi !", type="positive")
                         except TimeoutError:
+                            if _cancelled["v"]:
+                                return
                             status_label.text = "L'import a dépassé le délai (45 s). Réessayez."
                             status_label.classes("text-negative")
                             status_label.set_visibility(True)
                             ui.notify("Délai dépassé (45 s). Réessayez.", type="warning")
                         except Exception:
+                            if _cancelled["v"]:
+                                return
                             _log.exception("Erreur import EasyBeer")
                             status_label.text = "Erreur lors de l'import. Vérifiez la connexion EasyBeer."
                             status_label.classes("text-negative")
                             status_label.set_visibility(True)
                         finally:
                             import_spinner.set_visibility(False)
+                            cancel_btn.set_visibility(False)
                             import_btn.enable()
 
                     import_btn = ui.button(

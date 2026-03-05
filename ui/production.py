@@ -30,7 +30,7 @@ from ui._production_calc import (
 from ui._production_easybeer import _render_easybeer_section
 from ui.accueil import get_df_raw
 from ui.auth import require_auth
-from ui.theme import COLORS, date_picker_field, kpi_card, page_layout, section_title
+from ui.theme import COLORS, date_picker_field, error_banner, kpi_card, page_layout, section_title
 
 _log = logging.getLogger("ferment.production")
 
@@ -53,6 +53,14 @@ async def page_production():
     user = require_auth()
     if not user:
         return
+
+    # Avertissement navigateur si modifications non sauvegardées
+    ui.add_head_html("""<script>
+    window._fsProductionDirty = false;
+    window.addEventListener('beforeunload', function(e) {
+        if (window._fsProductionDirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+    </script>""")
 
     with page_layout("Production", "factory", "/production") as sidebar:
 
@@ -224,12 +232,18 @@ async def page_production():
             except TimeoutError:
                 main_container.clear()
                 with main_container:
-                    ui.label("Le calcul a dépassé le délai (60 s). Réessayez avec moins de goûts ou un volume plus petit.").classes("text-negative")
+                    error_banner(
+                        "Le calcul a dépassé le délai (60 s). Réessayez avec moins de goûts ou un volume plus petit.",
+                        retry_fn=do_compute,
+                    )
                 return
             except Exception as exc:
                 main_container.clear()
                 with main_container:
-                    ui.label(f"Erreur optimiseur : {exc}").classes("text-negative")
+                    error_banner(
+                        f"Erreur optimiseur : {exc}",
+                        retry_fn=do_compute,
+                    )
                 return
 
             df_min = _result["df_min"]
@@ -452,6 +466,7 @@ async def page_production():
                             overrides.clear()
                             overrides.update(new_ov)
                             app.storage.user["production_overrides"] = dict(overrides)
+                            ui.run_javascript("window._fsProductionDirty = true;")
                             await do_compute()
 
                         ui.button(
@@ -602,6 +617,7 @@ async def page_production():
 
                             def do_save_and_download():
                                 do_save()
+                                ui.run_javascript("window._fsProductionDirty = false;")
                                 if cb_download.value:
                                     _download_xlsx()
 

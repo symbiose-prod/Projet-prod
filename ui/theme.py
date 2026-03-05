@@ -187,7 +187,7 @@ def kpi_card(
                 )
                 ui.label(value).classes("text-h6").style(
                     f"color: {COLORS['ink']}; font-weight: 600"
-                )
+                ).props('aria-live="polite"')
 
 
 def date_picker_field(default_value: str, label: str | None = None) -> ui.input:
@@ -293,6 +293,70 @@ def section_title(title: str, icon: str = ""):
         ui.label(title).classes("text-subtitle1").style(
             f"color: {COLORS['ink']}; font-weight: 600"
         )
+
+
+def confirm_dialog(
+    title: str,
+    message: str,
+    action_label: str = "Confirmer",
+    action_icon: str = "",
+    danger: bool = False,
+) -> tuple:
+    """Dialogue de confirmation réutilisable.
+
+    Retourne (dialog, message_label, action_button) pour permettre
+    la personnalisation dynamique du message et du handler.
+
+    Usage ::
+
+        dlg, msg_lbl, action_btn = confirm_dialog(
+            "Confirmer ?", "Ceci est irréversible.", "Supprimer", danger=True,
+        )
+        action_btn.on_click(lambda: (dlg.close(), my_action()))
+        trigger_btn = ui.button("Ouvrir", on_click=dlg.open)
+    """
+    action_color = "red-7" if danger else "green-8"
+    with ui.dialog() as dlg, ui.card().classes("q-pa-lg"):
+        ui.label(title).classes("text-subtitle1").style(
+            f"color: {COLORS['ink']}; font-weight: 600"
+        )
+        msg_label = ui.label(message).classes("text-body2 text-grey-7 q-mt-xs")
+        with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+            ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
+            props = f"color={action_color} unelevated"
+            if action_icon:
+                action_btn = ui.button(action_label, icon=action_icon).props(props)
+            else:
+                action_btn = ui.button(action_label).props(props)
+    return dlg, msg_label, action_btn
+
+
+def error_banner(
+    message: str,
+    retry_fn=None,
+    dismissible: bool = True,
+) -> ui.card:
+    """Bannière d'erreur unifiée avec retry optionnel.
+
+    Retourne la card pour manipulation ultérieure (ex: card.delete()).
+    """
+    with ui.card().classes("w-full").props("flat bordered").style(
+        f"border-color: {COLORS['error']}40"
+    ) as card:
+        with ui.card_section().classes("row items-center gap-3 q-pa-md"):
+            ui.icon("error_outline", size="sm").style(f"color: {COLORS['error']}")
+            ui.label(message).classes("text-body2 flex-1").style(
+                f"color: {COLORS['error']}"
+            )
+            if retry_fn:
+                ui.button(
+                    "Réessayer", icon="refresh", on_click=retry_fn,
+                ).props("outline color=red-7 dense")
+            if dismissible:
+                ui.button(
+                    icon="close", on_click=lambda: card.delete(),
+                ).props("flat round dense color=grey-6")
+    return card
 
 
 # ─── Layout partagé ─────────────────────────────────────────────────────────

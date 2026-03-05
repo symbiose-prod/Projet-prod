@@ -114,7 +114,8 @@ def _load_weights_cache() -> dict[tuple[int, str], float] | None:
 
 
 def _save_weights_cache(weights: dict[tuple[int, str], float]) -> None:
-    """Sauvegarde le cache fichier des poids cartons (ecriture atomique via rename)."""
+    """Sauvegarde le cache fichier des poids cartons (ecriture atomique via rename + flock)."""
+    import fcntl
     import json
     import tempfile
     data = [{"pid": pid, "fmt": fmt, "w": w} for (pid, fmt), w in weights.items()]
@@ -122,17 +123,23 @@ def _save_weights_cache(weights: dict[tuple[int, str], float]) -> None:
     try:
         cache_dir = os.path.dirname(_WEIGHTS_CACHE_PATH)
         os.makedirs(cache_dir, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(cache, f)
-            os.replace(tmp_path, _WEIGHTS_CACHE_PATH)
-        except BaseException:
+        lock_path = _WEIGHTS_CACHE_PATH + ".lock"
+        with open(lock_path, "w") as lock_f:
+            fcntl.flock(lock_f, fcntl.LOCK_EX)
             try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+                fd, tmp_path = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(cache, f)
+                    os.replace(tmp_path, _WEIGHTS_CACHE_PATH)
+                except BaseException:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    raise
+            finally:
+                fcntl.flock(lock_f, fcntl.LOCK_UN)
     except (OSError, ValueError):
         _log.warning("Impossible de sauvegarder le cache poids cartons", exc_info=True)
 

@@ -88,34 +88,41 @@ def page_login():
                             login_error.text = "Renseigne email et mot de passe."
                             login_error.set_visibility(True)
                             return
-                        # PBKDF2 est CPU-bound → thread pour ne pas bloquer l'event loop
-                        user = await asyncio.to_thread(authenticate, email, pwd)
-                        if not user:
-                            login_error.text = "Identifiants invalides."
-                            login_error.set_visibility(True)
-                            return
-                        # Stocker en session
-                        app.storage.user.update({
-                            "authenticated": True,
-                            "id": str(user["id"]),
-                            "tenant_id": str(user["tenant_id"]),
-                            "email": user["email"],
-                            "role": user.get("role", "user"),
-                        })
-                        # "Se souvenir de moi" : token stocke via middleware Set-Cookie
-                        if remember.value:
-                            try:
-                                token = create_session_token(
-                                    str(user["id"]), str(user["tenant_id"]),
-                                    days=SESSION_DEFAULT_DAYS,
-                                )
-                                # Le middleware posera le cookie HttpOnly sur la prochaine requete
-                                app.storage.user["_pending_remember_token"] = token
-                            except Exception:
-                                _log.warning("Impossible de creer le token remember-me", exc_info=True)
-                        ui.navigate.to("/accueil")
+                        login_btn.disable()
+                        login_btn.props("loading")
+                        login_error.set_visibility(False)
+                        try:
+                            # PBKDF2 est CPU-bound → thread pour ne pas bloquer l'event loop
+                            user = await asyncio.to_thread(authenticate, email, pwd)
+                            if not user:
+                                login_error.text = "Identifiants invalides."
+                                login_error.set_visibility(True)
+                                return
+                            # Stocker en session
+                            app.storage.user.update({
+                                "authenticated": True,
+                                "id": str(user["id"]),
+                                "tenant_id": str(user["tenant_id"]),
+                                "email": user["email"],
+                                "role": user.get("role", "user"),
+                            })
+                            # "Se souvenir de moi" : token stocke via middleware Set-Cookie
+                            if remember.value:
+                                try:
+                                    token = create_session_token(
+                                        str(user["id"]), str(user["tenant_id"]),
+                                        days=SESSION_DEFAULT_DAYS,
+                                    )
+                                    # Le middleware posera le cookie HttpOnly sur la prochaine requete
+                                    app.storage.user["_pending_remember_token"] = token
+                                except Exception:
+                                    _log.warning("Impossible de creer le token remember-me", exc_info=True)
+                            ui.navigate.to("/accueil")
+                        finally:
+                            login_btn.enable()
+                            login_btn.props(remove="loading")
 
-                    ui.button(
+                    login_btn = ui.button(
                         "Connexion",
                         icon="login",
                         on_click=do_login,

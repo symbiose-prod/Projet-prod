@@ -20,7 +20,7 @@ from common.session_store import load_df
 from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import parse_stock as _parse_stock
 from ui._production_calc import _auto_match, _fetch_eb_products
-from ui.theme import date_picker_field
+from ui.theme import COLORS as _COLORS, confirm_dialog, date_picker_field
 
 _log = logging.getLogger("ferment.production")
 
@@ -470,34 +470,36 @@ def _render_easybeer_section(
             for err in errors:
                 ui.notify(err, type="negative")
 
-        # Dialogue de confirmation (action irréversible dans l'ERP)
-        with ui.dialog() as _confirm_dlg, ui.card().classes("q-pa-lg"):
-            ui.label("Confirmer la création des brassins ?").classes("text-subtitle1").style(
-                f"color: {colors['ink']}; font-weight: 600"
-            )
-            ui.label(
-                f"{len(_gouts_eb)} brassin(s) seront créés dans EasyBeer. "
-                "Cette action est irréversible."
-            ).classes("text-body2 text-grey-7 q-mt-xs")
-            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
-                ui.button("Annuler", on_click=_confirm_dlg.close).props("flat color=grey-7")
+        # Dialogue de confirmation avec preview détaillée (action irréversible dans l'ERP)
+        _detail_lines = [
+            f"{g} — {_vol_par_gout.get(g, 0):.0f} L — {_prod_labels[_product_indices[g]] if _product_indices.get(g) is not None and _prod_labels else '—'}"
+            for g in _gouts_eb
+        ]
+        _confirm_dlg, _confirm_msg, _confirm_action = confirm_dialog(
+            title="Confirmer la création des brassins ?",
+            message=f"{len(_gouts_eb)} brassin(s) seront créés dans EasyBeer.",
+            action_label="Créer",
+            action_icon="rocket_launch",
+            danger=True,
+        )
+        # Enrichir le dialog avec la preview détaillée
+        with _confirm_dlg:
+            with ui.column().classes("gap-1 q-mt-xs q-mb-sm"):
+                for line in _detail_lines:
+                    ui.label(f"• {line}").classes("text-body2").style("font-weight: 500")
+                ui.label("Cette action est irréversible.").classes("text-caption text-grey-6 q-mt-xs")
 
-                async def _confirmed_create():
-                    _confirm_dlg.close()
-                    # Disable le bouton principal + afficher spinner pendant la création
-                    _create_btn.disable()
-                    _create_spinner.set_visibility(True)
-                    try:
-                        await do_create_brassins()
-                    finally:
-                        _create_btn.enable()
-                        _create_spinner.set_visibility(False)
+        async def _confirmed_create():
+            _confirm_dlg.close()
+            _create_btn.disable()
+            _create_spinner.set_visibility(True)
+            try:
+                await do_create_brassins()
+            finally:
+                _create_btn.enable()
+                _create_spinner.set_visibility(False)
 
-                ui.button(
-                    "Créer",
-                    icon="rocket_launch",
-                    on_click=_confirmed_create,
-                ).props("color=green-8 unelevated")
+        _confirm_action.on_click(_confirmed_create)
 
         with ui.row().classes("w-full items-center gap-3 q-mt-md"):
             _create_btn = ui.button(
