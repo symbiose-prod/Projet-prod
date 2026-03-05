@@ -620,6 +620,14 @@ async def page_production():
                                 ui.run_javascript("window._fsProductionDirty = false;")
                                 if cb_download.value:
                                     _download_xlsx()
+                                # Rafraîchir la section EasyBeer (maintenant que saved_production existe)
+                                eb_container.clear()
+                                with eb_container:
+                                    _render_easybeer_section(
+                                        mode_prod, volume_details, volume_cible,
+                                        TANK_CONFIGS, TEMPLATE_PATH, COLORS,
+                                        on_recreate=do_compute,
+                                    )
 
                             ui.button(
                                 "Sauvegarder",
@@ -636,7 +644,8 @@ async def page_production():
                                     f"color: {COLORS['ink']}; font-weight: 600"
                                 )
 
-                        with ui.card_section().classes("q-pt-none"):
+                        eb_container = ui.card_section().classes("q-pt-none")
+                        with eb_container:
                             _render_easybeer_section(
                                 mode_prod, volume_details, volume_cible,
                                 TANK_CONFIGS, TEMPLATE_PATH, COLORS,
