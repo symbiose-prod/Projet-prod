@@ -2,6 +2,7 @@
 ui/stocks.py
 ============
 Page Stocks — Analyse de l'autonomie des stocks contenants, groupés par fournisseur.
+Sélection du fournisseur dans la sidebar, puis analyse par période.
 """
 from __future__ import annotations
 
@@ -12,8 +13,9 @@ from nicegui import ui
 
 _log = logging.getLogger("ferment.stocks")
 
+from common.data import get_stocks_config
 from common.easybeer import is_configured as eb_configured
-from ui._stocks_calc import StockGroup, StockItem, fetch_and_compute
+from ui._stocks_calc import StockGroup, fetch_and_compute
 from ui.auth import require_auth
 from ui.theme import COLORS, kpi_card, page_layout, section_title
 
@@ -62,110 +64,177 @@ def page_stocks():
     if not user:
         return
 
+    # Charger la config fournisseurs
+    stocks_cfg = get_stocks_config()
+    supplier_groups = stocks_cfg.get("supplier_groups") or []
+    supplier_options = [g["name"] for g in supplier_groups]
+
     with page_layout("Stocks", "inventory_2", "/stocks") as sidebar:
 
+        # ── Sidebar : sélecteur fournisseur ─────────────────────────
         with sidebar:
-            ui.label("Stocks contenants").classes("text-subtitle2 text-grey-7")
-            ui.label("Analyse d'autonomie").classes("text-caption text-grey-5")
+            ui.label("Fournisseur").classes("text-subtitle2 text-grey-7")
+            ui.label("Sélectionnez pour analyser").classes(
+                "text-caption text-grey-5"
+            )
+
+            if not eb_configured():
+                ui.label("EasyBeer non configuré.").classes(
+                    "text-caption text-grey-5 q-mt-sm"
+                )
+            elif not supplier_options:
+                ui.label("Aucun fournisseur configuré.").classes(
+                    "text-caption text-grey-5 q-mt-sm"
+                )
+            else:
+                supplier_select = ui.select(
+                    options=supplier_options,
+                    label="Fournisseur",
+                    value=None,
+                ).props("outlined dense color=green-8 clearable").classes(
+                    "q-mt-sm"
+                )
 
         # ── Explication ──────────────────────────────────────────────
         with ui.card().classes("w-full").props("flat bordered"):
             with ui.card_section().classes("q-pa-md"):
                 ui.label(
                     "Analysez l'autonomie de vos stocks de contenants. "
-                    "Choisissez une période pour calculer la consommation "
-                    "moyenne et estimer le nombre de jours de stock restant. "
-                    "Les contenants sont regroupés par fournisseur."
+                    "Sélectionnez un fournisseur dans le menu latéral, "
+                    "choisissez une période, puis lancez l'analyse."
                 ).classes("text-body2").style(
                     f"color: {COLORS['ink2']}; line-height: 1.6"
                 )
 
-        # ── Carte d'analyse ──────────────────────────────────────────
-        with ui.card().classes("").props("flat bordered").style(
-            "width: 50%; min-width: 320px"
-        ):
+        if not eb_configured() or not supplier_options:
+            return
+
+        # ── Placeholder (aucun fournisseur sélectionné) ─────────────
+        placeholder_msg = ui.card().classes("w-full").props("flat bordered")
+        with placeholder_msg:
+            with ui.card_section().classes("q-pa-lg text-center"):
+                ui.icon("touch_app", size="xl").style(
+                    f"color: {COLORS['ink2']}; opacity: 0.4"
+                )
+                ui.label(
+                    "Sélectionnez un fournisseur dans le menu "
+                    "pour lancer une analyse."
+                ).classes("text-body1 q-mt-sm").style(
+                    f"color: {COLORS['ink2']}"
+                )
+
+        # ── Bloc d'analyse (masqué par défaut) ──────────────────────
+        analysis_card = ui.card().classes("w-full").props("flat bordered")
+        analysis_card.set_visibility(False)
+
+        with analysis_card:
             with ui.card_section():
                 with ui.row().classes("items-center gap-2"):
-                    ui.icon("inventory_2", size="sm").style(
+                    ui.icon("analytics", size="sm").style(
                         f"color: {COLORS['green']}"
                     )
-                    ui.label("Analyse EasyBeer").classes("text-h6")
+                    supplier_header = ui.label("Analyse").classes("text-h6")
 
             with ui.card_section():
-                if not eb_configured():
-                    ui.label("EasyBeer non configuré.").classes("text-grey-6")
-                else:
-                    ui.label("Période d'analyse").classes("text-caption").style(
-                        f"color: {COLORS['ink2']}; font-weight: 500"
-                    )
-                    period_radio = ui.radio(
-                        {30: "1 mois", 60: "2 mois", 90: "3 mois", 180: "6 mois"},
-                        value=30,
-                    ).props("inline dense color=green-8")
+                ui.label("Période d'analyse").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; font-weight: 500"
+                )
+                period_radio = ui.radio(
+                    {30: "1 mois", 60: "2 mois", 90: "3 mois", 180: "6 mois"},
+                    value=30,
+                ).props("inline dense color=green-8")
 
-                    status_label = ui.label("").classes("text-body2 q-mt-sm")
+                status_label = ui.label("").classes("text-body2 q-mt-sm")
+                status_label.set_visibility(False)
+
+                fetch_spinner = ui.spinner(
+                    "dots", size="xl", color="green-8",
+                ).classes("self-center q-pa-md")
+                fetch_spinner.set_visibility(False)
+
+                # Conteneur des résultats
+                results_container = ui.column().classes("w-full gap-4 q-mt-md")
+
+                async def do_fetch():
+                    fetch_btn.disable()
+                    fetch_spinner.set_visibility(True)
                     status_label.set_visibility(False)
-
-                    fetch_spinner = ui.spinner(
-                        "dots", size="xl", color="green-8",
-                    ).classes("self-center q-pa-md")
-                    fetch_spinner.set_visibility(False)
-
-                    # Conteneur des résultats (vidé/rerempli à chaque analyse)
-                    results_container = ui.column().classes("w-full gap-4 q-mt-md")
-
-                    async def do_fetch():
-                        fetch_btn.disable()
-                        fetch_spinner.set_visibility(True)
-                        status_label.set_visibility(False)
-                        results_container.clear()
-                        try:
-                            days = int(period_radio.value or 30)
-                            groups: list[StockGroup] = await asyncio.wait_for(
-                                asyncio.to_thread(fetch_and_compute, days),
-                                timeout=60,
-                            )
-                            total_items = sum(len(g.items) for g in groups)
-                            if not groups or total_items == 0:
-                                status_label.text = (
-                                    "Aucun contenant trouvé dans EasyBeer. "
-                                    "Vérifiez la configuration des stocks."
-                                )
-                                status_label.classes("text-negative", remove="text-positive")
-                                status_label.set_visibility(True)
-                                return
-                            _render_groups(results_container, groups, days)
+                    results_container.clear()
+                    try:
+                        days = int(period_radio.value or 30)
+                        selected = supplier_select.value
+                        groups: list[StockGroup] = await asyncio.wait_for(
+                            asyncio.to_thread(fetch_and_compute, days),
+                            timeout=60,
+                        )
+                        # Filtrer pour le fournisseur sélectionné
+                        filtered = [
+                            g for g in groups if g.name == selected
+                        ]
+                        total_items = sum(len(g.items) for g in filtered)
+                        if not filtered or total_items == 0:
                             status_label.text = (
-                                f"Analyse terminée — {total_items} contenant(s) "
-                                f"en {len(groups)} groupe(s) sur {days} jours"
+                                f"Aucun contenant trouvé pour {selected}. "
+                                "Vérifiez la configuration des stocks."
                             )
-                            status_label.classes("text-positive", remove="text-negative")
-                            status_label.set_visibility(True)
-                            ui.notify("Analyse terminée !", type="positive")
-                        except TimeoutError:
-                            status_label.text = (
-                                "L'analyse a dépassé le délai (60 s). Réessayez."
+                            status_label.classes(
+                                "text-negative", remove="text-positive"
                             )
-                            status_label.classes("text-negative", remove="text-positive")
                             status_label.set_visibility(True)
-                            ui.notify("Délai dépassé", type="warning")
-                        except Exception:
-                            _log.exception("Erreur analyse stocks contenants")
-                            status_label.text = (
-                                "Erreur lors de l'analyse. "
-                                "Vérifiez la connexion EasyBeer."
-                            )
-                            status_label.classes("text-negative", remove="text-positive")
-                            status_label.set_visibility(True)
-                        finally:
-                            fetch_spinner.set_visibility(False)
-                            fetch_btn.enable()
+                            return
+                        _render_groups(results_container, filtered, days)
+                        status_label.text = (
+                            f"Analyse terminée — {total_items} contenant(s) "
+                            f"sur {days} jours"
+                        )
+                        status_label.classes(
+                            "text-positive", remove="text-negative"
+                        )
+                        status_label.set_visibility(True)
+                        ui.notify("Analyse terminée !", type="positive")
+                    except TimeoutError:
+                        status_label.text = (
+                            "L'analyse a dépassé le délai (60 s). Réessayez."
+                        )
+                        status_label.classes(
+                            "text-negative", remove="text-positive"
+                        )
+                        status_label.set_visibility(True)
+                        ui.notify("Délai dépassé", type="warning")
+                    except Exception:
+                        _log.exception("Erreur analyse stocks contenants")
+                        status_label.text = (
+                            "Erreur lors de l'analyse. "
+                            "Vérifiez la connexion EasyBeer."
+                        )
+                        status_label.classes(
+                            "text-negative", remove="text-positive"
+                        )
+                        status_label.set_visibility(True)
+                    finally:
+                        fetch_spinner.set_visibility(False)
+                        fetch_btn.enable()
 
-                    fetch_btn = ui.button(
-                        "Analyser les stocks",
-                        icon="analytics",
-                        on_click=do_fetch,
-                    ).classes("w-full q-mt-md").props("color=green-8 unelevated")
+                fetch_btn = ui.button(
+                    "Analyser les stocks",
+                    icon="analytics",
+                    on_click=do_fetch,
+                ).classes("w-full q-mt-md").props("color=green-8 unelevated")
+
+        # ── Callback sélection fournisseur ──────────────────────────
+        def on_supplier_change(e):
+            selected = e.value
+            if selected:
+                analysis_card.set_visibility(True)
+                placeholder_msg.set_visibility(False)
+                supplier_header.text = f"Analyse — {selected}"
+                results_container.clear()
+                status_label.set_visibility(False)
+            else:
+                analysis_card.set_visibility(False)
+                placeholder_msg.set_visibility(True)
+
+        supplier_select.on_value_change(on_supplier_change)
 
 
 # ─── Rendu des résultats ──────────────────────────────────────────────────────
