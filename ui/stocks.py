@@ -50,6 +50,11 @@ def _format_number(n: float, unit: str = "") -> str:
     return f"{s} {unit}".strip() if unit else s
 
 
+def _short_label(label: str) -> str:
+    """'Bouteille - 0.33L' → 'Bouteille', 'Bouteille 75cl SAFT - 0.75L' → 'Bouteille 75cl SAFT'."""
+    return label.split(" - ")[0] if " - " in label else label
+
+
 def _group_summary(group: StockGroup) -> str:
     """Short summary for expansion panel header badge."""
     n = len(group.items)
@@ -355,7 +360,7 @@ def _render_group_panel(
             for item in group.items:
                 kpi_card(
                     icon="inventory_2",
-                    label=item.label,
+                    label=_short_label(item.label),
                     value=_format_days(item.stock_days),
                     color=_days_color(item.stock_days),
                 )
@@ -373,7 +378,7 @@ def _render_group_panel(
         rows = []
         for item in group.items:
             rows.append({
-                "label": item.label,
+                "label": _short_label(item.label),
                 "stock": _format_number(item.current_stock, item.unit),
                 "seuil": _format_number(item.seuil_bas, item.unit) if item.seuil_bas else "—",
                 "conso": _format_number(item.consumption, item.unit),
@@ -447,7 +452,7 @@ def _render_order_section(rec: OrderRecommendation) -> None:
                 val = "N/A"
             kpi_card(
                 icon="event",
-                label=oi.label,
+                label=_short_label(oi.label),
                 value=val,
                 color=item_color,
             )
@@ -506,7 +511,7 @@ def _render_order_section(rec: OrderRecommendation) -> None:
                     )
                     for oi in rec.items:
                         # Short label: take last meaningful part
-                        short = oi.label.split(" - ")[0] if " - " in oi.label else oi.label
+                        short = _short_label(oi.label)
                         palettes_txt = (
                             f"{oi.suggested_pallets} pal."
                             f" = {_format_number(oi.suggested_qty)} btl"
@@ -555,7 +560,7 @@ def _render_coverage_bar(oi, lead_time_days: int, bar_max: float) -> None:
     else:
         bar_color = COLORS["success"]
 
-    short_label = oi.label.split(" - ")[0] if " - " in oi.label else oi.label
+    short_label = _short_label(oi.label)
     days_txt = f"{stock_days:.0f} j" if stock_days else "N/A"
 
     with ui.column().classes("w-full gap-0 q-mb-sm"):
