@@ -51,8 +51,20 @@ def _format_number(n: float, unit: str = "") -> str:
 
 
 def _short_label(label: str) -> str:
-    """'Bouteille - 0.33L' → 'Bouteille', 'Bouteille 75cl SAFT - 0.75L' → 'Bouteille 75cl SAFT'."""
-    return label.split(" - ")[0] if " - " in label else label
+    """'Bouteille - 0.33L' → 'Bouteille 33cl', 'Bouteille 75cl SAFT - 0.75L' → 'Bouteille 75cl SAFT'."""
+    if " - " not in label:
+        return label
+    name, vol = label.split(" - ", 1)
+    # Si le nom contient déjà une taille (ex: "75cl"), on le garde tel quel
+    if "cl" in name.lower():
+        return name
+    # Sinon, convertir le suffixe "0.33L" → "33cl"
+    vol = vol.strip().rstrip("Ll")
+    try:
+        cl = int(float(vol) * 100)
+        return f"{name} {cl}cl"
+    except ValueError:
+        return name
 
 
 def _group_summary(group: StockGroup) -> str:
