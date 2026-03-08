@@ -76,29 +76,67 @@ def page_stocks():
 
     with page_layout("Stocks", "inventory_2", "/stocks") as sidebar:
 
-        # ── Sidebar : sélecteur fournisseur ─────────────────────────
+        # ── Sidebar : liste fournisseurs par catégorie ────────────────
         with sidebar:
-            ui.label("Fournisseur").classes("text-subtitle2 text-grey-7")
-            ui.label("Sélectionnez pour analyser").classes(
-                "text-caption text-grey-5"
-            )
-
             if not eb_configured():
                 ui.label("EasyBeer non configuré.").classes(
-                    "text-caption text-grey-5 q-mt-sm"
+                    "text-caption text-grey-5"
                 )
             elif not supplier_options:
                 ui.label("Aucun fournisseur configuré.").classes(
-                    "text-caption text-grey-5 q-mt-sm"
+                    "text-caption text-grey-5"
                 )
             else:
-                supplier_select = ui.select(
-                    options=supplier_options,
-                    label="Fournisseur",
-                    value=None,
-                ).props("outlined dense color=green-8 clearable").classes(
-                    "q-mt-sm"
-                )
+                # État de sélection
+                selected_supplier = {"value": None}
+                supplier_buttons: dict[str, ui.button] = {}
+
+                def select_supplier(name: str):
+                    prev = selected_supplier["value"]
+                    # Dé-sélectionner l'ancien
+                    if prev and prev in supplier_buttons:
+                        supplier_buttons[prev].props(
+                            "color=grey-8", remove="color=green-8"
+                        )
+                        supplier_buttons[prev].classes(
+                            remove="nav-active"
+                        )
+                    # Sélectionner le nouveau (ou désélectionner si même)
+                    if name == prev:
+                        selected_supplier["value"] = None
+                        _on_supplier_selected(None)
+                    else:
+                        selected_supplier["value"] = name
+                        supplier_buttons[name].props(
+                            "color=green-8", remove="color=grey-8"
+                        )
+                        supplier_buttons[name].classes("nav-active")
+                        _on_supplier_selected(name)
+
+                # Grouper par catégorie
+                categories: dict[str, list[dict]] = {}
+                for g in supplier_groups:
+                    cat = g.get("category", "Autres")
+                    categories.setdefault(cat, []).append(g)
+
+                for cat_name, items in categories.items():
+                    ui.label(cat_name).classes(
+                        "text-caption text-grey-6 q-mt-sm"
+                    ).style("font-weight: 600; text-transform: uppercase")
+                    for g in items:
+                        btn = ui.button(
+                            g["name"],
+                            icon=g.get("icon", "category"),
+                            on_click=lambda _, n=g["name"]: select_supplier(n),
+                        ).classes(
+                            "w-full justify-start q-mb-xs"
+                        ).props(
+                            "flat align=left color=grey-8"
+                        ).style(
+                            "font-size: 13px; text-transform: none; "
+                            "letter-spacing: 0"
+                        )
+                        supplier_buttons[g["name"]] = btn
 
         # ── Explication ──────────────────────────────────────────────
         with ui.card().classes("w-full").props("flat bordered"):
@@ -185,7 +223,7 @@ def page_stocks():
                     results_container.clear()
                     try:
                         days = int(period_radio.value or 30)
-                        selected = supplier_select.value
+                        selected = selected_supplier["value"]
                         groups: list[StockGroup] = await asyncio.wait_for(
                             asyncio.to_thread(fetch_and_compute, days),
                             timeout=60,
@@ -245,25 +283,22 @@ def page_stocks():
                 ).classes("w-full q-mt-md").props("color=green-8 unelevated")
 
         # ── Callback sélection fournisseur ──────────────────────────
-        def on_supplier_change(e):
-            selected = e.value
+        def _on_supplier_selected(name: str | None):
             # Masquer tout par défaut
             placeholder_msg.set_visibility(False)
             analysis_card.set_visibility(False)
             coming_soon_card.set_visibility(False)
 
-            if not selected:
+            if not name:
                 placeholder_msg.set_visibility(True)
-            elif selected in _analysable:
+            elif name in _analysable:
                 analysis_card.set_visibility(True)
-                supplier_header.text = f"Analyse — {selected}"
+                supplier_header.text = f"Analyse — {name}"
                 results_container.clear()
                 status_label.set_visibility(False)
             else:
                 coming_soon_card.set_visibility(True)
-                coming_soon_name.text = selected
-
-        supplier_select.on_value_change(on_supplier_change)
+                coming_soon_name.text = name
 
 
 # ─── Rendu des résultats ──────────────────────────────────────────────────────
