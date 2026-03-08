@@ -109,7 +109,7 @@ def _analyse_history(
         if diff > 0:
             fournisseur = record.get("fournisseur") or ""
             if fournisseur and isinstance(fournisseur, str) and fournisseur.strip():
-                record_date = record.get("date", "") or ""
+                record_date = str(record.get("date", "") or "")
                 prev_date = supplier_date.get(stock_name, "")
                 if record_date >= prev_date:
                     supplier[stock_name] = fournisseur.strip()
