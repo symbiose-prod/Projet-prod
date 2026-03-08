@@ -258,10 +258,12 @@ def page_stocks():
                 # Colonne droite : contrôles sticky
                 with ui.column().style(
                     "position: sticky; top: 16px; "
-                    "width: 180px; min-width: 180px; flex: 0 0 180px;"
+                    "width: 300px; min-width: 300px; flex: 0 0 300px;"
                 ):
-                    with ui.card().props("flat bordered"):
-                        with ui.card_section().classes("q-pa-sm"):
+                    with ui.card().props("flat bordered").style(
+                        "width: 300px; min-height: 300px"
+                    ):
+                        with ui.card_section().classes("q-pa-md"):
                             ui.label("Période").classes(
                                 "text-caption"
                             ).style(
