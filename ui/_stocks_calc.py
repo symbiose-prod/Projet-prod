@@ -18,7 +18,9 @@ Data flow
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Any
 
 _log = logging.getLogger("ferment.stocks")
@@ -50,6 +52,34 @@ class StockGroup:
     name: str
     icon: str
     items: list[StockItem] = field(default_factory=list)
+
+
+@dataclass
+class OrderItem:
+    """Order recommendation detail for one contenant reference."""
+
+    label: str
+    stock_days: float | None
+    days_before_order: float | None   # stock_days - lead_time
+    deadline: date | None             # date by which to place order
+    daily_consumption: float
+    bottles_per_pallet: int
+    suggested_pallets: int
+    suggested_qty: int                # palettes * bottles_per_pallet
+    coverage_days: float | None       # suggested_qty / daily_consumption
+
+
+@dataclass
+class OrderRecommendation:
+    """Order recommendation for one supplier."""
+
+    supplier: str
+    lead_time_days: int
+    min_pallets: int
+    can_split: bool
+    items: list[OrderItem]
+    order_deadline: date | None       # earliest deadline across items
+    urgency: str                      # "critical" | "warning" | "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +218,126 @@ def _assign_groups(
         ),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Order recommendation
+# ---------------------------------------------------------------------------
+
+
+def compute_order_recommendation(
+    group: StockGroup,
+    ordering_cfg: dict[str, Any],
+) -> OrderRecommendation | None:
+    """Compute order recommendation from stock analysis + ordering config.
+
+    Returns None if no ordering config or no items with consumption.
+    """
+    if not ordering_cfg:
+        return None
+
+    lead_time = int(ordering_cfg.get("lead_time_days", 0))
+    min_pallets = int(ordering_cfg.get("min_order_pallets", 1))
+    can_split = bool(ordering_cfg.get("can_split_references", False))
+    pallet_cfg = ordering_cfg.get("pallets") or {}
+
+    today = date.today()
+    order_items: list[OrderItem] = []
+
+    for item in group.items:
+        bpp = 0
+        # Find matching pallet config for this item label
+        for pallet_label, pallet_data in pallet_cfg.items():
+            if pallet_label == item.label:
+                bpp = int(pallet_data.get("bottles_per_pallet", 0))
+                break
+
+        if bpp == 0:
+            continue  # no pallet config for this reference
+
+        days_before = None
+        deadline = None
+        if item.stock_days is not None:
+            days_before = item.stock_days - lead_time
+            deadline = today + timedelta(days=int(days_before))
+
+        order_items.append(OrderItem(
+            label=item.label,
+            stock_days=item.stock_days,
+            days_before_order=days_before,
+            deadline=deadline,
+            daily_consumption=item.daily_consumption,
+            bottles_per_pallet=bpp,
+            suggested_pallets=0,  # filled below
+            suggested_qty=0,
+            coverage_days=None,
+        ))
+
+    if not order_items:
+        return None
+
+    # --- Determine urgency from earliest deadline ---
+    deadlines = [oi.days_before_order for oi in order_items
+                 if oi.days_before_order is not None]
+    min_days_before = min(deadlines) if deadlines else None
+
+    if min_days_before is None:
+        urgency = "ok"
+        order_deadline = None
+    elif min_days_before <= 0:
+        urgency = "critical"
+        order_deadline = today + timedelta(days=int(min_days_before))
+    elif min_days_before <= 14:
+        urgency = "warning"
+        order_deadline = today + timedelta(days=int(min_days_before))
+    else:
+        urgency = "ok"
+        order_deadline = today + timedelta(days=int(min_days_before))
+
+    # --- Distribute pallets proportionally to daily consumption ---
+    total_daily = sum(oi.daily_consumption for oi in order_items)
+    if total_daily > 0 and len(order_items) > 1 and can_split:
+        # Proportional distribution
+        raw: list[float] = []
+        for oi in order_items:
+            raw.append((oi.daily_consumption / total_daily) * min_pallets)
+        # Floor each, distribute remainder to highest fractional parts
+        floored = [math.floor(r) for r in raw]
+        remainder = min_pallets - sum(floored)
+        fractions = [(r - f, i) for i, (r, f) in enumerate(zip(raw, floored))]
+        fractions.sort(reverse=True)
+        for _, idx in fractions[:remainder]:
+            floored[idx] += 1
+        for i, oi in enumerate(order_items):
+            oi.suggested_pallets = max(floored[i], 1)  # at least 1
+    elif len(order_items) == 1:
+        order_items[0].suggested_pallets = min_pallets
+    else:
+        # Equal split
+        per_item = max(min_pallets // len(order_items), 1)
+        for oi in order_items:
+            oi.suggested_pallets = per_item
+
+    # Ensure total >= min_pallets
+    total_suggested = sum(oi.suggested_pallets for oi in order_items)
+    if total_suggested < min_pallets and order_items:
+        order_items[0].suggested_pallets += min_pallets - total_suggested
+
+    # Compute quantities and coverage
+    for oi in order_items:
+        oi.suggested_qty = oi.suggested_pallets * oi.bottles_per_pallet
+        if oi.daily_consumption > 0:
+            oi.coverage_days = oi.suggested_qty / oi.daily_consumption
+
+    return OrderRecommendation(
+        supplier=group.name,
+        lead_time_days=lead_time,
+        min_pallets=min_pallets,
+        can_split=can_split,
+        items=order_items,
+        order_deadline=order_deadline,
+        urgency=urgency,
+    )
 
 
 # ---------------------------------------------------------------------------

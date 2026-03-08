@@ -15,7 +15,12 @@ _log = logging.getLogger("ferment.stocks")
 
 from common.data import get_stocks_config
 from common.easybeer import is_configured as eb_configured
-from ui._stocks_calc import StockGroup, fetch_and_compute
+from ui._stocks_calc import (
+    OrderRecommendation,
+    StockGroup,
+    compute_order_recommendation,
+    fetch_and_compute,
+)
 from ui.auth import require_auth
 from ui.theme import COLORS, kpi_card, page_layout, section_title
 
@@ -243,7 +248,15 @@ def page_stocks():
                             )
                             status_label.set_visibility(True)
                             return
-                        _render_groups(results_container, filtered, days)
+                        # Build ordering config map
+                        ordering_cfgs = {
+                            g["name"]: g.get("ordering", {})
+                            for g in supplier_groups
+                            if g.get("ordering")
+                        }
+                        _render_groups(
+                            results_container, filtered, days, ordering_cfgs,
+                        )
                         status_label.text = (
                             f"Analyse terminée — {total_items} contenant(s) "
                             f"sur {days} jours"
@@ -308,14 +321,18 @@ def _render_groups(
     container: ui.column,
     groups: list[StockGroup],
     window_days: int,
+    ordering_cfgs: dict[str, dict],
 ) -> None:
     """Render all stock groups as expansion panels."""
     with container:
         for group in groups:
-            _render_group_panel(group, window_days)
+            ordering = ordering_cfgs.get(group.name, {})
+            _render_group_panel(group, window_days, ordering)
 
 
-def _render_group_panel(group: StockGroup, window_days: int) -> None:
+def _render_group_panel(
+    group: StockGroup, window_days: int, ordering_cfg: dict,
+) -> None:
     """Render a single supplier group as an expansion panel."""
     summary = _group_summary(group)
 
@@ -368,3 +385,213 @@ def _render_group_panel(group: StockGroup, window_days: int) -> None:
             rows=rows,
             row_key="label",
         ).classes("w-full").props("flat bordered dense")
+
+        # ── Recommandation de commande ──────────────────────────
+        rec = compute_order_recommendation(group, ordering_cfg)
+        if rec:
+            _render_order_section(rec)
+
+
+# ─── Section commande ────────────────────────────────────────────────────────
+
+
+_URGENCY_COLORS = {
+    "critical": COLORS["error"],
+    "warning": COLORS["warning"],
+    "ok": COLORS["success"],
+}
+_URGENCY_LABELS = {
+    "critical": "URGENT",
+    "warning": "A planifier",
+    "ok": "Stock OK",
+}
+_URGENCY_ICONS = {
+    "critical": "error",
+    "warning": "schedule",
+    "ok": "check_circle",
+}
+
+_MONTHS_FR = [
+    "", "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def _format_date_fr(d) -> str:
+    """Format a date as 'DD mois YYYY' in French."""
+    if d is None:
+        return "—"
+    return f"{d.day} {_MONTHS_FR[d.month]} {d.year}"
+
+
+def _render_order_section(rec: OrderRecommendation) -> None:
+    """Render the ordering recommendation section."""
+    color = _URGENCY_COLORS[rec.urgency]
+
+    section_title("Recommandation de commande", "local_shipping")
+
+    # ── KPI cards: deadline per reference ──────────────────────
+    with ui.row().classes("w-full gap-4 flex-wrap"):
+        for oi in rec.items:
+            if oi.days_before_order is not None and oi.days_before_order <= 0:
+                item_color = COLORS["error"]
+                val = "En retard"
+            elif oi.days_before_order is not None and oi.days_before_order <= 14:
+                item_color = COLORS["warning"]
+                val = _format_date_fr(oi.deadline)
+            elif oi.deadline:
+                item_color = COLORS["success"]
+                val = _format_date_fr(oi.deadline)
+            else:
+                item_color = COLORS["ink2"]
+                val = "N/A"
+            kpi_card(
+                icon="event",
+                label=oi.label,
+                value=val,
+                color=item_color,
+            )
+
+    # ── Coverage bars + summary card ──────────────────────────
+    with ui.card().classes("w-full q-mt-sm").props("flat bordered"):
+        with ui.card_section().classes("q-pa-md"):
+            # Header with urgency badge
+            with ui.row().classes("items-center gap-2 q-mb-md"):
+                ui.icon(
+                    _URGENCY_ICONS[rec.urgency], size="sm",
+                ).style(f"color: {color}")
+                ui.label(
+                    f"Commande {rec.supplier}",
+                ).classes("text-subtitle1").style("font-weight: 600")
+                ui.space()
+                ui.badge(
+                    _URGENCY_LABELS[rec.urgency],
+                ).props(f"color={_q_color(rec.urgency)}")
+
+            # Coverage bars per reference
+            max_days = max(
+                (oi.stock_days or 0 for oi in rec.items), default=60,
+            )
+            bar_max = max(max_days, rec.lead_time_days * 3, 60)
+
+            for oi in rec.items:
+                _render_coverage_bar(oi, rec.lead_time_days, bar_max)
+
+            ui.separator().classes("q-my-md")
+
+            # Order summary
+            with ui.row().classes("items-start gap-6 flex-wrap"):
+                # Left: key info
+                with ui.column().classes("gap-1"):
+                    _info_line(
+                        "Date limite commande",
+                        _format_date_fr(rec.order_deadline),
+                        bold=True,
+                    )
+                    _info_line(
+                        "Délai livraison",
+                        f"{rec.lead_time_days} jours",
+                    )
+                    _info_line(
+                        "Commande minimum",
+                        f"{rec.min_pallets} palettes",
+                    )
+
+                # Right: pallet breakdown
+                with ui.column().classes("gap-1"):
+                    ui.label("Répartition suggérée").classes(
+                        "text-caption",
+                    ).style(
+                        f"color: {COLORS['ink2']}; font-weight: 600"
+                    )
+                    for oi in rec.items:
+                        # Short label: take last meaningful part
+                        short = oi.label.split(" - ")[0] if " - " in oi.label else oi.label
+                        palettes_txt = (
+                            f"{oi.suggested_palettes} pal."
+                            f" = {_format_number(oi.suggested_qty)} btl"
+                        )
+                        coverage_txt = (
+                            f"(~{oi.coverage_days:.0f} j)"
+                            if oi.coverage_days else ""
+                        )
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("inventory_2", size="xs").style(
+                                f"color: {COLORS['ink2']}"
+                            )
+                            ui.label(
+                                f"{short} : {palettes_txt} {coverage_txt}",
+                            ).classes("text-body2")
+
+
+def _q_color(urgency: str) -> str:
+    """Map urgency to Quasar color name for badge."""
+    return {"critical": "red-6", "warning": "amber-8", "ok": "green-7"}[urgency]
+
+
+def _info_line(label: str, value: str, bold: bool = False) -> None:
+    """Render a label: value line."""
+    with ui.row().classes("items-center gap-2"):
+        ui.label(label).classes("text-caption").style(
+            f"color: {COLORS['ink2']}; font-weight: 500"
+        )
+        weight = "700" if bold else "600"
+        ui.label(value).classes("text-body2").style(
+            f"color: {COLORS['ink']}; font-weight: {weight}"
+        )
+
+
+def _render_coverage_bar(oi, lead_time_days: int, bar_max: float) -> None:
+    """Render a horizontal coverage bar for one reference."""
+    stock_days = oi.stock_days or 0
+    pct_stock = min(stock_days / bar_max * 100, 100) if bar_max > 0 else 0
+    pct_lead = min(lead_time_days / bar_max * 100, 100) if bar_max > 0 else 0
+
+    # Bar color based on stock vs lead time
+    if stock_days <= lead_time_days:
+        bar_color = COLORS["error"]
+    elif stock_days <= lead_time_days * 2:
+        bar_color = COLORS["warning"]
+    else:
+        bar_color = COLORS["success"]
+
+    short_label = oi.label.split(" - ")[0] if " - " in oi.label else oi.label
+    days_txt = f"{stock_days:.0f} j" if stock_days else "N/A"
+
+    with ui.column().classes("w-full gap-0 q-mb-sm"):
+        with ui.row().classes("items-center justify-between w-full"):
+            ui.label(short_label).classes("text-caption").style(
+                f"color: {COLORS['ink']}; font-weight: 500"
+            )
+            ui.label(days_txt).classes("text-caption").style(
+                f"color: {bar_color}; font-weight: 700"
+            )
+        # Bar container
+        ui.html(f"""
+            <div style="
+                position: relative;
+                width: 100%;
+                height: 20px;
+                background: {COLORS['sage']};
+                border-radius: 4px;
+                overflow: hidden;
+            ">
+                <div style="
+                    width: {pct_stock:.1f}%;
+                    height: 100%;
+                    background: {bar_color};
+                    border-radius: 4px;
+                    opacity: 0.8;
+                    transition: width 0.5s ease;
+                "></div>
+                <div style="
+                    position: absolute;
+                    top: 0;
+                    left: {pct_lead:.1f}%;
+                    width: 2px;
+                    height: 100%;
+                    background: {COLORS['ink']};
+                    opacity: 0.6;
+                " title="Délai livraison ({lead_time_days} j)"></div>
+            </div>
+        """)

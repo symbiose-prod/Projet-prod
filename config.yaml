@@ -47,10 +47,26 @@ stocks:
       icon: "water_drop"
       category: "Contenants"
       patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse
+      ordering:
+        lead_time_days: 14              # délai de livraison : 2 semaines
+        min_order_pallets: 10           # commande minimum 10 palettes
+        pallets:
+          "Bouteille 75cl EAU GAZEUSE - 0.75L":
+            bottles_per_pallet: 1624
+
     - name: "Wiegand-glas"
       icon: "inventory_2"
       category: "Contenants"
       patterns: ["Bouteille"]           # 33cl + 75cl SAFT
+      ordering:
+        lead_time_days: 14              # délai de livraison : 2 semaines
+        min_order_pallets: 26           # commande par camion complet
+        can_split_references: true      # répartition libre entre références
+        pallets:
+          "Bouteille - 0.33L":
+            bottles_per_pallet: 3610
+          "Bouteille 75cl SAFT - 0.75L":
+            bottles_per_pallet: 1421
 
     # ── Matières premières ──
     - name: "Nature Favours"
