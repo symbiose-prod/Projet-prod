@@ -236,11 +236,12 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # ─── Import des pages (les @ui.page sont enregistrés à l'import) ────────────
 
+from nicegui import ui  # noqa: F811 — restaure nicegui.ui après imports locaux ui.*
+
 import ui.accueil  # noqa: F401 — /accueil
 import ui.auth  # noqa: F401 — /login, /reset/{token}
 import ui.production  # noqa: F401 — /production
 import ui.ramasse  # noqa: F401 — /ramasse
-from nicegui import ui  # noqa: F811 — restaure nicegui.ui après imports locaux ui.*
 
 # ─── Health check ────────────────────────────────────────────────────────────
 

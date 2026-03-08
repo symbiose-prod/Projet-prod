@@ -20,7 +20,7 @@ from common.session_store import load_df
 from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import parse_stock as _parse_stock
 from ui._production_calc import _auto_match, _fetch_eb_products
-from ui.theme import COLORS as _COLORS, confirm_dialog, date_picker_field
+from ui.theme import confirm_dialog, date_picker_field
 
 _log = logging.getLogger("ferment.production")
 
