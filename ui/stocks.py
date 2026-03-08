@@ -642,34 +642,34 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
         with ui.row().classes("w-full items-start").style(
             "flex: 1 1 0; overflow: hidden"
         ):
-            # LEFT panel: order summary (no scroll — all visible)
-            with ui.column().style(
-                f"width: 380px; border-right: 1px solid "
-                f"{COLORS.get('border', '#e5e7eb')}; overflow-y: auto"
+            # LEFT panel: order summary + options (scrollable)
+            with ui.scroll_area().style(
+                f"width: 320px; border-right: 1px solid "
+                f"{COLORS.get('border', '#e5e7eb')}"
             ):
-                with ui.column().classes("q-pa-md gap-2"):
+                with ui.column().classes("q-pa-sm gap-1"):
                     _render_order_summary_panel(rec)
 
                     # ── Options ──
-                    ui.separator().classes("q-my-md")
+                    ui.separator().classes("q-my-sm")
                     ui.label("Options").classes("text-subtitle2").style(
                         f"color: {COLORS['ink']}; font-weight: 600"
                     )
 
                     # Language — two separate buttons
-                    ui.label("Langue de l'email").classes("text-caption").style(
-                        f"color: {COLORS['ink2']}"
-                    )
-                    with ui.row().classes("gap-3"):
+                    ui.label("Langue de l'email").classes(
+                        "text-caption"
+                    ).style(f"color: {COLORS['ink2']}")
+                    with ui.row().classes("gap-2"):
                         btn_fr = ui.button(
                             "🇫🇷 Français",
-                        ).props("unelevated no-caps color=green-8").style(
-                            "min-width: 130px"
+                        ).props(
+                            "unelevated dense no-caps size=sm color=green-8"
                         )
                         btn_en = ui.button(
                             "🇬🇧 English",
-                        ).props("outline no-caps color=grey-6").style(
-                            "min-width: 130px"
+                        ).props(
+                            "outline dense no-caps size=sm color=grey-6"
                         )
 
                     def _set_lang(lang: str):
@@ -690,18 +690,18 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
 
                     # Delivery preference — two separate buttons
                     ui.label("Livraison souhaitée").classes(
-                        "text-caption q-mt-sm"
+                        "text-caption q-mt-xs"
                     ).style(f"color: {COLORS['ink2']}")
-                    with ui.row().classes("gap-3"):
+                    with ui.row().classes("gap-2"):
                         btn_asap = ui.button(
                             "ASAP",
-                        ).props("unelevated no-caps color=green-8").style(
-                            "min-width: 130px"
+                        ).props(
+                            "unelevated dense no-caps size=sm color=green-8"
                         )
                         btn_date = ui.button(
-                            "📅 Date précise",
-                        ).props("outline no-caps color=grey-6").style(
-                            "min-width: 130px"
+                            "📅 Date",
+                        ).props(
+                            "outline dense no-caps size=sm color=grey-6"
                         )
 
                     delivery_date_input = ui.input(
@@ -1208,56 +1208,48 @@ def _build_context_prompt(context: dict) -> str:
 
 
 def _render_order_summary_panel(rec: OrderRecommendation) -> None:
-    """Render read-only order summary in the left panel of the dialog."""
-    ui.label("Résumé de la commande").classes("text-subtitle1").style(
+    """Render compact order summary in the left panel of the dialog."""
+    ui.label("Résumé").classes("text-subtitle2").style(
         f"color: {COLORS['ink']}; font-weight: 700"
     )
 
-    with ui.column().classes("gap-2 q-mt-md"):
+    with ui.column().classes("gap-1 q-mt-xs"):
         _summary_row("Fournisseur", rec.supplier)
         _summary_row(
             "Urgence",
             _URGENCY_LABELS[rec.urgency],
             color=_URGENCY_COLORS[rec.urgency],
         )
-        _summary_row("Délai livraison", f"{rec.lead_time_days} jours")
+        _summary_row("Délai", f"{rec.lead_time_days} j")
         _summary_row("Date limite", _format_date_fr(rec.order_deadline))
         _summary_row("Min. palettes", str(rec.min_pallets))
 
-    ui.separator().classes("q-my-md")
-    ui.label("Articles").classes("text-subtitle2").style(
+    ui.separator().classes("q-my-xs")
+    ui.label("Articles").classes("text-caption").style(
         f"color: {COLORS['ink']}; font-weight: 600"
     )
 
     for oi in rec.items:
-        with ui.card().classes("w-full q-pa-sm q-mt-xs").props("flat bordered"):
-            ui.label(_short_label(oi.label)).classes("text-body2").style(
+        with ui.row().classes("w-full items-center gap-2 q-py-none"):
+            ui.label(_short_label(oi.label)).classes("text-caption").style(
                 "font-weight: 600"
             )
-            with ui.row().classes("gap-4"):
-                ui.label(
-                    f"{oi.suggested_pallets} pal."
-                ).classes("text-caption")
-                ui.label(
-                    _format_number(oi.suggested_qty)
-                ).classes("text-caption")
-                if oi.coverage_days:
-                    ui.label(
-                        f"~{oi.coverage_days:.0f} j"
-                    ).classes("text-caption").style(
-                        f"color: {COLORS['ink2']}"
-                    )
+            ui.label(
+                f"{oi.suggested_pallets} pal. · {_format_number(oi.suggested_qty)} u"
+            ).classes("text-caption").style(f"color: {COLORS['ink2']}")
 
     total_pal = sum(oi.suggested_pallets for oi in rec.items)
     total_qty = sum(oi.suggested_qty for oi in rec.items)
-    ui.separator().classes("q-my-sm")
+    ui.separator().classes("q-my-xs")
     with ui.row().classes("justify-between w-full"):
-        ui.label("TOTAL").style(
+        ui.label("TOTAL").classes("text-caption").style(
             f"color: {COLORS['ink']}; font-weight: 700"
         )
         ui.label(
             f"{total_pal} pal. / {_format_number(total_qty)} u"
-        ).style(f"color: {COLORS['ink']}; font-weight: 700")
+        ).classes("text-caption").style(
+            f"color: {COLORS['ink']}; font-weight: 700"
+        )
 
 
 def _summary_row(label: str, value: str, *, color: str | None = None) -> None:
