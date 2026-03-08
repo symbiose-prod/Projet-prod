@@ -56,6 +56,19 @@ def get_business_config() -> dict[str, Any]:
     return result
 
 
+_STOCKS_DEFAULTS: dict[str, Any] = {
+    "supplier_groups": [],
+    "ungrouped_label": "Autres contenants",
+}
+
+
+@lru_cache(maxsize=1)
+def get_stocks_config() -> dict[str, Any]:
+    """Retourne la section 'stocks' de config.yaml avec valeurs par défaut."""
+    cfg = load_config()
+    return {**_STOCKS_DEFAULTS, **cfg.get("stocks", {})}
+
+
 _SECURITY_DEFAULTS: dict[str, Any] = {
     "min_password_length": 10,
     "lockout_thresholds": [

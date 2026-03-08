@@ -38,6 +38,17 @@ business:
       nb_gouts: 1
       nominal_hL: 48.0
 
+# ─── Stocks — Regroupement fournisseurs ──────────────────────────────────────
+stocks:
+  supplier_groups:
+    - name: "Fournisseur Bouteilles (commun)"
+      icon: "inventory_2"
+      patterns: ["Bouteille"]
+    - name: "Eau gazeuse"
+      icon: "water_drop"
+      patterns: ["EAU GAZEUSE"]
+  ungrouped_label: "Autres contenants"
+
 # ─── Sécurité ─────────────────────────────────────────────────────────────────
 security:
   min_password_length: 10

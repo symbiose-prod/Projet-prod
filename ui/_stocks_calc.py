@@ -12,79 +12,67 @@ Data flow
 2. ``POST /stock/contenant/historique``        → movement history over the period
 3. Group history by ``record["stock"]``        → match to consolidation ``libelle``
 4. Compute daily consumption and remaining stock days
+5. Group items by supplier via config.yaml patterns
 """
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 _log = logging.getLogger("ferment.stocks")
 
-# ---------------------------------------------------------------------------
-# Bottle definitions — match on the ``libelle`` field returned by
-# ``GET /stock/bouteilles`` (e.g. "Bouteille - 0.33L").
-# The same string appears in the ``stock`` field of history records.
-# ---------------------------------------------------------------------------
-
-BOTTLE_TARGETS: list[tuple[str, str]] = [
-    ("Bouteille 33cl", "Bouteille - 0.33L"),
-    ("Bouteille 75cl SAFT", "Bouteille 75cl SAFT - 0.75L"),
-]
-
 
 # ---------------------------------------------------------------------------
-# Result dataclass
+# Result dataclasses
 # ---------------------------------------------------------------------------
 
 @dataclass
-class BottleStockResult:
-    """Computed stock metrics for a single bottle type."""
+class StockItem:
+    """Computed stock metrics for a single contenant type."""
 
-    label: str
-    eb_libelle: str  # EasyBeer libelle (e.g. "Bouteille - 0.33L")
+    label: str            # consolidation libelle (e.g. "Bouteille - 0.33L")
     current_stock: float
-    unit: str
+    unit: str             # "u"
     seuil_bas: float
-    consumption: float  # total consumed over period
+    consumption: float    # total consumed over period
     window_days: int
-    daily_consumption: float  # consumption / window_days
+    daily_consumption: float
     stock_days: float | None  # current_stock / daily_consumption, or None
+
+
+@dataclass
+class StockGroup:
+    """A supplier group containing one or more stock items."""
+
+    name: str
+    icon: str
+    items: list[StockItem] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _find_bottles_in_consolidation(
+def _extract_all_contenants(
     consolidation: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
-    """Find target bottles in the consolidation tree from GET /stock/bouteilles.
-
-    Returns ``{eb_libelle: consolidation_entry}`` for each target found.
-    """
+) -> list[dict[str, Any]]:
+    """Extract all children from the consolidation tree, excluding TOTAL."""
     children = consolidation.get("consolidationsFilles") or []
-    found: dict[str, dict[str, Any]] = {}
-
-    target_libelles = {eb_libelle for _, eb_libelle in BOTTLE_TARGETS}
-
+    result = []
     for entry in children:
         libelle = entry.get("libelle", "")
-        if libelle in target_libelles:
-            found[libelle] = entry
-            _log.info(
-                "Contenant trouvé '%s' → id=%s, stock=%s, seuilBas=%s",
-                libelle,
-                entry.get("id"),
-                entry.get("quantiteVirtuelle"),
-                entry.get("seuilBas"),
-            )
-
-    for _, eb_libelle in BOTTLE_TARGETS:
-        if eb_libelle not in found:
-            _log.warning("Contenant introuvable : '%s'", eb_libelle)
-
-    return found
+        if libelle.upper() == "TOTAL":
+            continue
+        result.append(entry)
+        _log.info(
+            "Contenant trouvé '%s' → id=%s, stock=%s, seuilBas=%s",
+            libelle,
+            entry.get("id"),
+            entry.get("quantiteVirtuelle"),
+            entry.get("seuilBas"),
+        )
+    return result
 
 
 def _compute_consumption_from_history(
@@ -108,57 +96,98 @@ def _compute_consumption_from_history(
     return consumption
 
 
+def _assign_groups(
+    items: list[StockItem],
+    stocks_config: dict[str, Any],
+) -> list[StockGroup]:
+    """Assign stock items to supplier groups based on pattern matching.
+
+    Each item matches the *first* group whose pattern is found (case-insensitive)
+    in ``item.label``. Unmatched items go into the fallback group.
+    """
+    supplier_groups = stocks_config.get("supplier_groups") or []
+    ungrouped_label = stocks_config.get("ungrouped_label", "Autres contenants")
+
+    # Build ordered group list
+    groups: list[StockGroup] = [
+        StockGroup(name=g["name"], icon=g.get("icon", "category"))
+        for g in supplier_groups
+    ]
+    fallback = StockGroup(name=ungrouped_label, icon="more_horiz")
+
+    # Precompute lowered patterns per group
+    group_patterns: list[list[str]] = [
+        [p.lower() for p in g.get("patterns", [])]
+        for g in supplier_groups
+    ]
+
+    for item in items:
+        label_lower = item.label.lower()
+        matched = False
+        for idx, patterns in enumerate(group_patterns):
+            if any(p in label_lower for p in patterns):
+                groups[idx].items.append(item)
+                matched = True
+                break
+        if not matched:
+            fallback.items.append(item)
+
+    # Return non-empty groups, fallback last
+    result = [g for g in groups if g.items]
+    if fallback.items:
+        result.append(fallback)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Main entry-point (blocking — run in thread)
 # ---------------------------------------------------------------------------
 
-def fetch_and_compute(window_days: int) -> list[BottleStockResult]:
-    """Fetch EasyBeer data and compute stock duration for tracked bottles.
+def fetch_and_compute(window_days: int) -> list[StockGroup]:
+    """Fetch EasyBeer data and compute stock duration for all contenants.
 
-    1. ``GET /stock/bouteilles``     → find bottles, get current stock
+    1. ``GET /stock/bouteilles``     → find all contenants, get current stock
     2. ``POST /stock/contenant/historique`` → get all movements over period
-    3. Match history to bottles by ``stock``/``libelle`` field
+    3. Match history to contenants by ``stock``/``libelle`` field
     4. Compute daily consumption and remaining stock days
+    5. Group by supplier via config.yaml patterns
     """
+    from common.data import get_stocks_config
     from common.easybeer import get_contenant_historique, get_stock_bouteilles
     from common.easybeer._client import _dates
 
-    # Step 1 — get current stock levels for all bottles
+    # Step 1 — get current stock levels for all contenants
     consolidation = get_stock_bouteilles()
-    found = _find_bottles_in_consolidation(consolidation)
+    contenants = _extract_all_contenants(consolidation)
 
-    if not found:
-        _log.warning("Aucun contenant bouteille trouvé dans EasyBeer")
+    if not contenants:
+        _log.warning("Aucun contenant trouvé dans EasyBeer")
         return []
 
-    # Step 2 — fetch movement history for the period
+    # Step 2 — fetch movement history for the period (single API call)
     date_debut, date_fin = _dates(window_days)
     history = get_contenant_historique(
         date_debut=date_debut,
         date_fin=date_fin,
     )
 
-    # Step 3 — compute consumption per bottle type
-    target_libelles = {eb_libelle for _, eb_libelle in BOTTLE_TARGETS}
+    # Step 3 — compute consumption per contenant
+    target_libelles = {e.get("libelle", "") for e in contenants}
     consumption_map = _compute_consumption_from_history(history, target_libelles)
 
-    # Step 4 — build results
-    results: list[BottleStockResult] = []
+    # Step 4 — build StockItem list
+    items: list[StockItem] = []
 
-    for display_label, eb_libelle in BOTTLE_TARGETS:
-        entry = found.get(eb_libelle)
-        if not entry:
-            continue
-
+    for entry in contenants:
+        libelle = entry.get("libelle", "")
         current_stock = float(entry.get("quantiteVirtuelle", 0) or 0)
         seuil_bas = float(entry.get("seuilBas", 0) or 0)
-        consumption = consumption_map.get(eb_libelle, 0.0)
+        consumption = consumption_map.get(libelle, 0.0)
         daily = consumption / window_days if window_days > 0 else 0.0
         stock_days = (current_stock / daily) if daily > 0 else None
 
-        result = BottleStockResult(
-            label=display_label,
-            eb_libelle=eb_libelle,
+        item = StockItem(
+            label=libelle,
             current_stock=current_stock,
             unit="u",
             seuil_bas=seuil_bas,
@@ -167,16 +196,18 @@ def fetch_and_compute(window_days: int) -> list[BottleStockResult]:
             daily_consumption=daily,
             stock_days=stock_days,
         )
-        results.append(result)
+        items.append(item)
 
         _log.info(
             "Stock '%s': stock=%.0f, conso=%.0f/%dj, daily=%.1f, jours=%s",
-            display_label,
-            result.current_stock,
-            result.consumption,
+            libelle,
+            item.current_stock,
+            item.consumption,
             window_days,
-            result.daily_consumption,
-            f"{result.stock_days:.1f}" if result.stock_days else "N/A",
+            item.daily_consumption,
+            f"{item.stock_days:.1f}" if item.stock_days else "N/A",
         )
 
-    return results
+    # Step 5 — group by supplier
+    stocks_config = get_stocks_config()
+    return _assign_groups(items, stocks_config)

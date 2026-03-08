@@ -1,7 +1,7 @@
 """
 ui/stocks.py
 ============
-Page Stocks Bouteilles — Analyse de l'autonomie des stocks bouteilles.
+Page Stocks — Analyse de l'autonomie des stocks contenants, groupés par fournisseur.
 """
 from __future__ import annotations
 
@@ -13,11 +13,12 @@ from nicegui import ui
 _log = logging.getLogger("ferment.stocks")
 
 from common.easybeer import is_configured as eb_configured
-from ui._stocks_calc import BottleStockResult, fetch_and_compute
+from ui._stocks_calc import StockGroup, StockItem, fetch_and_compute
 from ui.auth import require_auth
 from ui.theme import COLORS, kpi_card, page_layout, section_title
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _format_days(days: float | None) -> str:
     if days is None:
@@ -42,7 +43,18 @@ def _format_number(n: float, unit: str = "") -> str:
     return f"{s} {unit}".strip() if unit else s
 
 
+def _group_summary(group: StockGroup) -> str:
+    """Short summary for expansion panel header badge."""
+    n = len(group.items)
+    days_list = [it.stock_days for it in group.items if it.stock_days is not None]
+    if days_list:
+        min_days = min(days_list)
+        return f"{n} item{'s' if n > 1 else ''} — min {_format_days(min_days)}"
+    return f"{n} item{'s' if n > 1 else ''}"
+
+
 # ─── Page ─────────────────────────────────────────────────────────────────────
+
 
 @ui.page("/stocks")
 def page_stocks():
@@ -50,20 +62,20 @@ def page_stocks():
     if not user:
         return
 
-    with page_layout("Stocks Bouteilles", "inventory_2", "/stocks") as sidebar:
+    with page_layout("Stocks", "inventory_2", "/stocks") as sidebar:
 
         with sidebar:
-            ui.label("Stocks bouteilles").classes("text-subtitle2 text-grey-7")
-            ui.label("Fournisseur commun").classes("text-caption text-grey-5")
+            ui.label("Stocks contenants").classes("text-subtitle2 text-grey-7")
+            ui.label("Analyse d'autonomie").classes("text-caption text-grey-5")
 
         # ── Explication ──────────────────────────────────────────────
         with ui.card().classes("w-full").props("flat bordered"):
             with ui.card_section().classes("q-pa-md"):
                 ui.label(
-                    "Analysez l'autonomie de vos stocks de bouteilles "
-                    "(33cl bavarian et 75cl SAFT). Choisissez une période "
-                    "pour calculer la consommation moyenne et estimer "
-                    "le nombre de jours de stock restant."
+                    "Analysez l'autonomie de vos stocks de contenants. "
+                    "Choisissez une période pour calculer la consommation "
+                    "moyenne et estimer le nombre de jours de stock restant. "
+                    "Les contenants sont regroupés par fournisseur."
                 ).classes("text-body2").style(
                     f"color: {COLORS['ink2']}; line-height: 1.6"
                 )
@@ -109,22 +121,23 @@ def page_stocks():
                         results_container.clear()
                         try:
                             days = int(period_radio.value or 30)
-                            results: list[BottleStockResult] = await asyncio.wait_for(
+                            groups: list[StockGroup] = await asyncio.wait_for(
                                 asyncio.to_thread(fetch_and_compute, days),
                                 timeout=60,
                             )
-                            if not results:
+                            total_items = sum(len(g.items) for g in groups)
+                            if not groups or total_items == 0:
                                 status_label.text = (
-                                    "Aucun contenant bouteille trouvé dans EasyBeer. "
+                                    "Aucun contenant trouvé dans EasyBeer. "
                                     "Vérifiez la configuration des stocks."
                                 )
                                 status_label.classes("text-negative", remove="text-positive")
                                 status_label.set_visibility(True)
                                 return
-                            _render_results(results_container, results, days)
+                            _render_groups(results_container, groups, days)
                             status_label.text = (
-                                f"Analyse terminée — {len(results)} bouteille(s) "
-                                f"sur {days} jours"
+                                f"Analyse terminée — {total_items} contenant(s) "
+                                f"en {len(groups)} groupe(s) sur {days} jours"
                             )
                             status_label.classes("text-positive", remove="text-negative")
                             status_label.set_visibility(True)
@@ -137,7 +150,7 @@ def page_stocks():
                             status_label.set_visibility(True)
                             ui.notify("Délai dépassé", type="warning")
                         except Exception:
-                            _log.exception("Erreur analyse stocks bouteilles")
+                            _log.exception("Erreur analyse stocks contenants")
                             status_label.text = (
                                 "Erreur lors de l'analyse. "
                                 "Vérifiez la connexion EasyBeer."
@@ -157,27 +170,50 @@ def page_stocks():
 
 # ─── Rendu des résultats ──────────────────────────────────────────────────────
 
-def _render_results(
+
+def _render_groups(
     container: ui.column,
-    results: list[BottleStockResult],
+    groups: list[StockGroup],
     window_days: int,
 ) -> None:
+    """Render all stock groups as expansion panels."""
     with container:
+        for group in groups:
+            _render_group_panel(group, window_days)
+
+
+def _render_group_panel(group: StockGroup, window_days: int) -> None:
+    """Render a single supplier group as an expansion panel."""
+    summary = _group_summary(group)
+
+    with ui.expansion(value=True).classes("w-full").props(
+        "dense header-class=bg-grey-2"
+    ) as expansion:
+        # Custom header with icon + name + badge
+        with expansion.add_slot("header"):
+            with ui.row().classes("items-center gap-2 w-full"):
+                ui.icon(group.icon, size="sm").style(
+                    f"color: {COLORS['green']}"
+                )
+                ui.label(group.name).classes("text-subtitle1")
+                ui.space()
+                ui.badge(summary).props("color=grey-6 outline")
+
         # ── KPI cards ────────────────────────────────────────────
-        section_title("Autonomie des stocks", "timer")
+        section_title("Autonomie", "timer")
         with ui.row().classes("w-full gap-4 flex-wrap"):
-            for r in results:
+            for item in group.items:
                 kpi_card(
                     icon="inventory_2",
-                    label=r.label,
-                    value=_format_days(r.stock_days),
-                    color=_days_color(r.stock_days),
+                    label=item.label,
+                    value=_format_days(item.stock_days),
+                    color=_days_color(item.stock_days),
                 )
 
         # ── Tableau détail ───────────────────────────────────────
-        section_title("Détail par bouteille", "table_chart")
+        section_title("Détail", "table_chart")
         columns = [
-            {"name": "label", "label": "Bouteille", "field": "label", "align": "left"},
+            {"name": "label", "label": "Contenant", "field": "label", "align": "left"},
             {"name": "stock", "label": "Stock actuel", "field": "stock", "align": "right"},
             {"name": "seuil", "label": "Seuil bas", "field": "seuil", "align": "right"},
             {"name": "conso", "label": f"Conso ({window_days} j)", "field": "conso", "align": "right"},
@@ -185,14 +221,14 @@ def _render_results(
             {"name": "days", "label": "Autonomie", "field": "days", "align": "right"},
         ]
         rows = []
-        for r in results:
+        for item in group.items:
             rows.append({
-                "label": r.label,
-                "stock": _format_number(r.current_stock, r.unit),
-                "seuil": _format_number(r.seuil_bas, r.unit) if r.seuil_bas else "—",
-                "conso": _format_number(r.consumption, r.unit),
-                "daily": f"{r.daily_consumption:,.1f} {r.unit}/j",
-                "days": _format_days(r.stock_days),
+                "label": item.label,
+                "stock": _format_number(item.current_stock, item.unit),
+                "seuil": _format_number(item.seuil_bas, item.unit) if item.seuil_bas else "—",
+                "conso": _format_number(item.consumption, item.unit),
+                "daily": f"{item.daily_consumption:,.1f} {item.unit}/j",
+                "days": _format_days(item.stock_days),
             })
         ui.table(
             columns=columns,
