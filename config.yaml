@@ -44,9 +44,9 @@ stocks:
     - name: "Wiegand-glas"
       icon: "inventory_2"
       patterns: ["Bouteille"]           # 33cl + 75cl SAFT
-    - name: "Eau gazeuse"
+    - name: "Verallia"
       icon: "water_drop"
-      patterns: ["EAU GAZEUSE"]
+      patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse
   ungrouped_label: "Autres contenants"
 
 # ─── Sécurité ─────────────────────────────────────────────────────────────────
