@@ -22,7 +22,7 @@ from ui._stocks_calc import (
     fetch_and_compute,
 )
 from ui.auth import require_auth
-from ui.theme import COLORS, kpi_card, page_layout, section_title
+from ui.theme import COLORS, kpi_card, page_layout
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,17 @@ def _days_color(days: float | None) -> str:
     if days < 30:
         return COLORS["warning"]
     return COLORS["success"]
+
+
+def _q_badge_color(days: float | None) -> str:
+    """Quasar color name for badge."""
+    if days is None:
+        return "grey-6"
+    if days < 14:
+        return "red-6"
+    if days < 30:
+        return "amber-8"
+    return "green-7"
 
 
 def _format_number(n: float, unit: str = "") -> str:
@@ -67,14 +78,37 @@ def _short_label(label: str) -> str:
         return name
 
 
-def _group_summary(group: StockGroup) -> str:
-    """Short summary for expansion panel header badge."""
-    n = len(group.items)
-    days_list = [it.stock_days for it in group.items if it.stock_days is not None]
-    if days_list:
-        min_days = min(days_list)
-        return f"{n} item{'s' if n > 1 else ''} — min {_format_days(min_days)}"
-    return f"{n} item{'s' if n > 1 else ''}"
+_MONTHS_FR = [
+    "", "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def _format_date_fr(d) -> str:
+    if d is None:
+        return "—"
+    return f"{d.day} {_MONTHS_FR[d.month]} {d.year}"
+
+
+_URGENCY_COLORS = {
+    "critical": COLORS["error"],
+    "warning": COLORS["warning"],
+    "ok": COLORS["success"],
+}
+_URGENCY_LABELS = {
+    "critical": "URGENT — Commander maintenant",
+    "warning": "A planifier",
+    "ok": "Stock suffisant",
+}
+_URGENCY_ICONS = {
+    "critical": "error",
+    "warning": "schedule",
+    "ok": "check_circle",
+}
+
+
+def _q_urgency_color(urgency: str) -> str:
+    return {"critical": "red-6", "warning": "amber-8", "ok": "green-7"}[urgency]
 
 
 # ─── Page ─────────────────────────────────────────────────────────────────────
@@ -89,12 +123,12 @@ def page_stocks():
     # Charger la config fournisseurs
     stocks_cfg = get_stocks_config()
     supplier_groups = stocks_cfg.get("supplier_groups") or []
-    # Tous les noms pour le sélecteur
     supplier_options = [g["name"] for g in supplier_groups]
-    # Fournisseurs avec patterns = analyse contenants disponible
     _analysable = {
         g["name"] for g in supplier_groups if g.get("patterns")
     }
+    # Map supplier name → config dict (for icon lookup etc.)
+    _supplier_cfg = {g["name"]: g for g in supplier_groups}
 
     with page_layout("Stocks", "inventory_2", "/stocks") as sidebar:
 
@@ -109,21 +143,16 @@ def page_stocks():
                     "text-caption text-grey-5"
                 )
             else:
-                # État de sélection
                 selected_supplier = {"value": None}
                 supplier_buttons: dict[str, ui.button] = {}
 
                 def select_supplier(name: str):
                     prev = selected_supplier["value"]
-                    # Dé-sélectionner l'ancien
                     if prev and prev in supplier_buttons:
                         supplier_buttons[prev].props(
                             "color=grey-8", remove="color=green-8"
                         )
-                        supplier_buttons[prev].classes(
-                            remove="nav-active"
-                        )
-                    # Sélectionner le nouveau (ou désélectionner si même)
+                        supplier_buttons[prev].classes(remove="nav-active")
                     if name == prev:
                         selected_supplier["value"] = None
                         _on_supplier_selected(None)
@@ -135,7 +164,6 @@ def page_stocks():
                         supplier_buttons[name].classes("nav-active")
                         _on_supplier_selected(name)
 
-                # Grouper par catégorie
                 categories: dict[str, list[dict]] = {}
                 for g in supplier_groups:
                     cat = g.get("category", "Autres")
@@ -160,17 +188,6 @@ def page_stocks():
                         )
                         supplier_buttons[g["name"]] = btn
 
-        # ── Explication ──────────────────────────────────────────────
-        with ui.card().classes("w-full").props("flat bordered"):
-            with ui.card_section().classes("q-pa-md"):
-                ui.label(
-                    "Analysez l'autonomie de vos stocks de contenants. "
-                    "Sélectionnez un fournisseur dans le menu latéral, "
-                    "choisissez une période, puis lancez l'analyse."
-                ).classes("text-body2").style(
-                    f"color: {COLORS['ink2']}; line-height: 1.6"
-                )
-
         if not eb_configured() or not supplier_options:
             return
 
@@ -188,7 +205,7 @@ def page_stocks():
                     f"color: {COLORS['ink2']}"
                 )
 
-        # ── Placeholder "bientôt disponible" (MP/emballages) ────────
+        # ── Placeholder "bientôt disponible" ──────────────────────────
         coming_soon_card = ui.card().classes("w-full").props("flat bordered")
         coming_soon_card.set_visibility(False)
         with coming_soon_card:
@@ -196,9 +213,7 @@ def page_stocks():
                 ui.icon("construction", size="xl").style(
                     f"color: {COLORS['warning']}; opacity: 0.6"
                 )
-                coming_soon_name = ui.label("").classes(
-                    "text-h6 q-mt-sm"
-                )
+                coming_soon_name = ui.label("").classes("text-h6 q-mt-sm")
                 ui.label(
                     "L'analyse des stocks pour ce fournisseur "
                     "sera bientôt disponible."
@@ -207,114 +222,113 @@ def page_stocks():
                 )
 
         # ── Bloc d'analyse (masqué par défaut) ──────────────────────
-        analysis_card = ui.card().classes("w-full").props("flat bordered")
+        analysis_card = ui.column().classes("w-full gap-0")
         analysis_card.set_visibility(False)
 
         with analysis_card:
-            with ui.card_section():
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("analytics", size="sm").style(
-                        f"color: {COLORS['green']}"
-                    )
-                    supplier_header = ui.label("Analyse").classes("text-h6")
+            # ── Barre sticky : Nom fournisseur + période + bouton ──
+            with ui.element("div").classes("w-full").style(
+                "position: sticky; top: 0; z-index: 10; "
+                f"background: {COLORS['bg']}; "
+                "padding: 12px 0 8px 0;"
+            ):
+                with ui.card().classes("w-full").props("flat bordered"):
+                    with ui.card_section().classes("q-pa-md"):
+                        with ui.row().classes(
+                            "items-center w-full gap-4 flex-wrap"
+                        ):
+                            # Left: supplier name
+                            supplier_icon_el = ui.icon(
+                                "inventory_2", size="md",
+                            ).style(f"color: {COLORS['green']}")
+                            supplier_header = ui.label(
+                                "Fournisseur",
+                            ).classes("text-h5").style(
+                                f"color: {COLORS['ink']}; font-weight: 700"
+                            )
+                            ui.space()
+                            # Right: period + button
+                            with ui.row().classes("items-center gap-3"):
+                                period_radio = ui.radio(
+                                    {30: "1m", 60: "2m", 90: "3m", 180: "6m"},
+                                    value=60,
+                                ).props(
+                                    "inline dense color=green-8"
+                                ).style("font-size: 13px")
+                                fetch_btn = ui.button(
+                                    "Analyser",
+                                    icon="analytics",
+                                    on_click=lambda: do_fetch(),
+                                ).props("color=green-8 unelevated dense")
 
-            with ui.card_section():
-                ui.label("Période d'analyse").classes("text-caption").style(
-                    f"color: {COLORS['ink2']}; font-weight: 500"
-                )
-                period_radio = ui.radio(
-                    {30: "1 mois", 60: "2 mois", 90: "3 mois", 180: "6 mois"},
-                    value=30,
-                ).props("inline dense color=green-8")
+            # ── Status + spinner ──────────────────────────────────
+            status_label = ui.label("").classes("text-body2")
+            status_label.set_visibility(False)
 
-                status_label = ui.label("").classes("text-body2 q-mt-sm")
+            fetch_spinner = ui.spinner(
+                "dots", size="xl", color="green-8",
+            ).classes("self-center q-pa-md")
+            fetch_spinner.set_visibility(False)
+
+            # ── Résultats ─────────────────────────────────────────
+            results_container = ui.column().classes("w-full gap-0")
+
+            async def do_fetch():
+                fetch_btn.disable()
+                fetch_spinner.set_visibility(True)
                 status_label.set_visibility(False)
-
-                fetch_spinner = ui.spinner(
-                    "dots", size="xl", color="green-8",
-                ).classes("self-center q-pa-md")
-                fetch_spinner.set_visibility(False)
-
-                # Conteneur des résultats
-                results_container = ui.column().classes("w-full gap-4 q-mt-md")
-
-                async def do_fetch():
-                    fetch_btn.disable()
-                    fetch_spinner.set_visibility(True)
-                    status_label.set_visibility(False)
-                    results_container.clear()
-                    try:
-                        days = int(period_radio.value or 30)
-                        selected = selected_supplier["value"]
-                        groups: list[StockGroup] = await asyncio.wait_for(
-                            asyncio.to_thread(fetch_and_compute, days),
-                            timeout=60,
-                        )
-                        # Filtrer pour le fournisseur sélectionné
-                        filtered = [
-                            g for g in groups if g.name == selected
-                        ]
-                        total_items = sum(len(g.items) for g in filtered)
-                        if not filtered or total_items == 0:
-                            status_label.text = (
-                                f"Aucun contenant trouvé pour {selected}. "
-                                "Vérifiez la configuration des stocks."
-                            )
-                            status_label.classes(
-                                "text-negative", remove="text-positive"
-                            )
-                            status_label.set_visibility(True)
-                            return
-                        # Build ordering config map
-                        ordering_cfgs = {
-                            g["name"]: g.get("ordering", {})
-                            for g in supplier_groups
-                            if g.get("ordering")
-                        }
-                        _render_groups(
-                            results_container, filtered, days, ordering_cfgs,
-                        )
+                results_container.clear()
+                try:
+                    days = int(period_radio.value or 60)
+                    selected = selected_supplier["value"]
+                    groups: list[StockGroup] = await asyncio.wait_for(
+                        asyncio.to_thread(fetch_and_compute, days),
+                        timeout=60,
+                    )
+                    filtered = [g for g in groups if g.name == selected]
+                    total_items = sum(len(g.items) for g in filtered)
+                    if not filtered or total_items == 0:
                         status_label.text = (
-                            f"Analyse terminée — {total_items} contenant(s) "
-                            f"sur {days} jours"
-                        )
-                        status_label.classes(
-                            "text-positive", remove="text-negative"
-                        )
-                        status_label.set_visibility(True)
-                        ui.notify("Analyse terminée !", type="positive")
-                    except TimeoutError:
-                        status_label.text = (
-                            "L'analyse a dépassé le délai (60 s). Réessayez."
+                            f"Aucun contenant trouvé pour {selected}."
                         )
                         status_label.classes(
                             "text-negative", remove="text-positive"
                         )
                         status_label.set_visibility(True)
-                        ui.notify("Délai dépassé", type="warning")
-                    except Exception:
-                        _log.exception("Erreur analyse stocks contenants")
-                        status_label.text = (
-                            "Erreur lors de l'analyse. "
-                            "Vérifiez la connexion EasyBeer."
-                        )
-                        status_label.classes(
-                            "text-negative", remove="text-positive"
-                        )
-                        status_label.set_visibility(True)
-                    finally:
-                        fetch_spinner.set_visibility(False)
-                        fetch_btn.enable()
+                        return
+                    ordering_cfgs = {
+                        g["name"]: g.get("ordering", {})
+                        for g in supplier_groups
+                        if g.get("ordering")
+                    }
+                    _render_results(
+                        results_container, filtered, days, ordering_cfgs,
+                    )
+                    ui.notify("Analyse terminée", type="positive")
+                except TimeoutError:
+                    status_label.text = (
+                        "L'analyse a dépassé le délai (60 s). Réessayez."
+                    )
+                    status_label.classes(
+                        "text-negative", remove="text-positive"
+                    )
+                    status_label.set_visibility(True)
+                except Exception:
+                    _log.exception("Erreur analyse stocks contenants")
+                    status_label.text = (
+                        "Erreur lors de l'analyse. "
+                        "Vérifiez la connexion EasyBeer."
+                    )
+                    status_label.classes(
+                        "text-negative", remove="text-positive"
+                    )
+                    status_label.set_visibility(True)
+                finally:
+                    fetch_spinner.set_visibility(False)
+                    fetch_btn.enable()
 
-                fetch_btn = ui.button(
-                    "Analyser les stocks",
-                    icon="analytics",
-                    on_click=do_fetch,
-                ).classes("w-full q-mt-md").props("color=green-8 unelevated")
-
-        # ── Callback sélection fournisseur ──────────────────────────
+        # ── Callback sélection fournisseur ────────────────────────
         def _on_supplier_selected(name: str | None):
-            # Masquer tout par défaut
             placeholder_msg.set_visibility(False)
             analysis_card.set_visibility(False)
             coming_soon_card.set_visibility(False)
@@ -323,7 +337,9 @@ def page_stocks():
                 placeholder_msg.set_visibility(True)
             elif name in _analysable:
                 analysis_card.set_visibility(True)
-                supplier_header.text = f"Analyse — {name}"
+                supplier_header.text = name
+                cfg = _supplier_cfg.get(name, {})
+                supplier_icon_el.props(f'name="{cfg.get("icon", "inventory_2")}"')
                 results_container.clear()
                 status_label.set_visibility(False)
             else:
@@ -331,161 +347,156 @@ def page_stocks():
                 coming_soon_name.text = name
 
 
-# ─── Rendu des résultats ──────────────────────────────────────────────────────
+# ─── Rendu des résultats (sans expansion panel) ─────────────────────────────
 
 
-def _render_groups(
+def _render_results(
     container: ui.column,
     groups: list[StockGroup],
     window_days: int,
     ordering_cfgs: dict[str, dict],
 ) -> None:
-    """Render all stock groups as expansion panels."""
+    """Render stock analysis results — flat layout, no expansion panels."""
     with container:
         for group in groups:
             ordering = ordering_cfgs.get(group.name, {})
-            _render_group_panel(group, window_days, ordering)
 
+            # ── AUTONOMIE ─────────────────────────────────────────
+            with ui.element("div").classes("w-full q-mt-lg q-mb-sm"):
+                with ui.row().classes("items-center gap-3"):
+                    ui.icon("timer", size="sm").style(
+                        f"color: {COLORS['green']}"
+                    )
+                    ui.label("Autonomie des stocks").classes("text-h6").style(
+                        f"color: {COLORS['ink']}; font-weight: 700"
+                    )
 
-def _render_group_panel(
-    group: StockGroup, window_days: int, ordering_cfg: dict,
-) -> None:
-    """Render a single supplier group as an expansion panel."""
-    summary = _group_summary(group)
+            # KPI cards
+            with ui.row().classes("w-full gap-4 flex-wrap"):
+                for item in group.items:
+                    kpi_card(
+                        icon="inventory_2",
+                        label=_short_label(item.label),
+                        value=_format_days(item.stock_days),
+                        color=_days_color(item.stock_days),
+                    )
 
-    with ui.expansion(value=True).classes("w-full").props(
-        "dense header-class=bg-grey-2"
-    ) as expansion:
-        # Custom header with icon + name + badge
-        with expansion.add_slot("header"):
-            with ui.row().classes("items-center gap-2 w-full"):
-                ui.icon(group.icon, size="sm").style(
-                    f"color: {COLORS['green']}"
-                )
-                ui.label(group.name).classes("text-subtitle1")
-                ui.space()
-                ui.badge(summary).props("color=grey-6 outline")
+            # ── DETAIL TABLE ──────────────────────────────────────
+            with ui.element("div").classes("w-full q-mt-lg q-mb-sm"):
+                with ui.row().classes("items-center gap-3"):
+                    ui.icon("table_chart", size="sm").style(
+                        f"color: {COLORS['ink2']}"
+                    )
+                    ui.label("Détail").classes("text-subtitle1").style(
+                        f"color: {COLORS['ink']}; font-weight: 600"
+                    )
 
-        # ── KPI cards ────────────────────────────────────────────
-        section_title("Autonomie", "timer")
-        with ui.row().classes("w-full gap-4 flex-wrap"):
+            columns = [
+                {"name": "label", "label": "Contenant", "field": "label",
+                 "align": "left", "sortable": True},
+                {"name": "stock", "label": "Stock actuel", "field": "stock",
+                 "align": "right"},
+                {"name": "conso", "label": f"Conso ({window_days} j)",
+                 "field": "conso", "align": "right"},
+                {"name": "daily", "label": "Conso / jour", "field": "daily",
+                 "align": "right"},
+                {"name": "days", "label": "Autonomie", "field": "days",
+                 "align": "right", "sortable": True},
+            ]
+            rows = []
             for item in group.items:
-                kpi_card(
-                    icon="inventory_2",
-                    label=_short_label(item.label),
-                    value=_format_days(item.stock_days),
-                    color=_days_color(item.stock_days),
-                )
+                rows.append({
+                    "label": _short_label(item.label),
+                    "stock": _format_number(item.current_stock, item.unit),
+                    "conso": _format_number(item.consumption, item.unit),
+                    "daily": f"{item.daily_consumption:,.1f} {item.unit}/j",
+                    "days": _format_days(item.stock_days),
+                    "_days_raw": item.stock_days,
+                })
+            table = ui.table(
+                columns=columns,
+                rows=rows,
+                row_key="label",
+            ).classes("w-full").props("flat bordered dense")
 
-        # ── Tableau détail ───────────────────────────────────────
-        section_title("Détail", "table_chart")
-        columns = [
-            {"name": "label", "label": "Contenant", "field": "label", "align": "left"},
-            {"name": "stock", "label": "Stock actuel", "field": "stock", "align": "right"},
-            {"name": "seuil", "label": "Seuil bas", "field": "seuil", "align": "right"},
-            {"name": "conso", "label": f"Conso ({window_days} j)", "field": "conso", "align": "right"},
-            {"name": "daily", "label": "Conso / jour", "field": "daily", "align": "right"},
-            {"name": "days", "label": "Autonomie", "field": "days", "align": "right"},
-        ]
-        rows = []
-        for item in group.items:
-            rows.append({
-                "label": _short_label(item.label),
-                "stock": _format_number(item.current_stock, item.unit),
-                "seuil": _format_number(item.seuil_bas, item.unit) if item.seuil_bas else "—",
-                "conso": _format_number(item.consumption, item.unit),
-                "daily": f"{item.daily_consumption:,.1f} {item.unit}/j",
-                "days": _format_days(item.stock_days),
-            })
-        ui.table(
-            columns=columns,
-            rows=rows,
-            row_key="label",
-        ).classes("w-full").props("flat bordered dense")
+            # Slot custom pour colorer la colonne Autonomie
+            table.add_slot(
+                "body-cell-days",
+                """
+                <q-td :props="props" class="text-right">
+                    <q-badge
+                        :color="props.row._days_raw == null ? 'grey-5'
+                              : props.row._days_raw < 14 ? 'red-6'
+                              : props.row._days_raw < 30 ? 'amber-8'
+                              : 'green-7'"
+                        :label="props.row.days"
+                        class="text-weight-bold"
+                        style="font-size: 13px; padding: 4px 10px"
+                    />
+                </q-td>
+                """,
+            )
 
-        # ── Recommandation de commande ──────────────────────────
-        rec = compute_order_recommendation(group, ordering_cfg)
-        if rec:
-            _render_order_section(rec)
-
-
-# ─── Section commande ────────────────────────────────────────────────────────
+            # ── RECOMMANDATION DE COMMANDE ────────────────────────
+            rec = compute_order_recommendation(group, ordering)
+            if rec:
+                _render_order_section(rec)
 
 
-_URGENCY_COLORS = {
-    "critical": COLORS["error"],
-    "warning": COLORS["warning"],
-    "ok": COLORS["success"],
-}
-_URGENCY_LABELS = {
-    "critical": "URGENT",
-    "warning": "A planifier",
-    "ok": "Stock OK",
-}
-_URGENCY_ICONS = {
-    "critical": "error",
-    "warning": "schedule",
-    "ok": "check_circle",
-}
-
-_MONTHS_FR = [
-    "", "janvier", "février", "mars", "avril", "mai", "juin",
-    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
-]
-
-
-def _format_date_fr(d) -> str:
-    """Format a date as 'DD mois YYYY' in French."""
-    if d is None:
-        return "—"
-    return f"{d.day} {_MONTHS_FR[d.month]} {d.year}"
+# ─── Section commande — redesign ────────────────────────────────────────────
 
 
 def _render_order_section(rec: OrderRecommendation) -> None:
-    """Render the ordering recommendation section."""
+    """Render ordering recommendation as a prominent, clear section."""
     color = _URGENCY_COLORS[rec.urgency]
+    q_color = _q_urgency_color(rec.urgency)
 
-    section_title("Recommandation de commande", "local_shipping")
-
-    # ── KPI cards: deadline per reference ──────────────────────
-    with ui.row().classes("w-full gap-4 flex-wrap"):
-        for oi in rec.items:
-            if oi.days_before_order is not None and oi.days_before_order <= 0:
-                item_color = COLORS["error"]
-                val = "En retard"
-            elif oi.days_before_order is not None and oi.days_before_order <= 14:
-                item_color = COLORS["warning"]
-                val = _format_date_fr(oi.deadline)
-            elif oi.deadline:
-                item_color = COLORS["success"]
-                val = _format_date_fr(oi.deadline)
-            else:
-                item_color = COLORS["ink2"]
-                val = "N/A"
-            kpi_card(
-                icon="event",
-                label=_short_label(oi.label),
-                value=val,
-                color=item_color,
+    # ── Section header ────────────────────────────────────────
+    with ui.element("div").classes("w-full q-mt-xl q-mb-sm"):
+        with ui.row().classes("items-center gap-3"):
+            ui.icon("local_shipping", size="sm").style(f"color: {color}")
+            ui.label("Recommandation de commande").classes("text-h6").style(
+                f"color: {COLORS['ink']}; font-weight: 700"
             )
+            ui.badge(
+                _URGENCY_LABELS[rec.urgency],
+            ).props(f"color={q_color}")
 
-    # ── Coverage bars + summary card ──────────────────────────
+    # ── Alert banner (urgence) ────────────────────────────────
+    with ui.card().classes("w-full").props("flat").style(
+        f"border-left: 4px solid {color}; "
+        f"background: {color}08; "
+        "border-radius: 6px;"
+    ):
+        with ui.card_section().classes("q-pa-md"):
+            with ui.row().classes("items-center gap-3"):
+                ui.icon(_URGENCY_ICONS[rec.urgency], size="md").style(
+                    f"color: {color}"
+                )
+                with ui.column().classes("gap-0"):
+                    if rec.urgency == "critical":
+                        ui.label(
+                            "Stock insuffisant pour couvrir le délai "
+                            f"de livraison ({rec.lead_time_days} j)",
+                        ).classes("text-body1").style("font-weight: 600")
+                    elif rec.urgency == "warning":
+                        ui.label(
+                            f"Commander avant le "
+                            f"{_format_date_fr(rec.order_deadline)}",
+                        ).classes("text-body1").style("font-weight: 600")
+                    else:
+                        ui.label(
+                            "Le stock actuel couvre largement le délai "
+                            f"de livraison ({rec.lead_time_days} j)",
+                        ).classes("text-body1").style("font-weight: 600")
+
+    # ── Coverage bars ─────────────────────────────────────────
     with ui.card().classes("w-full q-mt-sm").props("flat bordered"):
         with ui.card_section().classes("q-pa-md"):
-            # Header with urgency badge
-            with ui.row().classes("items-center gap-2 q-mb-md"):
-                ui.icon(
-                    _URGENCY_ICONS[rec.urgency], size="sm",
-                ).style(f"color: {color}")
-                ui.label(
-                    f"Commande {rec.supplier}",
-                ).classes("text-subtitle1").style("font-weight: 600")
-                ui.space()
-                ui.badge(
-                    _URGENCY_LABELS[rec.urgency],
-                ).props(f"color={_q_color(rec.urgency)}")
+            ui.label("Couverture par référence").classes(
+                "text-subtitle2 q-mb-md"
+            ).style(f"color: {COLORS['ink']}; font-weight: 600")
 
-            # Coverage bars per reference
             max_days = max(
                 (oi.stock_days or 0 for oi in rec.items), default=60,
             )
@@ -494,68 +505,74 @@ def _render_order_section(rec: OrderRecommendation) -> None:
             for oi in rec.items:
                 _render_coverage_bar(oi, rec.lead_time_days, bar_max)
 
-            ui.separator().classes("q-my-md")
+    # ── Synthèse commande (tableau clair) ─────────────────────
+    with ui.card().classes("w-full q-mt-sm").props("flat bordered"):
+        with ui.card_section().classes("q-pa-md"):
+            ui.label("Synthèse de commande").classes(
+                "text-subtitle2 q-mb-md"
+            ).style(f"color: {COLORS['ink']}; font-weight: 600")
 
-            # Order summary
-            with ui.row().classes("items-start gap-6 flex-wrap"):
-                # Left: key info
-                with ui.column().classes("gap-1"):
-                    _info_line(
-                        "Date limite commande",
-                        _format_date_fr(rec.order_deadline),
-                        bold=True,
-                    )
-                    _info_line(
-                        "Délai livraison",
-                        f"{rec.lead_time_days} jours",
-                    )
-                    _info_line(
-                        "Commande minimum",
-                        f"{rec.min_pallets} palettes",
-                    )
+            # Infos clés en row
+            with ui.row().classes("w-full gap-6 q-mb-md flex-wrap"):
+                _metric_chip("event", "Date limite",
+                             _format_date_fr(rec.order_deadline), color)
+                _metric_chip("schedule", "Délai",
+                             f"{rec.lead_time_days} j", COLORS["ink2"])
+                _metric_chip("local_shipping", "Min. palettes",
+                             str(rec.min_pallets), COLORS["ink2"])
 
-                # Right: pallet breakdown
-                with ui.column().classes("gap-1"):
-                    ui.label("Répartition suggérée").classes(
-                        "text-caption",
-                    ).style(
-                        f"color: {COLORS['ink2']}; font-weight: 600"
-                    )
-                    for oi in rec.items:
-                        # Short label: take last meaningful part
-                        short = _short_label(oi.label)
-                        palettes_txt = (
-                            f"{oi.suggested_pallets} pal."
-                            f" = {_format_number(oi.suggested_qty)} btl"
-                        )
-                        coverage_txt = (
-                            f"(~{oi.coverage_days:.0f} j)"
-                            if oi.coverage_days else ""
-                        )
-                        with ui.row().classes("items-center gap-2"):
-                            ui.icon("inventory_2", size="xs").style(
-                                f"color: {COLORS['ink2']}"
-                            )
-                            ui.label(
-                                f"{short} : {palettes_txt} {coverage_txt}",
-                            ).classes("text-body2")
-
-
-def _q_color(urgency: str) -> str:
-    """Map urgency to Quasar color name for badge."""
-    return {"critical": "red-6", "warning": "amber-8", "ok": "green-7"}[urgency]
+            # Tableau de répartition
+            order_cols = [
+                {"name": "ref", "label": "Référence", "field": "ref",
+                 "align": "left"},
+                {"name": "pallets", "label": "Palettes", "field": "pallets",
+                 "align": "center"},
+                {"name": "qty", "label": "Bouteilles", "field": "qty",
+                 "align": "right"},
+                {"name": "coverage", "label": "Couverture",
+                 "field": "coverage", "align": "right"},
+            ]
+            order_rows = []
+            for oi in rec.items:
+                order_rows.append({
+                    "ref": _short_label(oi.label),
+                    "pallets": str(oi.suggested_pallets),
+                    "qty": _format_number(oi.suggested_qty),
+                    "coverage": (
+                        f"~{oi.coverage_days:.0f} j"
+                        if oi.coverage_days else "—"
+                    ),
+                })
+            # Total row
+            total_pal = sum(oi.suggested_pallets for oi in rec.items)
+            total_qty = sum(oi.suggested_qty for oi in rec.items)
+            order_rows.append({
+                "ref": "TOTAL",
+                "pallets": str(total_pal),
+                "qty": _format_number(total_qty),
+                "coverage": "",
+            })
+            ui.table(
+                columns=order_cols,
+                rows=order_rows,
+                row_key="ref",
+            ).classes("w-full").props("flat bordered dense")
 
 
-def _info_line(label: str, value: str, bold: bool = False) -> None:
-    """Render a label: value line."""
+def _metric_chip(icon: str, label: str, value: str, color: str) -> None:
+    """Small metric display with icon."""
     with ui.row().classes("items-center gap-2"):
-        ui.label(label).classes("text-caption").style(
-            f"color: {COLORS['ink2']}; font-weight: 500"
-        )
-        weight = "700" if bold else "600"
-        ui.label(value).classes("text-body2").style(
-            f"color: {COLORS['ink']}; font-weight: {weight}"
-        )
+        with ui.element("div").classes("q-pa-xs").style(
+            f"background: {color}10; border-radius: 6px"
+        ):
+            ui.icon(icon, size="xs").style(f"color: {color}")
+        with ui.column().classes("gap-0"):
+            ui.label(label).classes("text-caption").style(
+                f"color: {COLORS['ink2']}; font-weight: 500; font-size: 11px"
+            )
+            ui.label(value).classes("text-body2").style(
+                f"color: {COLORS['ink']}; font-weight: 700"
+            )
 
 
 def _render_coverage_bar(oi, lead_time_days: int, bar_max: float) -> None:
@@ -564,7 +581,6 @@ def _render_coverage_bar(oi, lead_time_days: int, bar_max: float) -> None:
     pct_stock = min(stock_days / bar_max * 100, 100) if bar_max > 0 else 0
     pct_lead = min(lead_time_days / bar_max * 100, 100) if bar_max > 0 else 0
 
-    # Bar color based on stock vs lead time
     if stock_days <= lead_time_days:
         bar_color = COLORS["error"]
     elif stock_days <= lead_time_days * 2:
@@ -575,40 +591,37 @@ def _render_coverage_bar(oi, lead_time_days: int, bar_max: float) -> None:
     short_label = _short_label(oi.label)
     days_txt = f"{stock_days:.0f} j" if stock_days else "N/A"
 
-    with ui.column().classes("w-full gap-0 q-mb-sm"):
-        with ui.row().classes("items-center justify-between w-full"):
-            ui.label(short_label).classes("text-caption").style(
-                f"color: {COLORS['ink']}; font-weight: 500"
+    with ui.column().classes("w-full gap-0 q-mb-md"):
+        with ui.row().classes("items-center justify-between w-full q-mb-xs"):
+            ui.label(short_label).classes("text-body2").style(
+                f"color: {COLORS['ink']}; font-weight: 600"
             )
-            ui.label(days_txt).classes("text-caption").style(
-                f"color: {bar_color}; font-weight: 700"
-            )
+            ui.badge(days_txt).props(
+                f"color={'red-6' if stock_days <= lead_time_days else 'amber-8' if stock_days <= lead_time_days * 2 else 'green-7'}"
+            ).style("font-size: 12px")
         # Bar container
         ui.html(f"""
             <div style="
-                position: relative;
-                width: 100%;
-                height: 20px;
-                background: {COLORS['sage']};
-                border-radius: 4px;
-                overflow: hidden;
+                position: relative; width: 100%; height: 24px;
+                background: {COLORS['sage']}; border-radius: 6px;
+                overflow: visible;
             ">
                 <div style="
-                    width: {pct_stock:.1f}%;
-                    height: 100%;
-                    background: {bar_color};
-                    border-radius: 4px;
-                    opacity: 0.8;
-                    transition: width 0.5s ease;
+                    width: {pct_stock:.1f}%; height: 100%;
+                    background: {bar_color}; border-radius: 6px;
+                    opacity: 0.75; transition: width 0.5s ease;
                 "></div>
                 <div style="
-                    position: absolute;
-                    top: 0;
-                    left: {pct_lead:.1f}%;
-                    width: 2px;
-                    height: 100%;
-                    background: {COLORS['ink']};
-                    opacity: 0.6;
-                " title="Délai livraison ({lead_time_days} j)"></div>
+                    position: absolute; top: -4px;
+                    left: {pct_lead:.1f}%; width: 2px; height: 32px;
+                    background: {COLORS['ink']}; opacity: 0.5;
+                    border-radius: 1px;
+                "></div>
+                <div style="
+                    position: absolute; top: -18px;
+                    left: calc({pct_lead:.1f}% - 20px);
+                    font-size: 10px; color: {COLORS['ink2']};
+                    white-space: nowrap;
+                ">{lead_time_days}j</div>
             </div>
         """)
