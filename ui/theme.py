@@ -66,6 +66,7 @@ NAV_ITEMS = [
     ("home",           "Accueil",              "/accueil"),
     ("factory",        "Production",           "/production"),
     ("local_shipping", "Fiche de ramasse",     "/ramasse"),
+    ("inventory_2",    "Stocks Bouteilles",    "/stocks"),
 ]
 
 

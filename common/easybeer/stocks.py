@@ -95,6 +95,33 @@ _WEIGHTS_CACHE_PATH = os.path.join(
 _WEIGHTS_CACHE_TTL = 24 * 3600  # 24 heures
 
 
+# ─── Matieres premieres (toutes) ─────────────────────────────────────────────
+
+_MP_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
+_MP_CACHE_TTL = 3600  # 1 heure
+
+
+@retry_api
+def get_all_matieres_premieres() -> list[dict[str, Any]]:
+    """GET /stock/matieres-premieres/all → Liste de toutes les matieres premieres."""
+    if _MP_CACHE["data"] is not None and (time.monotonic() - _MP_CACHE["ts"]) < _MP_CACHE_TTL:
+        return _MP_CACHE["data"]
+    ep = "stock/matieres-premieres/all"
+    r = get_session().get(
+        f"{BASE}/{ep}",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
+    result = data if isinstance(data, list) else []
+    if result:
+        _MP_CACHE["data"] = result
+        _MP_CACHE["ts"] = time.monotonic()
+    _log.info("get_all_matieres_premieres : %d MP chargées", len(result))
+    return result
+
+
 def _load_weights_cache() -> dict[tuple[int, str], float] | None:
     """Charge le cache fichier des poids cartons si encore valide."""
     import json
