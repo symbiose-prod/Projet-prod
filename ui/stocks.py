@@ -782,6 +782,9 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                 "text-caption self-center"
             ).style(f"color: {COLORS['ink2']}")
             ui.element("div").style("flex-grow: 1")
+            preview_pdf_btn = ui.button(
+                "Aperçu PDF", icon="picture_as_pdf",
+            ).props("outline color=grey-8")
             preview_btn = ui.button(
                 "Aperçu email", icon="visibility",
             ).props("outline color=grey-8")
@@ -1103,7 +1106,93 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
         finally:
             send_email_btn.enable()
 
+    async def _preview_pdf():
+        """Generate and display the PDF purchase order in a sub-dialog."""
+        import base64
+
+        preview_pdf_btn.disable()
+        try:
+            today = _date.today()
+            supplier_short = (
+                rec.supplier.upper().replace(" ", "").replace("-", "")[:8]
+            )
+            ref = f"BC-{today.strftime('%Y-%m%d')}-{supplier_short}"
+
+            pdf_items = [
+                {
+                    "label": _short_label(oi.label),
+                    "pallets": oi.suggested_pallets,
+                    "qty": oi.suggested_qty,
+                    "conditionnement": f"{oi.bottles_per_pallet}/palette",
+                }
+                for oi in rec.items
+            ]
+
+            supplier_info_dict: dict = {
+                "name": rec.supplier,
+                "address_lines": [],
+                "contact_name": None,
+                "email": state["supplier_email"],
+            }
+            if state["supplier_info"]:
+                supplier_info_dict["address_lines"] = extract_supplier_address(
+                    state["supplier_info"]
+                )
+                supplier_info_dict["contact_name"] = (
+                    extract_supplier_contact_name(state["supplier_info"])
+                )
+
+            delivery = state.get("delivery_date") or _format_date_fr(
+                rec.order_deadline
+            )
+            if state["delivery_mode"] == "asap":
+                delivery = "Dès que possible (ASAP)"
+
+            pdf_data = {
+                "reference": ref,
+                "date": today,
+                "items": pdf_items,
+                "delivery_date": delivery,
+                "notes": None,
+            }
+
+            pdf_bytes = await asyncio.to_thread(
+                build_bon_commande_pdf, pdf_data, supplier_info_dict,
+            )
+
+            # Encode to base64 for inline display
+            b64 = base64.b64encode(pdf_bytes).decode("ascii")
+
+            with ui.dialog() as pdf_dlg, ui.card().classes("q-pa-none").style(
+                "width: 900px; max-width: 95vw; height: 85vh"
+            ):
+                with ui.row().classes(
+                    "w-full items-center q-pa-sm"
+                ).style(
+                    f"background: {COLORS.get('bg2', '#f9fafb')}; "
+                    "flex-shrink: 0"
+                ):
+                    ui.label(f"📄 {ref}").classes("text-subtitle2").style(
+                        "font-weight: 600"
+                    )
+                    ui.element("div").style("flex-grow: 1")
+                    ui.button("Fermer", on_click=pdf_dlg.close).props(
+                        "flat color=grey-7"
+                    )
+                ui.html(
+                    f'<iframe src="data:application/pdf;base64,{b64}" '
+                    f'style="width:100%; height:100%; border:none"></iframe>'
+                ).style("flex: 1 1 0; overflow: hidden")
+            pdf_dlg.open()
+
+        except Exception as exc:
+            _log.exception("Error generating PDF preview")
+            ui.notify(f"Erreur PDF : {exc}", type="negative")
+        finally:
+            preview_pdf_btn.enable()
+
     # ── Wire up button handlers ──
+    preview_pdf_btn.on_click(_preview_pdf)
     preview_btn.on_click(_preview_email)
     send_email_btn.on_click(_send_order_email)
 
