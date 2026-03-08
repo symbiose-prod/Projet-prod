@@ -59,6 +59,7 @@ from .stocks import (
     get_autonomie_stocks,
     get_autonomie_stocks_excel,
     get_mp_lots,
+    get_stock_bouteilles,
     get_stock_produit_detail,
 )
 
@@ -67,7 +68,7 @@ __all__ = [
     "BASE", "TIMEOUT", "is_configured", "EasyBeerError", "get_session",
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_all_matieres_premieres",
-    "get_mp_lots", "get_stock_produit_detail", "fetch_carton_weights",
+    "get_mp_lots", "get_stock_produit_detail", "get_stock_bouteilles", "fetch_carton_weights",
     # history
     "get_contenant_historique",
     # clients

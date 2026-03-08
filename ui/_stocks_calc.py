@@ -1,10 +1,17 @@
 """
 ui/_stocks_calc.py
 ==================
-Stock duration computation for bottles — no UI, thread-safe.
+Stock duration computation for bottles (contenants) — no UI, thread-safe.
 
 Called via ``asyncio.to_thread(fetch_and_compute, window_days)`` from the
 ``/stocks`` page.
+
+Data flow
+---------
+1. ``GET /stock/bouteilles?idUniteVolume=4``  → current stock & seuil per bottle
+2. ``POST /stock/contenant/historique``        → movement history over the period
+3. Group history by ``record["stock"]``        → match to consolidation ``libelle``
+4. Compute daily consumption and remaining stock days
 """
 from __future__ import annotations
 
@@ -15,12 +22,14 @@ from typing import Any
 _log = logging.getLogger("ferment.stocks")
 
 # ---------------------------------------------------------------------------
-# Bottle definitions — keywords must ALL match in MP libelle (case-insensitive)
+# Bottle definitions — match on the ``libelle`` field returned by
+# ``GET /stock/bouteilles`` (e.g. "Bouteille - 0.33L").
+# The same string appears in the ``stock`` field of history records.
 # ---------------------------------------------------------------------------
 
-BOTTLE_KEYWORDS: list[tuple[str, list[str]]] = [
-    ("Bouteille 33cl bavarian", ["bouteille", "33", "bavarian"]),
-    ("Bouteille 75cl SAFT", ["bouteille", "75", "saft"]),
+BOTTLE_TARGETS: list[tuple[str, str]] = [
+    ("Bouteille 33cl", "Bouteille - 0.33L"),
+    ("Bouteille 75cl SAFT", "Bouteille 75cl SAFT - 0.75L"),
 ]
 
 
@@ -33,7 +42,7 @@ class BottleStockResult:
     """Computed stock metrics for a single bottle type."""
 
     label: str
-    id_mp: int
+    eb_libelle: str  # EasyBeer libelle (e.g. "Bouteille - 0.33L")
     current_stock: float
     unit: str
     seuil_bas: float
@@ -47,69 +56,56 @@ class BottleStockResult:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def find_bottle_mps(
-    all_mps: list[dict[str, Any]],
+def _find_bottles_in_consolidation(
+    consolidation: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Search all matières premières for the tracked bottle types.
+    """Find target bottles in the consolidation tree from GET /stock/bouteilles.
 
-    Returns ``{label: mp_dict}`` for every bottle found.
-    Match strategy: every keyword must appear in ``libelle`` (case-insensitive).
+    Returns ``{eb_libelle: consolidation_entry}`` for each target found.
     """
+    children = consolidation.get("consolidationsFilles") or []
     found: dict[str, dict[str, Any]] = {}
-    for label, keywords in BOTTLE_KEYWORDS:
-        for mp in all_mps:
-            libelle = (mp.get("libelle") or "").lower()
-            if all(kw.lower() in libelle for kw in keywords):
-                found[label] = mp
-                _log.info(
-                    "MP trouvée '%s' → id=%s, stock=%.1f",
-                    label,
-                    mp.get("idMatierePremiere"),
-                    mp.get("quantiteVirtuelle", 0),
-                )
-                break
-        else:
-            _log.warning("MP introuvable pour '%s'", label)
+
+    target_libelles = {eb_libelle for _, eb_libelle in BOTTLE_TARGETS}
+
+    for entry in children:
+        libelle = entry.get("libelle", "")
+        if libelle in target_libelles:
+            found[libelle] = entry
+            _log.info(
+                "Contenant trouvé '%s' → id=%s, stock=%s, seuilBas=%s",
+                libelle,
+                entry.get("id"),
+                entry.get("quantiteVirtuelle"),
+                entry.get("seuilBas"),
+            )
+
+    for _, eb_libelle in BOTTLE_TARGETS:
+        if eb_libelle not in found:
+            _log.warning("Contenant introuvable : '%s'", eb_libelle)
+
     return found
 
 
-def compute_consumption(history: list[dict[str, Any]]) -> float:
-    """Total consumption = sum of ``abs(difference)`` for negative differences."""
-    total = 0.0
+def _compute_consumption_from_history(
+    history: list[dict[str, Any]],
+    target_libelles: set[str],
+) -> dict[str, float]:
+    """Group history records by ``stock`` field and sum negative differences.
+
+    Returns ``{stock_name: total_consumption}``.
+    """
+    consumption: dict[str, float] = {lib: 0.0 for lib in target_libelles}
+
     for record in history:
+        stock_name = record.get("stock", "")
+        if stock_name not in target_libelles:
+            continue
         diff = record.get("difference", 0) or 0
         if diff < 0:
-            total += abs(diff)
-    return total
+            consumption[stock_name] += abs(diff)
 
-
-def compute_stock_duration(
-    mp: dict[str, Any],
-    history: list[dict[str, Any]],
-    window_days: int,
-    label: str,
-) -> BottleStockResult:
-    """Compute stock duration for one bottle type."""
-    current_stock = float(mp.get("quantiteVirtuelle", 0) or 0)
-    unit_obj = mp.get("unite") or {}
-    unit = unit_obj.get("symbole", "u")
-    seuil_bas = float(mp.get("seuilBas", 0) or 0)
-
-    consumption = compute_consumption(history)
-    daily = consumption / window_days if window_days > 0 else 0.0
-    stock_days = (current_stock / daily) if daily > 0 else None
-
-    return BottleStockResult(
-        label=label,
-        id_mp=mp.get("idMatierePremiere", 0),
-        current_stock=current_stock,
-        unit=unit,
-        seuil_bas=seuil_bas,
-        consumption=consumption,
-        window_days=window_days,
-        daily_consumption=daily,
-        stock_days=stock_days,
-    )
+    return consumption
 
 
 # ---------------------------------------------------------------------------
@@ -119,47 +115,68 @@ def compute_stock_duration(
 def fetch_and_compute(window_days: int) -> list[BottleStockResult]:
     """Fetch EasyBeer data and compute stock duration for tracked bottles.
 
-    1. ``GET /stock/matieres-premieres/all`` → find bottle MP ids
-    2. ``POST /stock/contenant/historique`` × N  → consumption per bottle
-    3. Compute daily consumption and remaining stock days
+    1. ``GET /stock/bouteilles``     → find bottles, get current stock
+    2. ``POST /stock/contenant/historique`` → get all movements over period
+    3. Match history to bottles by ``stock``/``libelle`` field
+    4. Compute daily consumption and remaining stock days
     """
-    from common.easybeer import get_all_matieres_premieres, get_contenant_historique
+    from common.easybeer import get_contenant_historique, get_stock_bouteilles
     from common.easybeer._client import _dates
 
-    # Step 1 — find bottle MPs
-    all_mps = get_all_matieres_premieres()
-    found = find_bottle_mps(all_mps)
+    # Step 1 — get current stock levels for all bottles
+    consolidation = get_stock_bouteilles()
+    found = _find_bottles_in_consolidation(consolidation)
 
     if not found:
-        _log.warning("Aucune bouteille trouvée dans les MP EasyBeer")
+        _log.warning("Aucun contenant bouteille trouvé dans EasyBeer")
         return []
 
-    # Step 2 & 3 — fetch history + compute per bottle
+    # Step 2 — fetch movement history for the period
     date_debut, date_fin = _dates(window_days)
+    history = get_contenant_historique(
+        date_debut=date_debut,
+        date_fin=date_fin,
+    )
+
+    # Step 3 — compute consumption per bottle type
+    target_libelles = {eb_libelle for _, eb_libelle in BOTTLE_TARGETS}
+    consumption_map = _compute_consumption_from_history(history, target_libelles)
+
+    # Step 4 — build results
     results: list[BottleStockResult] = []
 
-    for label, mp in found.items():
-        id_mp = mp.get("idMatierePremiere")
-        if not id_mp:
+    for display_label, eb_libelle in BOTTLE_TARGETS:
+        entry = found.get(eb_libelle)
+        if not entry:
             continue
 
-        history = get_contenant_historique(
-            date_debut=date_debut,
-            date_fin=date_fin,
-            ids_matieres_premieres=[id_mp],
-        )
+        current_stock = float(entry.get("quantiteVirtuelle", 0) or 0)
+        seuil_bas = float(entry.get("seuilBas", 0) or 0)
+        consumption = consumption_map.get(eb_libelle, 0.0)
+        daily = consumption / window_days if window_days > 0 else 0.0
+        stock_days = (current_stock / daily) if daily > 0 else None
 
-        result = compute_stock_duration(mp, history, window_days, label)
+        result = BottleStockResult(
+            label=display_label,
+            eb_libelle=eb_libelle,
+            current_stock=current_stock,
+            unit="u",
+            seuil_bas=seuil_bas,
+            consumption=consumption,
+            window_days=window_days,
+            daily_consumption=daily,
+            stock_days=stock_days,
+        )
         results.append(result)
 
         _log.info(
-            "Stock '%s': stock=%.0f, conso=%.0f/%dj, daily=%.1f, jours=%.1f",
-            label,
+            "Stock '%s': stock=%.0f, conso=%.0f/%dj, daily=%.1f, jours=%s",
+            display_label,
             result.current_stock,
             result.consumption,
             window_days,
             result.daily_consumption,
-            result.stock_days or 0,
+            f"{result.stock_days:.1f}" if result.stock_days else "N/A",
         )
 
     return results

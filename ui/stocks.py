@@ -115,8 +115,8 @@ def page_stocks():
                             )
                             if not results:
                                 status_label.text = (
-                                    "Aucune bouteille trouvée dans EasyBeer. "
-                                    "Vérifiez les libellés des matières premières."
+                                    "Aucun contenant bouteille trouvé dans EasyBeer. "
+                                    "Vérifiez la configuration des stocks."
                                 )
                                 status_label.classes("text-negative", remove="text-positive")
                                 status_label.set_visibility(True)

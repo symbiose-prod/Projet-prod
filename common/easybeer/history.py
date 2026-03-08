@@ -40,7 +40,7 @@ def get_contenant_historique(
         filtre["typeMouvement"] = type_mouvement
 
     all_items: list[dict[str, Any]] = []
-    page = 0
+    page = 1  # EasyBeer uses 1-indexed pages
 
     while True:
         r = get_session().post(
@@ -63,11 +63,11 @@ def get_contenant_historique(
         total_pages = data.get("totalPages", 1)
         _log.debug(
             "contenant/historique page %d/%d \u2014 %d \u00e9l\u00e9ments",
-            page + 1, total_pages, len(items),
+            page, total_pages, len(items),
         )
 
         page += 1
-        if page >= total_pages or not items:
+        if page > total_pages or not items:
             break
 
     _log.info(
