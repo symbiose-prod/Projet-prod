@@ -255,10 +255,10 @@ def page_stocks():
 
                     results_container = ui.column().classes("w-full gap-0")
 
-                # Colonne droite : contrôles sticky (étroite)
+                # Colonne droite : contrôles sticky
                 with ui.column().style(
                     "position: sticky; top: 16px; "
-                    "width: 130px; min-width: 130px; flex: 0 0 130px;"
+                    "width: 180px; min-width: 180px; flex: 0 0 180px;"
                 ):
                     with ui.card().props("flat bordered"):
                         with ui.card_section().classes("q-pa-sm"):
