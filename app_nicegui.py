@@ -244,6 +244,8 @@ import ui.production  # noqa: F401 — /production
 import ui.ramasse  # noqa: F401 — /ramasse
 import ui.stocks  # noqa: F401 — /stocks
 
+from nicegui import ui  # noqa: F811 — re-restaure nicegui.ui après imports locaux ui.*
+
 # ─── Health check ────────────────────────────────────────────────────────────
 
 @app.get("/health")
