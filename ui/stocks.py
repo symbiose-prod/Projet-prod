@@ -261,30 +261,32 @@ def page_stocks():
                     "width: 300px; min-width: 300px; flex: 0 0 300px;"
                 ):
                     with ui.card().props("flat bordered").style(
-                        "width: 300px; min-height: 300px"
+                        "width: 300px; height: 300px"
                     ):
-                        with ui.card_section().classes("q-pa-md"):
-                            ui.label("Période").classes(
-                                "text-caption"
+                        with ui.card_section().classes(
+                            "q-pa-lg column justify-center items-center"
+                        ).style("height: 100%"):
+                            ui.label("Période d'analyse").classes(
+                                "text-subtitle2 q-mb-md"
                             ).style(
-                                f"color: {COLORS['ink2']}; "
-                                "font-weight: 600; text-transform: uppercase; "
-                                "font-size: 10px"
+                                f"color: {COLORS['ink']}; font-weight: 600"
                             )
                             period_radio = ui.radio(
                                 {30: "1 mois", 60: "2 mois",
                                  90: "3 mois", 180: "6 mois"},
                                 value=60,
                             ).props("dense color=green-8").style(
-                                "font-size: 13px"
+                                "font-size: 14px"
                             )
                             fetch_btn = ui.button(
                                 "Analyser",
                                 icon="analytics",
                                 on_click=lambda: do_fetch(),
                             ).props(
-                                "color=green-8 unelevated dense"
-                            ).classes("w-full q-mt-sm")
+                                "color=green-8 unelevated"
+                            ).classes("w-full q-mt-lg").style(
+                                "font-size: 15px; padding: 10px 16px"
+                            )
 
             async def do_fetch():
                 fetch_btn.disable()
