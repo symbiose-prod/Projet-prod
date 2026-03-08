@@ -67,7 +67,12 @@ def page_stocks():
     # Charger la config fournisseurs
     stocks_cfg = get_stocks_config()
     supplier_groups = stocks_cfg.get("supplier_groups") or []
+    # Tous les noms pour le sélecteur
     supplier_options = [g["name"] for g in supplier_groups]
+    # Fournisseurs avec patterns = analyse contenants disponible
+    _analysable = {
+        g["name"] for g in supplier_groups if g.get("patterns")
+    }
 
     with page_layout("Stocks", "inventory_2", "/stocks") as sidebar:
 
@@ -120,6 +125,24 @@ def page_stocks():
                     "Sélectionnez un fournisseur dans le menu "
                     "pour lancer une analyse."
                 ).classes("text-body1 q-mt-sm").style(
+                    f"color: {COLORS['ink2']}"
+                )
+
+        # ── Placeholder "bientôt disponible" (MP/emballages) ────────
+        coming_soon_card = ui.card().classes("w-full").props("flat bordered")
+        coming_soon_card.set_visibility(False)
+        with coming_soon_card:
+            with ui.card_section().classes("q-pa-lg text-center"):
+                ui.icon("construction", size="xl").style(
+                    f"color: {COLORS['warning']}; opacity: 0.6"
+                )
+                coming_soon_name = ui.label("").classes(
+                    "text-h6 q-mt-sm"
+                )
+                ui.label(
+                    "L'analyse des stocks pour ce fournisseur "
+                    "sera bientôt disponible."
+                ).classes("text-body2 q-mt-xs").style(
                     f"color: {COLORS['ink2']}"
                 )
 
@@ -224,15 +247,21 @@ def page_stocks():
         # ── Callback sélection fournisseur ──────────────────────────
         def on_supplier_change(e):
             selected = e.value
-            if selected:
+            # Masquer tout par défaut
+            placeholder_msg.set_visibility(False)
+            analysis_card.set_visibility(False)
+            coming_soon_card.set_visibility(False)
+
+            if not selected:
+                placeholder_msg.set_visibility(True)
+            elif selected in _analysable:
                 analysis_card.set_visibility(True)
-                placeholder_msg.set_visibility(False)
                 supplier_header.text = f"Analyse — {selected}"
                 results_container.clear()
                 status_label.set_visibility(False)
             else:
-                analysis_card.set_visibility(False)
-                placeholder_msg.set_visibility(True)
+                coming_soon_card.set_visibility(True)
+                coming_soon_name.text = selected
 
         supplier_select.on_value_change(on_supplier_change)
 

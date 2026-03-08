@@ -38,16 +38,51 @@ business:
       nb_gouts: 1
       nominal_hL: 48.0
 
-# ─── Stocks — Regroupement fournisseurs ──────────────────────────────────────
+# ─── Stocks — Fournisseurs principaux ────────────────────────────────────────
 stocks:
-  # Ordre important : le pattern le plus spécifique en premier
+  # Ordre important pour les patterns : le plus spécifique en premier
   supplier_groups:
+    # ── Contenants (bouteilles) ──
     - name: "Verallia"
       icon: "water_drop"
-      patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse (avant "Bouteille")
+      category: "Contenants"
+      patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse
     - name: "Wiegand-glas"
       icon: "inventory_2"
+      category: "Contenants"
       patterns: ["Bouteille"]           # 33cl + 75cl SAFT
+
+    # ── Matières premières ──
+    - name: "Nature Favours"
+      icon: "local_drink"
+      category: "Matières premières"
+    - name: "Cristalco"
+      icon: "grain"
+      category: "Matières premières"
+    - name: "Actibio"
+      icon: "eco"
+      category: "Matières premières"
+    - name: "Yacon & Co"
+      icon: "eco"
+      category: "Matières premières"
+    - name: "Cailleau"
+      icon: "spa"
+      category: "Matières premières"
+    - name: "ROBERTET SA"
+      icon: "science"
+      category: "Matières premières"
+
+    # ── Emballages ──
+    - name: "ADESA"
+      icon: "label"
+      category: "Emballages"
+    - name: "Turquet"
+      icon: "widgets"
+      category: "Emballages"
+    - name: "AWK"
+      icon: "circle"
+      category: "Emballages"
+
   ungrouped_label: "Autres contenants"
 
 # ─── Sécurité ─────────────────────────────────────────────────────────────────
