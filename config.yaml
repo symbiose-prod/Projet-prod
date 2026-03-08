@@ -40,13 +40,14 @@ business:
 
 # ─── Stocks — Regroupement fournisseurs ──────────────────────────────────────
 stocks:
+  # Ordre important : le pattern le plus spécifique en premier
   supplier_groups:
+    - name: "Verallia"
+      icon: "water_drop"
+      patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse (avant "Bouteille")
     - name: "Wiegand-glas"
       icon: "inventory_2"
       patterns: ["Bouteille"]           # 33cl + 75cl SAFT
-    - name: "Verallia"
-      icon: "water_drop"
-      patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse
   ungrouped_label: "Autres contenants"
 
 # ─── Sécurité ─────────────────────────────────────────────────────────────────
