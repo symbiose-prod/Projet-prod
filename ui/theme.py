@@ -149,6 +149,13 @@ def apply_quasar_theme():
             border-radius: 6px !important;
         }}
 
+        /* ── Mobile : padding réduit ──────────────────── */
+        @media (max-width: 599px) {{
+            .q-page-container .q-pa-lg {{
+                padding: 12px !important;
+            }}
+        }}
+
     </style>
     <style>
         /* ── Override Quasar green → palette custom ───── */
@@ -391,24 +398,29 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
     apply_quasar_theme()
 
     # ─── Header ──────────────────────────────────────────────────────
-    with ui.header().classes("items-center justify-between px-6"):
-        with ui.row().classes("items-center gap-3"):
+    with ui.header().classes("items-center justify-between px-4 px-sm-6"):
+        with ui.row().classes("items-center gap-2"):
+            # Hamburger menu (visible sur mobile, caché sur desktop)
+            menu_btn = ui.button(icon="menu", on_click=lambda: drawer.toggle()).props(
+                "flat round dense color=white"
+            ).classes("lt-md")
             ui.html(logo_svg(24, "white"))
             ui.label("Ferment Station").classes(
-                "text-white text-subtitle1"
+                "text-white text-subtitle1 gt-xs"
             ).style("font-weight: 600")
 
-        with ui.row().classes("items-center gap-3"):
+        with ui.row().classes("items-center gap-2"):
             user = app.storage.user
             email = user.get("email", "")
             initial = email[0].upper() if email else "?"
-            ui.label(email).classes("text-white text-body2").style("opacity: 0.85")
+            ui.label(email).classes("text-white text-body2 gt-sm").style("opacity: 0.85")
             ui.avatar(initial, text_color="white", size="sm").style(
                 "background: rgba(255,255,255,0.2)"
             )
 
     # ─── Drawer (sidebar) ────────────────────────────────────────────
-    with ui.left_drawer(value=True, bordered=True).classes("q-pa-md"):
+    # breakpoint=768 : en overlay sur mobile/tablette, persistant sur desktop
+    with ui.left_drawer(value=True, bordered=True).props("breakpoint=768").classes("q-pa-md") as drawer:
 
         for nav_icon, nav_label, nav_path in NAV_ITEMS:
             is_active = current_path == nav_path
