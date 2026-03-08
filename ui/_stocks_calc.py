@@ -12,7 +12,8 @@ Data flow
 2. ``POST /stock/contenant/historique``        → movement history over the period
 3. Group history by ``record["stock"]``        → match to consolidation ``libelle``
 4. Compute daily consumption and remaining stock days
-5. Group items by supplier via config.yaml patterns
+5. Extract supplier dynamically from history ``fournisseur`` field
+6. Fallback to config.yaml patterns for items without supplier in history
 """
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ class StockItem:
     window_days: int
     daily_consumption: float
     stock_days: float | None  # current_stock / daily_consumption, or None
+    supplier: str | None = None  # dynamically extracted from history
 
 
 @dataclass
@@ -75,67 +77,116 @@ def _extract_all_contenants(
     return result
 
 
-def _compute_consumption_from_history(
+def _analyse_history(
     history: list[dict[str, Any]],
     target_libelles: set[str],
-) -> dict[str, float]:
-    """Group history records by ``stock`` field and sum negative differences.
+) -> tuple[dict[str, float], dict[str, str]]:
+    """Analyse history records: compute consumption AND extract suppliers.
 
-    Returns ``{stock_name: total_consumption}``.
+    Returns:
+        (consumption_map, supplier_map)
+        - consumption_map: ``{stock_name: total_consumption}``
+        - supplier_map: ``{stock_name: most_recent_supplier}``
     """
     consumption: dict[str, float] = {lib: 0.0 for lib in target_libelles}
+    # Track supplier from most recent entry (positive diff) per stock
+    supplier: dict[str, str] = {}
+    # Track latest date per stock to pick the most recent supplier
+    supplier_date: dict[str, str] = {}
 
     for record in history:
         stock_name = record.get("stock", "")
         if stock_name not in target_libelles:
             continue
+
         diff = record.get("difference", 0) or 0
+
+        # Consumption: sum negative diffs
         if diff < 0:
             consumption[stock_name] += abs(diff)
 
-    return consumption
+        # Supplier: extract from entry records (positive diff with fournisseur)
+        if diff > 0:
+            fournisseur = record.get("fournisseur") or ""
+            if fournisseur and isinstance(fournisseur, str) and fournisseur.strip():
+                record_date = record.get("date", "") or ""
+                prev_date = supplier_date.get(stock_name, "")
+                if record_date >= prev_date:
+                    supplier[stock_name] = fournisseur.strip()
+                    supplier_date[stock_name] = record_date
+
+    for lib, sup in supplier.items():
+        _log.info("Fournisseur dynamique '%s' → '%s'", lib, sup)
+
+    return consumption, supplier
 
 
 def _assign_groups(
     items: list[StockItem],
     stocks_config: dict[str, Any],
 ) -> list[StockGroup]:
-    """Assign stock items to supplier groups based on pattern matching.
+    """Assign stock items to supplier groups.
 
-    Each item matches the *first* group whose pattern is found (case-insensitive)
-    in ``item.label``. Unmatched items go into the fallback group.
+    Priority:
+    1. Dynamic supplier from ``item.supplier`` (extracted from history)
+    2. Fallback: config.yaml pattern matching on ``item.label``
+    3. Final fallback: ungrouped bucket
     """
-    supplier_groups = stocks_config.get("supplier_groups") or []
     ungrouped_label = stocks_config.get("ungrouped_label", "Autres contenants")
 
-    # Build ordered group list
-    groups: list[StockGroup] = [
-        StockGroup(name=g["name"], icon=g.get("icon", "category"))
-        for g in supplier_groups
+    # Config-based fallback patterns
+    cfg_groups = stocks_config.get("supplier_groups") or []
+    cfg_patterns: list[tuple[str, str, list[str]]] = [
+        (g["name"], g.get("icon", "category"), [p.lower() for p in g.get("patterns", [])])
+        for g in cfg_groups
     ]
-    fallback = StockGroup(name=ungrouped_label, icon="more_horiz")
 
-    # Precompute lowered patterns per group
-    group_patterns: list[list[str]] = [
-        [p.lower() for p in g.get("patterns", [])]
-        for g in supplier_groups
-    ]
+    # Collect items per group name
+    group_map: dict[str, StockGroup] = {}
 
     for item in items:
-        label_lower = item.label.lower()
-        matched = False
-        for idx, patterns in enumerate(group_patterns):
-            if any(p in label_lower for p in patterns):
-                groups[idx].items.append(item)
-                matched = True
-                break
-        if not matched:
-            fallback.items.append(item)
+        group_name: str | None = None
+        group_icon = "local_shipping"
 
-    # Return non-empty groups, fallback last
-    result = [g for g in groups if g.items]
-    if fallback.items:
-        result.append(fallback)
+        # Priority 1: dynamic supplier from history
+        if item.supplier:
+            group_name = item.supplier
+            # Try to find matching icon from config
+            for cfg_name, cfg_icon, _ in cfg_patterns:
+                if cfg_name.lower() == group_name.lower():
+                    group_icon = cfg_icon
+                    group_name = cfg_name  # use config casing
+                    break
+
+        # Priority 2: config pattern fallback
+        if not group_name:
+            label_lower = item.label.lower()
+            for cfg_name, cfg_icon, patterns in cfg_patterns:
+                if any(p in label_lower for p in patterns):
+                    group_name = cfg_name
+                    group_icon = cfg_icon
+                    break
+
+        # Priority 3: ungrouped
+        if not group_name:
+            group_name = ungrouped_label
+            group_icon = "more_horiz"
+
+        # Add to group
+        if group_name not in group_map:
+            group_map[group_name] = StockGroup(name=group_name, icon=group_icon)
+        group_map[group_name].items.append(item)
+
+    # Sort: configured groups first (in order), then dynamic, then ungrouped last
+    cfg_order = {g["name"]: i for i, g in enumerate(cfg_groups)}
+    result = sorted(
+        group_map.values(),
+        key=lambda g: (
+            0 if g.name in cfg_order else (2 if g.name == ungrouped_label else 1),
+            cfg_order.get(g.name, 999),
+            g.name,
+        ),
+    )
     return result
 
 
@@ -150,7 +201,8 @@ def fetch_and_compute(window_days: int) -> list[StockGroup]:
     2. ``POST /stock/contenant/historique`` → get all movements over period
     3. Match history to contenants by ``stock``/``libelle`` field
     4. Compute daily consumption and remaining stock days
-    5. Group by supplier via config.yaml patterns
+    5. Extract supplier from history ``fournisseur`` field (dynamic)
+    6. Group by supplier (dynamic first, config.yaml fallback)
     """
     from common.data import get_stocks_config
     from common.easybeer import get_contenant_historique, get_stock_bouteilles
@@ -171,9 +223,9 @@ def fetch_and_compute(window_days: int) -> list[StockGroup]:
         date_fin=date_fin,
     )
 
-    # Step 3 — compute consumption per contenant
+    # Step 3 — compute consumption + extract suppliers from history
     target_libelles = {e.get("libelle", "") for e in contenants}
-    consumption_map = _compute_consumption_from_history(history, target_libelles)
+    consumption_map, supplier_map = _analyse_history(history, target_libelles)
 
     # Step 4 — build StockItem list
     items: list[StockItem] = []
@@ -195,19 +247,21 @@ def fetch_and_compute(window_days: int) -> list[StockGroup]:
             window_days=window_days,
             daily_consumption=daily,
             stock_days=stock_days,
+            supplier=supplier_map.get(libelle),
         )
         items.append(item)
 
         _log.info(
-            "Stock '%s': stock=%.0f, conso=%.0f/%dj, daily=%.1f, jours=%s",
+            "Stock '%s': stock=%.0f, conso=%.0f/%dj, daily=%.1f, jours=%s, fournisseur=%s",
             libelle,
             item.current_stock,
             item.consumption,
             window_days,
             item.daily_consumption,
             f"{item.stock_days:.1f}" if item.stock_days else "N/A",
+            item.supplier or "?",
         )
 
-    # Step 5 — group by supplier
+    # Step 5 — group by supplier (dynamic + config fallback)
     stocks_config = get_stocks_config()
     return _assign_groups(items, stocks_config)
