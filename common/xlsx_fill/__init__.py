@@ -9,11 +9,13 @@ from __future__ import annotations
 from ._tank_ruler import interpolate_ruler_height
 from .bl_excel import fill_bl_enlevements_xlsx
 from .bl_pdf import build_bl_enlevements_pdf
+from .bon_commande_pdf import build_bon_commande_pdf
 from .fiche_production import fill_fiche_xlsx
 
 __all__ = [
     "fill_fiche_xlsx",
     "fill_bl_enlevements_xlsx",
     "build_bl_enlevements_pdf",
+    "build_bon_commande_pdf",
     "interpolate_ruler_height",
 ]

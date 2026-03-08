@@ -52,6 +52,15 @@ from .recipes import (
     compute_v_start_max,
 )
 
+# --- suppliers ---
+from .suppliers import (
+    extract_supplier_address,
+    extract_supplier_contact_name,
+    extract_supplier_email,
+    find_fournisseur_by_name,
+    get_all_fournisseurs,
+)
+
 # --- stocks ---
 from .stocks import (
     fetch_carton_weights,
@@ -82,4 +91,7 @@ __all__ = [
     # conditioning
     "get_planification_matrice", "add_planification_conditionnement",
     "get_code_barre_matrice", "upload_fichier_brassin",
+    # suppliers
+    "get_all_fournisseurs", "find_fournisseur_by_name",
+    "extract_supplier_email", "extract_supplier_contact_name", "extract_supplier_address",
 ]

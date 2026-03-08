@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from datetime import date as _date
 
 from nicegui import ui
 
@@ -558,6 +560,18 @@ def _render_order_section(rec: OrderRecommendation) -> None:
                 row_key="ref",
             ).classes("w-full").props("flat bordered dense")
 
+    # ── Bouton "Préparer la commande" (si IA configurée) ────
+    from common.ai import is_ai_configured
+
+    if is_ai_configured():
+        ui.button(
+            "Préparer la commande",
+            icon="email",
+            on_click=lambda: _open_order_dialog(rec),
+        ).props("color=green-8 unelevated").classes("q-mt-md").style(
+            "font-size: 14px"
+        )
+
 
 def _metric_chip(icon: str, label: str, value: str, color: str) -> None:
     """Small metric display with icon."""
@@ -575,3 +589,487 @@ def _metric_chip(icon: str, label: str, value: str, color: str) -> None:
             )
 
 
+# ─── Dialog commande assisté par IA ──────────────────────────────────────────
+
+
+async def _open_order_dialog(rec: OrderRecommendation) -> None:
+    """Open full-screen dialog: left=order summary, right=AI chat, bottom=actions."""
+    from common.ai import generate_order_email
+    from common.easybeer.suppliers import (
+        extract_supplier_address,
+        extract_supplier_contact_name,
+        extract_supplier_email,
+        find_fournisseur_by_name,
+    )
+    from common.email import send_html_with_pdf
+    from common.xlsx_fill.bon_commande_pdf import build_bon_commande_pdf
+
+    # ── State ─────────────────────────────────────────────────────────────
+    state: dict = {
+        "conversation": [],
+        "current_draft": "",
+        "subject": f"Commande — {rec.supplier}",
+        "supplier_email": None,
+        "supplier_info": None,
+        "loading": False,
+    }
+
+    # ── Dialog ────────────────────────────────────────────────────────────
+    with ui.dialog().props("maximized persistent") as dlg, \
+         ui.card().classes("w-full h-full q-pa-none").style(
+             "display: flex; flex-direction: column"
+         ):
+
+        # ── Top bar ──
+        with ui.row().classes(
+            "w-full items-center q-pa-md gap-3"
+        ).style(
+            f"background: {COLORS['green']}; color: white; flex-shrink: 0"
+        ):
+            ui.icon("email", size="sm")
+            ui.label(f"Commande — {rec.supplier}").classes(
+                "text-h6"
+            ).style("font-weight: 600")
+            ui.element("div").style("flex-grow: 1")
+            ui.button(icon="close", on_click=dlg.close).props(
+                "flat round color=white"
+            )
+
+        # ── Main content: 2 panels ──
+        with ui.row().classes("w-full items-start").style(
+            "flex: 1 1 0; overflow: hidden"
+        ):
+            # LEFT panel: order summary
+            with ui.scroll_area().style(
+                f"width: 340px; border-right: 1px solid {COLORS.get('border', '#e5e7eb')}"
+            ):
+                with ui.column().classes("q-pa-md gap-2"):
+                    _render_order_summary_panel(rec)
+
+            # RIGHT panel: chat
+            with ui.column().style(
+                "flex: 1 1 0; display: flex; flex-direction: column; "
+                "overflow: hidden; height: 100%"
+            ):
+                # Chat messages area
+                chat_scroll = ui.scroll_area().style(
+                    "flex: 1 1 0; overflow-y: auto"
+                )
+                with chat_scroll:
+                    chat_container = ui.column().classes("w-full gap-2 q-pa-md")
+
+                # Input area
+                with ui.row().classes(
+                    "w-full q-pa-sm items-end gap-2"
+                ).style(
+                    f"border-top: 1px solid {COLORS.get('border', '#e5e7eb')}; "
+                    "flex-shrink: 0"
+                ):
+                    msg_input = ui.textarea(
+                        placeholder="Demander une modification...",
+                    ).props("outlined dense autogrow").classes(
+                        "flex-1"
+                    ).style("max-height: 120px")
+                    chat_send_btn = ui.button(
+                        icon="send",
+                        on_click=lambda: _send_chat_msg(),
+                    ).props("color=green-8 round unelevated")
+
+        # ── Bottom action bar ──
+        with ui.row().classes(
+            "w-full q-pa-md justify-end gap-3"
+        ).style(
+            f"border-top: 1px solid {COLORS.get('border', '#e5e7eb')}; "
+            "flex-shrink: 0"
+        ):
+            supplier_email_label = ui.label("").classes(
+                "text-caption self-center"
+            ).style(f"color: {COLORS['ink2']}")
+            ui.element("div").style("flex-grow: 1")
+            preview_btn = ui.button(
+                "Aperçu email", icon="visibility",
+            ).props("outline color=grey-8")
+            send_email_btn = ui.button(
+                "Envoyer la commande", icon="send",
+            ).props("color=green-8 unelevated")
+
+    # ── Chat logic ────────────────────────────────────────────────────────
+
+    async def _init_chat():
+        """Fetch supplier info from EasyBeer, then generate initial draft."""
+        # 1. Fetch supplier from EasyBeer
+        try:
+            fournisseur = await asyncio.wait_for(
+                asyncio.to_thread(find_fournisseur_by_name, rec.supplier),
+                timeout=15,
+            )
+            if fournisseur:
+                state["supplier_info"] = fournisseur
+                state["supplier_email"] = extract_supplier_email(fournisseur)
+                if state["supplier_email"]:
+                    supplier_email_label.text = (
+                        f"Destinataire : {state['supplier_email']}"
+                    )
+                else:
+                    supplier_email_label.text = (
+                        "Email fournisseur introuvable dans EasyBeer"
+                    )
+                    supplier_email_label.style(f"color: {COLORS['error']}")
+        except Exception:
+            _log.warning("Could not fetch supplier info for %s", rec.supplier)
+            supplier_email_label.text = "Impossible de charger la fiche fournisseur"
+
+        # 2. Show loading message
+        with chat_container:
+            loading_msg = ui.chat_message(
+                "Génération du brouillon en cours...",
+                name="Ferment AI",
+                avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+            )
+
+        # 3. Build context and generate
+        context = {
+            "supplier_name": rec.supplier,
+            "supplier_email": state["supplier_email"],
+            "items": [
+                {
+                    "label": _short_label(oi.label),
+                    "suggested_pallets": oi.suggested_pallets,
+                    "suggested_qty": oi.suggested_qty,
+                    "bottles_per_pallet": oi.bottles_per_pallet,
+                    "coverage_days": oi.coverage_days,
+                }
+                for oi in rec.items
+            ],
+            "lead_time_days": rec.lead_time_days,
+            "order_deadline": _format_date_fr(rec.order_deadline),
+            "urgency": rec.urgency,
+        }
+
+        try:
+            draft = await asyncio.wait_for(
+                asyncio.to_thread(generate_order_email, context),
+                timeout=45,
+            )
+            # Parse subject from first line "Objet : ..."
+            lines = draft.split("\n", 1)
+            if lines[0].lower().startswith("objet"):
+                state["subject"] = (
+                    lines[0]
+                    .replace("Objet :", "")
+                    .replace("Objet:", "")
+                    .strip()
+                )
+                state["current_draft"] = lines[1].strip() if len(lines) > 1 else ""
+            else:
+                state["current_draft"] = draft
+
+            state["conversation"] = [
+                {"role": "user", "content": _build_context_prompt(context)},
+                {"role": "assistant", "content": draft},
+            ]
+
+            # Replace loading message with actual draft
+            chat_container.clear()
+            with chat_container:
+                ui.chat_message(
+                    state["current_draft"],
+                    name="Ferment AI",
+                    avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+                    text_html=True,
+                )
+            chat_scroll.scroll_to(percent=1.0)
+
+        except Exception as exc:
+            _log.exception("Error generating initial draft")
+            chat_container.clear()
+            with chat_container:
+                ui.chat_message(
+                    f"Erreur lors de la génération : {exc}",
+                    name="Erreur",
+                    avatar="https://ui-avatars.com/api/?name=!&background=EF4444&color=fff&size=40",
+                )
+
+    async def _send_chat_msg():
+        """Send user refinement message to Claude."""
+        user_msg = msg_input.value.strip()
+        if not user_msg or state["loading"]:
+            return
+        state["loading"] = True
+        chat_send_btn.disable()
+        msg_input.value = ""
+
+        # Show user message
+        with chat_container:
+            ui.chat_message(user_msg, name="Vous", sent=True)
+        chat_scroll.scroll_to(percent=1.0)
+
+        # Add to conversation
+        state["conversation"].append({"role": "user", "content": user_msg})
+
+        # Show typing indicator
+        with chat_container:
+            typing_el = ui.chat_message(
+                "Mise à jour en cours...",
+                name="Ferment AI",
+                avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+            )
+
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    generate_order_email,
+                    {},
+                    state["conversation"],
+                ),
+                timeout=45,
+            )
+            state["conversation"].append(
+                {"role": "assistant", "content": response}
+            )
+
+            # Parse subject if present
+            lines = response.split("\n", 1)
+            if lines[0].lower().startswith("objet"):
+                state["subject"] = (
+                    lines[0]
+                    .replace("Objet :", "")
+                    .replace("Objet:", "")
+                    .strip()
+                )
+                state["current_draft"] = (
+                    lines[1].strip() if len(lines) > 1 else ""
+                )
+            else:
+                state["current_draft"] = response
+
+            # Replace typing indicator with actual response
+            chat_container.remove(typing_el)
+            with chat_container:
+                ui.chat_message(
+                    state["current_draft"],
+                    name="Ferment AI",
+                    avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+                    text_html=True,
+                )
+            chat_scroll.scroll_to(percent=1.0)
+
+        except Exception as exc:
+            _log.exception("Error refining draft")
+            state["conversation"].pop()  # remove failed user msg
+            chat_container.remove(typing_el)
+            with chat_container:
+                ui.chat_message(
+                    f"Erreur : {exc}",
+                    name="Erreur",
+                    avatar="https://ui-avatars.com/api/?name=!&background=EF4444&color=fff&size=40",
+                )
+        finally:
+            state["loading"] = False
+            chat_send_btn.enable()
+
+    async def _preview_email():
+        """Show email preview in a sub-dialog."""
+        if not state["current_draft"]:
+            ui.notify("Aucun brouillon disponible", type="warning")
+            return
+
+        with ui.dialog() as preview_dlg, ui.card().classes("q-pa-lg").style(
+            "width: 700px; max-width: 90vw; max-height: 80vh; overflow-y: auto"
+        ):
+            ui.label(f"Objet : {state['subject']}").classes("text-subtitle1")
+            dest = state["supplier_email"] or "Non trouvé"
+            ui.label(f"À : {dest}").classes("text-body2").style(
+                f"color: {COLORS['ink2']}"
+            )
+            ui.separator().classes("q-my-sm")
+            ui.html(state["current_draft"]).style("font-size: 14px")
+            ui.separator().classes("q-my-sm")
+            ui.label("📎 Bon de commande PDF joint").classes(
+                "text-caption"
+            ).style(f"color: {COLORS['ink2']}")
+            with ui.row().classes("w-full justify-end q-mt-md gap-2"):
+                ui.button("Fermer", on_click=preview_dlg.close).props(
+                    "flat color=grey-7"
+                )
+        preview_dlg.open()
+
+    async def _send_order_email():
+        """Build PDF and send via Brevo."""
+        recipient = state["supplier_email"]
+        if not recipient:
+            ui.notify(
+                "Email fournisseur introuvable. Vérifiez dans EasyBeer.",
+                type="negative",
+            )
+            return
+        if not state["current_draft"]:
+            ui.notify("Aucun brouillon à envoyer.", type="warning")
+            return
+
+        send_email_btn.disable()
+        ui.notify("Envoi en cours...", type="info", icon="hourglass_empty")
+
+        try:
+            # Build PDF
+            today = _date.today()
+            supplier_short = (
+                rec.supplier.upper().replace(" ", "").replace("-", "")[:8]
+            )
+            ref = f"BC-{today.strftime('%Y-%m%d')}-{supplier_short}"
+
+            pdf_items = [
+                {
+                    "label": _short_label(oi.label),
+                    "pallets": oi.suggested_pallets,
+                    "qty": oi.suggested_qty,
+                    "conditionnement": f"{oi.bottles_per_pallet}/palette",
+                }
+                for oi in rec.items
+            ]
+
+            supplier_info_dict: dict = {
+                "name": rec.supplier,
+                "address_lines": [],
+                "contact_name": None,
+                "email": recipient,
+            }
+            if state["supplier_info"]:
+                supplier_info_dict["address_lines"] = extract_supplier_address(
+                    state["supplier_info"]
+                )
+                supplier_info_dict["contact_name"] = (
+                    extract_supplier_contact_name(state["supplier_info"])
+                )
+
+            pdf_data = {
+                "reference": ref,
+                "date": today,
+                "items": pdf_items,
+                "delivery_date": _format_date_fr(rec.order_deadline),
+                "notes": None,
+            }
+
+            pdf_bytes = await asyncio.to_thread(
+                build_bon_commande_pdf, pdf_data, supplier_info_dict,
+            )
+
+            # Build full HTML email with signature
+            html_body = state["current_draft"]
+            html_body += (
+                "<hr>"
+                "<p><strong>Ferment Station</strong><br>"
+                "Producteur de boissons fermentées bio<br>"
+                "47 rue Ernest Renan — 94200 Ivry-sur-Seine<br>"
+                "Tél : 09 67 50 46 47</p>"
+            )
+
+            # Send
+            sender_email = os.environ.get("EMAIL_SENDER") or ""
+            filename = f"Bon_Commande_{ref}.pdf"
+
+            recipients = [recipient]
+            if sender_email and sender_email not in recipients:
+                recipients.append(sender_email)
+
+            def _do_send():
+                for rcpt in recipients:
+                    send_html_with_pdf(
+                        to_email=rcpt,
+                        subject=state["subject"],
+                        html_body=html_body,
+                        attachments=[(filename, pdf_bytes)],
+                    )
+
+            await asyncio.to_thread(_do_send)
+
+            ui.notify(
+                f"Commande envoyée à {recipient} !",
+                type="positive",
+                icon="check_circle",
+            )
+            dlg.close()
+
+        except Exception as exc:
+            _log.exception("Error sending order email")
+            ui.notify(f"Erreur d'envoi : {exc}", type="negative")
+        finally:
+            send_email_btn.enable()
+
+    # ── Wire up button handlers ──
+    preview_btn.on_click(_preview_email)
+    send_email_btn.on_click(_send_order_email)
+
+    # ── Open and start ──
+    dlg.open()
+    await _init_chat()
+
+
+def _build_context_prompt(context: dict) -> str:
+    """Build initial Claude prompt from order context (used internally)."""
+    from common.ai import _build_initial_prompt
+    return _build_initial_prompt(context)
+
+
+def _render_order_summary_panel(rec: OrderRecommendation) -> None:
+    """Render read-only order summary in the left panel of the dialog."""
+    ui.label("Résumé de la commande").classes("text-subtitle1").style(
+        f"color: {COLORS['ink']}; font-weight: 700"
+    )
+
+    with ui.column().classes("gap-2 q-mt-md"):
+        _summary_row("Fournisseur", rec.supplier)
+        _summary_row(
+            "Urgence",
+            _URGENCY_LABELS[rec.urgency],
+            color=_URGENCY_COLORS[rec.urgency],
+        )
+        _summary_row("Délai livraison", f"{rec.lead_time_days} jours")
+        _summary_row("Date limite", _format_date_fr(rec.order_deadline))
+        _summary_row("Min. palettes", str(rec.min_pallets))
+
+    ui.separator().classes("q-my-md")
+    ui.label("Articles").classes("text-subtitle2").style(
+        f"color: {COLORS['ink']}; font-weight: 600"
+    )
+
+    for oi in rec.items:
+        with ui.card().classes("w-full q-pa-sm q-mt-xs").props("flat bordered"):
+            ui.label(_short_label(oi.label)).classes("text-body2").style(
+                "font-weight: 600"
+            )
+            with ui.row().classes("gap-4"):
+                ui.label(
+                    f"{oi.suggested_pallets} pal."
+                ).classes("text-caption")
+                ui.label(
+                    _format_number(oi.suggested_qty)
+                ).classes("text-caption")
+                if oi.coverage_days:
+                    ui.label(
+                        f"~{oi.coverage_days:.0f} j"
+                    ).classes("text-caption").style(
+                        f"color: {COLORS['ink2']}"
+                    )
+
+    total_pal = sum(oi.suggested_pallets for oi in rec.items)
+    total_qty = sum(oi.suggested_qty for oi in rec.items)
+    ui.separator().classes("q-my-sm")
+    with ui.row().classes("justify-between w-full"):
+        ui.label("TOTAL").style(
+            f"color: {COLORS['ink']}; font-weight: 700"
+        )
+        ui.label(
+            f"{total_pal} pal. / {_format_number(total_qty)} u"
+        ).style(f"color: {COLORS['ink']}; font-weight: 700")
+
+
+def _summary_row(label: str, value: str, *, color: str | None = None) -> None:
+    """Label-value row in the order summary panel."""
+    with ui.row().classes("w-full justify-between items-center"):
+        ui.label(label).classes("text-caption").style(
+            f"color: {COLORS['ink2']}"
+        )
+        lbl = ui.label(value).classes("text-body2").style("font-weight: 600")
+        if color:
+            lbl.style(f"color: {color}")
