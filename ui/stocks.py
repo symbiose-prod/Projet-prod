@@ -612,6 +612,9 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
         "supplier_email": None,
         "supplier_info": None,
         "loading": False,
+        "language": "fr",
+        "delivery_mode": "asap",
+        "delivery_date": None,
     }
 
     # ── Dialog ────────────────────────────────────────────────────────────
@@ -645,6 +648,62 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             ):
                 with ui.column().classes("q-pa-md gap-2"):
                     _render_order_summary_panel(rec)
+
+                    # ── Options ──
+                    ui.separator().classes("q-my-md")
+                    ui.label("Options").classes("text-subtitle2").style(
+                        f"color: {COLORS['ink']}; font-weight: 600"
+                    )
+
+                    # Language toggle
+                    ui.label("Langue de l'email").classes("text-caption").style(
+                        f"color: {COLORS['ink2']}"
+                    )
+                    lang_toggle = ui.toggle(
+                        {"fr": "🇫🇷 Français", "en": "🇬🇧 English"},
+                        value="fr",
+                    ).props("dense no-caps color=green-8 toggle-color=green-8")
+                    lang_toggle.on_value_change(
+                        lambda e: state.update({"language": e.value})
+                    )
+
+                    # Delivery preference
+                    ui.label("Livraison souhaitée").classes(
+                        "text-caption q-mt-sm"
+                    ).style(f"color: {COLORS['ink2']}")
+                    delivery_toggle = ui.toggle(
+                        {"asap": "ASAP", "date": "📅 Date précise"},
+                        value="asap",
+                    ).props("dense no-caps color=green-8 toggle-color=green-8")
+
+                    delivery_date_input = ui.input(
+                        "Date souhaitée",
+                    ).props(
+                        "outlined dense"
+                    ).classes("w-full").style("display: none")
+                    with delivery_date_input:
+                        with ui.menu().props("no-parent-event") as date_menu:
+                            with ui.date().props(
+                                "mask=DD/MM/YYYY"
+                            ).bind_value(delivery_date_input) as date_picker:
+                                pass
+                        with delivery_date_input.add_slot("append"):
+                            ui.icon("event", size="sm").on(
+                                "click", date_menu.open
+                            ).classes("cursor-pointer")
+
+                    def _on_delivery_change(e):
+                        state["delivery_mode"] = e.value
+                        if e.value == "date":
+                            delivery_date_input.style("display: block")
+                        else:
+                            delivery_date_input.style("display: none")
+                            state["delivery_date"] = None
+
+                    delivery_toggle.on_value_change(_on_delivery_change)
+                    delivery_date_input.on_value_change(
+                        lambda e: state.update({"delivery_date": e.value})
+                    )
 
             # RIGHT panel: chat
             with ui.column().style(
@@ -744,6 +803,9 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             "lead_time_days": rec.lead_time_days,
             "order_deadline": _format_date_fr(rec.order_deadline),
             "urgency": rec.urgency,
+            "language": state["language"],
+            "delivery_preference": state["delivery_mode"],
+            "delivery_date_requested": state.get("delivery_date") or "",
         }
 
         try:
@@ -753,11 +815,13 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             )
             # Parse subject from first line "Objet : ..."
             lines = draft.split("\n", 1)
-            if lines[0].lower().startswith("objet"):
+            if lines[0].lower().startswith(("objet", "subject")):
                 state["subject"] = (
                     lines[0]
                     .replace("Objet :", "")
                     .replace("Objet:", "")
+                    .replace("Subject:", "")
+                    .replace("Subject :", "")
                     .strip()
                 )
                 state["current_draft"] = lines[1].strip() if len(lines) > 1 else ""
@@ -830,11 +894,13 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
 
             # Parse subject if present
             lines = response.split("\n", 1)
-            if lines[0].lower().startswith("objet"):
+            if lines[0].lower().startswith(("objet", "subject")):
                 state["subject"] = (
                     lines[0]
                     .replace("Objet :", "")
                     .replace("Objet:", "")
+                    .replace("Subject:", "")
+                    .replace("Subject :", "")
                     .strip()
                 )
                 state["current_draft"] = (
@@ -882,6 +948,9 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             ui.label(f"À : {dest}").classes("text-body2").style(
                 f"color: {COLORS['ink2']}"
             )
+            ui.label(
+                "CC : maxime@symbiose-kefir.fr, nicolas@symbiose-kefir.fr"
+            ).classes("text-body2").style(f"color: {COLORS['ink2']}")
             ui.separator().classes("q-my-sm")
             ui.html(state["current_draft"]).style("font-size: 14px")
             ui.separator().classes("q-my-sm")
@@ -965,26 +1034,27 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             )
 
             # Send
-            sender_email = os.environ.get("EMAIL_SENDER") or ""
             filename = f"Bon_Commande_{ref}.pdf"
 
-            recipients = [recipient]
-            if sender_email and sender_email not in recipients:
-                recipients.append(sender_email)
+            cc_list = [
+                "maxime@symbiose-kefir.fr",
+                "nicolas@symbiose-kefir.fr",
+            ]
 
             def _do_send():
-                for rcpt in recipients:
-                    send_html_with_pdf(
-                        to_email=rcpt,
-                        subject=state["subject"],
-                        html_body=html_body,
-                        attachments=[(filename, pdf_bytes)],
-                    )
+                send_html_with_pdf(
+                    to_email=recipient,
+                    subject=state["subject"],
+                    html_body=html_body,
+                    attachments=[(filename, pdf_bytes)],
+                    cc=cc_list,
+                )
 
             await asyncio.to_thread(_do_send)
 
+            cc_text = ", ".join(cc_list)
             ui.notify(
-                f"Commande envoyée à {recipient} !",
+                f"Commande envoyée à {recipient} (CC: {cc_text})",
                 type="positive",
                 icon="check_circle",
             )

@@ -33,16 +33,20 @@ _SYSTEM_PROMPT = """\
 Tu es l'assistant de Ferment Station, une brasserie artisanale de kéfir et \
 boissons fermentées bio, basée à Ivry-sur-Seine (94200).
 
-Ton rôle : rédiger des emails professionnels de commande fournisseur en français.
+Ton rôle : rédiger des emails professionnels de commande fournisseur.
 
 Règles :
-- Ton professionnel mais cordial, vouvoiement obligatoire
+- La LANGUE du mail est spécifiée dans le contexte (français ou anglais). \
+  Adapte tout le contenu (objet, corps, signature) à la langue demandée.
+- En français : vouvoiement obligatoire. En anglais : ton formel "Dear…"
+- Ton professionnel mais cordial
 - Inclure systématiquement : références exactes, quantités (palettes + unités), \
   date de livraison souhaitée
-- Signature : "Cordialement,\\nFerment Station"
+- Signature : "Cordialement,\\nFerment Station" (FR) ou \
+  "Kind regards,\\nFerment Station" (EN)
 - Format : HTML simple (balises <p>, <ul>, <li>, <strong> uniquement)
 - La PREMIÈRE LIGNE de ta réponse doit être l'objet du mail, préfixé par \
-  "Objet : " (ex: "Objet : Commande bouteilles 33cl et 75cl — Ferment Station")
+  "Objet : " (FR) ou "Subject: " (EN)
 - Le reste de la réponse est le corps HTML du mail
 - Ne jamais inventer de prix ou de conditions non fournies dans le contexte
 - Ne pas inclure d'en-tête "De:" ou "À:" — uniquement l'objet puis le corps
@@ -134,17 +138,31 @@ def _build_initial_prompt(context: dict[str, Any]) -> str:
     }
     urgency_text = urgency_map.get(context.get("urgency", "ok"), "Standard")
 
+    # Language
+    lang = context.get("language", "fr")
+    lang_label = "français" if lang == "fr" else "anglais"
+
+    # Delivery preference
+    delivery_pref = context.get("delivery_preference", "asap")
+    if delivery_pref == "asap":
+        delivery_text = "Dès que possible (ASAP)" if lang == "fr" else "As soon as possible (ASAP)"
+    else:
+        delivery_text = context.get("delivery_date_requested", delivery_pref)
+
     return f"""\
 Rédige un email de commande pour le fournisseur suivant :
 
+Langue du mail : {lang_label}
 Fournisseur : {context.get('supplier_name', '?')}
 Situation : {urgency_text}
 Délai de livraison habituel : {context.get('lead_time_days', '?')} jours
 Date limite de commande : {context.get('order_deadline', 'Non définie')}
+Date de livraison souhaitée : {delivery_text}
 
 Articles à commander :
 {items_text}
 
-Rédige l'email en HTML. Première ligne = "Objet : ..." puis le corps du mail.
+Rédige l'email en {lang_label}, en HTML. \
+Première ligne = "{'Objet' if lang == 'fr' else 'Subject'} : ..." puis le corps du mail.
 Demande une confirmation de commande et une date de livraison prévisionnelle.
 """

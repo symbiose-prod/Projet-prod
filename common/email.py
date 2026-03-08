@@ -174,10 +174,12 @@ def send_html_with_pdf(
     html_body: str,
     attachments: list[tuple[str, bytes]] | None = None,
     reply_to: str | None = None,
+    cc: list[str] | None = None,
 ) -> dict:
     """
     Envoi générique HTML + pièces jointes (PDF ou autres).
     - attachments: liste [(filename, bytes), ...]
+    - cc: liste d'emails en copie (optionnel)
     """
     _, sender_email, sender_name = _require_env()
     payload = {
@@ -188,6 +190,10 @@ def send_html_with_pdf(
     }
     # ajoute version texte simplifiée
     payload["textContent"] = _strip_html_to_text(html_body)
+
+    # CC
+    if cc:
+        payload["cc"] = [{"email": addr} for addr in cc]
 
     # attachments
     att = _encode_attachments(attachments)
