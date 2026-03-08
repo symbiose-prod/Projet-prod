@@ -508,7 +508,7 @@ def _render_order_section(rec: OrderRecommendation) -> None:
                         # Short label: take last meaningful part
                         short = oi.label.split(" - ")[0] if " - " in oi.label else oi.label
                         palettes_txt = (
-                            f"{oi.suggested_palettes} pal."
+                            f"{oi.suggested_pallets} pal."
                             f" = {_format_number(oi.suggested_qty)} btl"
                         )
                         coverage_txt = (
