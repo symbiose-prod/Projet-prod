@@ -42,6 +42,10 @@ Règles :
 - Ton professionnel mais cordial
 - Inclure systématiquement : références exactes, quantités (palettes + unités), \
   date de livraison souhaitée
+- Si des DOCUMENTS DE RÉFÉRENCE fournisseur sont fournis (confirmations de commande, \
+  factures, bons de livraison passés), utilise les références produits, numéros \
+  d'article, codes et formats exacts trouvés dans ces documents. \
+  Cela rend la commande plus précise et facilite le traitement côté fournisseur.
 - Signature : "Cordialement,\\nFerment Station" (FR) ou \
   "Kind regards,\\nFerment Station" (EN)
 - Format : HTML simple (balises <p>, <ul>, <li>, <strong> uniquement)
@@ -149,6 +153,23 @@ def _build_initial_prompt(context: dict[str, Any]) -> str:
     else:
         delivery_text = context.get("delivery_date_requested", delivery_pref)
 
+    # Supplier reference documents (extracted from EasyBeer files)
+    ref_texts = context.get("supplier_references") or []
+    ref_section = ""
+    if ref_texts:
+        ref_parts = []
+        for ref in ref_texts:
+            ref_parts.append(
+                f"--- {ref.get('type', 'Document')} : {ref['filename']} ---\n"
+                f"{ref['text']}"
+            )
+        ref_section = (
+            "\n\nDOCUMENTS DE RÉFÉRENCE du fournisseur (commandes/factures passées) :\n"
+            "Utilise les références produits, codes articles et formats exacts "
+            "trouvés ci-dessous pour rédiger une commande précise.\n\n"
+            + "\n\n".join(ref_parts)
+        )
+
     return f"""\
 Rédige un email de commande pour le fournisseur suivant :
 
@@ -161,6 +182,7 @@ Date de livraison souhaitée : {delivery_text}
 
 Articles à commander :
 {items_text}
+{ref_section}
 
 Rédige l'email en {lang_label}, en HTML. \
 Première ligne = "{'Objet' if lang == 'fr' else 'Subject'} : ..." puis le corps du mail.

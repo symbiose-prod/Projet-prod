@@ -54,11 +54,16 @@ from .recipes import (
 
 # --- suppliers ---
 from .suppliers import (
+    download_supplier_file,
     extract_supplier_address,
     extract_supplier_contact_name,
     extract_supplier_email,
+    extract_text_from_pdf,
     find_fournisseur_by_name,
     get_all_fournisseurs,
+    get_fournisseur_edition,
+    get_supplier_files,
+    get_supplier_reference_texts,
 )
 
 # --- stocks ---
@@ -94,4 +99,6 @@ __all__ = [
     # suppliers
     "get_all_fournisseurs", "find_fournisseur_by_name",
     "extract_supplier_email", "extract_supplier_contact_name", "extract_supplier_address",
+    "get_fournisseur_edition", "get_supplier_files", "download_supplier_file",
+    "extract_text_from_pdf", "get_supplier_reference_texts",
 ]

@@ -600,6 +600,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
         extract_supplier_contact_name,
         extract_supplier_email,
         find_fournisseur_by_name,
+        get_supplier_reference_texts,
     )
     from common.email import send_html_with_pdf
     from common.xlsx_fill.bon_commande_pdf import build_bon_commande_pdf
@@ -611,6 +612,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
         "subject": f"Commande — {rec.supplier}",
         "supplier_email": None,
         "supplier_info": None,
+        "supplier_references": [],  # extracted text from supplier PDF files
         "loading": False,
         "language": "fr",
         "delivery_mode": "asap",
@@ -836,6 +838,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             "language": state["language"],
             "delivery_preference": state["delivery_mode"],
             "delivery_date_requested": state.get("delivery_date") or "",
+            "supplier_references": state.get("supplier_references") or [],
         }
 
         try:
@@ -1217,7 +1220,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             text_html=True,
         )
 
-    # Fetch supplier info in background (email, address)
+    # Fetch supplier info in background (email, address, reference files)
     try:
         fournisseur = await asyncio.wait_for(
             asyncio.to_thread(find_fournisseur_by_name, rec.supplier),
@@ -1235,6 +1238,34 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                     "Email fournisseur introuvable dans EasyBeer"
                 )
                 supplier_email_label.style(f"color: {COLORS['error']}")
+
+            # Extract reference texts from supplier files (PDFs)
+            try:
+                ref_texts = await asyncio.wait_for(
+                    asyncio.to_thread(get_supplier_reference_texts, fournisseur),
+                    timeout=30,
+                )
+                if ref_texts:
+                    state["supplier_references"] = ref_texts
+                    filenames = ", ".join(r["filename"] for r in ref_texts)
+                    _log.info(
+                        "Loaded %d reference files for %s: %s",
+                        len(ref_texts), rec.supplier, filenames,
+                    )
+                    with chat_container:
+                        ui.chat_message(
+                            f"📄 {len(ref_texts)} document(s) de référence "
+                            f"chargé(s) depuis EasyBeer ({filenames}). "
+                            "Les références produits seront utilisées dans le mail.",
+                            name="Ferment AI",
+                            avatar="🤖",
+                            text_html=True,
+                        )
+            except Exception:
+                _log.warning(
+                    "Could not extract supplier reference files for %s",
+                    rec.supplier,
+                )
     except Exception:
         _log.warning("Could not fetch supplier info for %s", rec.supplier)
         supplier_email_label.text = "Impossible de charger la fiche fournisseur"
