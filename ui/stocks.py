@@ -238,12 +238,12 @@ def page_stocks():
                 )
 
             # ── Layout 2 colonnes : résultats + panneau sticky ───
-            with ui.row().classes("w-full items-start gap-4").style(
+            with ui.row().classes("w-full items-start gap-3").style(
                 "flex-wrap: nowrap"
             ):
-                # Colonne gauche : résultats (flex-grow)
+                # Colonne gauche : résultats (prend tout l'espace)
                 with ui.column().classes("gap-0").style(
-                    "flex: 1; min-width: 0"
+                    "flex: 1 1 0; min-width: 0; overflow: hidden"
                 ):
                     status_label = ui.label("").classes("text-body2")
                     status_label.set_visibility(False)
@@ -255,10 +255,10 @@ def page_stocks():
 
                     results_container = ui.column().classes("w-full gap-0")
 
-                # Colonne droite : contrôles sticky
+                # Colonne droite : contrôles sticky (étroite)
                 with ui.column().style(
-                    "position: sticky; top: 16px; width: 160px; "
-                    "flex-shrink: 0;"
+                    "position: sticky; top: 16px; "
+                    "width: 130px; min-width: 130px; flex: 0 0 130px;"
                 ):
                     with ui.card().props("flat bordered"):
                         with ui.card_section().classes("q-pa-sm"):
