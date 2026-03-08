@@ -41,9 +41,9 @@ business:
 # ─── Stocks — Regroupement fournisseurs ──────────────────────────────────────
 stocks:
   supplier_groups:
-    - name: "Fournisseur Bouteilles (commun)"
+    - name: "Wiegand-glas"
       icon: "inventory_2"
-      patterns: ["Bouteille"]
+      patterns: ["Bouteille"]           # 33cl + 75cl SAFT
     - name: "Eau gazeuse"
       icon: "water_drop"
       patterns: ["EAU GAZEUSE"]
