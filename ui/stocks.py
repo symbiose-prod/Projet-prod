@@ -505,21 +505,6 @@ def _render_order_section(rec: OrderRecommendation) -> None:
                             f"de livraison ({rec.lead_time_days} j)",
                         ).classes("text-body1").style("font-weight: 600")
 
-    # ── Coverage bars ─────────────────────────────────────────
-    with ui.card().classes("w-full q-mt-sm").props("flat bordered"):
-        with ui.card_section().classes("q-pa-md"):
-            ui.label("Couverture par référence").classes(
-                "text-subtitle2 q-mb-md"
-            ).style(f"color: {COLORS['ink']}; font-weight: 600")
-
-            max_days = max(
-                (oi.stock_days or 0 for oi in rec.items), default=60,
-            )
-            bar_max = max(max_days, rec.lead_time_days * 3, 60)
-
-            for oi in rec.items:
-                _render_coverage_bar(oi, rec.lead_time_days, bar_max)
-
     # ── Synthèse commande (tableau clair) ─────────────────────
     with ui.card().classes("w-full q-mt-sm").props("flat bordered"):
         with ui.card_section().classes("q-pa-md"):
@@ -590,53 +575,3 @@ def _metric_chip(icon: str, label: str, value: str, color: str) -> None:
             )
 
 
-def _render_coverage_bar(oi, lead_time_days: int, bar_max: float) -> None:
-    """Render a horizontal coverage bar for one reference."""
-    stock_days = oi.stock_days or 0
-    pct_stock = min(stock_days / bar_max * 100, 100) if bar_max > 0 else 0
-    pct_lead = min(lead_time_days / bar_max * 100, 100) if bar_max > 0 else 0
-
-    if stock_days <= lead_time_days:
-        bar_color = COLORS["error"]
-    elif stock_days <= lead_time_days * 2:
-        bar_color = COLORS["warning"]
-    else:
-        bar_color = COLORS["success"]
-
-    short_label = _short_label(oi.label)
-    days_txt = f"{stock_days:.0f} j" if stock_days else "N/A"
-
-    with ui.column().classes("w-full gap-0 q-mb-md"):
-        with ui.row().classes("items-center justify-between w-full q-mb-xs"):
-            ui.label(short_label).classes("text-body2").style(
-                f"color: {COLORS['ink']}; font-weight: 600"
-            )
-            ui.badge(days_txt).props(
-                f"color={'red-6' if stock_days <= lead_time_days else 'amber-8' if stock_days <= lead_time_days * 2 else 'green-7'}"
-            ).style("font-size: 12px")
-        # Bar container
-        ui.html(f"""
-            <div style="
-                position: relative; width: 100%; height: 24px;
-                background: {COLORS['sage']}; border-radius: 6px;
-                overflow: visible;
-            ">
-                <div style="
-                    width: {pct_stock:.1f}%; height: 100%;
-                    background: {bar_color}; border-radius: 6px;
-                    opacity: 0.75; transition: width 0.5s ease;
-                "></div>
-                <div style="
-                    position: absolute; top: -4px;
-                    left: {pct_lead:.1f}%; width: 2px; height: 32px;
-                    background: {COLORS['ink']}; opacity: 0.5;
-                    border-radius: 1px;
-                "></div>
-                <div style="
-                    position: absolute; top: -18px;
-                    left: calc({pct_lead:.1f}% - 20px);
-                    font-size: 10px; color: {COLORS['ink2']};
-                    white-space: nowrap;
-                ">{lead_time_days}j</div>
-            </div>
-        """)
