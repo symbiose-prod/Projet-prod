@@ -642,9 +642,10 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
         with ui.row().classes("w-full items-start").style(
             "flex: 1 1 0; overflow: hidden"
         ):
-            # LEFT panel: order summary
-            with ui.scroll_area().style(
-                f"width: 340px; border-right: 1px solid {COLORS.get('border', '#e5e7eb')}"
+            # LEFT panel: order summary (no scroll — all visible)
+            with ui.column().style(
+                f"width: 380px; border-right: 1px solid "
+                f"{COLORS.get('border', '#e5e7eb')}; overflow-y: auto"
             ):
                 with ui.column().classes("q-pa-md gap-2"):
                     _render_order_summary_panel(rec)
@@ -655,26 +656,53 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                         f"color: {COLORS['ink']}; font-weight: 600"
                     )
 
-                    # Language toggle
+                    # Language — two separate buttons
                     ui.label("Langue de l'email").classes("text-caption").style(
                         f"color: {COLORS['ink2']}"
                     )
-                    lang_toggle = ui.toggle(
-                        {"fr": "🇫🇷 Français", "en": "🇬🇧 English"},
-                        value="fr",
-                    ).props("dense no-caps color=green-8 toggle-color=green-8")
-                    lang_toggle.on_value_change(
-                        lambda e: state.update({"language": e.value})
-                    )
+                    with ui.row().classes("gap-3"):
+                        btn_fr = ui.button(
+                            "🇫🇷 Français",
+                        ).props("unelevated no-caps color=green-8").style(
+                            "min-width: 130px"
+                        )
+                        btn_en = ui.button(
+                            "🇬🇧 English",
+                        ).props("outline no-caps color=grey-6").style(
+                            "min-width: 130px"
+                        )
 
-                    # Delivery preference
+                    def _set_lang(lang: str):
+                        state["language"] = lang
+                        if lang == "fr":
+                            btn_fr.props("unelevated color=green-8")
+                            btn_fr.props(remove="outline")
+                            btn_en.props("outline color=grey-6")
+                            btn_en.props(remove="unelevated")
+                        else:
+                            btn_en.props("unelevated color=green-8")
+                            btn_en.props(remove="outline")
+                            btn_fr.props("outline color=grey-6")
+                            btn_fr.props(remove="unelevated")
+
+                    btn_fr.on_click(lambda: _set_lang("fr"))
+                    btn_en.on_click(lambda: _set_lang("en"))
+
+                    # Delivery preference — two separate buttons
                     ui.label("Livraison souhaitée").classes(
                         "text-caption q-mt-sm"
                     ).style(f"color: {COLORS['ink2']}")
-                    delivery_toggle = ui.toggle(
-                        {"asap": "ASAP", "date": "📅 Date précise"},
-                        value="asap",
-                    ).props("dense no-caps color=green-8 toggle-color=green-8")
+                    with ui.row().classes("gap-3"):
+                        btn_asap = ui.button(
+                            "ASAP",
+                        ).props("unelevated no-caps color=green-8").style(
+                            "min-width: 130px"
+                        )
+                        btn_date = ui.button(
+                            "📅 Date précise",
+                        ).props("outline no-caps color=grey-6").style(
+                            "min-width: 130px"
+                        )
 
                     delivery_date_input = ui.input(
                         "Date souhaitée",
@@ -692,15 +720,24 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                                 "click", date_menu.open
                             ).classes("cursor-pointer")
 
-                    def _on_delivery_change(e):
-                        state["delivery_mode"] = e.value
-                        if e.value == "date":
-                            delivery_date_input.style("display: block")
-                        else:
+                    def _set_delivery(mode: str):
+                        state["delivery_mode"] = mode
+                        if mode == "asap":
+                            btn_asap.props("unelevated color=green-8")
+                            btn_asap.props(remove="outline")
+                            btn_date.props("outline color=grey-6")
+                            btn_date.props(remove="unelevated")
                             delivery_date_input.style("display: none")
                             state["delivery_date"] = None
+                        else:
+                            btn_date.props("unelevated color=green-8")
+                            btn_date.props(remove="outline")
+                            btn_asap.props("outline color=grey-6")
+                            btn_asap.props(remove="unelevated")
+                            delivery_date_input.style("display: block")
 
-                    delivery_toggle.on_value_change(_on_delivery_change)
+                    btn_asap.on_click(lambda: _set_delivery("asap"))
+                    btn_date.on_click(lambda: _set_delivery("date"))
                     delivery_date_input.on_value_change(
                         lambda e: state.update({"delivery_date": e.value})
                     )
@@ -783,7 +820,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             loading_msg = ui.chat_message(
                 "Génération du brouillon en cours...",
                 name="Ferment AI",
-                avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+                avatar="🤖",
             )
 
         # 3. Build context and generate
@@ -839,7 +876,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                 ui.chat_message(
                     state["current_draft"],
                     name="Ferment AI",
-                    avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+                    avatar="🤖",
                     text_html=True,
                 )
             chat_scroll.scroll_to(percent=1.0)
@@ -851,7 +888,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                 ui.chat_message(
                     f"Erreur lors de la génération : {exc}",
                     name="Erreur",
-                    avatar="https://ui-avatars.com/api/?name=!&background=EF4444&color=fff&size=40",
+                    avatar="⚠️",
                 )
 
     async def _send_chat_msg():
@@ -876,7 +913,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             typing_el = ui.chat_message(
                 "Mise à jour en cours...",
                 name="Ferment AI",
-                avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+                avatar="🤖",
             )
 
         try:
@@ -915,7 +952,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                 ui.chat_message(
                     state["current_draft"],
                     name="Ferment AI",
-                    avatar="https://ui-avatars.com/api/?name=AI&background=15803D&color=fff&size=40",
+                    avatar="🤖",
                     text_html=True,
                 )
             chat_scroll.scroll_to(percent=1.0)
@@ -928,7 +965,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                 ui.chat_message(
                     f"Erreur : {exc}",
                     name="Erreur",
-                    avatar="https://ui-avatars.com/api/?name=!&background=EF4444&color=fff&size=40",
+                    avatar="⚠️",
                 )
         finally:
             state["loading"] = False
