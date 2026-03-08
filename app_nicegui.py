@@ -22,7 +22,7 @@ from nicegui import app, ui
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse
 
 _env_file = Path(__file__).resolve().parent / ".env"
 load_dotenv(_env_file, override=False)
@@ -56,8 +56,11 @@ if _IS_PRODUCTION:
 _log = _logging.getLogger("ferment.auth")
 _log_http = _logging.getLogger("ferment.http")
 
+# ─── Fichiers statiques PWA (icônes, manifest, service-worker) ───────────────
+app.add_static_files("/static", Path(__file__).resolve().parent / "static")
+
 # Pages publiques (pas besoin d'etre connecte)
-PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset", "/health"}
+PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset", "/health", "/static", "/service-worker.js"}
 
 # Cookie remember-me : duree par defaut (30 jours)
 _REMEMBER_MAX_AGE = 30 * 86400
@@ -313,6 +316,18 @@ async def _startup_cleanup():
     asyncio.ensure_future(_periodic_cleanup())
 
 
+# ─── Service Worker (servi depuis / pour scope racine) ──────────────────────
+
+@app.get("/service-worker.js")
+async def _service_worker():
+    """Sert le service worker depuis la racine pour avoir le scope '/'."""
+    return FileResponse(
+        Path(__file__).resolve().parent / "static" / "service-worker.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 # ─── Redirect racine ────────────────────────────────────────────────────────
 
 @ui.page("/")
@@ -340,7 +355,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         port=port,
         show=False,
         reload=os.environ.get("ENV") != "production",
-        favicon="🧪",
+        favicon=Path(__file__).resolve().parent / "static" / "icons" / "favicon-32.png",
         dark=False,
         language="fr",
         storage_secret=_get_storage_secret(),

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#15803D">
+    <title>Ferment Station — Hors ligne</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #FAFAFA;
+            color: #111827;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container {
+            text-align: center;
+            max-width: 400px;
+        }
+        .icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+            background: #15803D;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon svg {
+            width: 48px;
+            height: 48px;
+        }
+        h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        p {
+            color: #6B7280;
+            font-size: 15px;
+            line-height: 1.5;
+            margin-bottom: 24px;
+        }
+        button {
+            background: #15803D;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        button:hover { background: #166534; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">
+            <svg viewBox="0 0 48 48" fill="none" stroke="white" stroke-width="2.2"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 16 C6 13, 9 10, 16 10 C23 10, 26 13, 26 16"/>
+                <rect x="6" y="16" width="20" height="22" rx="3"/>
+                <line x1="6" y1="20" x2="26" y2="20"/>
+                <circle cx="13" cy="30" r="1.5" fill="white" stroke="none"/>
+                <circle cx="18" cy="26" r="1" fill="white" stroke="none"/>
+                <circle cx="11" cy="34" r="1" fill="white" stroke="none"/>
+                <path d="M26 28 L32 28"/>
+                <rect x="32" y="26" width="10" height="14" rx="3"/>
+                <path d="M35 26 L35 20 L39 20 L39 26"/>
+                <line x1="34" y1="18" x2="40" y2="18"/>
+                <path d="M35 20 L35 18"/>
+                <path d="M39 20 L39 18"/>
+            </svg>
+        </div>
+        <h1>Connexion requise</h1>
+        <p>Ferment Station nécessite une connexion internet pour fonctionner. Vérifiez votre connexion et réessayez.</p>
+        <button onclick="window.location.reload()">Réessayer</button>
+    </div>
+</body>
+</html>

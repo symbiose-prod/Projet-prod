@@ -163,6 +163,22 @@ def apply_quasar_theme():
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PWA -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#15803D">
+    <!-- iOS Safari -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Ferment Station">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+    <!-- Service Worker -->
+    <script>
+    if ('serviceWorker' in navigator) {{
+      navigator.serviceWorker.register('/service-worker.js');
+    }}
+    </script>
     """)
 
 
