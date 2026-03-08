@@ -226,52 +226,63 @@ def page_stocks():
         analysis_card.set_visibility(False)
 
         with analysis_card:
-            # ── Barre sticky : Nom fournisseur + période + bouton ──
-            with ui.element("div").classes("w-full").style(
-                "position: sticky; top: 0; z-index: 10; "
-                f"background: {COLORS['bg']}; "
-                "padding: 12px 0 8px 0;"
+            # ── Header fournisseur ────────────────────────────────
+            with ui.row().classes("items-center gap-3 q-mb-md"):
+                supplier_icon_el = ui.icon(
+                    "inventory_2", size="md",
+                ).style(f"color: {COLORS['green']}")
+                supplier_header = ui.label(
+                    "Fournisseur",
+                ).classes("text-h5").style(
+                    f"color: {COLORS['ink']}; font-weight: 700"
+                )
+
+            # ── Layout 2 colonnes : résultats + panneau sticky ───
+            with ui.row().classes("w-full items-start gap-4").style(
+                "flex-wrap: nowrap"
             ):
-                with ui.card().classes("w-full").props("flat bordered"):
-                    with ui.card_section().classes("q-pa-md"):
-                        with ui.row().classes(
-                            "items-center w-full gap-4 flex-wrap"
-                        ):
-                            # Left: supplier name
-                            supplier_icon_el = ui.icon(
-                                "inventory_2", size="md",
-                            ).style(f"color: {COLORS['green']}")
-                            supplier_header = ui.label(
-                                "Fournisseur",
-                            ).classes("text-h5").style(
-                                f"color: {COLORS['ink']}; font-weight: 700"
+                # Colonne gauche : résultats (flex-grow)
+                with ui.column().classes("gap-0").style(
+                    "flex: 1; min-width: 0"
+                ):
+                    status_label = ui.label("").classes("text-body2")
+                    status_label.set_visibility(False)
+
+                    fetch_spinner = ui.spinner(
+                        "dots", size="xl", color="green-8",
+                    ).classes("self-center q-pa-md")
+                    fetch_spinner.set_visibility(False)
+
+                    results_container = ui.column().classes("w-full gap-0")
+
+                # Colonne droite : contrôles sticky
+                with ui.column().style(
+                    "position: sticky; top: 16px; width: 160px; "
+                    "flex-shrink: 0;"
+                ):
+                    with ui.card().props("flat bordered"):
+                        with ui.card_section().classes("q-pa-sm"):
+                            ui.label("Période").classes(
+                                "text-caption"
+                            ).style(
+                                f"color: {COLORS['ink2']}; "
+                                "font-weight: 600; text-transform: uppercase; "
+                                "font-size: 10px"
                             )
-                            ui.space()
-                            # Right: period + button
-                            with ui.row().classes("items-center gap-3"):
-                                period_radio = ui.radio(
-                                    {30: "1m", 60: "2m", 90: "3m", 180: "6m"},
-                                    value=60,
-                                ).props(
-                                    "inline dense color=green-8"
-                                ).style("font-size: 13px")
-                                fetch_btn = ui.button(
-                                    "Analyser",
-                                    icon="analytics",
-                                    on_click=lambda: do_fetch(),
-                                ).props("color=green-8 unelevated dense")
-
-            # ── Status + spinner ──────────────────────────────────
-            status_label = ui.label("").classes("text-body2")
-            status_label.set_visibility(False)
-
-            fetch_spinner = ui.spinner(
-                "dots", size="xl", color="green-8",
-            ).classes("self-center q-pa-md")
-            fetch_spinner.set_visibility(False)
-
-            # ── Résultats ─────────────────────────────────────────
-            results_container = ui.column().classes("w-full gap-0")
+                            period_radio = ui.radio(
+                                {30: "1 mois", 60: "2 mois",
+                                 90: "3 mois", 180: "6 mois"},
+                                value=60,
+                            ).props("dense color=green-8").style(
+                                "font-size: 13px"
+                            )
+                            fetch_btn = ui.button(
+                                "Analyser",
+                                icon="analytics",
+                                on_click=lambda: do_fetch(),
+                            ).props(
+                                "color=green-8 unelevated dense"
+                            ).classes("w-full q-mt-sm")
 
             async def do_fetch():
                 fetch_btn.disable()
