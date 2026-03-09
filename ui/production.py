@@ -256,6 +256,7 @@ async def page_production():
             volume_details = _result["volume_details"]
             volume_cible = _result["volume_cible"]
             df_final = _result["df_final"]
+            mp_check = _result.get("mp_check", {})
 
             # ── Affichage ─────────────────────────────────────────────
             main_container.clear()
@@ -307,6 +308,80 @@ async def page_production():
                         f"{nb_actifs}" + (f" ({nb_forcés} forcé{'s' if nb_forcés > 1 else ''})" if nb_forcés else ""),
                         COLORS["orange"],
                     )
+
+                # ── Vérification matières premières ───────────────────
+                _mp_status = mp_check.get("status", "error")
+                _mp_items = mp_check.get("items", [])
+                _mp_err = mp_check.get("error_msg", "")
+                _mp_shortages = [it for it in _mp_items if not it["ok"]]
+
+                if _mp_status == "error":
+                    if _mp_err:
+                        with ui.row().classes("w-full items-center gap-2 q-py-xs"):
+                            ui.icon("cloud_off", size="xs").classes("text-grey-5")
+                            ui.label(f"Vérification MP indisponible — {_mp_err}").classes(
+                                "text-caption text-grey-5"
+                            )
+                elif _mp_items:
+                    _mp_color = COLORS["success"] if _mp_status == "ok" else COLORS["orange"]
+                    _mp_icon = "check_circle" if _mp_status == "ok" else "warning"
+                    _mp_title = (
+                        "Matières premières disponibles"
+                        if _mp_status == "ok"
+                        else f"{len(_mp_shortages)} matière(s) première(s) insuffisante(s)"
+                    )
+
+                    with ui.expansion(
+                        _mp_title,
+                        icon=_mp_icon,
+                        value=(_mp_status == "warning"),
+                    ).classes("w-full").style(
+                        f"border: 1px solid {_mp_color}40; border-radius: 8px"
+                    ):
+                        _mp_rows = [
+                            {
+                                "mp": it["libelle"],
+                                "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                "stock": f"{it['stock']:.1f} {it['unite']}",
+                                "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                "statut": "OK" if it["ok"] else "Insuffisant",
+                                "_ok": it["ok"],
+                                "_key": str(it["id_mp"]),
+                            }
+                            for it in _mp_items
+                        ]
+                        _mp_columns = [
+                            {"name": "mp", "label": "Matière première", "field": "mp", "align": "left"},
+                            {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
+                            {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
+                            {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
+                            {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
+                        ]
+                        mp_table = ui.table(
+                            columns=_mp_columns,
+                            rows=_mp_rows,
+                            row_key="_key",
+                        ).classes("w-full").props("flat bordered dense")
+
+                        mp_table.add_slot("body-cell-statut", r'''
+                            <q-td :props="props">
+                                <q-badge
+                                    :color="props.row._ok ? 'green-7' : 'orange-8'"
+                                    :label="props.row.statut"
+                                    text-color="white"
+                                />
+                            </q-td>
+                        ''')
+                        mp_table.add_slot("body-cell-ecart", r'''
+                            <q-td :props="props">
+                                <span :style="{
+                                    color: props.row._ok ? '#16A34A' : '#F97316',
+                                    fontWeight: props.row._ok ? 400 : 700,
+                                }">
+                                    {{ props.row.ecart }}
+                                </span>
+                            </q-td>
+                        ''')
 
                 # ── Images produits EasyBeer ─────────────────────────
                 product_images: dict[str, str] = {}  # produit_name → image_url

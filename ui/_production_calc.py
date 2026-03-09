@@ -123,6 +123,141 @@ def _build_final_table(
     return pd.DataFrame(rows_out) if rows_out else pd.DataFrame()
 
 
+# ─── Vérification disponibilité matières premières ──────────────────────────
+
+def _check_mp_availability(
+    gouts_cibles: list[str],
+    volume_details: dict,
+    volume_cible: float,
+    mode_prod: str,
+    *,
+    TANK_CONFIGS: dict,
+    DEFAULT_LOSS_LARGE: int,
+    DEFAULT_LOSS_SMALL: int,
+) -> dict:
+    """Vérifie si les MP (ingrédients recette) suffisent pour la production.
+
+    Retourne {"status": "ok"|"warning"|"error", "items": [...], "error_msg": ""}.
+    Exécutée dans le thread pool — pas d'UI.
+    """
+    from common.brassin_builder import scale_recipe_ingredients
+    from common.easybeer import (
+        get_all_matieres_premieres,
+        get_product_detail,
+        is_configured,
+    )
+
+    if not is_configured():
+        return {"status": "error", "items": [], "error_msg": "EasyBeer non configuré"}
+
+    nb_gouts = len(gouts_cibles)
+    if nb_gouts == 0:
+        return {"status": "ok", "items": [], "error_msg": ""}
+
+    # 1. Volume par goût (même logique que _render_easybeer_section)
+    vol_par_gout: dict[str, float] = {}
+    if mode_prod != "Manuel" and volume_details:
+        for g in gouts_cibles:
+            if g in volume_details:
+                vol_par_gout[g] = volume_details[g]["V_start"]
+            else:
+                _tank = TANK_CONFIGS.get(mode_prod) or TANK_CONFIGS["Cuve de 7200L (1 goût)"]
+                vol_par_gout[g] = float(_tank["capacity"])
+    else:
+        perte = DEFAULT_LOSS_LARGE if volume_cible > 50 else DEFAULT_LOSS_SMALL
+        for g in gouts_cibles:
+            vol_par_gout[g] = (volume_cible / nb_gouts) * 100 + perte
+
+    # 2. Matcher goûts → produits EasyBeer
+    eb_products = _fetch_eb_products()
+    if not eb_products:
+        return {"status": "error", "items": [], "error_msg": "Aucun produit EasyBeer"}
+
+    prod_labels = [p.get("libelle", "") for p in eb_products]
+
+    # 3. Pour chaque goût : recette → ingrédients → agréger besoins
+    total_needs: dict[int, dict] = {}  # idMatierePremiere → {libelle, qty, unite}
+
+    for g in gouts_cibles:
+        vol_l = vol_par_gout.get(g, 0)
+        if vol_l <= 0:
+            continue
+
+        idx = _auto_match(g, prod_labels)
+        id_produit = eb_products[idx]["idProduit"]
+
+        try:
+            detail = get_product_detail(id_produit)
+            recettes = detail.get("recettes") or []
+            if not recettes:
+                continue
+
+            scaled = scale_recipe_ingredients(recettes[0], vol_l)
+            for ing in scaled:
+                mp = ing.get("matierePremiere") or {}
+                id_mp = mp.get("idMatierePremiere")
+                if id_mp is None:
+                    continue
+
+                # V1 : ingrédients uniquement (exclure emballages)
+                mp_type = (mp.get("type") or {}).get("code", "")
+                if mp_type.startswith("CONDITIONNEMENT"):
+                    continue
+
+                qty = float(ing.get("quantite", 0) or 0)
+                unite = (ing.get("unite") or {}).get("symbole", "")
+                libelle = mp.get("libelle", f"MP #{id_mp}")
+
+                if id_mp in total_needs:
+                    total_needs[id_mp]["qty"] += qty
+                else:
+                    total_needs[id_mp] = {"libelle": libelle, "qty": qty, "unite": unite}
+        except Exception as exc:
+            _log.warning("MP check: erreur recette goût %s: %s", g, exc, exc_info=True)
+            continue
+
+    if not total_needs:
+        return {"status": "ok", "items": [], "error_msg": ""}
+
+    # 4. Stock actuel
+    try:
+        all_mps = get_all_matieres_premieres()
+    except Exception as exc:
+        return {"status": "error", "items": [], "error_msg": f"Erreur stocks MP: {exc}"}
+
+    stock_by_id: dict[int, float] = {
+        m["idMatierePremiere"]: float(m.get("quantiteVirtuelle", 0) or 0)
+        for m in all_mps
+        if m.get("idMatierePremiere") is not None
+    }
+
+    # 5. Comparer besoins vs stock
+    items = []
+    has_shortage = False
+    for id_mp, need in sorted(total_needs.items(), key=lambda x: x[1]["libelle"]):
+        stock = stock_by_id.get(id_mp, 0.0)
+        besoin = need["qty"]
+        ecart = stock - besoin
+        ok = ecart >= 0
+        if not ok:
+            has_shortage = True
+        items.append({
+            "id_mp": id_mp,
+            "libelle": need["libelle"],
+            "besoin": round(besoin, 2),
+            "stock": round(stock, 2),
+            "ecart": round(ecart, 2),
+            "unite": need["unite"],
+            "ok": ok,
+        })
+
+    return {
+        "status": "warning" if has_shortage else "ok",
+        "items": items,
+        "error_msg": "",
+    }
+
+
 # ─── Calcul lourd (exécuté dans le thread pool) ─────────────────────────────
 
 def _compute_production_sync(
@@ -240,6 +375,22 @@ def _compute_production_sync(
 
     df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
 
+    # ── PASSE 3 : Vérification disponibilité MP ──────────────────
+    mp_check: dict = {"status": "error", "items": [], "error_msg": ""}
+    try:
+        mp_check = _check_mp_availability(
+            gouts_cibles=gouts_cibles,
+            volume_details=volume_details,
+            volume_cible=volume_cible,
+            mode_prod=mode_prod,
+            TANK_CONFIGS=TANK_CONFIGS,
+            DEFAULT_LOSS_LARGE=DEFAULT_LOSS_LARGE,
+            DEFAULT_LOSS_SMALL=DEFAULT_LOSS_SMALL,
+        )
+    except Exception as exc:
+        _log.warning("Erreur vérification MP: %s", exc, exc_info=True)
+        mp_check = {"status": "error", "items": [], "error_msg": str(exc)}
+
     return {
         "df_min": df_min,
         "cap_resume": cap_resume,
@@ -251,4 +402,5 @@ def _compute_production_sync(
         "volume_details": volume_details,
         "volume_cible": volume_cible,
         "df_final": df_final,
+        "mp_check": mp_check,
     }
