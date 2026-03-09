@@ -162,6 +162,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pp_unique_name_per_tenant
 CREATE INDEX IF NOT EXISTS idx_login_failures_email_lower ON login_failures(lower(email));
 
 -- =========================
+-- Configurations fournisseurs (contraintes de commande éditables)
+-- =========================
+CREATE TABLE IF NOT EXISTS supplier_configs (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  supplier    TEXT NOT NULL,
+  config      JSONB NOT NULL DEFAULT '{}',
+  updated_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Un seul enregistrement par fournisseur par tenant
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_tenant_supplier
+  ON supplier_configs(tenant_id, supplier);
+
+CREATE INDEX IF NOT EXISTS idx_sc_tenant ON supplier_configs(tenant_id);
+
+DROP TRIGGER IF EXISTS trg_sc_touch ON supplier_configs;
+CREATE TRIGGER trg_sc_touch
+BEFORE UPDATE ON supplier_configs
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -169,7 +193,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'shark') THEN
     GRANT ALL ON TABLE tenants, users, production_proposals,
                        password_resets, user_sessions, login_failures,
-                       audit_log TO shark;
+                       audit_log, supplier_configs TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

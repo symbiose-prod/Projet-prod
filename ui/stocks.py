@@ -11,7 +11,7 @@ import logging
 import os
 from datetime import date as _date
 
-from nicegui import ui
+from nicegui import app, ui
 
 _log = logging.getLogger("ferment.stocks")
 
@@ -313,11 +313,10 @@ def page_stocks():
                         )
                         status_label.set_visibility(True)
                         return
-                    ordering_cfgs = {
-                        g["name"]: g.get("ordering", {})
-                        for g in supplier_groups
-                        if g.get("ordering")
-                    }
+                    from common.supplier_config import get_merged_ordering_configs
+                    ordering_cfgs = get_merged_ordering_configs(
+                        str(app.storage.user.get("tenant_id", ""))
+                    )
                     _render_results(
                         results_container, filtered, days, ordering_cfgs,
                     )
