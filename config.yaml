@@ -75,6 +75,7 @@ stocks:
       icon: "local_drink"
       category: "Matières premières"
       mp_types: ["INGREDIENT_FRUIT"]
+      patterns: ["jus", "purée"]            # AND → exclut Figues / Sirop de figues (→ Actibio)
 
     - name: "Cristalco"
       icon: "grain"
@@ -85,7 +86,7 @@ stocks:
     - name: "Actibio"
       icon: "eco"
       category: "Matières premières"
-      patterns: ["fibre"]                   # "Fibre d'acacia Bio" (INGREDIENT_AUTRE)
+      patterns: ["fibre", "figue"]          # Fibre d'acacia Bio + Figues + Sirop de figues
 
     - name: "Yacon & Co"
       icon: "eco"
