@@ -83,10 +83,20 @@ stocks:
       mp_types: ["INGREDIENT_SUCRE"]
       patterns: ["sucre"]                   # AND → exclut "Sirop de Yacon"
 
+    - name: "Siroperie Meurens"
+      icon: "local_cafe"
+      category: "Matières premières"
+      patterns: ["sirop de figue"]          # Sirop de figues — avant Actibio pour éviter collision
+
     - name: "Actibio"
       icon: "eco"
       category: "Matières premières"
-      patterns: ["fibre", "figue"]          # Fibre d'acacia Bio + Figues + Sirop de figues
+      patterns: ["figue"]                   # Figues uniquement (Sirop déjà capté ci-dessus)
+
+    - name: "Nexira"
+      icon: "science"
+      category: "Matières premières"
+      patterns: ["fibre"]                   # Fibre d'acacia Bio
 
     - name: "Yacon & Co"
       icon: "eco"
