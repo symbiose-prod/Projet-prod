@@ -35,7 +35,7 @@ from .conditioning import (
 )
 
 # --- history ---
-from .history import get_contenant_historique
+from .history import get_contenant_historique, get_mp_historique_entree
 
 # --- products ---
 from .products import (
@@ -75,6 +75,7 @@ from .stocks import (
     get_mp_lots,
     get_stock_bouteilles,
     get_stock_produit_detail,
+    get_synthese_consommations_mp,
 )
 
 __all__ = [
@@ -83,8 +84,9 @@ __all__ = [
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_all_matieres_premieres",
     "get_mp_lots", "get_stock_produit_detail", "get_stock_bouteilles", "fetch_carton_weights",
+    "get_synthese_consommations_mp",
     # history
-    "get_contenant_historique",
+    "get_contenant_historique", "get_mp_historique_entree",
     # clients
     "get_clients", "get_all_clients",
     # products

@@ -1,7 +1,7 @@
 """
 common/easybeer/history.py
 ==========================
-Stock container history (paginated).
+Stock container history (paginated) + matières premières entry history.
 """
 from __future__ import annotations
 
@@ -78,3 +78,47 @@ def get_contenant_historique(
         date_fin or "maintenant",
     )
     return all_items
+
+
+def get_mp_historique_entree(
+    categorie: str,
+    *,
+    date_debut: str | None = None,
+    date_fin: str | None = None,
+) -> list[dict[str, Any]]:
+    """POST /stock/matieres-premieres/historique/entree/{categorie}
+
+    Returns list of entry records with keys: libelle, fournisseur, date,
+    quantite, prixHT, identifiantLot, code, type, dluo.
+
+    ``categorie`` is one of: "Ingredient", "Conditionnement", "Divers".
+    """
+    ep = f"stock/matieres-premieres/historique/entree/{categorie}"
+
+    filtre: dict[str, Any] = {}
+    if date_debut or date_fin:
+        filtre["periodeSelectionnee"] = {
+            "dateDebut": date_debut or "2020-01-01T00:00:00.000Z",
+            "dateFin": date_fin or datetime.datetime.now(
+                datetime.UTC
+            ).strftime("%Y-%m-%dT23:59:59.999Z"),
+            "type": "PERIODE_LIBRE",
+        }
+
+    r = get_session().post(
+        f"{BASE}/{ep}",
+        json=filtre,
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
+    result = data if isinstance(data, list) else []
+    _log.info(
+        "mp/historique/entree/%s : %d entrees (periode=%s→%s)",
+        categorie,
+        len(result),
+        date_debut or "∞",
+        date_fin or "maintenant",
+    )
+    return result

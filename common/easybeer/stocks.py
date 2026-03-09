@@ -55,6 +55,34 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     return _safe_json(r, "autonomie-stocks")
 
 
+# ─── Synthese consommation MP ─────────────────────────────────────────────────
+
+@retry_api
+def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
+    """POST /indicateur/synthese-consommations-mp → Synthese conso MP par categorie.
+
+    Returns dict with keys: syntheseIngredient, syntheseConditionnement,
+    syntheseDivers, syntheseContenant. Each contains .elements[] with
+    idMatierePremiere, libelle, quantite, unite, cout.
+    """
+    ep = "indicateur/synthese-consommations-mp"
+    r = get_session().post(
+        f"{BASE}/{ep}",
+        params={"forceRefresh": False},
+        json=_indicator_payload(window_days),
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
+    # Log summary
+    for key in ("syntheseIngredient", "syntheseConditionnement", "syntheseDivers", "syntheseContenant"):
+        cat = data.get(key) or {}
+        elements = cat.get("elements") or []
+        _log.info("synthese-conso-mp %s : %d elements", key, len(elements))
+    return data
+
+
 # ─── Lots matieres premieres ─────────────────────────────────────────────────
 
 @retry_api

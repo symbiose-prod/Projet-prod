@@ -22,6 +22,7 @@ from ui._stocks_calc import (
     StockGroup,
     compute_order_recommendation,
     fetch_and_compute,
+    fetch_and_compute_mp,
 )
 from ui.auth import require_auth
 from ui.theme import COLORS, kpi_card, page_layout
@@ -126,9 +127,6 @@ def page_stocks():
     stocks_cfg = get_stocks_config()
     supplier_groups = stocks_cfg.get("supplier_groups") or []
     supplier_options = [g["name"] for g in supplier_groups]
-    _analysable = {
-        g["name"] for g in supplier_groups if g.get("patterns")
-    }
     # Map supplier name → config dict (for icon lookup etc.)
     _supplier_cfg = {g["name"]: g for g in supplier_groups}
 
@@ -207,22 +205,6 @@ def page_stocks():
                     f"color: {COLORS['ink2']}"
                 )
 
-        # ── Placeholder "bientôt disponible" ──────────────────────────
-        coming_soon_card = ui.card().classes("w-full").props("flat bordered")
-        coming_soon_card.set_visibility(False)
-        with coming_soon_card:
-            with ui.card_section().classes("q-pa-lg text-center"):
-                ui.icon("construction", size="xl").style(
-                    f"color: {COLORS['warning']}; opacity: 0.6"
-                )
-                coming_soon_name = ui.label("").classes("text-h6 q-mt-sm")
-                ui.label(
-                    "L'analyse des stocks pour ce fournisseur "
-                    "sera bientôt disponible."
-                ).classes("text-body2 q-mt-xs").style(
-                    f"color: {COLORS['ink2']}"
-                )
-
         # ── Bloc d'analyse (masqué par défaut) ──────────────────────
         analysis_card = ui.column().classes("w-full gap-0")
         analysis_card.set_visibility(False)
@@ -298,15 +280,20 @@ def page_stocks():
                 try:
                     days = int(period_radio.value or 60)
                     selected = selected_supplier["value"]
+                    # Choose fetcher based on supplier category
+                    cfg = _supplier_cfg.get(selected, {})
+                    is_contenant = cfg.get("category") == "Contenants"
+                    fetcher = fetch_and_compute if is_contenant else fetch_and_compute_mp
+                    timeout_secs = 60 if is_contenant else 120  # MP needs more time
                     groups: list[StockGroup] = await asyncio.wait_for(
-                        asyncio.to_thread(fetch_and_compute, days),
-                        timeout=60,
+                        asyncio.to_thread(fetcher, days),
+                        timeout=timeout_secs,
                     )
                     filtered = [g for g in groups if g.name == selected]
                     total_items = sum(len(g.items) for g in filtered)
                     if not filtered or total_items == 0:
                         status_label.text = (
-                            f"Aucun contenant trouvé pour {selected}."
+                            f"Aucun article trouvé pour {selected}."
                         )
                         status_label.classes(
                             "text-negative", remove="text-positive"
@@ -323,14 +310,14 @@ def page_stocks():
                     ui.notify("Analyse terminée", type="positive")
                 except TimeoutError:
                     status_label.text = (
-                        "L'analyse a dépassé le délai (60 s). Réessayez."
+                        "L'analyse a dépassé le délai. Réessayez."
                     )
                     status_label.classes(
                         "text-negative", remove="text-positive"
                     )
                     status_label.set_visibility(True)
                 except Exception:
-                    _log.exception("Erreur analyse stocks contenants")
+                    _log.exception("Erreur analyse stocks")
                     status_label.text = (
                         "Erreur lors de l'analyse. "
                         "Vérifiez la connexion EasyBeer."
@@ -347,20 +334,16 @@ def page_stocks():
         def _on_supplier_selected(name: str | None):
             placeholder_msg.set_visibility(False)
             analysis_card.set_visibility(False)
-            coming_soon_card.set_visibility(False)
 
             if not name:
                 placeholder_msg.set_visibility(True)
-            elif name in _analysable:
+            else:
                 analysis_card.set_visibility(True)
                 supplier_header.text = name
                 cfg = _supplier_cfg.get(name, {})
                 supplier_icon_el.props(f'name="{cfg.get("icon", "inventory_2")}"')
                 results_container.clear()
                 status_label.set_visibility(False)
-            else:
-                coming_soon_card.set_visibility(True)
-                coming_soon_name.text = name
 
 
 # ─── Rendu des résultats (sans expansion panel) ─────────────────────────────
@@ -408,7 +391,7 @@ def _render_results(
                     )
 
             columns = [
-                {"name": "label", "label": "Contenant", "field": "label",
+                {"name": "label", "label": "Article", "field": "label",
                  "align": "left", "sortable": True},
                 {"name": "stock", "label": "Stock actuel", "field": "stock",
                  "align": "right"},

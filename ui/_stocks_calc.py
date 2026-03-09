@@ -415,3 +415,144 @@ def fetch_and_compute(window_days: int) -> list[StockGroup]:
     # Step 5 — group by supplier (dynamic + config fallback)
     stocks_config = get_stocks_config()
     return _assign_groups(items, stocks_config)
+
+
+# ---------------------------------------------------------------------------
+# MP / Emballages entry-point (blocking — run in thread)
+# ---------------------------------------------------------------------------
+
+def _extract_supplier_map_from_entries(
+    entries: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Build libelle → most-recent-supplier map from MP entry history records.
+
+    Each record has: libelle, fournisseur, date (timestamp ms).
+    We keep the supplier from the most recent entry per libelle.
+    """
+    supplier: dict[str, str] = {}
+    latest_date: dict[str, int] = {}
+
+    for entry in entries:
+        fournisseur = (entry.get("fournisseur") or "").strip()
+        libelle = (entry.get("libelle") or "").strip()
+        if not fournisseur or not libelle:
+            continue
+        # date is a unix timestamp in milliseconds
+        entry_date = int(entry.get("date", 0) or 0)
+        prev = latest_date.get(libelle, 0)
+        if entry_date >= prev:
+            supplier[libelle] = fournisseur
+            latest_date[libelle] = entry_date
+
+    return supplier
+
+
+def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
+    """Fetch EasyBeer data and compute stock duration for matières premières.
+
+    1. ``GET /stock/matieres-premieres/all``  → current stock + seuil
+    2. ``POST /indicateur/synthese-consommations-mp`` → consumption over period
+    3. ``POST /stock/matieres-premieres/historique/entree/{cat}`` → supplier mapping
+    4. Compute daily consumption and remaining stock days
+    5. Group by supplier (dynamic from history, config.yaml fallback)
+    """
+    from common.data import get_stocks_config
+    from common.easybeer._client import _dates
+    from common.easybeer.history import get_mp_historique_entree
+    from common.easybeer.stocks import get_all_matieres_premieres, get_synthese_consommations_mp
+
+    # Step 1 — current stock for ALL matières premières
+    all_mp = get_all_matieres_premieres()
+    if not all_mp:
+        _log.warning("Aucune matière première trouvée dans EasyBeer")
+        return []
+
+    # Step 2 — consumption synthesis over the period
+    try:
+        conso_data = get_synthese_consommations_mp(window_days)
+    except Exception:
+        _log.exception("Erreur appel synthese-consommations-mp")
+        conso_data = {}
+
+    # Build consumption map: idMatierePremiere → total consumption
+    consumption_by_id: dict[int, float] = {}
+    for cat_key in (
+        "syntheseIngredient", "syntheseConditionnement",
+        "syntheseDivers", "syntheseContenant",
+    ):
+        cat = conso_data.get(cat_key) or {}
+        for el in cat.get("elements") or []:
+            mp_id = el.get("idMatierePremiere")
+            if mp_id is not None:
+                consumption_by_id[mp_id] = float(el.get("quantite", 0) or 0)
+
+    # Step 3 — supplier mapping from entry history
+    date_debut, date_fin = _dates(window_days)
+    supplier_map: dict[str, str] = {}  # libelle → fournisseur
+
+    for cat in ("Ingredient", "Conditionnement", "Divers"):
+        try:
+            entries = get_mp_historique_entree(
+                cat, date_debut=date_debut, date_fin=date_fin,
+            )
+            partial = _extract_supplier_map_from_entries(entries)
+            # Merge (don't overwrite existing — first category wins for duplicates)
+            for lib, sup in partial.items():
+                if lib not in supplier_map:
+                    supplier_map[lib] = sup
+        except Exception:
+            _log.warning("Erreur historique entree MP %s", cat, exc_info=True)
+
+    _log.info(
+        "MP supplier map: %d libelles → fournisseur mappés",
+        len(supplier_map),
+    )
+
+    # Step 4 — build StockItem list
+    items: list[StockItem] = []
+
+    for mp in all_mp:
+        mp_id = mp.get("idMatierePremiere")
+        libelle = (mp.get("libelle") or "").strip()
+        mp_type_code = (mp.get("type") or {}).get("code", "")
+
+        # Skip CONTENANT type — handled by fetch_and_compute()
+        if mp_type_code == "CONTENANT":
+            continue
+
+        current_stock = float(mp.get("quantiteVirtuelle", 0) or 0)
+        seuil_bas = float(mp.get("seuilBas", 0) or 0)
+        unite = (mp.get("unite") or {}).get("symbole", "u")
+        consumption = consumption_by_id.get(mp_id, 0.0)
+        daily = consumption / window_days if window_days > 0 else 0.0
+        stock_days = (current_stock / daily) if daily > 0 else None
+
+        item = StockItem(
+            label=libelle,
+            current_stock=current_stock,
+            unit=unite,
+            seuil_bas=seuil_bas,
+            consumption=consumption,
+            window_days=window_days,
+            daily_consumption=daily,
+            stock_days=stock_days,
+            supplier=supplier_map.get(libelle),
+        )
+        items.append(item)
+
+        if consumption > 0:
+            _log.info(
+                "MP '%s': stock=%.1f %s, conso=%.1f/%dj, daily=%.2f, jours=%s, fournisseur=%s",
+                libelle,
+                current_stock,
+                unite,
+                consumption,
+                window_days,
+                daily,
+                f"{stock_days:.1f}" if stock_days else "N/A",
+                item.supplier or "?",
+            )
+
+    # Step 5 — group by supplier
+    stocks_config = get_stocks_config()
+    return _assign_groups(items, stocks_config)
