@@ -91,6 +91,9 @@ stocks:
         lead_time_days: 21                  # 3 semaines
         min_order_pallets: 4
         notes: "Commande par 4 palettes de 900 kg chacune."
+        pallets:
+          "Sucre":
+            bottles_per_pallet: 900
 
     - name: "Siroperie Meurens"
       icon: "local_cafe"
@@ -100,6 +103,9 @@ stocks:
         lead_time_days: 14                  # 2 semaines
         min_order_pallets: 1
         notes: "Commande par palette de 1 tonne."
+        pallets:
+          "Sirop de figues":
+            bottles_per_pallet: 1000
 
     - name: "Actibio"
       icon: "eco"
@@ -109,6 +115,9 @@ stocks:
         lead_time_days: 21                  # 3 semaines
         min_order_pallets: 4
         notes: "Commande par 4 palettes de 800 kg chacune."
+        pallets:
+          "Figues":
+            bottles_per_pallet: 800
 
     - name: "Nexira"
       icon: "science"
