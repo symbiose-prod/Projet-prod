@@ -40,6 +40,7 @@ def _render_easybeer_section(
     template_path: str,
     colors: dict,
     on_recreate=None,
+    gouts_cibles: list[str] | None = None,
 ):
     """Affiche le contenu de la carte EasyBeer (création de brassins)."""
     from common.easybeer import is_configured as _eb_configured
@@ -57,7 +58,12 @@ def _render_easybeer_section(
         return
 
     _sp_eb = app.storage.user.get("saved_production", {})
-    _gouts_eb = _sp_eb.get("gouts", [])
+
+    # Utiliser les goûts du calcul courant si disponibles
+    if gouts_cibles:
+        _gouts_eb = list(gouts_cibles)
+    else:
+        _gouts_eb = _sp_eb.get("gouts", [])
 
     if not _gouts_eb:
         ui.label("Aucun goût dans la production sauvegardée.").classes("text-caption text-grey-6")
@@ -207,6 +213,16 @@ def _render_easybeer_section(
                 _cuve_options, value=_default_b,
                 label="Cuve garde (B)",
             ).props("outlined dense").classes("flex-1")
+
+    # ── Vérifier si la sauvegarde correspond aux goûts courants ──
+    _saved_gouts = set(_sp_eb.get("gouts", []))
+    _needs_save = not _sp_eb or _saved_gouts != set(_gouts_eb)
+
+    if _needs_save:
+        ui.label(
+            "Sauvegardez la production ci-dessus pour créer les brassins."
+        ).classes("text-caption text-orange-8 q-mt-md")
+        return
 
     # ── Guard anti-doublon ───────────────────────────────────────
     _creation_key = f"{_semaine_du_eb}_{'_'.join(_gouts_eb)}"

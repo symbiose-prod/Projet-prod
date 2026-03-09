@@ -425,18 +425,23 @@ async def page_production():
                             <q-td v-for="col in props.cols" :key="col.name" :props="props"
                                   :style="'text-align: ' + col.align">
                                 <template v-if="col.name === 'forcer'">
-                                    <q-input
-                                        v-model.number="props.row.forcer"
-                                        type="number"
-                                        dense
-                                        borderless
-                                        placeholder="auto"
-                                        min="0"
-                                        input-class="text-right text-bold"
-                                        :input-style="{color: props.row.forcer != null ? '#F97316' : '#9CA3AF'}"
-                                        style="max-width: 80px"
-                                        :rules="[v => v == null || v === '' || v >= 0 || 'Min 0']"
-                                    />
+                                    <span :style="{
+                                        color: props.row.forcer != null && props.row.forcer !== '' ? '#F97316' : '#9CA3AF',
+                                        fontWeight: props.row.forcer != null && props.row.forcer !== '' ? 700 : 400,
+                                        cursor: 'pointer',
+                                    }">
+                                        {{ props.row.forcer != null && props.row.forcer !== '' ? props.row.forcer : 'auto' }}
+                                        <q-icon name="edit" size="12px" color="grey-5" class="q-ml-xs" />
+                                    </span>
+                                    <q-popup-edit v-model="props.row.forcer" v-slot="scope"
+                                        @update:model-value="() => $parent.$emit('forcer_update', props.row)">
+                                        <q-input v-model.number="scope.value" type="number" dense autofocus
+                                            placeholder="auto" min="0"
+                                            input-class="text-right text-bold"
+                                            style="min-width: 100px"
+                                            hint="Entrée pour valider"
+                                            @keyup.enter="scope.set" />
+                                    </q-popup-edit>
                                 </template>
                                 <template v-else-if="col.name === 'cartons'">
                                     <span style="font-weight: 600;">{{ props.row[col.field] }}</span>
@@ -448,32 +453,25 @@ async def page_production():
                         </q-tr>
                     ''')
 
-                    with ui.row().classes("w-full gap-3 q-mt-sm"):
-                        async def do_apply_overrides():
-                            """Lit les valeurs 'Forcer' depuis le tableau et recalcule."""
-                            new_ov = {}
-                            for r in table.rows:
-                                if r.get("_sep"):
-                                    continue
-                                v = r.get("forcer")
-                                if v is not None and v != "" and v != 0:
-                                    try:
-                                        vi = int(float(v))
-                                        if vi >= 0:
-                                            new_ov[r["_key"]] = vi
-                                    except (TypeError, ValueError):
-                                        pass
-                            overrides.clear()
-                            overrides.update(new_ov)
-                            app.storage.user["production_overrides"] = dict(overrides)
-                            ui.run_javascript("window._fsProductionDirty = true;")
-                            await do_compute()
+                    # Clic sur cellule "Forcer" → popup → Entrée → applique override et recalcule
+                    async def _on_forcer_update(e):
+                        row = e.args
+                        if not isinstance(row, dict) or row.get("_sep"):
+                            return
+                        key = row.get("_key", "")
+                        val = row.get("forcer")
+                        # val peut être : int, float, None, "" ou NaN (sérialisé en null)
+                        if isinstance(val, (int, float)) and val == val and val > 0:
+                            overrides[key] = int(val)
+                        else:
+                            overrides.pop(key, None)
+                        app.storage.user["production_overrides"] = dict(overrides)
+                        ui.run_javascript("window._fsProductionDirty = true;")
+                        await do_compute()
 
-                        ui.button(
-                            "Appliquer les forcés",
-                            icon="check",
-                            on_click=do_apply_overrides,
-                        ).props("outline color=green-8")
+                    table.on("forcer_update", _on_forcer_update)
+
+                    with ui.row().classes("w-full gap-3 q-mt-sm"):
 
                         async def do_reset_overrides():
                             overrides.clear()
@@ -627,6 +625,7 @@ async def page_production():
                                         mode_prod, volume_details, volume_cible,
                                         TANK_CONFIGS, TEMPLATE_PATH, COLORS,
                                         on_recreate=do_compute,
+                                        gouts_cibles=gouts_cibles,
                                     )
 
                             ui.button(
@@ -650,6 +649,7 @@ async def page_production():
                                 mode_prod, volume_details, volume_cible,
                                 TANK_CONFIGS, TEMPLATE_PATH, COLORS,
                                 on_recreate=do_compute,
+                                gouts_cibles=gouts_cibles,
                             )
 
         # ── Watchers sidebar ──────────────────────────────────────────
