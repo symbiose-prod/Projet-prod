@@ -182,7 +182,9 @@ def build_bon_commande_pdf(
 
     # ── Items table ──────────────────────────────────────────────────────
     col_widths = [70, 28, 38, 44]  # total = 180
-    headers = ["Reference", "Palettes", "Quantite", "Conditionnement"]
+    _ou = order_data.get("order_unit", "palette").capitalize() + "s"
+    _qu = order_data.get("qty_unit", "unités").capitalize()
+    headers = ["Reference", _txt(_ou), _txt(_qu), "Conditionnement"]
 
     # Header row
     pdf.set_fill_color(55, 65, 81)   # dark gray

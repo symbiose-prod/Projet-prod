@@ -81,6 +81,8 @@ class OrderRecommendation:
     items: list[OrderItem]
     order_deadline: date | None       # earliest deadline across items
     urgency: str                      # "critical" | "warning" | "ok"
+    order_unit: str = "palette"       # display label for order unit
+    qty_unit: str = "unités"          # display label for quantity unit
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +266,8 @@ def compute_order_recommendation(
     min_pallets = int(ordering_cfg.get("min_order_pallets", 1))
     can_split = bool(ordering_cfg.get("can_split_references", False))
     pallet_cfg = ordering_cfg.get("pallets") or {}
+    order_unit = ordering_cfg.get("order_unit", "palette")
+    qty_unit = ordering_cfg.get("qty_unit", "unités")
 
     today = date.today()
     order_items: list[OrderItem] = []
@@ -361,6 +365,8 @@ def compute_order_recommendation(
         items=order_items,
         order_deadline=order_deadline,
         urgency=urgency,
+        order_unit=order_unit,
+        qty_unit=qty_unit,
     )
 
 

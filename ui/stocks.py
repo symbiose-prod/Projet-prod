@@ -502,16 +502,18 @@ def _render_order_section(rec: OrderRecommendation) -> None:
                              _format_date_fr(rec.order_deadline), color)
                 _metric_chip("schedule", "Délai",
                              f"{rec.lead_time_days} j", COLORS["ink2"])
-                _metric_chip("local_shipping", "Min. palettes",
+                _metric_chip("local_shipping", f"Min. {rec.order_unit}s",
                              str(rec.min_pallets), COLORS["ink2"])
 
             # Tableau de répartition
+            _ou_label = rec.order_unit.capitalize() + "s"
+            _qu_label = rec.qty_unit.capitalize()
             order_cols = [
                 {"name": "ref", "label": "Référence", "field": "ref",
                  "align": "left"},
-                {"name": "pallets", "label": "Palettes", "field": "pallets",
+                {"name": "pallets", "label": _ou_label, "field": "pallets",
                  "align": "center"},
-                {"name": "qty", "label": "Bouteilles", "field": "qty",
+                {"name": "qty", "label": _qu_label, "field": "qty",
                  "align": "right"},
                 {"name": "coverage", "label": "Couverture",
                  "field": "coverage", "align": "right"},
@@ -817,6 +819,8 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
             "lead_time_days": rec.lead_time_days,
             "order_deadline": _format_date_fr(rec.order_deadline),
             "urgency": rec.urgency,
+            "order_unit": rec.order_unit,
+            "qty_unit": rec.qty_unit,
             "language": state["language"],
             "delivery_preference": state["delivery_mode"],
             "delivery_date_requested": state.get("delivery_date") or "",
@@ -1009,7 +1013,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                     "label": _short_label(oi.label),
                     "pallets": oi.suggested_pallets,
                     "qty": oi.suggested_qty,
-                    "conditionnement": f"{oi.bottles_per_pallet}/palette",
+                    "conditionnement": f"{oi.bottles_per_pallet}/{rec.order_unit}",
                 }
                 for oi in rec.items
             ]
@@ -1034,6 +1038,8 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                 "items": pdf_items,
                 "delivery_date": _format_date_fr(rec.order_deadline),
                 "notes": None,
+                "order_unit": rec.order_unit,
+                "qty_unit": rec.qty_unit,
             }
 
             pdf_bytes = await asyncio.to_thread(
@@ -1100,7 +1106,7 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                     "label": _short_label(oi.label),
                     "pallets": oi.suggested_pallets,
                     "qty": oi.suggested_qty,
-                    "conditionnement": f"{oi.bottles_per_pallet}/palette",
+                    "conditionnement": f"{oi.bottles_per_pallet}/{rec.order_unit}",
                 }
                 for oi in rec.items
             ]
@@ -1131,6 +1137,8 @@ async def _open_order_dialog(rec: OrderRecommendation) -> None:
                 "items": pdf_items,
                 "delivery_date": delivery,
                 "notes": None,
+                "order_unit": rec.order_unit,
+                "qty_unit": rec.qty_unit,
             }
 
             pdf_bytes = await asyncio.to_thread(
@@ -1274,7 +1282,7 @@ def _render_order_summary_panel(rec: OrderRecommendation) -> None:
         )
         _summary_row("Délai", f"{rec.lead_time_days} j")
         _summary_row("Date limite", _format_date_fr(rec.order_deadline))
-        _summary_row("Min. palettes", str(rec.min_pallets))
+        _summary_row(f"Min. {rec.order_unit}s", str(rec.min_pallets))
 
     ui.separator().classes("q-my-xs")
     ui.label("Articles").classes("text-caption").style(
@@ -1287,7 +1295,7 @@ def _render_order_summary_panel(rec: OrderRecommendation) -> None:
                 "font-weight: 600"
             )
             ui.label(
-                f"{oi.suggested_pallets} pal. · {_format_number(oi.suggested_qty)} u"
+                f"{oi.suggested_pallets} {rec.order_unit}(s) · {_format_number(oi.suggested_qty)} {rec.qty_unit}"
             ).classes("text-caption").style(f"color: {COLORS['ink2']}")
 
     total_pal = sum(oi.suggested_pallets for oi in rec.items)
@@ -1298,7 +1306,7 @@ def _render_order_summary_panel(rec: OrderRecommendation) -> None:
             f"color: {COLORS['ink']}; font-weight: 700"
         )
         ui.label(
-            f"{total_pal} pal. / {_format_number(total_qty)} u"
+            f"{total_pal} {rec.order_unit}(s) / {_format_number(total_qty)} {rec.qty_unit}"
         ).classes("text-caption").style(
             f"color: {COLORS['ink']}; font-weight: 700"
         )

@@ -40,7 +40,7 @@ Règles :
   Adapte tout le contenu (objet, corps, signature) à la langue demandée.
 - En français : vouvoiement obligatoire. En anglais : ton formel "Dear…"
 - Ton professionnel mais cordial
-- Inclure systématiquement : références exactes, quantités (palettes + unités), \
+- Inclure systématiquement : références exactes, quantités (conditionnement + unités), \
   date de livraison souhaitée
 - Si des DOCUMENTS DE RÉFÉRENCE fournisseur sont fournis (confirmations de commande, \
   factures, bons de livraison passés), utilise les références produits, numéros \
@@ -125,10 +125,12 @@ def generate_order_email(
 def _build_initial_prompt(context: dict[str, Any]) -> str:
     """Build the first user message from order context."""
     items = context.get("items") or []
+    order_unit = context.get("order_unit", "palette")
+    qty_unit = context.get("qty_unit", "unités")
     items_text = "\n".join(
-        f"  - {it['label']}: {it['suggested_pallets']} palette(s), "
-        f"{it['suggested_qty']:,} unités".replace(",", "\u202f")
-        + (f" ({it['bottles_per_pallet']}/palette)"
+        f"  - {it['label']}: {it['suggested_pallets']} {order_unit}(s), "
+        f"{it['suggested_qty']:,} {qty_unit}".replace(",", "\u202f")
+        + (f" ({it['bottles_per_pallet']}/{order_unit})"
            if it.get("bottles_per_pallet") else "")
         + (f" — couverture ~{it['coverage_days']:.0f} jours"
            if it.get("coverage_days") else "")

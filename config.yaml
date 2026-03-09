@@ -78,9 +78,28 @@ stocks:
       patterns: ["jus", "purée"]            # AND → exclut Figues / Sirop de figues (→ Actibio)
       ordering:
         lead_time_days: 7                   # 1 semaine
-        min_order_pallets: 1
+        min_order_pallets: 40              # 40 bibs minimum
         can_split_references: true          # répartition libre entre tous les jus
+        order_unit: "bib"
+        qty_unit: "kg"
         notes: "Commande minimum 40 bibs de 20 kg. Possible de répartir selon tous les jus."
+        pallets:
+          "Jus de Gingembre":
+            bottles_per_pallet: 20
+          "Jus de Pamplemousse (GRAPEFRUIT)":
+            bottles_per_pallet: 20
+          "Jus de Passion":
+            bottles_per_pallet: 20
+          "Jus de citron Jaune":
+            bottles_per_pallet: 20
+          "Jus de citron Vert":
+            bottles_per_pallet: 20
+          "Jus de Baie de Sureau":
+            bottles_per_pallet: 20
+          "Puree de Mangue":
+            bottles_per_pallet: 20
+          "Puree de peche":
+            bottles_per_pallet: 20
 
     - name: "Cristalco"
       icon: "grain"
@@ -141,7 +160,19 @@ stocks:
       patterns: ["arome", "infusion"]       # AND avec mp_types → exclut "Fibre d'acacia"
       ordering:
         lead_time_days: 35                  # 5 semaines
+        min_order_pallets: 1               # 1 lot par référence
+        order_unit: "lot"
+        qty_unit: "kg"
         notes: "Commande par tranche de 50 kg."
+        pallets:
+          "AROME NATUREL DE PECHE 65%VOL":
+            bottles_per_pallet: 50
+          "INFUSION DE MELISSE 58%V":
+            bottles_per_pallet: 50
+          "INFUSION DE MENTHE POIVREE 60%V":
+            bottles_per_pallet: 50
+          "INFUSION MENTHE NANAH 75%V":
+            bottles_per_pallet: 50
 
     # ── Emballages ──
     - name: "ADESA"
@@ -160,7 +191,13 @@ stocks:
       mp_types: ["CONDITIONNEMENT_CAPSULE"]
       ordering:
         lead_time_days: 42                  # 6 semaines
+        min_order_pallets: 1               # 1 lot
+        order_unit: "lot"
+        qty_unit: "capsules"
         notes: "Commande par tranche de 200 000 capsules."
+        pallets:
+          "Capsules":
+            bottles_per_pallet: 200000
 
   ungrouped_label: "Autres contenants"
 
