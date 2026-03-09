@@ -498,17 +498,20 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
         _log.exception("Erreur appel synthese-consommations-mp")
         conso_data = {}
 
-    # Build consumption map: idMatierePremiere → total consumption
-    consumption_by_id: dict[int, float] = {}
+    # Build consumption map: libelle → total consumption
+    # (the synthesis endpoint returns {libelle, quantite, unite, cout} — no ID)
+    consumption_by_name: dict[str, float] = {}
     for cat_key in (
         "syntheseIngredient", "syntheseConditionnement",
         "syntheseDivers", "syntheseContenant",
     ):
         cat = conso_data.get(cat_key) or {}
         for el in cat.get("elements") or []:
-            mp_id = el.get("idMatierePremiere")
-            if mp_id is not None:
-                consumption_by_id[mp_id] = float(el.get("quantite", 0) or 0)
+            lib = (el.get("libelle") or "").strip()
+            if lib:
+                consumption_by_name[lib] = float(el.get("quantite", 0) or 0)
+    _log.info("Consumption map: %d libellés avec conso > 0",
+              sum(1 for v in consumption_by_name.values() if v > 0))
 
     # Step 3 — supplier mapping from entry history
     date_debut, date_fin = _dates(window_days)
@@ -547,7 +550,7 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
         current_stock = float(mp.get("quantiteVirtuelle", 0) or 0)
         seuil_bas = float(mp.get("seuilBas", 0) or 0)
         unite = (mp.get("unite") or {}).get("symbole", "u")
-        consumption = consumption_by_id.get(mp_id, 0.0)
+        consumption = consumption_by_name.get(libelle, 0.0)
         daily = consumption / window_days if window_days > 0 else 0.0
         stock_days = (current_stock / daily) if daily > 0 else None
 
