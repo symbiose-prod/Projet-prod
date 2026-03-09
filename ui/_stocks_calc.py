@@ -43,6 +43,7 @@ class StockItem:
     daily_consumption: float
     stock_days: float | None  # current_stock / daily_consumption, or None
     supplier: str | None = None  # dynamically extracted from history
+    type_code: str = ""  # EasyBeer type.code (e.g. "INGREDIENT_FRUIT")
 
 
 @dataclass
@@ -159,15 +160,23 @@ def _assign_groups(
 
     Priority:
     1. Dynamic supplier from ``item.supplier`` (extracted from history)
-    2. Fallback: config.yaml pattern matching on ``item.label``
+    2. Config matching — ``mp_types`` and/or ``patterns``:
+       - Both specified → AND logic (type must match AND pattern must match)
+       - Only ``mp_types`` → type code must match
+       - Only ``patterns`` → pattern must appear in label
     3. Final fallback: ungrouped bucket
     """
     ungrouped_label = stocks_config.get("ungrouped_label", "Autres contenants")
 
-    # Config-based fallback patterns
+    # Build per-supplier matching criteria
     cfg_groups = stocks_config.get("supplier_groups") or []
-    cfg_patterns: list[tuple[str, str, list[str]]] = [
-        (g["name"], g.get("icon", "category"), [p.lower() for p in g.get("patterns", [])])
+    cfg_matchers: list[tuple[str, str, list[str], list[str]]] = [
+        (
+            g["name"],
+            g.get("icon", "category"),
+            [p.lower() for p in g.get("patterns", [])],
+            g.get("mp_types", []),
+        )
         for g in cfg_groups
     ]
 
@@ -182,17 +191,32 @@ def _assign_groups(
         if item.supplier:
             group_name = item.supplier
             # Try to find matching icon from config
-            for cfg_name, cfg_icon, _ in cfg_patterns:
+            for cfg_name, cfg_icon, _, _ in cfg_matchers:
                 if cfg_name.lower() == group_name.lower():
                     group_icon = cfg_icon
                     group_name = cfg_name  # use config casing
                     break
 
-        # Priority 2: config pattern fallback
+        # Priority 2: config matching (mp_types + patterns)
         if not group_name:
             label_lower = item.label.lower()
-            for cfg_name, cfg_icon, patterns in cfg_patterns:
-                if any(p in label_lower for p in patterns):
+            type_code = item.type_code or ""
+
+            for cfg_name, cfg_icon, patterns, mp_types in cfg_matchers:
+                if mp_types and patterns:
+                    # Both specified → AND logic
+                    match = (
+                        type_code in mp_types
+                        and any(p in label_lower for p in patterns)
+                    )
+                elif mp_types:
+                    match = type_code in mp_types
+                elif patterns:
+                    match = any(p in label_lower for p in patterns)
+                else:
+                    match = False
+
+                if match:
                     group_name = cfg_name
                     group_icon = cfg_icon
                     break
@@ -537,6 +561,7 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
             daily_consumption=daily,
             stock_days=stock_days,
             supplier=supplier_map.get(libelle),
+            type_code=mp_type_code,
         )
         items.append(item)
 

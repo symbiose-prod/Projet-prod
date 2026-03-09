@@ -69,35 +69,55 @@ stocks:
             bottles_per_pallet: 1421
 
     # ── Matières premières ──
+    # Matching : mp_types + patterns en logique AND quand les deux sont
+    # présents, ce qui évite les faux-positifs sans dépendre de l'ordre.
     - name: "Nature Favours"
       icon: "local_drink"
       category: "Matières premières"
+      mp_types: ["INGREDIENT_FRUIT"]
+
     - name: "Cristalco"
       icon: "grain"
       category: "Matières premières"
+      mp_types: ["INGREDIENT_SUCRE"]
+      patterns: ["sucre"]                   # AND → exclut "Sirop de Yacon"
+
     - name: "Actibio"
       icon: "eco"
       category: "Matières premières"
+      patterns: ["fibre"]                   # "Fibre d'acacia Bio" (INGREDIENT_AUTRE)
+
     - name: "Yacon & Co"
       icon: "eco"
       category: "Matières premières"
+      patterns: ["yacon"]                   # "Sirop de Yacon"
+
     - name: "Cailleau"
       icon: "spa"
       category: "Matières premières"
+      mp_types: ["INGREDIENT_HERBE"]
+
     - name: "ROBERTET SA"
       icon: "science"
       category: "Matières premières"
+      mp_types: ["INGREDIENT_AUTRE"]
+      patterns: ["arome", "infusion"]       # AND avec mp_types → exclut "Fibre d'acacia"
 
     # ── Emballages ──
     - name: "ADESA"
       icon: "label"
       category: "Emballages"
+      mp_types: ["CONDITIONNEMENT_ETIQUETTE"]
+
     - name: "Turquet"
       icon: "widgets"
       category: "Emballages"
+      mp_types: ["CONDITIONNEMENT_CARTON"]
+
     - name: "AWK"
       icon: "circle"
       category: "Emballages"
+      mp_types: ["CONDITIONNEMENT_CAPSULE"]
 
   ungrouped_label: "Autres contenants"
 
