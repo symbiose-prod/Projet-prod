@@ -296,9 +296,12 @@ async def page_ramasse():
             for r in rows:
                 label = r["Produit (goût + format)"]
                 meta = meta_by_label.get(label, {})
+                # Extraire le goût depuis le label "Kéfir Original — 12x33cl"
+                gout = label.split(" — ")[0].strip() if " — " in label else label
                 grid_row = {
                     "ref": r["Référence"],
                     "produit": label,
+                    "_gout": gout,
                     "ddm": r["DDM"].strftime("%d/%m/%Y") if hasattr(r["DDM"], "strftime") else str(r["DDM"]),
                     "cartons": None,
                     "poids_u": float(meta.get("_poids_carton", 0)),
@@ -308,6 +311,9 @@ async def page_ramasse():
                     "poids_display": "—",
                 }
                 grid_rows.append(grid_row)
+
+            # Trier par goût pour regrouper visuellement
+            grid_rows.sort(key=lambda r: r["_gout"])
 
             # ── Restaurer les cartons saisis précédemment ──────────
             for grid_row in grid_rows:
@@ -323,7 +329,24 @@ async def page_ramasse():
                     grid_row["poids"] = p
                     grid_row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
 
-            table_ref["rows"] = grid_rows
+            # ── Insérer des en-têtes par goût ──────────────────────
+            ordered_rows: list[dict] = []
+            current_gout = None
+            for grid_row in grid_rows:
+                if grid_row["_gout"] != current_gout:
+                    current_gout = grid_row["_gout"]
+                    ordered_rows.append({
+                        "_sep": True,
+                        "_gout": current_gout,
+                        "ref": f"_sep_{current_gout}",
+                        "produit": "", "ddm": "",
+                        "cartons": None, "palettes": 0,
+                        "poids": 0, "poids_display": "",
+                        "poids_u": 0, "pal_cap": 0,
+                    })
+                ordered_rows.append(grid_row)
+
+            table_ref["rows"] = grid_rows  # rows sans séparateurs (pour calculs)
 
             try:
               with content_container:
@@ -388,9 +411,11 @@ async def page_ramasse():
                     "Clique sur le nombre de palettes pour l'ajuster manuellement."
                 ).classes("text-caption text-grey-6 q-mb-xs")
 
+                nb_cols = len(TABLE_COLUMNS)
+
                 table = ui.table(
                     columns=TABLE_COLUMNS,
-                    rows=grid_rows,
+                    rows=ordered_rows,
                     row_key="ref",
                     pagination={"rowsPerPage": 0},
                 ).classes("w-full").style(
@@ -399,10 +424,20 @@ async def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot body — style Forcer + @change auto-recalcul
+                # Slot body — en-tête goût OU ligne de données
                 ORANGE = COLORS["orange"]
+                GREEN = COLORS["green"]
                 table.add_slot("body", r'''
-                    <q-tr :props="props"
+                    <q-tr v-if="props.row._sep" :props="props">
+                        <q-td colspan="''' + str(nb_cols) + r'''"
+                               style="background: ''' + GREEN + r'''10; padding: 8px 12px; font-weight: 600; font-size: 13px; border-bottom: 2px solid ''' + GREEN + r'''30;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <q-icon name="local_drink" size="18px" style="color: ''' + GREEN + r'''" />
+                                <span style="color: ''' + GREEN + r'''">{{ props.row._gout }}</span>
+                            </div>
+                        </q-td>
+                    </q-tr>
+                    <q-tr v-else :props="props"
                           :style="props.row.cartons == null || props.row.cartons == 0 ? 'opacity: 0.45' : ''">
                         <q-td v-for="col in props.cols" :key="col.name" :props="props"
                               :style="'text-align: ' + col.align">
@@ -450,6 +485,27 @@ async def page_ramasse():
                     </q-tr>
                 ''')
 
+                # Helper : reconstruit les rows avec séparateurs pour le tableau
+                def _rebuild_table_rows():
+                    """Reconstruit ordered_rows à partir de table_ref['rows'] (données seules)."""
+                    out: list[dict] = []
+                    cur_gout = None
+                    for row in table_ref["rows"]:
+                        g = row.get("_gout", "")
+                        if g != cur_gout:
+                            cur_gout = g
+                            out.append({
+                                "_sep": True, "_gout": cur_gout,
+                                "ref": f"_sep_{cur_gout}",
+                                "produit": "", "ddm": "",
+                                "cartons": None, "palettes": 0,
+                                "poids": 0, "poids_display": "",
+                                "poids_u": 0, "pal_cap": 0,
+                            })
+                        out.append(row)
+                    table.rows[:] = out
+                    table.update()
+
                 # Handler @change : sync + recalcul automatique
                 def on_cartons_changed(e):
                     data = e.args
@@ -474,8 +530,7 @@ async def page_ramasse():
                             row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
                             break
 
-                    table.rows[:] = table_ref["rows"]
-                    table.update()
+                    _rebuild_table_rows()
                     _update_kpis()
 
                 table.on("cartons_changed", on_cartons_changed)
@@ -502,8 +557,7 @@ async def page_ramasse():
                             row["poids_display"] = f"{w:,} kg".replace(",", " ") if w else "—"
                             break
 
-                    table.rows[:] = table_ref["rows"]
-                    table.update()
+                    _rebuild_table_rows()
                     _update_kpis()
 
                 table.on("palettes_changed", on_palettes_changed)
