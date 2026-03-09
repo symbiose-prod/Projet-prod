@@ -76,22 +76,39 @@ stocks:
       category: "Matières premières"
       mp_types: ["INGREDIENT_FRUIT"]
       patterns: ["jus", "purée"]            # AND → exclut Figues / Sirop de figues (→ Actibio)
+      ordering:
+        lead_time_days: 7                   # 1 semaine
+        min_order_pallets: 1
+        can_split_references: true          # répartition libre entre tous les jus
+        notes: "Commande minimum 40 bibs de 20 kg. Possible de répartir selon tous les jus."
 
     - name: "Cristalco"
       icon: "grain"
       category: "Matières premières"
       mp_types: ["INGREDIENT_SUCRE"]
       patterns: ["sucre"]                   # AND → exclut "Sirop de Yacon"
+      ordering:
+        lead_time_days: 21                  # 3 semaines
+        min_order_pallets: 4
+        notes: "Commande par 4 palettes de 900 kg chacune."
 
     - name: "Siroperie Meurens"
       icon: "local_cafe"
       category: "Matières premières"
       patterns: ["sirop de figue"]          # Sirop de figues — avant Actibio pour éviter collision
+      ordering:
+        lead_time_days: 14                  # 2 semaines
+        min_order_pallets: 1
+        notes: "Commande par palette de 1 tonne."
 
     - name: "Actibio"
       icon: "eco"
       category: "Matières premières"
       patterns: ["figue"]                   # Figues uniquement (Sirop déjà capté ci-dessus)
+      ordering:
+        lead_time_days: 21                  # 3 semaines
+        min_order_pallets: 4
+        notes: "Commande par 4 palettes de 800 kg chacune."
 
     - name: "Nexira"
       icon: "science"
@@ -113,6 +130,9 @@ stocks:
       category: "Matières premières"
       mp_types: ["INGREDIENT_AUTRE"]
       patterns: ["arome", "infusion"]       # AND avec mp_types → exclut "Fibre d'acacia"
+      ordering:
+        lead_time_days: 35                  # 5 semaines
+        notes: "Commande par tranche de 50 kg."
 
     # ── Emballages ──
     - name: "ADESA"
@@ -129,6 +149,9 @@ stocks:
       icon: "circle"
       category: "Emballages"
       mp_types: ["CONDITIONNEMENT_CAPSULE"]
+      ordering:
+        lead_time_days: 42                  # 6 semaines
+        notes: "Commande par tranche de 200 000 capsules."
 
   ungrouped_label: "Autres contenants"
 
