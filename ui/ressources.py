@@ -61,9 +61,9 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
 
         # ── Form body ──
         with ui.card_section().classes("q-pa-md"):
-            with ui.row().classes("w-full gap-4 items-start"):
+            with ui.row().classes("w-full gap-4 items-start").style("flex-wrap: wrap"):
                 # Left column: numeric fields
-                with ui.column().classes("gap-3").style("min-width: 200px; flex: 1"):
+                with ui.column().classes("gap-3").style("min-width: 180px; flex: 1"):
                     inputs["lead_time"] = ui.number(
                         label="Delai livraison (jours)",
                         value=lead_time,
@@ -82,7 +82,7 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
                     ).style(f"color: {COLORS['ink']}")
 
                 # Right column: pallets per reference
-                with ui.column().classes("gap-3").style("min-width: 250px; flex: 1"):
+                with ui.column().classes("gap-3").style("min-width: 180px; flex: 1"):
                     if pallets_cfg:
                         ui.label("References palette").classes("text-caption").style(
                             f"color: {COLORS['ink2']}; font-weight: 600"
@@ -193,9 +193,12 @@ def page_ressources():
             cat = s.get("category", "Autre")
             categories.setdefault(cat, []).append(s)
 
-        # Render cards grouped by category
+        # Render cards grouped by category (3-column grid)
         for cat_name, cat_suppliers in categories.items():
             section_title(cat_name, "category")
 
-            for supplier in cat_suppliers:
-                _build_supplier_card(supplier)
+            with ui.element("div").style(
+                "display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;"
+            ):
+                for supplier in cat_suppliers:
+                    _build_supplier_card(supplier)
