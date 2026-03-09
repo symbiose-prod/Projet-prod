@@ -198,7 +198,7 @@ def page_ressources():
             section_title(cat_name, "category")
 
             with ui.element("div").style(
-                "display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;"
+                "display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;"
             ):
                 for supplier in cat_suppliers:
                     _build_supplier_card(supplier)
