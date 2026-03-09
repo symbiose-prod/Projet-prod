@@ -246,6 +246,13 @@ async def page_ramasse():
 
         def on_brassins_changed(e=None):
             """Reconstruit le tableau quand la sélection change."""
+            # ── Sauvegarder les cartons saisis avant de tout reconstruire ──
+            saved_cartons: dict[str, int] = {}
+            for row in table_ref["rows"]:
+                c = row.get("cartons")
+                if c is not None and c > 0:
+                    saved_cartons[row["ref"]] = int(c)
+
             content_container.clear()
             table_ref["table"] = None
             table_ref["rows"] = []
@@ -301,6 +308,20 @@ async def page_ramasse():
                     "poids_display": "—",
                 }
                 grid_rows.append(grid_row)
+
+            # ── Restaurer les cartons saisis précédemment ──────────
+            for grid_row in grid_rows:
+                ref = grid_row["ref"]
+                if ref in saved_cartons:
+                    c = saved_cartons[ref]
+                    grid_row["cartons"] = c
+                    cap = int(grid_row.get("pal_cap") or 0)
+                    pu = float(grid_row.get("poids_u") or 0)
+                    pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
+                    grid_row["palettes"] = pal
+                    p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
+                    grid_row["poids"] = p
+                    grid_row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
 
             table_ref["rows"] = grid_rows
 
@@ -363,7 +384,8 @@ async def page_ramasse():
                 section_title("Détail produits", "table_chart")
 
                 ui.label(
-                    "Saisis le nombre de cartons — palettes et poids se mettent à jour automatiquement."
+                    "Saisis le nombre de cartons — palettes et poids se calculent automatiquement. "
+                    "Clique sur le nombre de palettes pour l'ajuster manuellement."
                 ).classes("text-caption text-grey-6 q-mb-xs")
 
                 table = ui.table(
@@ -403,9 +425,23 @@ async def page_ramasse():
                                 </span>
                             </template>
                             <template v-else-if="col.name === 'palettes'">
-                                <span style="color: ''' + ORANGE + r'''; font-weight: 600">
-                                    {{ props.row[col.field] }}
+                                <span :style="{
+                                    color: '''' + ORANGE + r'''',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }">
+                                    {{ props.row.palettes || 0 }}
+                                    <q-icon name="edit" size="12px" color="grey-5" class="q-ml-xs" />
                                 </span>
+                                <q-popup-edit v-model="props.row.palettes" v-slot="scope"
+                                    @update:model-value="() => $parent.$emit('palettes_changed', {ref: props.row.ref, palettes: props.row.palettes})">
+                                    <q-input v-model.number="scope.value" type="number" dense autofocus
+                                        placeholder="0" min="0"
+                                        input-class="text-right text-bold"
+                                        style="min-width: 80px"
+                                        hint="Entrée pour valider"
+                                        @keyup.enter="scope.set" />
+                                </q-popup-edit>
                             </template>
                             <template v-else>
                                 {{ props.row[col.field] }}
@@ -443,6 +479,34 @@ async def page_ramasse():
                     _update_kpis()
 
                 table.on("cartons_changed", on_cartons_changed)
+
+                def on_palettes_changed(e):
+                    data = e.args
+                    ref = data.get("ref")
+                    p = data.get("palettes")
+                    try:
+                        p = int(float(p)) if p is not None and p != "" else 0
+                    except (TypeError, ValueError):
+                        p = 0
+                    if p < 0:
+                        p = 0
+
+                    for row in table_ref["rows"]:
+                        if row["ref"] == ref:
+                            row["palettes"] = p
+                            # Recalculer le poids avec le nouveau nombre de palettes
+                            c = int(row.get("cartons") or 0)
+                            pu = float(row.get("poids_u") or 0)
+                            w = int(round(c * pu + p * PALETTE_EMPTY_WEIGHT))
+                            row["poids"] = w
+                            row["poids_display"] = f"{w:,} kg".replace(",", " ") if w else "—"
+                            break
+
+                    table.rows[:] = table_ref["rows"]
+                    table.update()
+                    _update_kpis()
+
+                table.on("palettes_changed", on_palettes_changed)
 
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
