@@ -166,11 +166,13 @@ async def page_production():
                 with manual_container:
                     volume_input_ref["ref"] = ui.number(
                         "Volume cible (hL)", value=64.0, min=1.0, max=1000.0, step=1.0,
+                        on_change=lambda _: _debounced_compute(),
                     ).props("outlined dense").classes("w-full")
                     nb_gouts_input_ref["ref"] = ui.select(
                         {1: "1 goût", 2: "2 goûts"},
                         value=1,
                         label="Nb goûts",
+                        on_change=lambda _: _debounced_compute(),
                     ).props("outlined dense").classes("w-full")
 
         async def do_compute():
