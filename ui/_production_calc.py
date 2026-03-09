@@ -54,6 +54,114 @@ def _auto_match(gout: str, prod_labels: list[str]) -> int:
     return 0
 
 
+# ─── Productions en cours (brassins EasyBeer) ───────────────────────────────
+
+
+def _match_brassin_to_gout(produit_libelle: str, gouts_connus: list[str]) -> str | None:
+    """Retourne le GoutCanon qui matche le libellé produit du brassin.
+
+    Teste les goûts les plus longs d'abord pour éviter les faux positifs
+    (ex: "Citron Gingembre" doit matcher "Citron Gingembre" et pas "Citron").
+    """
+    lbl = produit_libelle.lower()
+    for g in sorted(gouts_connus, key=len, reverse=True):
+        if g.lower() in lbl:
+            return g
+    return None
+
+
+def _fetch_ongoing_productions(df: pd.DataFrame) -> dict:
+    """Récupère les brassins en cours et les agrège par GoutCanon.
+
+    Retourne {"par_gout": {GoutCanon: vol_hL}, "detail": [...], "total_hl": float}.
+    """
+    from common.easybeer import get_brassins_en_cours_cached
+
+    brassins = get_brassins_en_cours_cached()
+    if not brassins:
+        return {"par_gout": {}, "detail": [], "total_hl": 0.0}
+
+    gouts_connus = df["GoutCanon"].dropna().unique().tolist()
+    par_gout: dict[str, float] = {}
+    detail: list[dict] = []
+
+    for b in brassins:
+        # Filtrer annulés / terminés
+        if b.get("annule") or b.get("termine"):
+            continue
+
+        produit = b.get("produit") or {}
+        libelle = produit.get("libelle", "")
+        volume_l = float(b.get("volume") or 0)
+        if volume_l < 100:  # ignorer les petits brassins (tests)
+            continue
+
+        gout = _match_brassin_to_gout(libelle, gouts_connus)
+
+        # État
+        etat_obj = b.get("etat") or {}
+        etat_libelle = etat_obj.get("libelle", "En cours")
+
+        # Date conditionnement prévue
+        date_cond = ""
+        raw_date = b.get("dateConditionnementPrevue")
+        if isinstance(raw_date, str) and raw_date:
+            try:
+                dt = raw_date[:10]  # "2026-03-15T..."  → "2026-03-15"
+                date_cond = f"{dt[8:10]}/{dt[5:7]}/{dt[:4]}"
+            except (IndexError, ValueError):
+                date_cond = raw_date[:10]
+        elif isinstance(raw_date, (int, float)) and raw_date > 0:
+            try:
+                import datetime as _dt
+                date_cond = _dt.datetime.fromtimestamp(
+                    raw_date / 1000, tz=_dt.timezone.utc
+                ).strftime("%d/%m/%Y")
+            except (OSError, ValueError):
+                pass
+
+        vol_hl = round(volume_l / 100.0, 2)
+
+        detail.append({
+            "nom": b.get("nom", ""),
+            "produit": libelle,
+            "gout": gout or "—",
+            "volume_l": int(volume_l),
+            "volume_hl": vol_hl,
+            "etat": etat_libelle,
+            "date_conditionnement": date_cond,
+        })
+
+        if gout:
+            par_gout[gout] = par_gout.get(gout, 0.0) + vol_hl
+
+    total_hl = round(sum(par_gout.values()), 2)
+    return {"par_gout": par_gout, "detail": detail, "total_hl": total_hl}
+
+
+def _inject_ongoing_volumes(
+    df: pd.DataFrame, par_gout: dict[str, float],
+) -> pd.DataFrame:
+    """Ajoute les volumes en cours au stock disponible, au prorata des ventes par format.
+
+    Ceci augmente l'autonomie dans l'optimiseur → réduit la production proposée
+    pour les goûts qui ont déjà des brassins en cours.
+    """
+    df = df.copy()
+    for gout, vol_hl in par_gout.items():
+        mask = df["GoutCanon"] == gout
+        if not mask.any():
+            continue
+        ventes = df.loc[mask, "Volume vendu (hl)"]
+        total_ventes = ventes.sum()
+        if total_ventes > 0:
+            df.loc[mask, "Volume disponible (hl)"] += vol_hl * (ventes / total_ventes)
+        else:
+            n = mask.sum()
+            df.loc[mask, "Volume disponible (hl)"] += vol_hl / n
+    return df
+
+
 # ─── Construction tableau final ──────────────────────────────────────────────
 
 def _build_final_table(
@@ -275,7 +383,22 @@ def _compute_production_sync(
     DEFAULT_LOSS_LARGE: int,
     DEFAULT_LOSS_SMALL: int,
 ) -> dict:
-    """Passe 1 (optimiseur) + Passe 2 (EasyBeer) — aucun appel UI."""
+    """Passe 0 (en cours) + Passe 1 (optimiseur) + Passe 2 (EasyBeer) — aucun appel UI."""
+    # ── PASSE 0 : Productions en cours (ajuste le stock disponible) ──
+    ongoing: dict = {"par_gout": {}, "detail": [], "total_hl": 0.0}
+    try:
+        from common.easybeer import is_configured as _eb_conf_p0
+        if _eb_conf_p0():
+            ongoing = _fetch_ongoing_productions(df_in_filtered)
+            if ongoing["par_gout"]:
+                df_in_filtered = _inject_ongoing_volumes(df_in_filtered, ongoing["par_gout"])
+                _log.info(
+                    "Productions en cours intégrées : %s (total %.1f hL)",
+                    ongoing["par_gout"], ongoing["total_hl"],
+                )
+    except Exception as exc:
+        _log.warning("Erreur fetch brassins en cours: %s", exc, exc_info=True)
+
     # ── PASSE 1 : Optimiseur
     (
         df_min, cap_resume, gouts_cibles, synth_sel,
@@ -402,5 +525,6 @@ def _compute_production_sync(
         "volume_details": volume_details,
         "volume_cible": volume_cible,
         "df_final": df_final,
+        "ongoing": ongoing,
         "mp_check": mp_check,
     }

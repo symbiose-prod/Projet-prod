@@ -21,6 +21,8 @@ from .brassins import (
     get_brassin_detail,
     get_brassins_archives,
     get_brassins_en_cours,
+    get_brassins_en_cours_cached,
+    invalidate_brassins_en_cours_cache,
 )
 
 # --- clients ---
@@ -94,7 +96,8 @@ __all__ = [
     # recipes
     "compute_aromatisation_volume", "compute_v_start_max", "compute_dilution_ingredients",
     # brassins
-    "create_brassin", "get_brassins_en_cours", "get_brassins_archives", "get_brassin_detail",
+    "create_brassin", "get_brassins_en_cours", "get_brassins_en_cours_cached",
+    "invalidate_brassins_en_cours_cache", "get_brassins_archives", "get_brassin_detail",
     # conditioning
     "get_planification_matrice", "add_planification_conditionnement",
     "get_code_barre_matrice", "upload_fichier_brassin",

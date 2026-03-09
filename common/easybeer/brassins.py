@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import time as _time
 from typing import Any
 
 import requests
@@ -40,6 +41,31 @@ def get_brassins_en_cours() -> list[dict[str, Any]]:
     _check_response(r, ep)
     data = _safe_json(r, ep)
     return data if isinstance(data, list) else []
+
+
+# ─── Cache brassins en cours ────────────────────────────────────────────────
+
+_BRASSINS_EN_COURS_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
+_BRASSINS_EN_COURS_TTL = 300  # 5 min
+
+
+def get_brassins_en_cours_cached() -> list[dict[str, Any]]:
+    """Brassins en cours avec cache TTL 5 min (évite les appels HTTP redondants)."""
+    now = _time.monotonic()
+    cached = _BRASSINS_EN_COURS_CACHE["data"]
+    if cached is not None and (now - _BRASSINS_EN_COURS_CACHE["ts"]) < _BRASSINS_EN_COURS_TTL:
+        return cached
+    data = get_brassins_en_cours()
+    if data:
+        _BRASSINS_EN_COURS_CACHE["data"] = data
+        _BRASSINS_EN_COURS_CACHE["ts"] = now
+    return data
+
+
+def invalidate_brassins_en_cours_cache() -> None:
+    """Invalide le cache brassins en cours."""
+    _BRASSINS_EN_COURS_CACHE["data"] = None
+    _BRASSINS_EN_COURS_CACHE["ts"] = 0.0
 
 
 @retry_api

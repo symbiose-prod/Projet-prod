@@ -257,6 +257,7 @@ async def page_production():
             volume_cible = _result["volume_cible"]
             df_final = _result["df_final"]
             mp_check = _result.get("mp_check", {})
+            ongoing = _result.get("ongoing", {})
 
             # ── Affichage ─────────────────────────────────────────────
             main_container.clear()
@@ -286,6 +287,60 @@ async def page_production():
                                 f"Perte transfert : {_vd['transfer_loss']}L — "
                                 f"Perte embouteillage : {_vd['bottling_loss']}L — "
                                 f"Recette : {_vd['R']:.0f}L (réf) avec {_vd['A_R']:.1f}L d'aromatisation"
+                            ).classes("text-caption text-grey-6 q-mt-sm")
+
+                # ── Productions en cours ────────────────────────────
+                _ong_detail = ongoing.get("detail", [])
+                _ong_par_gout = ongoing.get("par_gout", {})
+                _ong_total = ongoing.get("total_hl", 0.0)
+
+                if _ong_detail:
+                    _ong_nb = len(_ong_detail)
+                    _ong_title = (
+                        f"{_ong_nb} production{'s' if _ong_nb > 1 else ''}"
+                        f" en cours — {_ong_total:.1f} hL"
+                    )
+                    with ui.expansion(
+                        _ong_title,
+                        icon="hourglass_top",
+                        value=True,
+                    ).classes("w-full").style(
+                        f"border: 1px solid {COLORS['blue']}40; border-radius: 8px"
+                    ):
+                        _ong_rows = [
+                            {
+                                "brassin": d["nom"],
+                                "produit": d["produit"],
+                                "volume": f"{d['volume_l']:,} L".replace(",", " "),
+                                "etat": d["etat"],
+                                "date_cond": d["date_conditionnement"] or "—",
+                                "_gout": d["gout"],
+                                "_key": d["nom"],
+                            }
+                            for d in _ong_detail
+                        ]
+                        _ong_columns = [
+                            {"name": "brassin", "label": "Brassin", "field": "brassin", "align": "left"},
+                            {"name": "produit", "label": "Produit", "field": "produit", "align": "left"},
+                            {"name": "volume", "label": "Volume", "field": "volume", "align": "right"},
+                            {"name": "etat", "label": "État", "field": "etat", "align": "center"},
+                            {"name": "date_cond", "label": "Conditionnement prévu", "field": "date_cond", "align": "center"},
+                        ]
+                        ui.table(
+                            columns=_ong_columns,
+                            rows=_ong_rows,
+                            row_key="_key",
+                        ).classes("w-full").props("flat bordered dense")
+
+                        # Note explicative
+                        _gouts_ajustes = [
+                            f"{g} (+{v:.1f} hL)"
+                            for g, v in _ong_par_gout.items()
+                        ]
+                        if _gouts_ajustes:
+                            ui.label(
+                                "ℹ️ Ces volumes ont été ajoutés au stock disponible "
+                                "pour le calcul : " + ", ".join(_gouts_ajustes)
                             ).classes("text-caption text-grey-6 q-mt-sm")
 
                 # KPIs
