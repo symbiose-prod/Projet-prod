@@ -47,19 +47,15 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
         f"border: 1px solid {COLORS['border']}; border-radius: 8px"
     ):
         # ── Header ──
-        with ui.card_section().classes("row items-center justify-between q-pa-md"):
-            with ui.row().classes("items-center gap-2").style(
-                "flex: 1; min-width: 0; overflow: hidden"
-            ):
-                ui.icon(icon, size="sm").style(f"color: {COLORS['green']}")
-                ui.label(name).classes("text-subtitle1").style(
-                    f"color: {COLORS['ink']}; font-weight: 600;"
-                    " white-space: nowrap; overflow: hidden; text-overflow: ellipsis"
-                )
+        with ui.card_section().classes("row items-center q-pa-md"):
+            ui.icon(icon, size="sm").style(f"color: {COLORS['green']}")
+            ui.label(name).classes("text-subtitle1").style(
+                f"color: {COLORS['ink']}; font-weight: 600"
+            )
             save_btn = ui.button(
                 "Sauvegarder", icon="save",
             ).props("unelevated color=green-8 dense").classes("q-px-md").style(
-                "flex-shrink: 0"
+                "margin-left: auto"
             )
 
         ui.separator()
