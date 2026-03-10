@@ -39,9 +39,12 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `ui/accueil.py` | `/accueil` | Home — file upload, EasyBeer sync |
 | `ui/production.py` | `/production` | Production planning + EasyBeer brassin creation |
 | `ui/ramasse.py` | `/ramasse` | Harvest/collection sheet + BL PDF/Excel export |
+| `ui/stocks.py` | `/stocks` | Stock autonomy by supplier, order suggestions |
+| `ui/ressources.py` | `/ressources` | Supplier ordering constraints editor (lead time, min pallets) |
 | `ui/theme.py` | — | Design system, page layout, custom components |
 | `ui/_production_calc.py` | — | Production computation (no UI, thread-safe) |
 | `ui/_production_easybeer.py` | — | EasyBeer brassin creation section |
+| `ui/_stocks_calc.py` | — | Stock duration computation, movement history (no UI) |
 
 ### Common Modules
 
@@ -55,8 +58,12 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `common/session_store.py` | DataFrame serialization with zlib compression |
 | `common/ramasse.py` | Harvest sheet business logic (poids cartons, palettes) |
 | `common/lot_fifo.py` | FIFO batch tracking for ingredient lots |
-| `common/xlsx_fill/` | Excel/PDF generation package (fiche production, BL) |
-| `common/easybeer/` | EasyBeer API client package (stocks, brassins, recipes, conditioning) |
+| `common/audit.py` | Audit trail fire-and-forget (INSERT to `audit_log` table) |
+| `common/supplier_config.py` | CRUD config fournisseurs (DB overrides merged on `config.yaml`) |
+| `common/brassin_builder.py` | Brassin code generation, payload building, recipe scaling |
+| `common/ai.py` | Claude/Anthropic client for supplier order email generation |
+| `common/xlsx_fill/` | Excel/PDF generation package (fiche production, BL, bon de commande) |
+| `common/easybeer/` | EasyBeer API client package (stocks, brassins, recipes, conditioning, suppliers, history) |
 
 ### Core Modules
 
@@ -73,7 +80,7 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 
 ## Database
 
-PostgreSQL 16 with 6 tables:
+PostgreSQL 16 with 8 tables:
 
 - **tenants** — organization isolation (multi-tenancy)
 - **users** — per-tenant accounts (email, PBKDF2-SHA256 password hash, role)
@@ -81,6 +88,8 @@ PostgreSQL 16 with 6 tables:
 - **password_resets** — one-time reset tokens with expiry
 - **user_sessions** — remember-me tokens (30 days, hashed)
 - **login_failures** — brute-force lockout tracking (persistent)
+- **audit_log** — action audit trail (tenant_id, user_email, action, details JSONB)
+- **supplier_configs** — editable supplier ordering constraints per tenant (JSONB, UNIQUE per tenant+supplier)
 
 Schema: `db/migrate.sql`
 Run migrations: `python scripts/app_bootstrap.py`
@@ -92,11 +101,19 @@ Run migrations: `python scripts/app_bootstrap.py`
 ### config.yaml (business constants — version-controlled)
 
 Toutes les constantes métier sont centralisées dans `config.yaml` :
-- Configurations cuves (capacités, pertes)
-- DDM, prix de référence
-- Limites (max slots, fenêtre de données)
 
-Voir `common/data.py` → `get_business_config()` pour le chargement avec valeurs par défaut.
+- **data_files** : chemins vers `data/production.xlsx`, `data/flavor_map.csv`, `assets/`
+- **business** :
+  - Configurations cuves (7200L : perte 800L ; 5200L : perte 400L)
+  - DDM par défaut (365 jours), prix de référence (400 €/hL)
+  - Limites (max 6 proposals sauvegardées, fenêtre par défaut 60 jours)
+- **stocks** : configuration des fournisseurs (11 entrées) avec pour chacun :
+  - Groupe (Contenants, MP, Emballages), délai de livraison (jours)
+  - Minimum de commande (palettes, kg, unités), références palette
+  - Exemples : Verallia (14j, 10 palettes min), Cristalco (21j, 4 palettes de 900kg), AWK (42j, 200k capsules)
+- **security** : longueur min mot de passe (10), seuils lockout (5/10/15 échecs)
+
+Voir `common/data.py` → `get_business_config()` / `get_stocks_config()` pour le chargement avec valeurs par défaut.
 
 ### Environment Variables
 
@@ -238,8 +255,9 @@ ssh ubuntu@92.222.229.87 "cd /home/ubuntu/app && git pull && sudo systemctl rest
 - **DB connections:** `db/conn.py` — pool_size=10, recycle=30min, statement_timeout=60s
 - **Business constants:** Centralisées dans `config.yaml` → `common/data.py:get_business_config()`
 - **Excel templates:** Located in `assets/` — `Fiche_production.xlsx`, `Grande.xlsx` (7200L), `Petite.xlsx` (5200L), `BL_enlevements_Sofripa.xlsx`
-- **Data files:** `data/production.xlsx` and `data/flavor_map.csv` are the main data sources
+- **Data files:** `data/production.xlsx`, `data/flavor_map.csv`, `data/regles_cuves.csv` (tank ruler interpolation), `data/destinataires.json` (harvest pickup recipients)
 - **Email:** Use Brevo HTTPS API (`common/email.py`), never SMTP in production
+- **AI:** Claude API via `common/ai.py` for supplier order email generation (Anthropic SDK)
 
 ---
 
@@ -259,16 +277,23 @@ ssh ubuntu@92.222.229.87 "cd /home/ubuntu/app && git pull && sudo systemctl rest
 | `POST` | `/indicateur/autonomie-stocks/export/excel` | Excel ventes+stock → page Accueil | `common/easybeer/stocks.py` |
 | `POST` | `/indicateur/autonomie-stocks` | Autonomie JSON | `common/easybeer/stocks.py` |
 | `GET` | `/matiere-premiere/all` | Liste matières premières | `common/easybeer/stocks.py` |
+| `GET` | `/stock/matieres-premieres/numero-lot/liste/{id}` | Lots MP pour FIFO | `common/easybeer/stocks.py` |
 | `POST` | `/indicateur/synthese-consommations-mp` | Consommation MP | `common/easybeer/stocks.py` |
 | `GET` | `/produit/all` | Liste produits | `common/easybeer/products.py` |
-| `GET` | `/produit/{id}` | Détail produit (recette, étapes) | `common/easybeer/products.py` |
-| `POST` | `/brassin` | Créer un brassin | `common/easybeer/brassins.py` |
+| `GET` | `/parametres/produit/edition/{id}` | Détail produit (recette, aromatisation) | `common/easybeer/products.py` |
+| `POST` | `/brassin/enregistrer` | Créer un brassin | `common/easybeer/brassins.py` |
 | `GET` | `/brassin/{id}` | Détail brassin | `common/easybeer/brassins.py` |
-| `POST` | `/brassin/{id}/fichier` | Upload fiche production | `common/easybeer/brassins.py` |
-| `GET` | `/conditionnement/planification/matrice` | Matrice conditionnement | `common/easybeer/conditioning.py` |
+| `POST` | `/brassin/upload/{id}` | Upload fiche production | `common/easybeer/brassins.py` |
+| `GET` | `/brassin/planification-conditionnement/matrice` | Matrice conditionnement | `common/easybeer/conditioning.py` |
 | `POST` | `/conditionnement/planification` | Planifier conditionnement | `common/easybeer/conditioning.py` |
+| `GET` | `/parametres/code-barre/matrice` | Matrice codes-barres | `common/easybeer/conditioning.py` |
 | `GET` | `/materiel/all` | Matériels (cuves) | `common/easybeer/stocks.py` |
 | `GET` | `/entrepot/all` | Entrepôts | `common/easybeer/stocks.py` |
+| `GET` | `/fournisseur/all` | Liste fournisseurs | `common/easybeer/suppliers.py` |
+| `GET` | `/fournisseur/{id}` | Détail fournisseur (contact, adresse) | `common/easybeer/suppliers.py` |
+| `GET` | `/client/all` | Liste clients (paginé) | `common/easybeer/clients.py` |
+| `GET` | `/stock/contenant/mouvement/liste/{id}` | Historique mouvements contenants | `common/easybeer/history.py` |
+| `GET` | `/stock/matieres-premieres/entree/liste/{id}` | Historique entrées MP | `common/easybeer/history.py` |
 
 ### Format payload (CRITIQUE)
 
@@ -336,15 +361,20 @@ nicegui              # UI framework (Quasar/Vue3 + FastAPI)
 pandas, numpy        # Data manipulation
 openpyxl, xlrd       # Excel read/write
 fpdf2                # PDF generation
+pypdf                # PDF manipulation (merge, split)
 pillow               # Image processing
 requests             # HTTP client (EasyBeer API)
+tenacity             # Retry with exponential backoff (Brevo, EasyBeer)
 SQLAlchemy, psycopg2-binary   # Database
 python-dotenv        # Environment loading
+python-dateutil      # Date parsing
 pyyaml               # Config parsing
+anthropic            # Claude AI SDK (supplier order email generation)
 ```
 
 Dev/Testing:
 ```
+ruff                 # Python linter/formatter
 pytest, pytest-cov   # Unit tests + coverage
 pip-audit            # Dependency vulnerability scanning
 ```

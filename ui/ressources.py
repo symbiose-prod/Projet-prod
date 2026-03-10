@@ -5,8 +5,7 @@ Page Ressources — Contraintes de commande fournisseurs editables.
 
 Affiche une carte par fournisseur (depuis config.yaml + surcharges DB),
 groupees par categorie. Chaque carte permet de modifier les contraintes
-de commande (delai, palettes min, bouteilles/palette, notes) et de
-sauvegarder en DB.
+de commande (delai, minimum, quantite/unite, notes) et de sauvegarder en DB.
 """
 from __future__ import annotations
 
@@ -24,6 +23,9 @@ from ui.theme import COLORS, page_layout, section_title
 
 _log = logging.getLogger("ferment.ressources")
 
+_ORDER_UNIT_OPTIONS = ["palette", "carton", "bidon", "lot"]
+_QTY_UNIT_OPTIONS = ["unités", "kg", "capsules"]
+
 
 # ─── Supplier card builder ──────────────────────────────────────────────────
 
@@ -31,21 +33,28 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
     """Build an editable card for one supplier."""
     name = supplier["name"]
     icon = supplier.get("icon", "business")
+    is_active = supplier.get("active", True)
     ordering = supplier.get("ordering") or {}
 
     # Current values (from merged config)
     lead_time = ordering.get("lead_time_days")
-    min_pallets = ordering.get("min_order_pallets")
+    min_order = ordering.get("min_order")
     can_split = ordering.get("can_split_references", False)
-    pallets_cfg = ordering.get("pallets") or {}
+    order_unit = ordering.get("order_unit", "palette")
+    qty_unit = ordering.get("qty_unit", "unités")
+    refs_cfg = ordering.get("references") or {}
     notes = ordering.get("notes", "")
 
     # ── State holders for form inputs ──
     inputs: dict[str, Any] = {}
 
-    with ui.card().classes("w-full").props("flat bordered").style(
+    card = ui.card().classes("w-full").props("flat bordered").style(
         f"border: 1px solid {COLORS['border']}; border-radius: 8px"
-    ):
+    )
+    if not is_active:
+        card.style(add="opacity: 0.5")
+
+    with card:
         # ── Header ──
         with ui.card_section().classes("q-pa-md").style(
             "display: flex; align-items: center; justify-content: space-between; gap: 8px"
@@ -55,62 +64,108 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
                 ui.label(name).classes("text-subtitle1").style(
                     f"color: {COLORS['ink']}; font-weight: 600"
                 )
-            save_btn = ui.button(
-                "Sauvegarder", icon="save",
-            ).props("unelevated color=green-8 dense no-wrap").classes("q-px-md")
+
+            with ui.row().classes("items-center gap-2 no-wrap"):
+                # Active toggle
+                inputs["active"] = ui.switch(
+                    "Actif", value=is_active,
+                ).props("dense color=green-8")
+
+                def _on_toggle(e, _card=card):
+                    if e.value:
+                        _card.style(remove="opacity: 0.5")
+                    else:
+                        _card.style(add="opacity: 0.5")
+
+                inputs["active"].on_value_change(_on_toggle)
+
+                save_btn = ui.button(
+                    "Sauvegarder", icon="save",
+                ).props("unelevated color=green-8 dense no-wrap").classes("q-px-md")
 
         ui.separator()
 
         # ── Form body ──
         with ui.card_section().classes("q-pa-md"):
             with ui.row().classes("w-full gap-4 items-start").style("flex-wrap: wrap"):
-                # Left column: numeric fields
-                with ui.column().classes("gap-3").style("min-width: 180px; flex: 1"):
+                # Left column: numeric fields + unit selectors
+                with ui.column().classes("gap-3").style("min-width: 200px; flex: 1"):
                     inputs["lead_time"] = ui.number(
-                        label="Delai livraison (jours)",
+                        label="Délai livraison (jours)",
                         value=lead_time,
                         min=0, max=365, step=1,
                     ).props("outlined dense").classes("w-full")
 
-                    inputs["min_pallets"] = ui.number(
-                        label="Commande min. (palettes)",
-                        value=min_pallets,
-                        min=0, max=999, step=1,
+                    # Order unit selector
+                    inputs["order_unit"] = ui.select(
+                        label="Unité de commande",
+                        options=_ORDER_UNIT_OPTIONS,
+                        value=order_unit,
+                    ).props("outlined dense").classes("w-full")
+
+                    inputs["min_order"] = ui.number(
+                        label=f"Commande minimum ({order_unit}s)",
+                        value=min_order,
+                        min=0, max=9999, step=1,
+                    ).props("outlined dense").classes("w-full")
+
+                    # Update min_order label when order_unit changes
+                    def _update_min_label(e, _inp=inputs):
+                        _inp["min_order"].props(
+                            f'label="Commande minimum ({e.value}s)"'
+                        )
+                    inputs["order_unit"].on_value_change(_update_min_label)
+
+                    # Qty unit selector
+                    inputs["qty_unit"] = ui.select(
+                        label="Unité de quantité",
+                        options=_QTY_UNIT_OPTIONS,
+                        value=qty_unit,
                     ).props("outlined dense").classes("w-full")
 
                     inputs["can_split"] = ui.checkbox(
-                        "Repartition libre entre references",
+                        "Répartition libre entre références",
                         value=can_split,
                     ).style(f"color: {COLORS['ink']}")
 
-                # Right column: pallets per reference
-                with ui.column().classes("gap-3").style("min-width: 180px; flex: 1"):
-                    if pallets_cfg:
-                        ui.label("References palette").classes("text-caption").style(
+                # Right column: references (qty per unit + optional min_qty)
+                with ui.column().classes("gap-3").style("min-width: 200px; flex: 1"):
+                    if refs_cfg:
+                        ui.label("Références").classes("text-caption").style(
                             f"color: {COLORS['ink2']}; font-weight: 600"
                         )
-                        pallet_inputs: dict[str, ui.number] = {}
-                        for ref_name, ref_cfg in pallets_cfg.items():
-                            bpp = ref_cfg.get("bottles_per_pallet")
-                            with ui.row().classes("items-center gap-2 w-full"):
+                        ref_inputs: dict[str, dict[str, ui.number]] = {}
+                        for ref_name, ref_data in refs_cfg.items():
+                            qpu = ref_data.get("qty_per_unit")
+                            min_qty = ref_data.get("min_qty")
+                            with ui.column().classes("w-full gap-1"):
                                 ui.label(ref_name).classes("text-body2").style(
-                                    f"color: {COLORS['ink']}; flex: 1; min-width: 140px"
+                                    f"color: {COLORS['ink']}; font-weight: 500"
                                 )
-                                inp = ui.number(
-                                    value=bpp, min=1, max=99999, step=1,
-                                ).props("outlined dense suffix=/pal").style("width: 130px")
-                                pallet_inputs[ref_name] = inp
-                        inputs["pallets"] = pallet_inputs
+                                with ui.row().classes("items-center gap-2 w-full"):
+                                    qpu_inp = ui.number(
+                                        label="Qté/unité",
+                                        value=qpu, min=1, max=999999, step=1,
+                                    ).props("outlined dense").style("flex: 1")
+                                    mq_inp = ui.number(
+                                        label="Min. qté",
+                                        value=min_qty, min=0, max=9999999, step=1,
+                                    ).props("outlined dense").style("flex: 1")
+                                    ref_inputs[ref_name] = {
+                                        "qty_per_unit": qpu_inp,
+                                        "min_qty": mq_inp,
+                                    }
+                        inputs["references"] = ref_inputs
                     else:
-                        ui.label("Aucune reference palette configuree").classes(
+                        ui.label("Aucune référence configurée").classes(
                             "text-body2"
                         ).style(f"color: {COLORS['ink2']}")
-                        inputs["pallets"] = {}
+                        inputs["references"] = {}
 
             # Notes textarea (full width)
             ui.separator().classes("q-my-sm")
             inputs["notes"] = ui.textarea(
-                label="Notes (references, contacts, conditions...)",
+                label="Notes (références, contacts, conditions...)",
                 value=notes,
             ).props("outlined dense autogrow").classes("w-full")
 
@@ -122,28 +177,48 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
         ):
             config: dict[str, Any] = {}
 
+            # Active flag
+            config["active"] = _inputs["active"].value
+
             # Lead time
             val = _inputs["lead_time"].value
             if val is not None and val != "":
                 config["lead_time_days"] = int(val)
 
-            # Min pallets
-            val = _inputs["min_pallets"].value
+            # Order unit
+            ou_val = _inputs["order_unit"].value
+            if ou_val:
+                config["order_unit"] = ou_val
+
+            # Min order
+            val = _inputs["min_order"].value
             if val is not None and val != "":
-                config["min_order_pallets"] = int(val)
+                config["min_order"] = int(val)
+
+            # Qty unit
+            qu_val = _inputs["qty_unit"].value
+            if qu_val:
+                config["qty_unit"] = qu_val
 
             # Can split
             config["can_split_references"] = _inputs["can_split"].value
 
-            # Pallets per reference
-            pallet_dict = _inputs.get("pallets") or {}
-            if pallet_dict:
-                pallets: dict[str, dict] = {}
-                for ref, inp in pallet_dict.items():
-                    if inp.value is not None and inp.value != "":
-                        pallets[ref] = {"bottles_per_pallet": int(inp.value)}
-                if pallets:
-                    config["pallets"] = pallets
+            # References (qty_per_unit + optional min_qty)
+            ref_dict = _inputs.get("references") or {}
+            if ref_dict:
+                references: dict[str, dict] = {}
+                for ref, inp_dict in ref_dict.items():
+                    ref_entry: dict[str, Any] = {}
+                    qpu_val = inp_dict["qty_per_unit"].value
+                    if qpu_val is not None and qpu_val != "":
+                        ref_entry["qty_per_unit"] = int(qpu_val)
+                    mq_val = inp_dict["min_qty"].value
+                    if mq_val is not None and mq_val != "" and int(mq_val) > 0:
+                        ref_entry["min_qty"] = int(mq_val)
+                    if ref_entry:
+                        references[ref] = ref_entry
+                if references:
+                    config["references"] = references
 
             # Notes
             notes_val = (_inputs["notes"].value or "").strip()
@@ -153,7 +228,7 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
             try:
                 upsert_supplier_config(_name, config)
                 ui.notify(
-                    f"{_name} — configuration sauvegardee",
+                    f"{_name} — configuration sauvegardée",
                     type="positive",
                 )
             except Exception as exc:
@@ -177,8 +252,8 @@ def page_ressources():
     with page_layout("Ressources", "menu_book", "/ressources"):
         ui.label(
             "Contraintes de commande par fournisseur. "
-            "Les modifications sont sauvegardees en base de donnees "
-            "et utilisees dans l'analyse des stocks."
+            "Les modifications sont sauvegardées en base de données "
+            "et utilisées dans l'analyse des stocks."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
 
         # Load all suppliers with merged config
@@ -195,7 +270,7 @@ def page_ressources():
             cat = s.get("category", "Autre")
             categories.setdefault(cat, []).append(s)
 
-        # Render cards grouped by category (3-column grid)
+        # Render cards grouped by category (2-column grid)
         for cat_name, cat_suppliers in categories.items():
             section_title(cat_name, "category")
 

@@ -56,6 +56,50 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
+def _normalize_ordering(cfg: dict) -> dict:
+    """Convert legacy field names to current names (backward compat for DB overrides).
+
+    Renames:
+        pallets          → references
+        bottles_per_pallet → qty_per_unit  (inside each reference)
+        min_order_pallets  → min_order
+    """
+    if not cfg:
+        return cfg
+
+    out = dict(cfg)
+
+    # min_order_pallets → min_order
+    if "min_order_pallets" in out and "min_order" not in out:
+        out["min_order"] = out.pop("min_order_pallets")
+    elif "min_order_pallets" in out:
+        del out["min_order_pallets"]
+
+    # pallets → references
+    old_refs = out.pop("pallets", None)
+    if old_refs and "references" not in out:
+        new_refs: dict[str, dict] = {}
+        for ref_name, ref_data in old_refs.items():
+            new_ref = dict(ref_data)
+            if "bottles_per_pallet" in new_ref and "qty_per_unit" not in new_ref:
+                new_ref["qty_per_unit"] = new_ref.pop("bottles_per_pallet")
+            elif "bottles_per_pallet" in new_ref:
+                del new_ref["bottles_per_pallet"]
+            new_refs[ref_name] = new_ref
+        out["references"] = new_refs
+
+    # Also normalize references already present (in case they use old sub-keys)
+    if "references" in out and isinstance(out["references"], dict):
+        for ref_data in out["references"].values():
+            if isinstance(ref_data, dict):
+                if "bottles_per_pallet" in ref_data and "qty_per_unit" not in ref_data:
+                    ref_data["qty_per_unit"] = ref_data.pop("bottles_per_pallet")
+                elif "bottles_per_pallet" in ref_data:
+                    del ref_data["bottles_per_pallet"]
+
+    return out
+
+
 # ─── Read ───────────────────────────────────────────────────────────────────
 
 def get_all_supplier_overrides(tenant_id: str | None = None) -> dict[str, dict]:
@@ -130,7 +174,7 @@ def get_merged_ordering_configs(tenant_id: str | None = None) -> dict[str, dict]
     merged: dict[str, dict] = {}
     for name in all_suppliers:
         base = yaml_cfgs.get(name, {})
-        over = db_overrides.get(name, {})
+        over = _normalize_ordering(db_overrides.get(name, {}))
         result = _deep_merge(base, over) if over else base
         if result:  # only include non-empty configs
             merged[name] = result
@@ -151,13 +195,14 @@ def get_all_suppliers_with_config(tenant_id: str | None = None) -> list[dict[str
     result: list[dict[str, Any]] = []
     for g in groups:
         yaml_ordering = copy.deepcopy(g.get("ordering") or {})
-        db_over = db_overrides.get(g["name"], {})
+        db_over = _normalize_ordering(db_overrides.get(g["name"], {}))
         merged = _deep_merge(yaml_ordering, db_over) if db_over else yaml_ordering
 
         result.append({
             "name": g["name"],
             "icon": g.get("icon", "business"),
             "category": g.get("category", "Autre"),
+            "active": g.get("active", True),
             "ordering": merged,
         })
 

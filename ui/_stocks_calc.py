@@ -64,10 +64,11 @@ class OrderItem:
     days_before_order: float | None   # stock_days - lead_time
     deadline: date | None             # date by which to place order
     daily_consumption: float
-    bottles_per_pallet: int
-    suggested_pallets: int
-    suggested_qty: int                # palettes * bottles_per_pallet
+    qty_per_unit: int
+    suggested_units: int
+    suggested_qty: int                # units * qty_per_unit
     coverage_days: float | None       # suggested_qty / daily_consumption
+    min_qty: int | None = None        # optional per-reference minimum
 
 
 @dataclass
@@ -76,7 +77,7 @@ class OrderRecommendation:
 
     supplier: str
     lead_time_days: int
-    min_pallets: int
+    min_order: int
     can_split: bool
     items: list[OrderItem]
     order_deadline: date | None       # earliest deadline across items
@@ -263,9 +264,10 @@ def compute_order_recommendation(
         return None
 
     lead_time = int(ordering_cfg.get("lead_time_days", 0))
-    min_pallets = int(ordering_cfg.get("min_order_pallets", 1))
+    min_order = int(ordering_cfg.get("min_order",
+                    ordering_cfg.get("min_order_pallets", 1)))
     can_split = bool(ordering_cfg.get("can_split_references", False))
-    pallet_cfg = ordering_cfg.get("pallets") or {}
+    ref_cfg = ordering_cfg.get("references") or ordering_cfg.get("pallets") or {}
     order_unit = ordering_cfg.get("order_unit", "palette")
     qty_unit = ordering_cfg.get("qty_unit", "unités")
 
@@ -273,15 +275,19 @@ def compute_order_recommendation(
     order_items: list[OrderItem] = []
 
     for item in group.items:
-        bpp = 0
-        # Find matching pallet config for this item label
-        for pallet_label, pallet_data in pallet_cfg.items():
-            if pallet_label == item.label:
-                bpp = int(pallet_data.get("bottles_per_pallet", 0))
+        qpu = 0
+        item_min_qty: int | None = None
+        # Find matching reference config for this item label
+        for ref_label, ref_data in ref_cfg.items():
+            if ref_label == item.label:
+                qpu = int(ref_data.get("qty_per_unit",
+                          ref_data.get("bottles_per_pallet", 0)))
+                if ref_data.get("min_qty"):
+                    item_min_qty = int(ref_data["min_qty"])
                 break
 
-        if bpp == 0:
-            continue  # no pallet config for this reference
+        if qpu == 0:
+            continue  # no reference config for this item
 
         days_before = None
         deadline = None
@@ -295,10 +301,11 @@ def compute_order_recommendation(
             days_before_order=days_before,
             deadline=deadline,
             daily_consumption=item.daily_consumption,
-            bottles_per_pallet=bpp,
-            suggested_pallets=0,  # filled below
+            qty_per_unit=qpu,
+            suggested_units=0,  # filled below
             suggested_qty=0,
             coverage_days=None,
+            min_qty=item_min_qty,
         ))
 
     if not order_items:
@@ -322,45 +329,49 @@ def compute_order_recommendation(
         urgency = "ok"
         order_deadline = today + timedelta(days=int(min_days_before))
 
-    # --- Distribute pallets proportionally to daily consumption ---
+    # --- Distribute units proportionally to daily consumption ---
     total_daily = sum(oi.daily_consumption for oi in order_items)
     if total_daily > 0 and len(order_items) > 1 and can_split:
         # Proportional distribution
         raw: list[float] = []
         for oi in order_items:
-            raw.append((oi.daily_consumption / total_daily) * min_pallets)
+            raw.append((oi.daily_consumption / total_daily) * min_order)
         # Floor each, distribute remainder to highest fractional parts
         floored = [math.floor(r) for r in raw]
-        remainder = min_pallets - sum(floored)
+        remainder = min_order - sum(floored)
         fractions = [(r - f, i) for i, (r, f) in enumerate(zip(raw, floored))]
         fractions.sort(reverse=True)
         for _, idx in fractions[:remainder]:
             floored[idx] += 1
         for i, oi in enumerate(order_items):
-            oi.suggested_pallets = max(floored[i], 1)  # at least 1
+            oi.suggested_units = max(floored[i], 1)  # at least 1
     elif len(order_items) == 1:
-        order_items[0].suggested_pallets = min_pallets
+        order_items[0].suggested_units = min_order
     else:
         # Equal split
-        per_item = max(min_pallets // len(order_items), 1)
+        per_item = max(min_order // len(order_items), 1)
         for oi in order_items:
-            oi.suggested_pallets = per_item
+            oi.suggested_units = per_item
 
-    # Ensure total >= min_pallets
-    total_suggested = sum(oi.suggested_pallets for oi in order_items)
-    if total_suggested < min_pallets and order_items:
-        order_items[0].suggested_pallets += min_pallets - total_suggested
+    # Ensure total >= min_order
+    total_suggested = sum(oi.suggested_units for oi in order_items)
+    if total_suggested < min_order and order_items:
+        order_items[0].suggested_units += min_order - total_suggested
 
     # Compute quantities and coverage
     for oi in order_items:
-        oi.suggested_qty = oi.suggested_pallets * oi.bottles_per_pallet
+        oi.suggested_qty = oi.suggested_units * oi.qty_per_unit
+        # Enforce per-reference minimum (e.g. Adesa labels)
+        if oi.min_qty and oi.suggested_qty < oi.min_qty:
+            oi.suggested_units = math.ceil(oi.min_qty / oi.qty_per_unit)
+            oi.suggested_qty = oi.suggested_units * oi.qty_per_unit
         if oi.daily_consumption > 0:
             oi.coverage_days = oi.suggested_qty / oi.daily_consumption
 
     return OrderRecommendation(
         supplier=group.name,
         lead_time_days=lead_time,
-        min_pallets=min_pallets,
+        min_order=min_order,
         can_split=can_split,
         items=order_items,
         order_deadline=order_deadline,

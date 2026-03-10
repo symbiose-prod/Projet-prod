@@ -69,8 +69,8 @@ def generate_order_email(
         context: Order context with keys:
             - supplier_name: str
             - supplier_email: str | None
-            - items: list[dict] with label, suggested_pallets, suggested_qty,
-              coverage_days, bottles_per_pallet
+            - items: list[dict] with label, suggested_units, suggested_qty,
+              coverage_days, qty_per_unit
             - lead_time_days: int
             - order_deadline: str | None (formatted date)
             - urgency: str ("critical" | "warning" | "ok")
@@ -128,10 +128,10 @@ def _build_initial_prompt(context: dict[str, Any]) -> str:
     order_unit = context.get("order_unit", "palette")
     qty_unit = context.get("qty_unit", "unités")
     items_text = "\n".join(
-        f"  - {it['label']}: {it['suggested_pallets']} {order_unit}(s), "
+        f"  - {it['label']}: {it['suggested_units']} {order_unit}(s), "
         f"{it['suggested_qty']:,} {qty_unit}".replace(",", "\u202f")
-        + (f" ({it['bottles_per_pallet']}/{order_unit})"
-           if it.get("bottles_per_pallet") else "")
+        + (f" ({it['qty_per_unit']}/{order_unit})"
+           if it.get("qty_per_unit") else "")
         + (f" — couverture ~{it['coverage_days']:.0f} jours"
            if it.get("coverage_days") else "")
         for it in items

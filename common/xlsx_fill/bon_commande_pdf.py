@@ -62,7 +62,7 @@ def build_bon_commande_pdf(
         order_data: dict with keys:
             - reference: str (e.g. "BC-2026-0308-WIEGAND")
             - date: date
-            - items: list[dict] with label, pallets, qty, conditionnement
+            - items: list[dict] with label, units, qty, conditionnement
             - delivery_date: str (requested delivery date text)
             - notes: str | None (optional free-text notes)
         supplier_info: dict with keys:
@@ -207,7 +207,7 @@ def build_bon_commande_pdf(
 
         pdf.cell(col_widths[0], 7, _txt(f"  {item.get('label', '')}"),
                  border=0, fill=True)
-        pdf.cell(col_widths[1], 7, _txt(str(item.get("pallets", ""))),
+        pdf.cell(col_widths[1], 7, _txt(str(item.get("units", ""))),
                  border=0, align="C", fill=True)
         pdf.cell(col_widths[2], 7, _txt(_fmt_number(item.get("qty", 0))),
                  border=0, align="C", fill=True)
@@ -222,7 +222,7 @@ def build_bon_commande_pdf(
     pdf.ln(1)
 
     # Total row
-    total_pal = sum(it.get("pallets", 0) for it in items)
+    total_pal = sum(it.get("units", 0) for it in items)
     total_qty = sum(it.get("qty", 0) for it in items)
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(245, 245, 245)

@@ -48,25 +48,26 @@ stocks:
       category: "Contenants"
       patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse
       ordering:
-        lead_time_days: 14              # délai de livraison : 2 semaines
-        min_order_pallets: 10           # commande minimum 10 palettes
-        pallets:
+        lead_time_days: 14
+        min_order: 10
+        can_split_references: true
+        references:
           "Bouteille 75cl EAU GAZEUSE - 0.75L":
-            bottles_per_pallet: 1624
+            qty_per_unit: 1624
 
     - name: "Wiegand-glas"
       icon: "inventory_2"
       category: "Contenants"
       patterns: ["Bouteille"]           # 33cl + 75cl SAFT
       ordering:
-        lead_time_days: 14              # délai de livraison : 2 semaines
-        min_order_pallets: 26           # commande par camion complet
-        can_split_references: true      # répartition libre entre références
-        pallets:
+        lead_time_days: 14
+        min_order: 26                   # camion complet
+        can_split_references: true
+        references:
           "Bouteille - 0.33L":
-            bottles_per_pallet: 3610
+            qty_per_unit: 3610
           "Bouteille 75cl SAFT - 0.75L":
-            bottles_per_pallet: 1421
+            qty_per_unit: 1421
 
     # ── Matières premières ──
     # Matching : mp_types + patterns en logique AND quand les deux sont
@@ -75,129 +76,155 @@ stocks:
       icon: "local_drink"
       category: "Matières premières"
       mp_types: ["INGREDIENT_FRUIT"]
-      patterns: ["jus", "purée"]            # AND → exclut Figues / Sirop de figues (→ Actibio)
+      patterns: ["jus", "purée"]
       ordering:
-        lead_time_days: 7                   # 1 semaine
-        min_order_pallets: 40              # 40 bibs minimum
-        can_split_references: true          # répartition libre entre tous les jus
-        order_unit: "bib"
+        lead_time_days: 7
+        min_order: 0
+        can_split_references: true
+        order_unit: "carton"
         qty_unit: "kg"
-        notes: "Commande minimum 40 bibs de 20 kg. Possible de répartir selon tous les jus."
-        pallets:
+        notes: "Cartons de 20 kg. Répartition libre entre tous les jus."
+        references:
           "Jus de Gingembre":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
           "Jus de Pamplemousse (GRAPEFRUIT)":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
           "Jus de Passion":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
           "Jus de citron Jaune":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
           "Jus de citron Vert":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
           "Jus de Baie de Sureau":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
           "Puree de Mangue":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
           "Puree de peche":
-            bottles_per_pallet: 20
+            qty_per_unit: 20
 
     - name: "Cristalco"
       icon: "grain"
       category: "Matières premières"
       mp_types: ["INGREDIENT_SUCRE"]
-      patterns: ["sucre"]                   # AND → exclut "Sirop de Yacon"
+      patterns: ["sucre"]
       ordering:
-        lead_time_days: 21                  # 3 semaines
-        min_order_pallets: 4
+        lead_time_days: 10
+        min_order: 4
+        qty_unit: "kg"
         notes: "Commande par 4 palettes de 900 kg chacune."
-        pallets:
+        references:
           "Sucre":
-            bottles_per_pallet: 900
+            qty_per_unit: 900
 
     - name: "Siroperie Meurens"
       icon: "local_cafe"
       category: "Matières premières"
-      patterns: ["sirop de figue"]          # Sirop de figues — avant Actibio pour éviter collision
+      patterns: ["sirop de figue"]
       ordering:
-        lead_time_days: 14                  # 2 semaines
-        min_order_pallets: 1
-        notes: "Commande par palette de 1 tonne."
-        pallets:
+        lead_time_days: 10
+        min_order: 40
+        order_unit: "carton"
+        qty_unit: "kg"
+        notes: "Commande par 40 cartons de 25 kg."
+        references:
           "Sirop de figues":
-            bottles_per_pallet: 1000
+            qty_per_unit: 25
 
     - name: "Actibio"
       icon: "eco"
       category: "Matières premières"
-      patterns: ["figue"]                   # Figues uniquement (Sirop déjà capté ci-dessus)
+      patterns: ["figue"]
       ordering:
-        lead_time_days: 21                  # 3 semaines
-        min_order_pallets: 4
-        notes: "Commande par 4 palettes de 800 kg chacune."
-        pallets:
+        lead_time_days: 20
+        min_order: 2
+        qty_unit: "kg"
+        notes: "Commande par 2 palettes de 800 kg chacune."
+        references:
           "Figues":
-            bottles_per_pallet: 800
+            qty_per_unit: 800
 
     - name: "Nexira"
       icon: "science"
       category: "Matières premières"
-      patterns: ["fibre"]                   # Fibre d'acacia Bio
+      patterns: ["fibre"]
+      active: false
 
     - name: "Yacon & Co"
       icon: "eco"
       category: "Matières premières"
-      patterns: ["yacon"]                   # "Sirop de Yacon"
+      patterns: ["yacon"]
+      active: false
 
     - name: "Cailleau"
       icon: "spa"
       category: "Matières premières"
       mp_types: ["INGREDIENT_HERBE"]
+      ordering:
+        lead_time_days: 10
+        min_order: 0
+        order_unit: "carton"
+        qty_unit: "kg"
+        notes: "Pas de minimum de commande."
 
     - name: "ROBERTET SA"
       icon: "science"
       category: "Matières premières"
       mp_types: ["INGREDIENT_AUTRE"]
-      patterns: ["arome", "infusion"]       # AND avec mp_types → exclut "Fibre d'acacia"
+      patterns: ["arome", "infusion"]
       ordering:
-        lead_time_days: 35                  # 5 semaines
-        min_order_pallets: 1               # 1 lot par référence
-        order_unit: "lot"
+        lead_time_days: 42
+        min_order: 50
+        order_unit: "bidon"
         qty_unit: "kg"
-        notes: "Commande par tranche de 50 kg."
-        pallets:
+        notes: "Commande par bidons de 25 kg."
+        references:
           "AROME NATUREL DE PECHE 65%VOL":
-            bottles_per_pallet: 50
+            qty_per_unit: 25
           "INFUSION DE MELISSE 58%V":
-            bottles_per_pallet: 50
+            qty_per_unit: 25
           "INFUSION DE MENTHE POIVREE 60%V":
-            bottles_per_pallet: 50
+            qty_per_unit: 25
           "INFUSION MENTHE NANAH 75%V":
-            bottles_per_pallet: 50
+            qty_per_unit: 25
 
     # ── Emballages ──
     - name: "ADESA"
       icon: "label"
       category: "Emballages"
       mp_types: ["CONDITIONNEMENT_ETIQUETTE"]
+      ordering:
+        lead_time_days: 20
+        can_split_references: true
+        order_unit: "carton"
+        qty_unit: "unités"
+        references:
+          "Étiquettes 33cl":
+            qty_per_unit: 4500
+            min_qty: 300000
+          "Étiquettes 75cl":
+            qty_per_unit: 3000
+            min_qty: 200000
 
     - name: "Turquet"
       icon: "widgets"
       category: "Emballages"
       mp_types: ["CONDITIONNEMENT_CARTON"]
+      ordering:
+        lead_time_days: 20
 
     - name: "AWK"
       icon: "circle"
       category: "Emballages"
       mp_types: ["CONDITIONNEMENT_CAPSULE"]
       ordering:
-        lead_time_days: 42                  # 6 semaines
-        min_order_pallets: 1               # 1 lot
-        order_unit: "lot"
+        lead_time_days: 42
+        min_order: 2
+        order_unit: "palette"
         qty_unit: "capsules"
-        notes: "Commande par tranche de 200 000 capsules."
-        pallets:
+        notes: "Commande par 2 palettes de 100 000 capsules."
+        references:
           "Capsules":
-            bottles_per_pallet: 200000
+            qty_per_unit: 100000
 
   ungrouped_label: "Autres contenants"
 
