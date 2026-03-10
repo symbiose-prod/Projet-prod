@@ -65,20 +65,24 @@ def _format_number(n: float, unit: str = "") -> str:
 
 
 def _short_label(label: str) -> str:
-    """'Bouteille - 0.33L' → 'Bouteille 33cl', 'Bouteille 75cl SAFT - 0.75L' → 'Bouteille 75cl SAFT'."""
+    """'Bouteille - 0.33L' → 'Bouteille 33cl', 'Bouteille 75cl SAFT - 0.75L' → 'Bouteille 75cl SAFT'.
+
+    Only shorten bottle labels whose suffix is a volume (e.g. '0.33L').
+    Other labels like 'Étiquette NIKO - Kéfir Gingembre 33' are returned as-is.
+    """
     if " - " not in label:
         return label
     name, vol = label.split(" - ", 1)
+    vol_stripped = vol.strip().rstrip("Ll")
+    # Only shorten if the suffix looks like a volume (e.g. "0.33", "0.75")
+    try:
+        cl = int(float(vol_stripped) * 100)
+    except ValueError:
+        return label  # not a volume suffix — return full label
     # Si le nom contient déjà une taille (ex: "75cl"), on le garde tel quel
     if "cl" in name.lower():
         return name
-    # Sinon, convertir le suffixe "0.33L" → "33cl"
-    vol = vol.strip().rstrip("Ll")
-    try:
-        cl = int(float(vol) * 100)
-        return f"{name} {cl}cl"
-    except ValueError:
-        return name
+    return f"{name} {cl}cl"
 
 
 _MONTHS_FR = [
