@@ -185,13 +185,13 @@ stocks:
         qty_unit: "kg"
         notes: "Commande par bidons de 25 kg."
         references:
-          "AROME NATUREL DE PECHE 65%VOL":
+          "AROME NATUREL DE PECHE":
             qty_per_unit: 25
-          "INFUSION DE MELISSE 58%V":
+          "INFUSION DE MELISSE":
             qty_per_unit: 25
-          "INFUSION DE MENTHE POIVRÉE 60%V":
+          "INFUSION DE MENTHE POIVRÉE":
             qty_per_unit: 25
-          "INFUSION MENTHE NANAH 75%V":
+          "INFUSION MENTHE NANAH":
             qty_per_unit: 25
 
     # ── Emballages ──
