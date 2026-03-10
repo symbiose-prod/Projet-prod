@@ -205,12 +205,58 @@ stocks:
         order_unit: "carton"
         qty_unit: "unités"
         references:
-          "Étiquettes 33cl":
+          "Etiquette INTER INFUZION ZEST 33":
             qty_per_unit: 4500
-            min_qty: 300000
-          "Étiquettes 75cl":
+          "Etiquette INTER WATER LEMONBALM 33":
+            qty_per_unit: 4500
+          "Etiquette INTER WATER PEPPERMINT 33":
+            qty_per_unit: 4500
+          "Etiquette KEFIR Gingembre 33":
+            qty_per_unit: 4500
+          "Etiquette KEFIR Gingembre 75":
             qty_per_unit: 3000
-            min_qty: 200000
+          "Etiquette KEFIR Mangue-Passion 33":
+            qty_per_unit: 4500
+          "Etiquette KEFIR Mangue-Passion 75":
+            qty_per_unit: 3000
+          "Etiquette KEFIR Menthe-Citron Vert 33":
+            qty_per_unit: 4500
+          "Etiquette KEFIR Menthe-Citron Vert 75":
+            qty_per_unit: 3000
+          "Etiquette KEFIR Original 33":
+            qty_per_unit: 4500
+          "Etiquette KEFIR Original 75":
+            qty_per_unit: 3000
+          "Etiquette KEFIR Pamplemousse 33":
+            qty_per_unit: 4500
+          "Etiquette KEFIR Pamplemousse 75":
+            qty_per_unit: 3000
+          "Etiquette KEFIR Pêche 33":
+            qty_per_unit: 4500
+          "Etiquette KEFIR Pêche 75":
+            qty_per_unit: 3000
+          "Étiquette INFUSION Menthe poivrée 33cl":
+            qty_per_unit: 4500
+          "Étiquette INFUSION Mélisse 33cl":
+            qty_per_unit: 4500
+          "Étiquette INFUSION Zests d'agrumes 33":
+            qty_per_unit: 4500
+          "Étiquette NIKO - Kéfir Gingembre 33":
+            qty_per_unit: 4500
+          "Étiquette NIKO - Kéfir Gingembre 75":
+            qty_per_unit: 3000
+          "Étiquette NIKO - Kéfir Mangue Passion 33":
+            qty_per_unit: 4500
+          "Étiquette NIKO - Kéfir Mangue Passion 75":
+            qty_per_unit: 3000
+          "Étiquette NIKO - Kéfir Pêche 33cl":
+            qty_per_unit: 4500
+          "Étiquette NIKO - Kéfir Pêche 75cl":
+            qty_per_unit: 3000
+          "Étiquette NIKO - Kéfir menthe Citron Vert 33":
+            qty_per_unit: 4500
+          "Étiquette NIKO - Kéfir menthe Citron Vert 75":
+            qty_per_unit: 3000
 
     - name: "Turquet"
       icon: "widgets"
