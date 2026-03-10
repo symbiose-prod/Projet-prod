@@ -561,7 +561,8 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
         mp_type_code = (mp.get("type") or {}).get("code", "")
 
         # Skip CONTENANT type — handled by fetch_and_compute()
-        if mp_type_code == "CONTENANT":
+        # Skip ETIQUETTE type — not useful in stock overview cards
+        if mp_type_code in ("CONTENANT", "CONDITIONNEMENT_ETIQUETTE"):
             continue
 
         # Skip inactive MP in EasyBeer
