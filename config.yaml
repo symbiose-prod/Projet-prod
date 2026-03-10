@@ -165,6 +165,21 @@ stocks:
         order_unit: "carton"
         qty_unit: "kg"
         notes: "Pas de minimum de commande."
+        references:
+          "Badiane Concassée":
+            qty_per_unit: 1
+          "Menthe Nanah":
+            qty_per_unit: 1
+          "Menthe Poivrée":
+            qty_per_unit: 1
+          "Mélisse":
+            qty_per_unit: 1
+          "Zest d'orange douce":
+            qty_per_unit: 1
+          "Zest de Bergamote":
+            qty_per_unit: 1
+          "Zest de citron":
+            qty_per_unit: 1
 
     - name: "ROBERTET SA"
       icon: "science"
@@ -211,6 +226,22 @@ stocks:
       mp_types: ["CONDITIONNEMENT_CARTON"]
       ordering:
         lead_time_days: 20
+        min_order: 0
+        order_unit: "palette"
+        qty_unit: "unités"
+        references:
+          "Carton 6x75cl Saft NIKO":
+            qty_per_unit: 1
+          "Cartons 12x33cl NIKO":
+            qty_per_unit: 1
+          "Cartons 12x33cl SYMBIOSE":
+            qty_per_unit: 1
+          "Cartons 4x75cl SYMBIOSE":
+            qty_per_unit: 1
+          "Cartons 6x33cl SYMBIOSE":
+            qty_per_unit: 1
+          "Cartons 6x75cl SYMBIOSE":
+            qty_per_unit: 1
 
     - name: "AWK"
       icon: "circle"
