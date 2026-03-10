@@ -4,8 +4,8 @@ ui/ressources.py
 Page Ressources — Contraintes de commande fournisseurs editables.
 
 Affiche une carte par fournisseur (depuis config.yaml + surcharges DB),
-groupees par categorie. Chaque carte permet de modifier les contraintes
-de commande (delai, minimum, quantite/unite, notes) et de sauvegarder en DB.
+groupees par categorie. Les references sont auto-decouvertes depuis
+l'API EasyBeer et matchees par ID stable (idMatierePremiere).
 """
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ from typing import Any
 from nicegui import ui
 
 from common.supplier_config import (
+    discover_supplier_refs,
     get_all_suppliers_with_config,
+    match_ref_config,
     upsert_supplier_config,
 )
 from ui.auth import require_auth
@@ -27,10 +29,28 @@ _ORDER_UNIT_OPTIONS = ["palette", "carton", "bidon", "lot"]
 _QTY_UNIT_OPTIONS = ["unités", "kg", "capsules"]
 
 
+# ─── EasyBeer MP loader (cached at page level) ──────────────────────────────
+
+def _load_easybeer_mp() -> list[dict[str, Any]]:
+    """Load all MP from EasyBeer. Returns [] on error."""
+    try:
+        from common.easybeer.stocks import get_all_matieres_premieres
+        return get_all_matieres_premieres()
+    except Exception:
+        _log.warning("Impossible de charger les MP EasyBeer", exc_info=True)
+        return []
+
+
 # ─── Supplier card builder ──────────────────────────────────────────────────
 
-def _build_supplier_card(supplier: dict[str, Any]) -> None:
-    """Build an editable card for one supplier."""
+def _build_supplier_card(
+    supplier: dict[str, Any],
+    live_refs: list[dict[str, Any]],
+) -> None:
+    """Build an editable card for one supplier.
+
+    live_refs: output of match_ref_config() — [{eb_id, label, qty_per_unit, min_qty, is_new}, ...]
+    """
     name = supplier["name"]
     icon = supplier.get("icon", "business")
     is_active = supplier.get("active", True)
@@ -42,7 +62,6 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
     can_split = ordering.get("can_split_references", False)
     order_unit = ordering.get("order_unit", "palette")
     qty_unit = ordering.get("qty_unit", "unités")
-    refs_cfg = ordering.get("references") or {}
     notes = ordering.get("notes", "")
 
     # ── State holders for form inputs ──
@@ -128,39 +147,88 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
                         value=can_split,
                     ).style(f"color: {COLORS['ink']}")
 
-                # Right column: references (qty per unit + optional min_qty)
+                # Right column: references (from EasyBeer auto-discovery)
                 with ui.column().classes("gap-3").style("min-width: 200px; flex: 1"):
-                    if refs_cfg:
-                        ui.label("Références").classes("text-caption").style(
-                            f"color: {COLORS['ink2']}; font-weight: 600"
-                        )
-                        ref_inputs: dict[str, dict[str, ui.number]] = {}
-                        for ref_name, ref_data in refs_cfg.items():
-                            qpu = ref_data.get("qty_per_unit")
-                            min_qty = ref_data.get("min_qty")
+                    if live_refs:
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label("Références").classes("text-caption").style(
+                                f"color: {COLORS['ink2']}; font-weight: 600"
+                            )
+                            ui.badge("EasyBeer", color="green-8").props(
+                                "outline"
+                            ).style("font-size: 10px")
+
+                        ref_inputs: list[dict[str, Any]] = []
+                        for ref in live_refs:
                             with ui.column().classes("w-full gap-1"):
-                                ui.label(ref_name).classes("text-body2").style(
-                                    f"color: {COLORS['ink']}; font-weight: 500"
-                                )
+                                with ui.row().classes("items-center gap-1"):
+                                    ui.label(ref["label"]).classes(
+                                        "text-body2"
+                                    ).style(
+                                        f"color: {COLORS['ink']}; font-weight: 500"
+                                    )
+                                    if ref.get("is_new"):
+                                        ui.badge(
+                                            "nouveau", color="orange-8"
+                                        ).props("outline").style("font-size: 9px")
                                 with ui.row().classes("items-center gap-2 w-full"):
                                     qpu_inp = ui.number(
                                         label="Qté/unité",
-                                        value=qpu, min=1, max=999999, step=1,
+                                        value=ref["qty_per_unit"] or None,
+                                        min=0, max=999999, step=1,
                                     ).props("outlined dense").style("flex: 1")
                                     mq_inp = ui.number(
                                         label="Min. qté",
-                                        value=min_qty, min=0, max=9999999, step=1,
+                                        value=ref.get("min_qty"),
+                                        min=0, max=9999999, step=1,
                                     ).props("outlined dense").style("flex: 1")
-                                    ref_inputs[ref_name] = {
+                                    ref_inputs.append({
+                                        "eb_id": ref["eb_id"],
+                                        "label": ref["label"],
                                         "qty_per_unit": qpu_inp,
                                         "min_qty": mq_inp,
-                                    }
+                                    })
                         inputs["references"] = ref_inputs
                     else:
-                        ui.label("Aucune référence configurée").classes(
-                            "text-body2"
-                        ).style(f"color: {COLORS['ink2']}")
-                        inputs["references"] = {}
+                        # Fallback: show config-based refs if no EasyBeer data
+                        refs_cfg = ordering.get("references") or {}
+                        if refs_cfg:
+                            ui.label("Références").classes("text-caption").style(
+                                f"color: {COLORS['ink2']}; font-weight: 600"
+                            )
+                            ref_inputs_legacy: list[dict[str, Any]] = []
+                            for ref_name, ref_data in refs_cfg.items():
+                                qpu = ref_data.get("qty_per_unit")
+                                min_qty = ref_data.get("min_qty")
+                                eb_id = ref_data.get("eb_id")
+                                with ui.column().classes("w-full gap-1"):
+                                    ui.label(ref_name).classes("text-body2").style(
+                                        f"color: {COLORS['ink']}; font-weight: 500"
+                                    )
+                                    with ui.row().classes(
+                                        "items-center gap-2 w-full"
+                                    ):
+                                        qpu_inp = ui.number(
+                                            label="Qté/unité",
+                                            value=qpu, min=0, max=999999, step=1,
+                                        ).props("outlined dense").style("flex: 1")
+                                        mq_inp = ui.number(
+                                            label="Min. qté",
+                                            value=min_qty, min=0, max=9999999,
+                                            step=1,
+                                        ).props("outlined dense").style("flex: 1")
+                                        ref_inputs_legacy.append({
+                                            "eb_id": eb_id,
+                                            "label": ref_name,
+                                            "qty_per_unit": qpu_inp,
+                                            "min_qty": mq_inp,
+                                        })
+                            inputs["references"] = ref_inputs_legacy
+                        else:
+                            ui.label("Aucune référence configurée").classes(
+                                "text-body2"
+                            ).style(f"color: {COLORS['ink2']}")
+                            inputs["references"] = []
 
             # Notes textarea (full width)
             ui.separator().classes("q-my-sm")
@@ -203,20 +271,24 @@ def _build_supplier_card(supplier: dict[str, Any]) -> None:
             # Can split
             config["can_split_references"] = _inputs["can_split"].value
 
-            # References (qty_per_unit + optional min_qty)
-            ref_dict = _inputs.get("references") or {}
-            if ref_dict:
+            # References with eb_id (auto-synced from EasyBeer)
+            ref_list = _inputs.get("references") or []
+            if ref_list:
                 references: dict[str, dict] = {}
-                for ref, inp_dict in ref_dict.items():
+                for ref_inp in ref_list:
+                    label = ref_inp["label"]
                     ref_entry: dict[str, Any] = {}
-                    qpu_val = inp_dict["qty_per_unit"].value
+                    # Store eb_id for ID-based matching
+                    if ref_inp.get("eb_id"):
+                        ref_entry["eb_id"] = ref_inp["eb_id"]
+                    qpu_val = ref_inp["qty_per_unit"].value
                     if qpu_val is not None and qpu_val != "":
                         ref_entry["qty_per_unit"] = int(qpu_val)
-                    mq_val = inp_dict["min_qty"].value
+                    mq_val = ref_inp["min_qty"].value
                     if mq_val is not None and mq_val != "" and int(mq_val) > 0:
                         ref_entry["min_qty"] = int(mq_val)
                     if ref_entry:
-                        references[ref] = ref_entry
+                        references[label] = ref_entry
                 if references:
                     config["references"] = references
 
@@ -252,8 +324,8 @@ def page_ressources():
     with page_layout("Ressources", "menu_book", "/ressources"):
         ui.label(
             "Contraintes de commande par fournisseur. "
-            "Les modifications sont sauvegardées en base de données "
-            "et utilisées dans l'analyse des stocks."
+            "Les références sont synchronisées depuis EasyBeer. "
+            "Les modifications sont sauvegardées en base de données."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
 
         # Load all suppliers with merged config
@@ -263,6 +335,9 @@ def page_ressources():
             _log.exception("Erreur chargement config fournisseurs")
             ui.label(f"Erreur : {exc}").style(f"color: {COLORS['error']}")
             return
+
+        # Load EasyBeer MP for auto-discovery
+        all_mp = _load_easybeer_mp()
 
         # Group by category
         categories: dict[str, list[dict]] = {}
@@ -278,4 +353,14 @@ def page_ressources():
                 "display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;"
             ):
                 for supplier in cat_suppliers:
-                    _build_supplier_card(supplier)
+                    # Auto-discover refs from EasyBeer
+                    ordering_refs = (supplier.get("ordering") or {}).get(
+                        "references", {}
+                    )
+                    if all_mp:
+                        discovered = discover_supplier_refs(supplier, all_mp)
+                        live_refs = match_ref_config(discovered, ordering_refs)
+                    else:
+                        live_refs = []
+
+                    _build_supplier_card(supplier, live_refs)

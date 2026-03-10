@@ -203,7 +203,97 @@ def get_all_suppliers_with_config(tenant_id: str | None = None) -> list[dict[str
             "icon": g.get("icon", "business"),
             "category": g.get("category", "Autre"),
             "active": g.get("active", True),
+            "mp_types": g.get("mp_types", []),
+            "patterns": g.get("patterns", []),
             "ordering": merged,
+        })
+
+    return result
+
+
+# ─── EasyBeer auto-discovery ─────────────────────────────────────────────────
+
+def discover_supplier_refs(
+    supplier: dict[str, Any],
+    all_mp: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Discover EasyBeer MP that belong to a supplier group.
+
+    Uses the same mp_types + patterns logic as _assign_groups() in _stocks_calc.
+    Returns [{eb_id, label, unit}, ...] for active MP matching this supplier.
+    """
+    mp_types = supplier.get("mp_types", [])
+    patterns = [p.lower() for p in supplier.get("patterns", [])]
+
+    if not mp_types and not patterns:
+        return []
+
+    refs: list[dict[str, Any]] = []
+    for mp in all_mp:
+        if not mp.get("actif", True):
+            continue
+        label = (mp.get("libelle") or "").strip()
+        type_code = (mp.get("type") or {}).get("code", "")
+        label_lower = label.lower()
+
+        if mp_types and patterns:
+            match = type_code in mp_types and any(p in label_lower for p in patterns)
+        elif mp_types:
+            match = type_code in mp_types
+        elif patterns:
+            match = any(p in label_lower for p in patterns)
+        else:
+            match = False
+
+        if match:
+            refs.append({
+                "eb_id": mp.get("idMatierePremiere"),
+                "label": label,
+                "unit": (mp.get("unite") or {}).get("symbole", "u"),
+            })
+
+    return sorted(refs, key=lambda r: r["label"])
+
+
+def match_ref_config(
+    discovered: list[dict[str, Any]],
+    ordering_refs: dict[str, dict],
+) -> list[dict[str, Any]]:
+    """Match discovered EasyBeer refs to existing ordering config.
+
+    For each discovered ref, tries:
+      1. Match by eb_id (if stored in ordering_refs values)
+      2. Match by exact name
+
+    Returns discovered list enriched with qty_per_unit/min_qty from config.
+    """
+    # Build eb_id → ref_data lookup from existing config
+    id_map: dict[int, dict] = {}
+    for ref_name, ref_data in ordering_refs.items():
+        ref_eb_id = ref_data.get("eb_id")
+        if ref_eb_id:
+            id_map[int(ref_eb_id)] = {**ref_data, "_config_name": ref_name}
+
+    result: list[dict[str, Any]] = []
+    for ref in discovered:
+        eb_id = ref["eb_id"]
+        label = ref["label"]
+        unit = ref["unit"]
+
+        # Try matching by eb_id first, then by name
+        matched_data: dict | None = None
+        if eb_id and eb_id in id_map:
+            matched_data = id_map[eb_id]
+        elif label in ordering_refs:
+            matched_data = ordering_refs[label]
+
+        result.append({
+            "eb_id": eb_id,
+            "label": label,
+            "unit": unit,
+            "qty_per_unit": int(matched_data.get("qty_per_unit", 0)) if matched_data else 0,
+            "min_qty": int(matched_data["min_qty"]) if matched_data and matched_data.get("min_qty") else None,
+            "is_new": matched_data is None,
         })
 
     return result

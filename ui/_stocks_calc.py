@@ -44,6 +44,7 @@ class StockItem:
     stock_days: float | None  # current_stock / daily_consumption, or None
     supplier: str | None = None  # dynamically extracted from history
     type_code: str = ""  # EasyBeer type.code (e.g. "INGREDIENT_FRUIT")
+    eb_id: int | None = None  # EasyBeer idMatierePremiere (stable across renames)
 
 
 @dataclass
@@ -277,9 +278,15 @@ def compute_order_recommendation(
     for item in group.items:
         qpu = 0
         item_min_qty: int | None = None
-        # Find matching reference config for this item label
+        # Find matching reference config: try eb_id first, then name
         for ref_label, ref_data in ref_cfg.items():
-            if ref_label == item.label:
+            ref_eb_id = ref_data.get("eb_id")
+            matched = False
+            if ref_eb_id and item.eb_id and int(ref_eb_id) == item.eb_id:
+                matched = True  # ID-based match (survives renames)
+            elif ref_label == item.label:
+                matched = True  # name-based fallback
+            if matched:
                 qpu = int(ref_data.get("qty_per_unit",
                           ref_data.get("bottles_per_pallet", 0)))
                 if ref_data.get("min_qty"):
@@ -586,6 +593,7 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
             stock_days=stock_days,
             supplier=supplier_map.get(libelle),
             type_code=mp_type_code,
+            eb_id=mp_id,
         )
         items.append(item)
 
