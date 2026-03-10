@@ -97,9 +97,9 @@ stocks:
             qty_per_unit: 20
           "Jus de Baie de Sureau":
             qty_per_unit: 20
-          "Puree de Mangue":
+          "Purée de Mangue":
             qty_per_unit: 20
-          "Puree de peche":
+          "Purée de pêche":
             qty_per_unit: 20
 
     - name: "Cristalco"
@@ -113,7 +113,7 @@ stocks:
         qty_unit: "kg"
         notes: "Commande par 4 palettes de 900 kg chacune."
         references:
-          "Sucre":
+          "Sucre de betterave française Bio":
             qty_per_unit: 900
 
     - name: "Siroperie Meurens"
@@ -189,7 +189,7 @@ stocks:
             qty_per_unit: 25
           "INFUSION DE MELISSE 58%V":
             qty_per_unit: 25
-          "INFUSION DE MENTHE POIVREE 60%V":
+          "INFUSION DE MENTHE POIVRÉE 60%V":
             qty_per_unit: 25
           "INFUSION MENTHE NANAH 75%V":
             qty_per_unit: 25
