@@ -379,16 +379,6 @@ def _render_results(
                         f"color: {COLORS['ink']}; font-weight: 700"
                     )
 
-            # KPI cards
-            with ui.row().classes("w-full gap-4 flex-wrap"):
-                for item in group.items:
-                    kpi_card(
-                        icon="inventory_2",
-                        label=_short_label(item.label),
-                        value=_format_days(item.stock_days),
-                        color=_days_color(item.stock_days),
-                    )
-
             # ── DETAIL TABLE ──────────────────────────────────────
             with ui.element("div").classes("w-full q-mt-lg q-mb-sm"):
                 with ui.row().classes("items-center gap-3"):
