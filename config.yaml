@@ -166,14 +166,6 @@ stocks:
         qty_unit: "kg"
         notes: "Pas de minimum de commande."
         references:
-          "Badiane Concassée":
-            qty_per_unit: 1
-          "Menthe Nanah":
-            qty_per_unit: 1
-          "Menthe Poivrée":
-            qty_per_unit: 1
-          "Mélisse":
-            qty_per_unit: 1
           "Zest d'orange douce":
             qty_per_unit: 1
           "Zest de Bergamote":

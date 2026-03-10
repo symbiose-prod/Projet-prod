@@ -564,6 +564,10 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
         if mp_type_code == "CONTENANT":
             continue
 
+        # Skip inactive MP in EasyBeer
+        if not mp.get("actif", True):
+            continue
+
         current_stock = float(mp.get("quantiteVirtuelle", 0) or 0)
         seuil_bas = float(mp.get("seuilBas", 0) or 0)
         unite = (mp.get("unite") or {}).get("symbole", "u")
