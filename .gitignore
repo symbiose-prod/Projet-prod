@@ -22,5 +22,14 @@ build/
 *.swp
 *.swo
 
+# Data caches
+data/_*_cache.json
+
+# Agent Windows (données locales)
+agent/*.mdb
+agent/*.ldb
+agent/config.ini
+agent/logs/
+
 # Deployment (legacy)
 Procfile

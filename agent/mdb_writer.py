@@ -63,7 +63,15 @@ def replace_all(mdb_path: str, table_name: str, products: list[dict[str, Any]]) 
         """
 
         inserted = 0
+        skipped = 0
         for p in products:
+            # CODE INTERNE obligatoire (NOT NULL dans Access)
+            code_interne = str(p.get("code_interne", "")).strip()
+            if not code_interne:
+                _log.warning("Produit sans CODE INTERNE, skip: %s", p.get("designation", "?"))
+                skipped += 1
+                continue
+
             # Parser la DDM (ISO string → datetime)
             ddm_raw = p.get("ddm", "")
             try:
@@ -74,14 +82,17 @@ def replace_all(mdb_path: str, table_name: str, products: list[dict[str, Any]]) 
             cursor.execute(insert_sql, (
                 str(p.get("designation", ""))[:255],
                 str(p.get("marque", ""))[:255],
-                str(p.get("code_interne", ""))[:255],
+                code_interne[:255],
                 float(p.get("pcb", 0)),
-                str(p.get("gtin_uvc", ""))[:50],
-                str(p.get("gtin_colis", ""))[:50],
+                str(p.get("gtin_uvc", ""))[:255],
+                str(p.get("gtin_colis", ""))[:255],
                 float(p.get("lot", 0)),
                 ddm_val,
             ))
             inserted += 1
+
+        if skipped:
+            _log.warning("%d produit(s) sans CODE INTERNE ignoré(s)", skipped)
 
         # 3. Commit atomique
         conn.commit()

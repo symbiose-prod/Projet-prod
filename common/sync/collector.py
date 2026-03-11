@@ -450,6 +450,15 @@ def collect_label_data() -> list[dict[str, Any]]:
 
             for fmt_str, cb_info in formats.items():
                 code_interne = stock_codes.get((pid, fmt_str), "")
+
+                # CODE INTERNE obligatoire (NOT NULL dans la table Access Domino)
+                if not code_interne:
+                    _log.debug(
+                        "Produit %s (%s) format %s : pas de code_interne, skip",
+                        pid, clean_label, fmt_str,
+                    )
+                    continue
+
                 gtin_uvc = cb_info.get("gtin_uvc", "")
                 gtin_colis = cb_info.get("gtin_colis", "")
                 pcb = cb_info.get("pcb", 0)
@@ -457,8 +466,8 @@ def collect_label_data() -> list[dict[str, Any]]:
                 # Construire la désignation (ex: "Kéfir Gingembre — 12x33cl")
                 designation = f"{clean_label} — {fmt_str}cl"
 
-                # Dédoublonnage
-                dedup_key = f"{code_interne or designation}|{lot}"
+                # Dédoublonnage par code_interne + lot
+                dedup_key = f"{code_interne}|{lot}"
                 if dedup_key in seen:
                     continue
                 seen.add(dedup_key)
