@@ -68,6 +68,7 @@ NAV_ITEMS = [
     ("local_shipping", "Fiche de ramasse",     "/ramasse"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("menu_book",      "Ressources",           "/ressources"),
+    ("label",          "Étiquettes",           "/sync"),
 ]
 
 

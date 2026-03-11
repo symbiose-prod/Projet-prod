@@ -244,6 +244,7 @@ import ui.production  # noqa: F401 — /production
 import ui.ramasse  # noqa: F401 — /ramasse
 import ui.ressources  # noqa: F401 — /ressources
 import ui.stocks  # noqa: F401 — /stocks
+import ui.sync  # noqa: F401 — /sync
 
 from nicegui import ui  # noqa: F811 — re-restaure nicegui.ui après imports locaux ui.*
 
