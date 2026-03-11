@@ -158,12 +158,8 @@ def _build_supplier_card(
 
             inputs["ai_instructions"] = ui.textarea(
                 value=ai_instructions,
-                placeholder=(
-                    "Décrivez les contraintes de commande pour ce fournisseur : "
-                    "minimum de commande, conditionnement par référence, "
-                    "conditions particulières..."
-                ),
-            ).props("outlined autogrow").classes("w-full q-mt-xs").style(
+                placeholder="Cliquez pour éditer les instructions...",
+            ).props("outlined autogrow readonly").classes("w-full q-mt-xs").style(
                 "min-height: 80px; max-height: 150px; font-size: 13px; "
                 "overflow-y: auto; cursor: pointer"
             )
@@ -231,7 +227,7 @@ def _build_supplier_card(
                 dlg.open()
 
             inputs["ai_instructions"].on(
-                "focus", lambda e, _fn=_open_editor: _fn()
+                "click", lambda e, _fn=_open_editor: _fn()
             )
 
             ui.label(
