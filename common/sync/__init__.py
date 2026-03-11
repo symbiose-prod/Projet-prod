@@ -28,7 +28,7 @@ def create_sync_operation(
     payload_json = json.dumps(products, ensure_ascii=False, default=str)
     rows = run_sql(
         """INSERT INTO sync_operations (tenant_id, op_type, payload, product_count, triggered_by)
-           VALUES (:t, 'REPLACE_ALL', :p::jsonb, :n, :tb)
+           VALUES (:t, 'REPLACE_ALL', CAST(:p AS jsonb), :n, :tb)
            RETURNING id, product_count, created_at""",
         {"t": tenant_id, "p": payload_json, "n": len(products), "tb": triggered_by},
     )

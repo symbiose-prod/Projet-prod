@@ -38,7 +38,7 @@ def log_event(
         run_sql(
             """
             INSERT INTO audit_log (tenant_id, user_email, action, details)
-            VALUES (:t, :e, :a, :d::jsonb)
+            VALUES (:t, :e, :a, CAST(:d AS jsonb))
             """,
             {
                 "t": tenant_id,
