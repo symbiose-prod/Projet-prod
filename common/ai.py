@@ -1,10 +1,12 @@
 """
 common/ai.py
 ============
-Claude AI client for order email generation.
+DEPRECATED — email generation is now handled by ``common/ai_order.py``
+via the unified ``analyze_and_respond()`` function with ``draft_order_email`` tool.
 
-Uses the Anthropic Python SDK.  Feature is disabled if ANTHROPIC_API_KEY is not
-set — ``is_ai_configured()`` returns False and the UI hides the chat button.
+Only ``is_ai_configured()`` is still used (checks ANTHROPIC_API_KEY).
+``generate_order_email()`` and ``_build_initial_prompt()`` are kept for
+backward compatibility but are no longer called from the UI.
 """
 from __future__ import annotations
 

@@ -1,19 +1,14 @@
 """
 common/ai_order.py
 ==================
-AI-powered stock analysis and order proposal using Claude tool_use.
+Unified AI for stock analysis, order proposals **and** email drafting.
 
-The AI receives:
-  - Current stock data (levels, daily consumption, autonomy)
-  - Supplier-specific instructions from /ressources (free-form text)
-  - Lead time and today's date
+Uses Claude tool_use with two tools:
+  - ``propose_order`` — structured order proposal
+  - ``draft_order_email`` — order email in HTML
 
-It responds with:
-  - Natural language analysis and reasoning
-  - A structured order proposal via the ``propose_order`` tool
-
-The structured output is then bridged to the existing ``OrderRecommendation``
-dataclass to feed the PDF/email pipeline unchanged.
+A single conversation thread flows from the inline stock-analysis chat
+through to the email-drafting dialog, preserving full context.
 """
 from __future__ import annotations
 
@@ -37,8 +32,9 @@ _SYSTEM_PROMPT = """\
 Tu es l'assistant de Ferment Station, une brasserie artisanale de kéfir \
 et boissons fermentées bio, basée à Ivry-sur-Seine (94200).
 
-Ton rôle : analyser les données de stock d'un fournisseur et proposer \
-une commande optimale.
+Tu as deux rôles :
+1. Analyser les données de stock d'un fournisseur et proposer une commande
+2. Rédiger l'email de commande associé quand on te le demande
 
 ## Données disponibles
 
@@ -54,7 +50,7 @@ Tu reçois aussi :
 - Les instructions de commande spécifiques au fournisseur \
   (conditionnement, minimums, conditions particulières)
 
-## Règles
+## Règles — Analyse de stock
 
 1. Analyse les niveaux de stock et identifie les urgences \
    (autonomie < délai de livraison = critique)
@@ -70,14 +66,38 @@ Tu reçois aussi :
 7. Arrondis toujours les quantités aux unités de conditionnement entières \
    (palettes complètes, cartons complets, etc.)
 
+## Règles — Rédaction d'email
+
+Quand l'utilisateur te demande de rédiger l'email de commande, utilise \
+l'outil `draft_order_email`. Tu as déjà tout le contexte de l'analyse \
+précédente dans la conversation.
+
+1. La LANGUE du mail est spécifiée par l'utilisateur (français ou anglais). \
+   Adapte tout le contenu (objet, corps) à la langue demandée.
+2. En français : vouvoiement obligatoire, signature « Cordialement, \
+   Ferment Station ». En anglais : ton formel « Dear… », signature \
+   « Kind regards, Ferment Station ».
+3. Ton professionnel mais cordial.
+4. Inclure systématiquement : références exactes, quantités \
+   (conditionnement + unités), date de livraison souhaitée.
+5. Si des DOCUMENTS DE RÉFÉRENCE fournisseur sont fournis (confirmations \
+   de commande, factures, bons de livraison passés), utilise les références \
+   produits, numéros d'article, codes et formats exacts de ces documents.
+6. Format HTML simple : balises <p>, <ul>, <li>, <strong> uniquement.
+7. NE PAS inclure d'en-tête « De: » ou « À: ». \
+   La signature complète (adresse, téléphone) est ajoutée automatiquement — \
+   termine juste par la formule de politesse courte.
+8. Ne jamais inventer de prix ou de conditions non fournies dans le contexte.
+9. Demander une confirmation de commande et une date de livraison prévisionnelle.
+
 ## Format
 
-Réponds d'abord en texte (analyse concise), puis utilise l'outil \
-`propose_order` pour structurer ta proposition.
+Réponds d'abord en texte (analyse concise), puis utilise l'outil approprié \
+(`propose_order` ou `draft_order_email`) pour structurer ta réponse.
 """
 
 
-# ─── Tool schema ─────────────────────────────────────────────────────────────
+# ─── Tool schemas ────────────────────────────────────────────────────────────
 
 ORDER_PROPOSAL_TOOL = {
     "name": "propose_order",
@@ -150,6 +170,40 @@ ORDER_PROPOSAL_TOOL = {
 }
 
 
+DRAFT_EMAIL_TOOL = {
+    "name": "draft_order_email",
+    "description": (
+        "Rédige un email de commande fournisseur en HTML. "
+        "Utilise cet outil pour formaliser l'email après la proposition "
+        "de commande. Ne pas inclure d'en-tête De:/À: ni la signature "
+        "complète (elle est ajoutée automatiquement)."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "subject": {
+                "type": "string",
+                "description": (
+                    "Objet de l'email "
+                    "(ex: 'Commande Ferment Station — Bouteilles 33cl')"
+                ),
+            },
+            "html_body": {
+                "type": "string",
+                "description": (
+                    "Corps de l'email en HTML simple "
+                    "(balises <p>, <ul>, <li>, <strong> uniquement). "
+                    "Terminer par la formule de politesse courte."
+                ),
+            },
+        },
+        "required": ["subject", "html_body"],
+    },
+}
+
+_ALL_TOOLS = [ORDER_PROPOSAL_TOOL, DRAFT_EMAIL_TOOL]
+
+
 # ─── Context builder ────────────────────────────────────────────────────────
 
 def build_stock_context(
@@ -207,11 +261,15 @@ def build_stock_context(
 
 # ─── Main API call ──────────────────────────────────────────────────────────
 
-def analyze_stock_and_propose_order(
+def analyze_and_respond(
     context_prompt: str,
     conversation: list[dict] | None = None,
 ) -> dict[str, Any]:
-    """Analyze stock data and propose an order using Claude tool_use.
+    """Unified AI call: analyse stock, propose orders, or draft emails.
+
+    This single function handles the full conversation lifecycle.
+    On the first call it analyses stock data and proposes an order.
+    On subsequent calls it can refine the order or draft an email.
 
     Args:
         context_prompt: Built by build_stock_context() for initial call.
@@ -221,8 +279,9 @@ def analyze_stock_and_propose_order(
         {
             "text": "Natural language analysis...",
             "order": {propose_order tool input} or None,
+            "email": {"subject": "...", "html_body": "..."} or None,
             "conversation": updated conversation list for follow-up,
-            "tool_use_id": str or None (needed for conversation continuation),
+            "tool_use_id": str or None,
         }
     """
     api_key = _get_api_key()
@@ -240,66 +299,90 @@ def analyze_stock_and_propose_order(
         messages = [{"role": "user", "content": context_prompt}]
 
     _log.info(
-        "AI order analysis: %d message(s), model=%s",
+        "AI call: %d message(s), model=%s",
         len(messages),
         _MODEL,
     )
 
     response = client.messages.create(
         model=_MODEL,
-        max_tokens=2000,
+        max_tokens=4000,
         system=_SYSTEM_PROMPT,
-        tools=[ORDER_PROPOSAL_TOOL],
+        tools=_ALL_TOOLS,
         messages=messages,
     )
 
     # Parse response: extract text blocks and tool_use blocks
     text_parts: list[str] = []
     order_data: dict | None = None
-    tool_use_id: str | None = None
+    email_data: dict | None = None
+    tool_results: list[dict] = []
 
     for block in response.content:
         if block.type == "text":
             text_parts.append(block.text)
-        elif block.type == "tool_use" and block.name == "propose_order":
-            order_data = block.input
-            tool_use_id = block.id
+        elif block.type == "tool_use":
+            if block.name == "propose_order":
+                order_data = block.input
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": (
+                        "Commande bien reçue. "
+                        "L'utilisateur peut demander des modifications."
+                    ),
+                })
+            elif block.name == "draft_order_email":
+                email_data = block.input
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": (
+                        "Email bien reçu. "
+                        "L'utilisateur peut demander des modifications."
+                    ),
+                })
 
     text = "\n".join(text_parts)
 
+    # Pick last tool_use_id for backward compat
+    tool_use_id: str | None = None
+    for block in response.content:
+        if block.type == "tool_use":
+            tool_use_id = block.id
+
     _log.info(
-        "AI order response: %d chars text, order=%s, usage=%s",
+        "AI response: %d chars text, order=%s, email=%s, usage=%s",
         len(text),
         "yes" if order_data else "no",
+        "yes" if email_data else "no",
         response.usage,
     )
 
     # Build conversation for follow-up
     new_conversation = list(messages)
-    # Add assistant response (raw content blocks for proper tool_use flow)
     new_conversation.append({
         "role": "assistant",
         "content": response.content,
     })
-    # If tool was called, add tool_result to allow continued conversation
-    if tool_use_id:
+    # All tool_result entries go in one user message
+    if tool_results:
         new_conversation.append({
             "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tool_use_id,
-                    "content": "Commande bien reçue. L'utilisateur peut demander des modifications.",
-                }
-            ],
+            "content": tool_results,
         })
 
     return {
         "text": text,
         "order": order_data,
+        "email": email_data,
         "conversation": new_conversation,
         "tool_use_id": tool_use_id,
     }
+
+
+# Keep old name as alias for backward compatibility
+analyze_stock_and_propose_order = analyze_and_respond
 
 
 # ─── Bridge to OrderRecommendation ─────────────────────────────────────────
