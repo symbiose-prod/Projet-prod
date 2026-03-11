@@ -488,8 +488,9 @@ def _render_ai_order_section(
         f"border: 1px solid {COLORS['border']}; border-radius: 8px"
     )
 
-    # Ensure chat user messages can be wider
+    # Fix scroll-area absolute-positioned content wrapper not taking full width
     ui.add_css("""
+        .ai-chat-scroll .q-scrollarea__content { width: 100% !important; }
         .ai-chat .q-message-text { max-width: 80% !important; }
         .ai-chat .q-message-text--sent { max-width: 80% !important; }
     """)
@@ -497,9 +498,9 @@ def _render_ai_order_section(
     with chat_card:
         with ui.card_section().classes("q-pa-none"):
             # Scrollable chat area
-            chat_scroll = ui.scroll_area().classes("w-full").style(
-                "max-height: 420px; min-height: 120px"
-            )
+            chat_scroll = ui.scroll_area().classes(
+                "w-full ai-chat-scroll"
+            ).style("max-height: 420px; min-height: 120px")
             with chat_scroll:
                 chat_container = ui.column().classes(
                     "w-full gap-2 q-pa-md ai-chat"
