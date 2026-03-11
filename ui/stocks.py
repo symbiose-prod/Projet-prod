@@ -488,15 +488,21 @@ def _render_ai_order_section(
         f"border: 1px solid {COLORS['border']}; border-radius: 8px"
     )
 
+    # Force chat bubbles to use full width (Quasar default is ~250px)
+    ui.add_css("""
+        .ai-chat .q-message-text { max-width: 100% !important; }
+        .ai-chat .q-message-text--sent { max-width: 80% !important; }
+    """)
+
     with chat_card:
         with ui.card_section().classes("q-pa-none"):
             # Scrollable chat area
-            chat_scroll = ui.scroll_area().style(
+            chat_scroll = ui.scroll_area().classes("w-full").style(
                 "max-height: 420px; min-height: 120px"
             )
             with chat_scroll:
                 chat_container = ui.column().classes(
-                    "w-full gap-2 q-pa-md"
+                    "w-full gap-2 q-pa-md ai-chat"
                 )
 
             ui.separator()
@@ -535,16 +541,34 @@ def _render_ai_order_section(
 
     # ── Helpers ───────────────────────────────────────────────
 
+    def _md_to_html(text: str) -> str:
+        """Minimal markdown → HTML: bold, headings, lists."""
+        import re
+        # Bold: **text** → <strong>text</strong>
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+        # Headings: ## Title → <strong>Title</strong><br>
+        text = re.sub(
+            r"^#{1,3}\s+(.+)$", r"<strong>\1</strong>", text, flags=re.MULTILINE
+        )
+        # List items: - item → • item
+        text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
+        # Paragraphs: double newline → <br><br>, single → <br>
+        text = text.replace("\n\n", "<br><br>").replace("\n", "<br>")
+        return text
+
     def _add_message(text: str, role: str = "assistant"):
         """Add a message bubble to the chat."""
         with chat_container:
             if role == "assistant":
-                ui.chat_message(
-                    text,
+                html = _md_to_html(text)
+                msg = ui.chat_message(
                     name="Ferment AI",
                     stamp="",
                     avatar="https://api.iconify.design/mdi/robot-happy.svg",
                 ).props("bg-color=green-1")
+                msg.clear()
+                with msg:
+                    ui.html(html).style("font-size: 13px; line-height: 1.5")
             else:
                 ui.chat_message(
                     text,
