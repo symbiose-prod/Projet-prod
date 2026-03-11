@@ -488,9 +488,9 @@ def _render_ai_order_section(
         f"border: 1px solid {COLORS['border']}; border-radius: 8px"
     )
 
-    # Force chat bubbles to use full width (Quasar default is ~250px)
+    # Ensure chat user messages can be wider
     ui.add_css("""
-        .ai-chat .q-message-text { max-width: 100% !important; }
+        .ai-chat .q-message-text { max-width: 80% !important; }
         .ai-chat .q-message-text--sent { max-width: 80% !important; }
     """)
 
@@ -561,14 +561,28 @@ def _render_ai_order_section(
         with chat_container:
             if role == "assistant":
                 html = _md_to_html(text)
-                msg = ui.chat_message(
-                    name="Ferment AI",
-                    stamp="",
-                    avatar="https://api.iconify.design/mdi/robot-happy.svg",
-                ).props("bg-color=green-1")
-                msg.clear()
-                with msg:
-                    ui.html(html).style("font-size: 13px; line-height: 1.5")
+                # Custom bubble — avoids Quasar QMessage max-width constraints
+                with ui.row().classes("w-full items-start gap-2 no-wrap"):
+                    ui.image(
+                        "https://api.iconify.design/mdi/robot-happy.svg"
+                    ).style(
+                        "width: 32px; height: 32px; flex-shrink: 0; "
+                        "border-radius: 50%; margin-top: 2px"
+                    )
+                    with ui.element("div").style(
+                        f"background: {COLORS['green']}0A; "
+                        f"border: 1px solid {COLORS['green']}30; "
+                        "border-radius: 8px; padding: 10px 14px; "
+                        "flex: 1; min-width: 0;"
+                    ):
+                        ui.label("Ferment AI").style(
+                            f"font-size: 11px; font-weight: 600; "
+                            f"color: {COLORS['ink2']}; margin-bottom: 4px"
+                        )
+                        ui.html(html).style(
+                            "font-size: 13px; line-height: 1.6; "
+                            "word-wrap: break-word; overflow-wrap: break-word"
+                        )
             else:
                 ui.chat_message(
                     text,
