@@ -488,23 +488,21 @@ def _render_ai_order_section(
         f"border: 1px solid {COLORS['border']}; border-radius: 8px"
     )
 
-    # Fix scroll-area absolute-positioned content wrapper not taking full width
-    ui.add_css("""
-        .ai-chat-scroll .q-scrollarea__content { width: 100% !important; }
-        .ai-chat .q-message-text { max-width: 80% !important; }
-        .ai-chat .q-message-text--sent { max-width: 80% !important; }
-    """)
+    # Generate a unique DOM id for the scroll div
+    _scroll_id = f"ai-chat-{id(chat_state)}"
 
     with chat_card:
         with ui.card_section().classes("q-pa-none"):
-            # Scrollable chat area
-            chat_scroll = ui.scroll_area().classes(
-                "w-full ai-chat-scroll"
-            ).style("max-height: 420px; min-height: 120px")
+            # Plain div with overflow scroll — avoids QScrollArea width issues
+            chat_scroll = ui.element("div").style(
+                "max-height: 420px; min-height: 120px; "
+                "overflow-y: auto; width: 100%"
+            )
+            chat_scroll._props["id"] = _scroll_id
             with chat_scroll:
                 chat_container = ui.column().classes(
                     "w-full gap-2 q-pa-md ai-chat"
-                )
+                ).style("width: 100%")
 
             ui.separator()
 
@@ -557,13 +555,22 @@ def _render_ai_order_section(
         text = text.replace("\n\n", "<br><br>").replace("\n", "<br>")
         return text
 
+    def _scroll_chat_bottom():
+        """Scroll chat div to bottom via JS."""
+        ui.run_javascript(
+            f'var e=document.getElementById("{_scroll_id}");'
+            f'if(e)e.scrollTop=e.scrollHeight;'
+        )
+
     def _add_message(text: str, role: str = "assistant"):
         """Add a message bubble to the chat."""
         with chat_container:
             if role == "assistant":
                 html = _md_to_html(text)
-                # Custom bubble — avoids Quasar QMessage max-width constraints
-                with ui.row().classes("w-full items-start gap-2 no-wrap"):
+                # Custom bubble — full width, no Quasar QMessage constraints
+                with ui.row().classes("w-full items-start gap-2 no-wrap").style(
+                    "width: 100%"
+                ):
                     ui.image(
                         "https://api.iconify.design/mdi/robot-happy.svg"
                     ).style(
@@ -591,7 +598,7 @@ def _render_ai_order_section(
                     stamp="",
                     sent=True,
                 ).props("bg-color=grey-2")
-        chat_scroll.scroll_to(percent=1.0)
+        _scroll_chat_bottom()
 
     def _add_order_table(order: dict):
         """Render a nice order summary table inside the chat."""
@@ -655,7 +662,7 @@ def _render_ai_order_section(
                         columns=cols, rows=rows, row_key="ref",
                     ).classes("w-full").props("flat bordered dense")
 
-        chat_scroll.scroll_to(percent=1.0)
+        _scroll_chat_bottom()
 
     # ── Build stock items context ─────────────────────────────
     items_data = []
