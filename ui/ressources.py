@@ -164,12 +164,78 @@ def _build_supplier_card(
                     "conditions particulières..."
                 ),
             ).props("outlined autogrow").classes("w-full q-mt-xs").style(
-                "min-height: 120px; font-size: 13px"
+                "min-height: 80px; max-height: 150px; font-size: 13px; "
+                "overflow-y: auto; cursor: pointer"
+            )
+
+            # Click on textarea → open fullscreen dialog for comfortable editing
+            def _open_editor(
+                _e=None,
+                _name=name,
+                _textarea=inputs["ai_instructions"],
+            ):
+                with ui.dialog().props("maximized") as dlg, \
+                     ui.card().classes("w-full h-full q-pa-none").style(
+                         "display: flex; flex-direction: column"
+                     ):
+                    # Top bar
+                    with ui.row().classes(
+                        "w-full items-center q-pa-md gap-3"
+                    ).style(
+                        f"background: {COLORS['green']}; color: white; "
+                        "flex-shrink: 0"
+                    ):
+                        ui.icon("smart_toy", size="sm")
+                        ui.label(
+                            f"Instructions — {_name}"
+                        ).classes("text-h6").style("font-weight: 600")
+                        ui.element("div").style("flex-grow: 1")
+                        ui.button(
+                            icon="close", on_click=dlg.close,
+                        ).props("flat round color=white")
+
+                    # Fullscreen textarea
+                    editor = ui.textarea(
+                        value=_textarea.value,
+                        placeholder=(
+                            "Décrivez les contraintes de commande pour "
+                            "ce fournisseur...\n\n"
+                            "Exemples :\n"
+                            "- Commande minimum : 26 palettes (camion complet)\n"
+                            "- Bouteille 33cl : 3 610 par palette\n"
+                            "- Répartition libre entre les références\n"
+                            "- Pas de livraison le vendredi"
+                        ),
+                    ).props("outlined autogrow").classes(
+                        "w-full q-pa-md"
+                    ).style(
+                        "flex: 1; font-size: 15px; line-height: 1.6"
+                    )
+
+                    # Bottom action bar
+                    with ui.row().classes(
+                        "w-full justify-end q-pa-md gap-2"
+                    ).style("flex-shrink: 0"):
+                        ui.button(
+                            "Annuler", on_click=dlg.close,
+                        ).props("flat color=grey-8")
+
+                        def _apply(_dlg=dlg, _editor=editor, _ta=_textarea):
+                            _ta.value = _editor.value
+                            _dlg.close()
+
+                        ui.button(
+                            "Appliquer", icon="check", on_click=_apply,
+                        ).props("unelevated color=green-8")
+
+                dlg.open()
+
+            inputs["ai_instructions"].on(
+                "focus", lambda e, _fn=_open_editor: _fn()
             )
 
             ui.label(
-                "Ces instructions seront utilisées par l'IA pour analyser "
-                "vos stocks et proposer des commandes adaptées."
+                "Cliquez pour éditer en plein écran."
             ).classes("text-caption").style(
                 f"color: {COLORS['ink2']}; font-style: italic"
             )
