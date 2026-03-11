@@ -211,6 +211,46 @@ def get_all_suppliers_with_config(tenant_id: str | None = None) -> list[dict[str
     return result
 
 
+# ─── AI instructions migration ──────────────────────────────────────────────
+
+def generate_instructions_from_config(ordering: dict[str, Any]) -> str:
+    """Generate natural-language AI instructions from structured ordering config.
+
+    Used for one-time migration: existing structured fields → free-form text
+    that Claude will use to analyse stocks and propose orders.
+    """
+    parts: list[str] = []
+
+    order_unit = ordering.get("order_unit", "palette")
+    qty_unit = ordering.get("qty_unit", "unités")
+
+    min_order = ordering.get("min_order")
+    if min_order:
+        parts.append(f"Commande minimum : {min_order} {order_unit}(s).")
+
+    if ordering.get("can_split_references"):
+        parts.append("Répartition libre entre les références.")
+
+    refs = ordering.get("references") or {}
+    if refs:
+        parts.append("\nConditionnement par référence :")
+        for name, data in refs.items():
+            qpu = data.get("qty_per_unit")
+            min_qty = data.get("min_qty")
+            line = f"  - {name}"
+            if qpu:
+                line += f" : {qpu} {qty_unit}/{order_unit}"
+            if min_qty:
+                line += f" (minimum {min_qty} {qty_unit})"
+            parts.append(line)
+
+    notes = ordering.get("notes")
+    if notes:
+        parts.append(f"\n{notes}")
+
+    return "\n".join(parts)
+
+
 # ─── EasyBeer auto-discovery ─────────────────────────────────────────────────
 
 def discover_supplier_refs(

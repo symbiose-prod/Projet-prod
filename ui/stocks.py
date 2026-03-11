@@ -20,7 +20,6 @@ from common.easybeer import is_configured as eb_configured
 from ui._stocks_calc import (
     OrderRecommendation,
     StockGroup,
-    compute_order_recommendation,
     fetch_and_compute,
     fetch_and_compute_mp,
 )
@@ -435,13 +434,343 @@ def _render_results(
                 """,
             )
 
-            # ── RECOMMANDATION DE COMMANDE ────────────────────────
-            rec = compute_order_recommendation(group, ordering)
-            if rec:
-                _render_order_section(rec)
+            # ── ANALYSE & COMMANDE (IA) ────────────────────────────
+            _render_ai_order_section(group, ordering, window_days)
 
 
-# ─── Section commande — redesign ────────────────────────────────────────────
+# ─── Section commande IA (chat inline) ──────────────────────────────────────
+
+
+def _render_ai_order_section(
+    group: StockGroup,
+    ordering_cfg: dict,
+    window_days: int,
+) -> None:
+    """Render AI-powered order analysis section with inline chat."""
+    from common.ai import is_ai_configured
+    from common.ai_order import (
+        ai_order_to_recommendation,
+        analyze_stock_and_propose_order,
+        build_stock_context,
+    )
+
+    supplier_name = group.name
+    lead_time = int(ordering_cfg.get("lead_time_days", 0))
+    ai_instructions = ordering_cfg.get("ai_instructions", "")
+
+    # If no AI key, show a hint
+    if not is_ai_configured():
+        with ui.element("div").classes("w-full q-mt-xl q-mb-sm"):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("smart_toy", size="sm").style(f"color: {COLORS['ink2']}")
+                ui.label(
+                    "Analyse IA indisponible — ANTHROPIC_API_KEY non configurée"
+                ).classes("text-body2").style(f"color: {COLORS['ink2']}")
+        return
+
+    # ── Section header ────────────────────────────────────────
+    with ui.element("div").classes("w-full q-mt-xl q-mb-sm"):
+        with ui.row().classes("items-center gap-3"):
+            ui.icon("smart_toy", size="sm").style(f"color: {COLORS['green']}")
+            ui.label("Analyse & commande").classes("text-h6").style(
+                f"color: {COLORS['ink']}; font-weight: 700"
+            )
+
+    # ── Chat state ────────────────────────────────────────────
+    chat_state: dict = {
+        "conversation": None,
+        "current_order": None,  # latest propose_order result
+        "loading": False,
+    }
+
+    # Chat container
+    chat_card = ui.card().classes("w-full").props("flat bordered").style(
+        f"border: 1px solid {COLORS['border']}; border-radius: 8px"
+    )
+
+    with chat_card:
+        with ui.card_section().classes("q-pa-none"):
+            # Scrollable chat area
+            chat_scroll = ui.scroll_area().style(
+                "max-height: 420px; min-height: 120px"
+            )
+            with chat_scroll:
+                chat_container = ui.column().classes(
+                    "w-full gap-2 q-pa-md"
+                )
+
+            ui.separator()
+
+            # Input area
+            with ui.row().classes("w-full items-end gap-2 q-pa-sm"):
+                chat_input = ui.textarea(
+                    placeholder="Demander une modification...",
+                ).props("outlined dense autogrow rows=1").classes(
+                    "col"
+                ).style("font-size: 13px")
+
+                send_btn = ui.button(
+                    icon="send",
+                ).props("round flat color=green-8 size=sm")
+
+    # "Analyze" button (before chat starts)
+    analyze_btn_container = ui.element("div").classes("q-mt-sm")
+    with analyze_btn_container:
+        analyze_btn = ui.button(
+            "Analyser avec l'IA",
+            icon="smart_toy",
+        ).props("color=green-8 unelevated").style("font-size: 14px")
+
+    # "Préparer la commande" button (hidden until AI proposes)
+    order_btn_container = ui.element("div").classes("q-mt-sm")
+    order_btn_container.set_visibility(False)
+    with order_btn_container:
+        order_btn = ui.button(
+            "Préparer la commande",
+            icon="email",
+        ).props("color=green-8 unelevated").style("font-size: 14px")
+
+    # Hide chat initially
+    chat_card.set_visibility(False)
+
+    # ── Helpers ───────────────────────────────────────────────
+
+    def _add_message(text: str, role: str = "assistant"):
+        """Add a message bubble to the chat."""
+        with chat_container:
+            if role == "assistant":
+                ui.chat_message(
+                    text,
+                    name="Ferment AI",
+                    stamp="",
+                    avatar="https://api.iconify.design/mdi/robot-happy.svg",
+                ).props("bg-color=green-1")
+            else:
+                ui.chat_message(
+                    text,
+                    name="Vous",
+                    stamp="",
+                    sent=True,
+                ).props("bg-color=grey-2")
+        chat_scroll.scroll_to(percent=1.0)
+
+    def _add_order_table(order: dict):
+        """Render a nice order summary table inside the chat."""
+        items = order.get("items", [])
+        if not items:
+            return
+        order_unit = order.get("order_unit", "palette")
+        qty_unit = order.get("qty_unit", "unités")
+        urgency = order.get("urgency", "ok")
+
+        with chat_container:
+            with ui.card().classes("w-full q-mt-xs").props("flat bordered"):
+                with ui.card_section().classes("q-pa-sm"):
+                    with ui.row().classes("items-center gap-2 q-mb-sm"):
+                        ui.icon(
+                            _URGENCY_ICONS.get(urgency, "check_circle"),
+                            size="xs",
+                        ).style(
+                            f"color: {_URGENCY_COLORS.get(urgency, COLORS['success'])}"
+                        )
+                        ui.label("Proposition de commande").classes(
+                            "text-caption"
+                        ).style("font-weight: 700")
+                        ui.badge(
+                            _URGENCY_LABELS.get(urgency, "ok"),
+                        ).props(
+                            f"color={_q_urgency_color(urgency)}"
+                        ).style("font-size: 10px")
+
+                    cols = [
+                        {"name": "ref", "label": "Référence", "field": "ref",
+                         "align": "left"},
+                        {"name": "units", "label": order_unit.capitalize() + "s",
+                         "field": "units", "align": "center"},
+                        {"name": "qty", "label": qty_unit.capitalize(),
+                         "field": "qty", "align": "right"},
+                        {"name": "cover", "label": "Couverture",
+                         "field": "cover", "align": "right"},
+                    ]
+                    rows = []
+                    for it in items:
+                        rows.append({
+                            "ref": _short_label(it["label"]),
+                            "units": str(it.get("units", 0)),
+                            "qty": _format_number(it.get("qty", 0)),
+                            "cover": (
+                                f"~{it['coverage_days']:.0f} j"
+                                if it.get("coverage_days") else "—"
+                            ),
+                        })
+                    # Total row
+                    total_u = sum(it.get("units", 0) for it in items)
+                    total_q = sum(it.get("qty", 0) for it in items)
+                    rows.append({
+                        "ref": "TOTAL",
+                        "units": str(total_u),
+                        "qty": _format_number(total_q),
+                        "cover": "",
+                    })
+                    ui.table(
+                        columns=cols, rows=rows, row_key="ref",
+                    ).classes("w-full").props("flat bordered dense")
+
+        chat_scroll.scroll_to(percent=1.0)
+
+    # ── Build stock items context ─────────────────────────────
+    items_data = []
+    for item in group.items:
+        items_data.append({
+            "label": item.label,
+            "current_stock": item.current_stock,
+            "unit": item.unit,
+            "seuil_bas": item.seuil_bas,
+            "daily_consumption": item.daily_consumption,
+            "stock_days": item.stock_days,
+            "consumption": item.consumption,
+        })
+
+    # ── Analyze button handler ────────────────────────────────
+
+    async def _do_analyze():
+        if chat_state["loading"]:
+            return
+        chat_state["loading"] = True
+        analyze_btn.disable()
+        analyze_btn_container.set_visibility(False)
+        chat_card.set_visibility(True)
+
+        # Show loading message
+        with chat_container:
+            spinner_msg = ui.row().classes("items-center gap-2 q-pa-sm")
+            with spinner_msg:
+                ui.spinner("dots", size="sm", color="green-8")
+                ui.label("Analyse en cours...").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}"
+                )
+
+        try:
+            context_prompt = build_stock_context(
+                supplier_name=supplier_name,
+                lead_time_days=lead_time,
+                ai_instructions=ai_instructions,
+                items=items_data,
+                window_days=window_days,
+            )
+
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    analyze_stock_and_propose_order, context_prompt
+                ),
+                timeout=60,
+            )
+
+            # Remove spinner
+            chat_container.remove(spinner_msg)
+
+            # Show AI response text
+            if result.get("text"):
+                _add_message(result["text"])
+
+            # Show order table if proposed
+            if result.get("order"):
+                chat_state["current_order"] = result["order"]
+                chat_state["conversation"] = result["conversation"]
+                _add_order_table(result["order"])
+                order_btn_container.set_visibility(True)
+
+        except TimeoutError:
+            chat_container.remove(spinner_msg)
+            _add_message("L'analyse a dépassé le délai. Réessayez.")
+        except Exception as exc:
+            _log.exception("AI order analysis error")
+            chat_container.remove(spinner_msg)
+            _add_message(f"Erreur : {exc}")
+        finally:
+            chat_state["loading"] = False
+            analyze_btn.enable()
+
+    analyze_btn.on_click(_do_analyze)
+
+    # ── Send refinement message ───────────────────────────────
+
+    async def _send_refinement():
+        msg = (chat_input.value or "").strip()
+        if not msg or chat_state["loading"]:
+            return
+        chat_input.value = ""
+        chat_state["loading"] = True
+        send_btn.disable()
+
+        _add_message(msg, role="user")
+
+        # Show loading
+        with chat_container:
+            spinner_msg = ui.row().classes("items-center gap-2 q-pa-sm")
+            with spinner_msg:
+                ui.spinner("dots", size="sm", color="green-8")
+                ui.label("Réflexion...").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}"
+                )
+
+        try:
+            # Add user message to conversation
+            conversation = chat_state.get("conversation") or []
+            conversation.append({
+                "role": "user",
+                "content": msg,
+            })
+
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    analyze_stock_and_propose_order,
+                    "",  # context not used when conversation is provided
+                    conversation,
+                ),
+                timeout=60,
+            )
+
+            chat_container.remove(spinner_msg)
+
+            if result.get("text"):
+                _add_message(result["text"])
+
+            if result.get("order"):
+                chat_state["current_order"] = result["order"]
+                chat_state["conversation"] = result["conversation"]
+                _add_order_table(result["order"])
+                order_btn_container.set_visibility(True)
+            else:
+                chat_state["conversation"] = result["conversation"]
+
+        except TimeoutError:
+            chat_container.remove(spinner_msg)
+            _add_message("Le délai a été dépassé. Réessayez.")
+        except Exception as exc:
+            _log.exception("AI refinement error")
+            chat_container.remove(spinner_msg)
+            _add_message(f"Erreur : {exc}")
+        finally:
+            chat_state["loading"] = False
+            send_btn.enable()
+
+    send_btn.on_click(_send_refinement)
+    chat_input.on("keydown.enter", _send_refinement)
+
+    # ── "Préparer la commande" button handler ─────────────────
+
+    async def _prepare_order():
+        order = chat_state.get("current_order")
+        if not order:
+            return
+        rec = ai_order_to_recommendation(order, supplier_name, lead_time)
+        await _open_order_dialog(rec)
+
+    order_btn.on_click(_prepare_order)
+
+
+# ─── Section commande (LEGACY — kept for reference) ─────────────────────────
 
 
 def _render_order_section(rec: OrderRecommendation) -> None:

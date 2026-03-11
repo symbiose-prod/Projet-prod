@@ -1,11 +1,12 @@
 """
 ui/ressources.py
 ================
-Page Ressources — Contraintes de commande fournisseurs editables.
+Page Ressources — Instructions de commande fournisseurs (prompts IA).
 
-Affiche une carte par fournisseur (depuis config.yaml + surcharges DB),
-groupees par categorie. Les references sont auto-decouvertes depuis
-l'API EasyBeer et matchees par ID stable (idMatierePremiere).
+Chaque fournisseur a :
+- Un délai de livraison (structuré, utilisé pour le calcul d'urgence)
+- Des références auto-découvertes depuis EasyBeer (lecture seule)
+- Des instructions en langage naturel que l'IA utilisera pour proposer des commandes
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from nicegui import ui
 
 from common.supplier_config import (
     discover_supplier_refs,
+    generate_instructions_from_config,
     get_all_suppliers_with_config,
     match_ref_config,
     upsert_supplier_config,
@@ -24,9 +26,6 @@ from ui.auth import require_auth
 from ui.theme import COLORS, page_layout, section_title
 
 _log = logging.getLogger("ferment.ressources")
-
-_ORDER_UNIT_OPTIONS = ["palette", "carton", "bidon", "lot"]
-_QTY_UNIT_OPTIONS = ["unités", "kg", "capsules"]
 
 
 # ─── EasyBeer MP loader (cached at page level) ──────────────────────────────
@@ -49,20 +48,20 @@ def _build_supplier_card(
 ) -> None:
     """Build an editable card for one supplier.
 
-    live_refs: output of match_ref_config() — [{eb_id, label, qty_per_unit, min_qty, is_new}, ...]
+    live_refs: output of match_ref_config() — [{eb_id, label, unit, ...}, ...]
     """
     name = supplier["name"]
     icon = supplier.get("icon", "business")
     is_active = supplier.get("active", True)
     ordering = supplier.get("ordering") or {}
 
-    # Current values (from merged config)
+    # Current values
     lead_time = ordering.get("lead_time_days")
-    min_order = ordering.get("min_order")
-    can_split = ordering.get("can_split_references", False)
-    order_unit = ordering.get("order_unit", "palette")
-    qty_unit = ordering.get("qty_unit", "unités")
-    notes = ordering.get("notes", "")
+
+    # AI instructions: from DB override, or generate from structured config
+    ai_instructions = ordering.get("ai_instructions", "")
+    if not ai_instructions:
+        ai_instructions = generate_instructions_from_config(ordering)
 
     # ── State holders for form inputs ──
     inputs: dict[str, Any] = {}
@@ -106,136 +105,74 @@ def _build_supplier_card(
 
         # ── Form body ──
         with ui.card_section().classes("q-pa-md"):
-            with ui.row().classes("w-full gap-4 items-start").style("flex-wrap: wrap"):
-                # Left column: numeric fields + unit selectors
-                with ui.column().classes("gap-3").style("min-width: 200px; flex: 1"):
-                    inputs["lead_time"] = ui.number(
-                        label="Délai livraison (jours)",
-                        value=lead_time,
-                        min=0, max=365, step=1,
-                    ).props("outlined dense").classes("w-full")
+            # Lead time (structured — used for urgency calculation)
+            inputs["lead_time"] = ui.number(
+                label="Délai livraison (jours)",
+                value=lead_time,
+                min=0, max=365, step=1,
+            ).props("outlined dense").style("max-width: 200px")
 
-                    # Order unit selector
-                    inputs["order_unit"] = ui.select(
-                        label="Unité de commande",
-                        options=_ORDER_UNIT_OPTIONS,
-                        value=order_unit,
-                    ).props("outlined dense").classes("w-full")
+            # References (read-only, from EasyBeer auto-discovery)
+            if live_refs:
+                with ui.row().classes("items-center gap-2 q-mt-md"):
+                    ui.label("Références").classes("text-caption").style(
+                        f"color: {COLORS['ink2']}; font-weight: 600"
+                    )
+                    ui.badge("EasyBeer", color="green-8").props(
+                        "outline"
+                    ).style("font-size: 10px")
 
-                    inputs["min_order"] = ui.number(
-                        label=f"Commande minimum ({order_unit}s)",
-                        value=min_order,
-                        min=0, max=9999, step=1,
-                    ).props("outlined dense").classes("w-full")
-
-                    # Update min_order label when order_unit changes
-                    def _update_min_label(e, _inp=inputs):
-                        _inp["min_order"].props(
-                            f'label="Commande minimum ({e.value}s)"'
-                        )
-                    inputs["order_unit"].on_value_change(_update_min_label)
-
-                    # Qty unit selector
-                    inputs["qty_unit"] = ui.select(
-                        label="Unité de quantité",
-                        options=_QTY_UNIT_OPTIONS,
-                        value=qty_unit,
-                    ).props("outlined dense").classes("w-full")
-
-                    inputs["can_split"] = ui.checkbox(
-                        "Répartition libre entre références",
-                        value=can_split,
-                    ).style(f"color: {COLORS['ink']}")
-
-                # Right column: references (from EasyBeer auto-discovery)
-                with ui.column().classes("gap-3").style("min-width: 200px; flex: 1"):
-                    if live_refs:
-                        with ui.row().classes("items-center gap-2"):
-                            ui.label("Références").classes("text-caption").style(
-                                f"color: {COLORS['ink2']}; font-weight: 600"
+                with ui.element("div").classes("q-mt-xs").style(
+                    f"display: flex; flex-wrap: wrap; gap: 6px;"
+                ):
+                    for ref in live_refs:
+                        with ui.element("span").style(
+                            f"background: {COLORS['green']}0A; "
+                            f"border: 1px solid {COLORS['green']}30; "
+                            "border-radius: 4px; padding: 2px 8px; "
+                            "font-size: 12px;"
+                        ):
+                            ui.label(ref["label"]).style(
+                                f"color: {COLORS['ink']}"
                             )
-                            ui.badge("EasyBeer", color="green-8").props(
-                                "outline"
-                            ).style("font-size: 10px")
 
-                        ref_inputs: list[dict[str, Any]] = []
-                        for ref in live_refs:
-                            with ui.column().classes("w-full gap-1"):
-                                with ui.row().classes("items-center gap-1"):
-                                    ui.label(ref["label"]).classes(
-                                        "text-body2"
-                                    ).style(
-                                        f"color: {COLORS['ink']}; font-weight: 500"
-                                    )
-                                    if ref.get("is_new"):
-                                        ui.badge(
-                                            "nouveau", color="orange-8"
-                                        ).props("outline").style("font-size: 9px")
-                                with ui.row().classes("items-center gap-2 w-full"):
-                                    qpu_inp = ui.number(
-                                        label="Qté/unité",
-                                        value=ref["qty_per_unit"] or None,
-                                        min=0, max=999999, step=1,
-                                    ).props("outlined dense").style("flex: 1")
-                                    mq_inp = ui.number(
-                                        label="Min. qté",
-                                        value=ref.get("min_qty"),
-                                        min=0, max=9999999, step=1,
-                                    ).props("outlined dense").style("flex: 1")
-                                    ref_inputs.append({
-                                        "eb_id": ref["eb_id"],
-                                        "label": ref["label"],
-                                        "qty_per_unit": qpu_inp,
-                                        "min_qty": mq_inp,
-                                    })
-                        inputs["references"] = ref_inputs
-                    else:
-                        # Fallback: show config-based refs if no EasyBeer data
-                        refs_cfg = ordering.get("references") or {}
-                        if refs_cfg:
-                            ui.label("Références").classes("text-caption").style(
-                                f"color: {COLORS['ink2']}; font-weight: 600"
-                            )
-                            ref_inputs_legacy: list[dict[str, Any]] = []
-                            for ref_name, ref_data in refs_cfg.items():
-                                qpu = ref_data.get("qty_per_unit")
-                                min_qty = ref_data.get("min_qty")
-                                eb_id = ref_data.get("eb_id")
-                                with ui.column().classes("w-full gap-1"):
-                                    ui.label(ref_name).classes("text-body2").style(
-                                        f"color: {COLORS['ink']}; font-weight: 500"
-                                    )
-                                    with ui.row().classes(
-                                        "items-center gap-2 w-full"
-                                    ):
-                                        qpu_inp = ui.number(
-                                            label="Qté/unité",
-                                            value=qpu, min=0, max=999999, step=1,
-                                        ).props("outlined dense").style("flex: 1")
-                                        mq_inp = ui.number(
-                                            label="Min. qté",
-                                            value=min_qty, min=0, max=9999999,
-                                            step=1,
-                                        ).props("outlined dense").style("flex: 1")
-                                        ref_inputs_legacy.append({
-                                            "eb_id": eb_id,
-                                            "label": ref_name,
-                                            "qty_per_unit": qpu_inp,
-                                            "min_qty": mq_inp,
-                                        })
-                            inputs["references"] = ref_inputs_legacy
-                        else:
-                            ui.label("Aucune référence configurée").classes(
-                                "text-body2"
-                            ).style(f"color: {COLORS['ink2']}")
-                            inputs["references"] = []
+                # Store ref data for save
+                inputs["eb_refs"] = [
+                    {"eb_id": r["eb_id"], "label": r["label"]}
+                    for r in live_refs
+                ]
+            else:
+                inputs["eb_refs"] = []
 
-            # Notes textarea (full width)
-            ui.separator().classes("q-my-sm")
-            inputs["notes"] = ui.textarea(
-                label="Notes (références, contacts, conditions...)",
-                value=notes,
-            ).props("outlined dense autogrow").classes("w-full")
+            # AI instructions (the core of the new approach)
+            ui.separator().classes("q-my-md")
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("smart_toy", size="xs").style(
+                    f"color: {COLORS['green']}"
+                )
+                ui.label("Instructions de commande (IA)").classes(
+                    "text-caption"
+                ).style(
+                    f"color: {COLORS['ink2']}; font-weight: 600"
+                )
+
+            inputs["ai_instructions"] = ui.textarea(
+                value=ai_instructions,
+                placeholder=(
+                    "Décrivez les contraintes de commande pour ce fournisseur : "
+                    "minimum de commande, conditionnement par référence, "
+                    "conditions particulières..."
+                ),
+            ).props("outlined autogrow").classes("w-full q-mt-xs").style(
+                "min-height: 120px; font-size: 13px"
+            )
+
+            ui.label(
+                "Ces instructions seront utilisées par l'IA pour analyser "
+                "vos stocks et proposer des commandes adaptées."
+            ).classes("text-caption").style(
+                f"color: {COLORS['ink2']}; font-style: italic"
+            )
 
         # ── Save handler ──
         async def _save(
@@ -253,49 +190,15 @@ def _build_supplier_card(
             if val is not None and val != "":
                 config["lead_time_days"] = int(val)
 
-            # Order unit
-            ou_val = _inputs["order_unit"].value
-            if ou_val:
-                config["order_unit"] = ou_val
+            # AI instructions
+            instr = (_inputs["ai_instructions"].value or "").strip()
+            if instr:
+                config["ai_instructions"] = instr
 
-            # Min order
-            val = _inputs["min_order"].value
-            if val is not None and val != "":
-                config["min_order"] = int(val)
-
-            # Qty unit
-            qu_val = _inputs["qty_unit"].value
-            if qu_val:
-                config["qty_unit"] = qu_val
-
-            # Can split
-            config["can_split_references"] = _inputs["can_split"].value
-
-            # References with eb_id (auto-synced from EasyBeer)
-            ref_list = _inputs.get("references") or []
-            if ref_list:
-                references: dict[str, dict] = {}
-                for ref_inp in ref_list:
-                    label = ref_inp["label"]
-                    ref_entry: dict[str, Any] = {}
-                    # Store eb_id for ID-based matching
-                    if ref_inp.get("eb_id"):
-                        ref_entry["eb_id"] = ref_inp["eb_id"]
-                    qpu_val = ref_inp["qty_per_unit"].value
-                    if qpu_val is not None and qpu_val != "":
-                        ref_entry["qty_per_unit"] = int(qpu_val)
-                    mq_val = ref_inp["min_qty"].value
-                    if mq_val is not None and mq_val != "" and int(mq_val) > 0:
-                        ref_entry["min_qty"] = int(mq_val)
-                    if ref_entry:
-                        references[label] = ref_entry
-                if references:
-                    config["references"] = references
-
-            # Notes
-            notes_val = (_inputs["notes"].value or "").strip()
-            if notes_val:
-                config["notes"] = notes_val
+            # EasyBeer refs (eb_id mapping for reference tracking)
+            eb_refs = _inputs.get("eb_refs") or []
+            if eb_refs:
+                config["eb_refs"] = eb_refs
 
             try:
                 upsert_supplier_config(_name, config)
@@ -323,9 +226,10 @@ def page_ressources():
 
     with page_layout("Ressources", "menu_book", "/ressources"):
         ui.label(
-            "Contraintes de commande par fournisseur. "
+            "Instructions de commande par fournisseur. "
             "Les références sont synchronisées depuis EasyBeer. "
-            "Les modifications sont sauvegardées en base de données."
+            "L'IA utilisera ces instructions pour analyser vos stocks "
+            "et proposer des commandes adaptées."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
 
         # Load all suppliers with merged config
