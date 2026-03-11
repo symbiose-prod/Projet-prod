@@ -1,0 +1,29 @@
+[server]
+# URL du SaaS Ferment Station (HTTPS obligatoire)
+url = https://prod.symbiose-kefir.fr
+
+# Clé API générée depuis l'interface admin du SaaS
+api_key = sk_sync_VOTRE_CLE_ICI
+
+[local]
+# Chemin absolu vers le fichier .mdb sur ce PC
+mdb_path = C:\LabelPrinting\Base_FERMENT_STATION.mdb
+
+# Nom de la table dans le .mdb
+table_name = Produits
+
+# Intervalle de polling en secondes (5 minutes par défaut)
+poll_interval = 300
+
+# Nombre max de tentatives si le fichier .mdb est verrouillé
+max_lock_retries = 5
+
+# Délai entre chaque tentative en cas de verrouillage (secondes)
+lock_retry_delay = 30
+
+[logging]
+# Niveau de log : DEBUG, INFO, WARNING, ERROR
+level = INFO
+
+# Fichier de log (relatif au dossier de l'agent)
+file = logs/sync_agent.log

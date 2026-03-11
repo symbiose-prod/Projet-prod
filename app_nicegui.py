@@ -60,7 +60,7 @@ _log_http = _logging.getLogger("ferment.http")
 app.add_static_files("/static", Path(__file__).resolve().parent / "static")
 
 # Pages publiques (pas besoin d'etre connecte)
-PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset", "/health", "/static", "/service-worker.js"}
+PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset", "/health", "/static", "/service-worker.js", "/api/sync"}
 
 # Cookie remember-me : duree par defaut (30 jours)
 _REMEMBER_MAX_AGE = 30 * 86400
@@ -276,6 +276,158 @@ async def _health_check():
     )
 
 
+# ─── API Sync étiquettes (/api/sync/*) ───────────────────────────────────────
+# Routes publiques (bypass AuthMiddleware) avec auth par clé API Bearer token.
+
+_sync_log = _logging.getLogger("ferment.sync.api")
+
+
+def _extract_bearer_key(request: Request) -> str | None:
+    """Extrait le token Bearer depuis l'en-tête Authorization."""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return None
+
+
+def _verify_sync_auth(request: Request) -> tuple[dict | None, JSONResponse | None]:
+    """Vérifie la clé API sync. Retourne (auth_info, None) ou (None, error_response)."""
+    from common.sync.api_key import verify_api_key
+
+    raw_key = _extract_bearer_key(request)
+    if not raw_key:
+        return None, JSONResponse({"error": "Missing Authorization header"}, status_code=401)
+    auth_info = verify_api_key(raw_key)
+    if not auth_info:
+        return None, JSONResponse({"error": "Invalid API key"}, status_code=401)
+    return auth_info, None
+
+
+@app.get("/api/sync/pending")
+async def _sync_pending(request: Request):
+    """Agent Windows : récupère la dernière opération pending."""
+    auth_info, err = _verify_sync_auth(request)
+    if err:
+        return err
+
+    from db.conn import run_sql
+    import json
+
+    rows = run_sql(
+        """SELECT id, op_type, payload, product_count, created_at
+           FROM sync_operations
+           WHERE tenant_id = :t AND status = 'pending'
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        {"t": auth_info["tenant_id"]},
+    )
+    if not rows:
+        return JSONResponse(status_code=204, content=None)
+
+    op = rows[0]
+    # Passer en status "fetched"
+    run_sql(
+        "UPDATE sync_operations SET status = 'fetched', fetched_at = now() WHERE id = :id",
+        {"id": op["id"]},
+    )
+    _sync_log.info("Op #%s fetched by agent (tenant %s)", op["id"], auth_info["tenant_id"])
+
+    payload = op["payload"]
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    return JSONResponse({
+        "operation_id": op["id"],
+        "op_type": op["op_type"],
+        "product_count": op["product_count"],
+        "created_at": op["created_at"].isoformat() if hasattr(op["created_at"], "isoformat") else str(op["created_at"]),
+        "products": payload,
+    })
+
+
+@app.post("/api/sync/ack")
+async def _sync_ack(request: Request):
+    """Agent Windows : confirme le traitement d'une opération."""
+    auth_info, err = _verify_sync_auth(request)
+    if err:
+        return err
+
+    from db.conn import run_sql
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    op_id = body.get("operation_id")
+    status = body.get("status")
+    error_msg = body.get("error_msg", "")
+
+    if not op_id or status not in ("applied", "error"):
+        return JSONResponse(
+            {"error": "Required: operation_id (int) + status ('applied'|'error')"},
+            status_code=400,
+        )
+
+    count = run_sql(
+        """UPDATE sync_operations
+           SET status = :s, applied_at = now(), error_msg = :e
+           WHERE id = :id AND tenant_id = :t""",
+        {"s": status, "e": error_msg or None, "id": op_id, "t": auth_info["tenant_id"]},
+    )
+    if not count:
+        return JSONResponse({"error": "Operation not found"}, status_code=404)
+
+    _sync_log.info("Op #%s ack: %s %s", op_id, status, f"({error_msg})" if error_msg else "")
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/sync/trigger")
+async def _sync_trigger(request: Request):
+    """Déclenchement manuel depuis l'UI NiceGUI (auth session, pas API key).
+
+    Cet endpoint est dans PUBLIC_PATHS (/api/sync) mais on vérifie manuellement
+    soit un Bearer token (API key), soit une session NiceGUI authentifiée.
+    """
+    # Essayer d'abord l'auth API key (pour les appels programmatiques)
+    raw_key = _extract_bearer_key(request)
+    if raw_key:
+        from common.sync.api_key import verify_api_key
+        auth_info = verify_api_key(raw_key)
+        if not auth_info:
+            return JSONResponse({"error": "Invalid API key"}, status_code=401)
+        tenant_id = auth_info["tenant_id"]
+    else:
+        # Fallback : auth session NiceGUI
+        user_store = app.storage.user
+        if not user_store.get("authenticated"):
+            return JSONResponse({"error": "Not authenticated"}, status_code=401)
+        tenant_id = user_store.get("tenant_id")
+
+    if not tenant_id:
+        return JSONResponse({"error": "No tenant context"}, status_code=400)
+
+    import asyncio
+    from common.sync.collector import collect_label_data
+    from common.sync import create_sync_operation
+
+    try:
+        loop = asyncio.get_event_loop()
+        products = await loop.run_in_executor(None, collect_label_data)
+        if not products:
+            return JSONResponse({"operation_id": None, "product_count": 0, "status": "empty"})
+
+        op = create_sync_operation(products, tenant_id=tenant_id, triggered_by="manual")
+        return JSONResponse({
+            "operation_id": op["id"],
+            "product_count": op["product_count"],
+            "status": "pending",
+        })
+    except Exception:
+        _sync_log.exception("Erreur sync trigger manuelle")
+        return JSONResponse({"error": "Sync failed"}, status_code=500)
+
+
 # ─── Nettoyage périodique (sessions / resets expirés) ────────────────────────
 
 _CLEANUP_INTERVAL = 3600  # 1 heure
@@ -319,6 +471,10 @@ async def _startup_cleanup():
 
     # Démarrer le timer périodique (toutes les heures)
     asyncio.ensure_future(_periodic_cleanup())
+
+    # Démarrer le scheduler sync étiquettes (tous les jours à 12h Paris)
+    from common.sync.scheduler import daily_sync_loop
+    asyncio.ensure_future(daily_sync_loop())
 
 
 # ─── Service Worker (servi depuis / pour scope racine) ──────────────────────

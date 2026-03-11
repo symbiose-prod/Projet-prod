@@ -186,6 +186,43 @@ BEFORE UPDATE ON supplier_configs
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 -- =========================
+-- Synchronisation étiquettes (SaaS → Base Access)
+-- =========================
+
+-- File d'attente sync + audit trail
+CREATE TABLE IF NOT EXISTS sync_operations (
+  id            BIGSERIAL PRIMARY KEY,
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  op_type       TEXT NOT NULL DEFAULT 'REPLACE_ALL',
+  status        TEXT NOT NULL DEFAULT 'pending',
+  payload       JSONB NOT NULL DEFAULT '[]'::jsonb,
+  product_count INTEGER NOT NULL DEFAULT 0,
+  triggered_by  TEXT NOT NULL DEFAULT 'scheduler',
+  error_msg     TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  fetched_at    TIMESTAMPTZ,
+  applied_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_ops_tenant_status ON sync_operations(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_sync_ops_created       ON sync_operations(created_at DESC);
+
+-- Clés API pour l'agent Windows
+CREATE TABLE IF NOT EXISTS sync_api_keys (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  key_hash    TEXT NOT NULL UNIQUE,
+  label       TEXT NOT NULL DEFAULT '',
+  is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+  last_used   TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_api_keys_hash   ON sync_api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_sync_api_keys_tenant ON sync_api_keys(tenant_id);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -193,7 +230,8 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'shark') THEN
     GRANT ALL ON TABLE tenants, users, production_proposals,
                        password_resets, user_sessions, login_failures,
-                       audit_log, supplier_configs TO shark;
+                       audit_log, supplier_configs,
+                       sync_operations, sync_api_keys TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;
