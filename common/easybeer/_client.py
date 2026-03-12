@@ -57,9 +57,10 @@ def get_session() -> requests.Session:
 
 
 # ─── Rate-limiter global (thread-safe) ───────────────────────────────────────
-_API_MIN_INTERVAL = 0.2  # secondes
+_API_MIN_INTERVAL = 0.2  # secondes (5 req/s max nominal)
 _api_last_ts: float = 0.0
 _api_lock = _threading.Lock()
+_api_backoff_until: float = 0.0  # monotonic timestamp until which we enforce a cooldown
 
 
 def _throttle() -> None:
@@ -67,10 +68,22 @@ def _throttle() -> None:
     global _api_last_ts
     with _api_lock:
         now = _time.monotonic()
+        # If we're in a backoff window (after a rate-limit hit), wait it out
+        if _api_backoff_until > now:
+            _time.sleep(_api_backoff_until - now)
+            now = _time.monotonic()
         wait = _API_MIN_INTERVAL - (now - _api_last_ts)
         if wait > 0:
             _time.sleep(wait)
         _api_last_ts = _time.monotonic()
+
+
+def _on_rate_limited() -> None:
+    """Called when a rate-limit response is detected; enforces a 2s cooldown."""
+    global _api_backoff_until
+    with _api_lock:
+        _api_backoff_until = _time.monotonic() + 2.0
+    _log.warning("Rate-limit détecté — pause 2s avant prochains appels API")
 
 
 def _auth() -> tuple[str, str]:
@@ -90,6 +103,11 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
     if r.ok:
         return
     body = r.text[:500]
+    # Rate-limit: HTTP 400 with "limit" / "banned" or HTTP 429
+    if r.status_code in (429, 400) and any(
+        kw in body.lower() for kw in ("limit", "banned", "rate")
+    ):
+        _on_rate_limited()
     if "<!DOCTYPE" in body or "<html" in body.lower():
         raise EasyBeerError(
             f"EasyBeer {endpoint} \u2192 HTTP {r.status_code} : le serveur a renvoy\u00e9 une page HTML "
@@ -150,7 +168,11 @@ def _is_retryable(exc: BaseException) -> bool:
             return True
     if isinstance(exc, EasyBeerError):
         msg = str(exc)
-        return any(f" {c}" in msg for c in ("429", "500", "502", "503", "504"))
+        if any(f" {c}" in msg for c in ("429", "500", "502", "503", "504")):
+            return True
+        # HTTP 400 rate-limit ("limit 10 request/s", "banned", etc.)
+        if " 400" in msg and any(kw in msg.lower() for kw in ("limit", "banned", "rate")):
+            return True
     return False
 
 
