@@ -332,9 +332,6 @@ def page_sync():
                 "outlined dense"
             ).classes("q-mt-md").style("max-width: 300px")
 
-            new_key_result = ui.label("").classes("text-body2 q-mt-xs")
-            new_key_result.set_visibility(False)
-
             def _generate():
                 from common.sync.api_key import generate_api_key
 
@@ -344,19 +341,54 @@ def page_sync():
                     created_by=user_id,
                     label=label,
                 )
-                new_key_result.text = f"Clé générée (copiez-la maintenant, elle ne sera plus affichée) : {raw}"
-                new_key_result.style(f"color: {COLORS['success']}; word-break: break-all")
-                new_key_result.set_visibility(True)
-                ui.notify("Clé API générée !", type="positive")
                 new_key_label.set_value("")
                 _refresh_keys()
+
+                # Dialogue modal pour copier la clé
+                with ui.dialog().props("persistent") as dlg, \
+                        ui.card().style("min-width: 480px; max-width: 600px"):
+                    with ui.card_section().classes("q-pa-lg"):
+                        with ui.row().classes("items-center gap-2 q-mb-md"):
+                            ui.icon("vpn_key", size="sm").style(f"color: {COLORS['green']}")
+                            ui.label("Clé API générée").classes("text-h6")
+
+                        ui.label(
+                            "Copiez cette clé maintenant. "
+                            "Elle ne sera plus visible après fermeture."
+                        ).classes("text-body2 q-mb-md").style(f"color: {COLORS['warning']}")
+
+                        # Champ avec la clé — sélection facile
+                        key_input = ui.input(
+                            value=raw,
+                        ).props("outlined readonly dense").classes("w-full").style(
+                            "font-family: monospace; font-size: 13px"
+                        )
+
+                        with ui.row().classes("w-full justify-end gap-2 q-mt-lg"):
+                            ui.button(
+                                "Copier",
+                                icon="content_copy",
+                                on_click=lambda: (
+                                    ui.run_javascript(
+                                        f"navigator.clipboard.writeText({raw!r})"
+                                        ".then(() => {})"
+                                    ),
+                                    ui.notify("Clé copiée !", type="positive"),
+                                ),
+                            ).props("unelevated color=green-8")
+                            ui.button(
+                                "Fermer",
+                                icon="close",
+                                on_click=dlg.close,
+                            ).props("flat color=grey-7")
+
+                dlg.open()
 
             ui.button(
                 "Générer une clé API",
                 icon="add",
                 on_click=_generate,
             ).classes("q-mt-sm").props("color=green-8 unelevated")
-            new_key_result  # noqa — reference to keep in scope
 
         with keys_container:
             _build_keys_section(tenant_id, user.get("user_id"))
