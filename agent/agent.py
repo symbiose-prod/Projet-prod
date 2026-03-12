@@ -164,8 +164,10 @@ def run_sync_cycle(
     log = logging.getLogger("sync_agent")
 
     # 1. Récupérer l'opération en attente
+    log.info("Polling %s …", client.base_url)
     op = client.fetch_pending()
     if not op:
+        log.info("Aucune opération en attente — prochain poll dans %ds", 300)
         return False
 
     op_id = op.get("operation_id")
