@@ -3,8 +3,10 @@ common/sync/scheduler.py
 ========================
 Scheduler quotidien pour la sync étiquettes.
 
-Lance collect_label_data() tous les jours à 12h00 (heure Paris)
+Lance collect_label_data() tous les jours à l'heure configurée (par tenant)
 et crée une opération REPLACE_ALL dans sync_operations.
+
+L'heure est stockée dans tenants.sync_schedule_hour (défaut: 5h, heure Paris).
 """
 from __future__ import annotations
 
@@ -17,15 +19,31 @@ from dateutil.tz import gettz
 _log = logging.getLogger("ferment.sync")
 _PARIS_TZ = gettz("Europe/Paris")
 
-# Heure cible (configurable)
-_TARGET_HOUR = 12
-_TARGET_MINUTE = 0
+# Fallback si impossible de lire la DB
+_DEFAULT_HOUR = 5
+_DEFAULT_MINUTE = 0
 
 
-def _seconds_until_target() -> float:
-    """Calcule le nombre de secondes jusqu'au prochain créneau 12h00 Paris."""
+def _get_schedule_hour() -> int:
+    """Récupère l'heure de sync depuis la DB (premier tenant)."""
+    try:
+        from db.conn import run_sql
+        rows = run_sql(
+            "SELECT sync_schedule_hour FROM tenants LIMIT 1", {},
+        )
+        if rows and rows[0].get("sync_schedule_hour") is not None:
+            return int(rows[0]["sync_schedule_hour"])
+    except Exception:
+        _log.debug("Impossible de lire sync_schedule_hour, fallback %dh", _DEFAULT_HOUR)
+    return _DEFAULT_HOUR
+
+
+def _seconds_until_target(hour: int | None = None) -> float:
+    """Calcule le nombre de secondes jusqu'au prochain créneau cible (heure Paris)."""
+    if hour is None:
+        hour = _get_schedule_hour()
     now = dt.datetime.now(_PARIS_TZ)
-    target = now.replace(hour=_TARGET_HOUR, minute=_TARGET_MINUTE, second=0, microsecond=0)
+    target = now.replace(hour=hour, minute=_DEFAULT_MINUTE, second=0, microsecond=0)
     if now >= target:
         target += dt.timedelta(days=1)
     return (target - now).total_seconds()
@@ -77,14 +95,19 @@ def _get_default_tenant_id() -> str | None:
 
 
 async def daily_sync_loop() -> None:
-    """Boucle infinie : lance la sync tous les jours à 12h00 Paris.
+    """Boucle infinie : lance la sync tous les jours à l'heure configurée.
 
-    Pattern identique à _periodic_cleanup() dans app_nicegui.py.
+    Relit l'heure depuis la DB à chaque itération pour prendre en compte
+    les changements faits depuis l'UI /sync.
     """
     while True:
-        wait = _seconds_until_target()
+        hour = _get_schedule_hour()
+        wait = _seconds_until_target(hour)
         next_run = dt.datetime.now(_PARIS_TZ) + dt.timedelta(seconds=wait)
-        _log.info("Prochaine sync étiquettes dans %.0f s (à %s)", wait, next_run.strftime("%H:%M %d/%m"))
+        _log.info(
+            "Prochaine sync étiquettes dans %.0f s (à %02dh%02d le %s)",
+            wait, hour, _DEFAULT_MINUTE, next_run.strftime("%d/%m"),
+        )
         await asyncio.sleep(wait)
 
         _log.info("=== Lancement sync quotidienne étiquettes ===")

@@ -189,6 +189,60 @@ def page_sync():
                     on_click=do_trigger,
                 ).classes("q-mt-md").props("color=green-8 unelevated")
 
+        # ── Planification ───────────────────────────────────────────
+        section_title("Planification automatique", "schedule")
+
+        with ui.card().classes("w-full").props("flat bordered"):
+            with ui.card_section().classes("q-pa-md"):
+                ui.label(
+                    "La sync se lance automatiquement une fois par jour à l'heure choisie. "
+                    "Il est recommandé de planifier la sync en dehors des heures de production."
+                ).classes("text-body2").style(f"color: {COLORS['ink2']}; line-height: 1.6")
+
+                # Lire l'heure actuelle depuis la DB
+                from db.conn import run_sql as _run_sql
+                _sched_rows = _run_sql(
+                    "SELECT sync_schedule_hour FROM tenants WHERE id = :t",
+                    {"t": tenant_id},
+                )
+                _current_hour = int(_sched_rows[0]["sync_schedule_hour"]) if _sched_rows else 5
+
+                _hour_options = [
+                    {"label": f"{h:02d}h00", "value": h}
+                    for h in range(0, 24)
+                ]
+
+                with ui.row().classes("items-center gap-3 q-mt-md"):
+                    hour_select = ui.select(
+                        options=_hour_options,
+                        value=_current_hour,
+                        label="Heure de sync quotidienne",
+                    ).props("outlined dense options-dense emit-value map-options").style(
+                        "min-width: 200px"
+                    )
+
+                    sched_status = ui.label("").classes("text-body2")
+                    sched_status.set_visibility(False)
+
+                    def _save_schedule():
+                        new_hour = hour_select.value
+                        if new_hour is None:
+                            return
+                        _run_sql(
+                            "UPDATE tenants SET sync_schedule_hour = :h WHERE id = :t",
+                            {"h": int(new_hour), "t": tenant_id},
+                        )
+                        sched_status.text = f"Planification mise à jour : {int(new_hour):02d}h00"
+                        sched_status.style(f"color: {COLORS['success']}")
+                        sched_status.set_visibility(True)
+                        ui.notify(f"Sync planifiée à {int(new_hour):02d}h00", type="positive")
+
+                    ui.button(
+                        "Enregistrer",
+                        icon="save",
+                        on_click=_save_schedule,
+                    ).props("unelevated color=green-8 dense")
+
         # ── Historique des opérations ─────────────────────────────────
         section_title("Historique des syncs", "history")
 

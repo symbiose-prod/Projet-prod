@@ -222,6 +222,10 @@ CREATE TABLE IF NOT EXISTS sync_api_keys (
 CREATE INDEX IF NOT EXISTS idx_sync_api_keys_hash   ON sync_api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_sync_api_keys_tenant ON sync_api_keys(tenant_id);
 
+-- Heure planifiée sync étiquettes (configurable par tenant)
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS sync_schedule_hour SMALLINT NOT NULL DEFAULT 5;
+-- Défaut 5h du matin (avant la production)
+
 -- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
