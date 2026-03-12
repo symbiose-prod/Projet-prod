@@ -207,17 +207,14 @@ def page_sync():
                 )
                 _current_hour = int(_sched_rows[0]["sync_schedule_hour"]) if _sched_rows else 5
 
-                _hour_options = [
-                    {"label": f"{h:02d}h00", "value": h}
-                    for h in range(0, 24)
-                ]
+                _hour_options = {h: f"{h:02d}h00" for h in range(0, 24)}
 
                 with ui.row().classes("items-center gap-3 q-mt-md"):
                     hour_select = ui.select(
                         options=_hour_options,
                         value=_current_hour,
                         label="Heure de sync quotidienne",
-                    ).props("outlined dense options-dense emit-value map-options").style(
+                    ).props("outlined dense options-dense").style(
                         "min-width: 200px"
                     )
 
