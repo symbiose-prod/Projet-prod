@@ -574,7 +574,7 @@ async def page_ramasse():
                     if not pkg_items:
                         return
 
-                    section_title("Emballages à récupérer", "inventory_2")
+                    section_title("Emballages à ramener", "inventory_2")
                     with ui.expansion(
                         "Demander des palettes d'emballage",
                         icon="move_to_inbox",
@@ -695,7 +695,6 @@ async def page_ramasse():
                                 destinataire_title=dest_title,
                                 destinataire_lines=dest_lines,
                                 df_lines=df_export[cols],
-                                packaging_lines=_get_packaging_lines(),
                             )
                             ui.download(pdf_bytes, f"Fiche_de_ramasse_{d:%Y-%m-%d}.pdf")
                             ui.notify("PDF généré !", type="positive", icon="check")
@@ -742,14 +741,12 @@ async def page_ramasse():
                             _dest_email = _get_dest_obj()
                             dest_lines = _dest_email.get("address_lines", []) if _dest_email else []
 
-                            _pkg_lines_email = _get_packaging_lines()
                             pdf_bytes = build_bl_enlevements_pdf(
                                 date_creation=today_paris(),
                                 date_ramasse=d,
                                 destinataire_title=dest_title,
                                 destinataire_lines=dest_lines,
                                 df_lines=df_export[cols],
-                                packaging_lines=_pkg_lines_email,
                             )
 
                             tot_palettes = sum(int(r["palettes"]) for r in active_rows)
@@ -757,13 +754,14 @@ async def page_ramasse():
                             subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
 
                             pkg_html = ""
+                            _pkg_lines_email = _get_packaging_lines()
                             if _pkg_lines_email:
                                 pkg_items_html = "<br>".join(
                                     f"— {p['qty']} {p['unit']}(s) {p['label']}"
                                     for p in _pkg_lines_email
                                 )
                                 pkg_html = (
-                                    f"<p><strong>Emballages à récupérer :</strong><br>"
+                                    f"<p><strong>Emballages à ramener :</strong><br>"
                                     f"{pkg_items_html}</p>"
                                 )
 
