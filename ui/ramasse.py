@@ -32,9 +32,11 @@ from common.easybeer import (
 from common.email import EmailSendError, send_html_with_pdf
 from common.ramasse import (
     PALETTE_EMPTY_WEIGHT,
+    build_packaging_summary,
     build_ramasse_lines,
     clean_product_label,
     load_destinataires,
+    load_packaging_items,
     parse_barcode_matrix,
     today_paris,
 )
@@ -562,6 +564,63 @@ async def page_ramasse():
 
                 table.on("palettes_changed", on_palettes_changed)
 
+                # ── Emballages à récupérer ─────────────────────────
+                packaging_state: dict = {"items": []}
+
+                def _build_packaging_section():
+                    """Construit la section emballages pour le destinataire courant."""
+                    packaging_state["items"] = []
+                    pkg_items = load_packaging_items(dest_select.value)
+                    if not pkg_items:
+                        return
+
+                    section_title("Emballages à récupérer", "inventory_2")
+                    with ui.expansion(
+                        "Demander des palettes d'emballage",
+                        icon="move_to_inbox",
+                    ).classes("w-full").props(
+                        "dense header-class='text-subtitle2'"
+                    ):
+                        for item in pkg_items:
+                            item_state = {
+                                "id": item["id"],
+                                "label": item["label"],
+                                "unit": item.get("unit", "palette"),
+                                "qty": 0,
+                            }
+                            packaging_state["items"].append(item_state)
+
+                            with ui.row().classes("w-full items-center gap-3 q-py-xs"):
+                                ui.label(item["label"]).classes("flex-1 text-body2")
+                                qty_input = ui.number(
+                                    value=0, min=0, step=1,
+                                ).props("outlined dense").style("max-width: 100px")
+                                ui.label(item.get("unit", "palette")).classes(
+                                    "text-caption text-grey-6"
+                                )
+
+                                def _on_qty(e, state=item_state, inp=qty_input):
+                                    state["qty"] = int(inp.value or 0)
+
+                                qty_input.on("update:model-value", _on_qty)
+
+                packaging_container = ui.column().classes("w-full")
+                with packaging_container:
+                    _build_packaging_section()
+
+                def _refresh_packaging(e=None):
+                    """Reconstruit la section emballages quand le destinataire change."""
+                    packaging_container.clear()
+                    with packaging_container:
+                        _build_packaging_section()
+
+                dest_select.on_value_change(_refresh_packaging)
+
+                def _get_packaging_lines() -> list[dict] | None:
+                    """Retourne les emballages sélectionnés ou None."""
+                    summary = build_packaging_summary(packaging_state["items"])
+                    return summary if summary else None
+
                 # ── Actions : PDF + Email ────────────────────────────
                 section_title("Export et envoi", "send")
 
@@ -636,6 +695,7 @@ async def page_ramasse():
                                 destinataire_title=dest_title,
                                 destinataire_lines=dest_lines,
                                 df_lines=df_export[cols],
+                                packaging_lines=_get_packaging_lines(),
                             )
                             ui.download(pdf_bytes, f"Fiche_de_ramasse_{d:%Y-%m-%d}.pdf")
                             ui.notify("PDF généré !", type="positive", icon="check")
@@ -682,21 +742,36 @@ async def page_ramasse():
                             _dest_email = _get_dest_obj()
                             dest_lines = _dest_email.get("address_lines", []) if _dest_email else []
 
+                            _pkg_lines_email = _get_packaging_lines()
                             pdf_bytes = build_bl_enlevements_pdf(
                                 date_creation=today_paris(),
                                 date_ramasse=d,
                                 destinataire_title=dest_title,
                                 destinataire_lines=dest_lines,
                                 df_lines=df_export[cols],
+                                packaging_lines=_pkg_lines_email,
                             )
 
                             tot_palettes = sum(int(r["palettes"]) for r in active_rows)
                             filename = f"Fiche_de_ramasse_{d:%Y%m%d}.pdf"
                             subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
+
+                            pkg_html = ""
+                            if _pkg_lines_email:
+                                pkg_items_html = "<br>".join(
+                                    f"— {p['qty']} {p['unit']}(s) {p['label']}"
+                                    for p in _pkg_lines_email
+                                )
+                                pkg_html = (
+                                    f"<p><strong>Emballages à récupérer :</strong><br>"
+                                    f"{pkg_items_html}</p>"
+                                )
+
                             body = f"""
                             <p>Bonjour,</p>
                             <p>Nous aurions besoin d'une ramasse pour le {d:%d/%m/%Y}.<br>
                             Pour <strong>{tot_palettes}</strong> palette{'s' if tot_palettes != 1 else ''}.</p>
+                            {pkg_html}
                             <p>Merci,<br>Bon après-midi.</p>
                             <hr>
                             <p><strong>Ferment Station</strong><br>

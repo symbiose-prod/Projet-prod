@@ -382,3 +382,38 @@ def build_ramasse_lines(
                 })
 
     return rows, meta_by_label
+
+
+# ─── Emballages à récupérer chez le logisticien ────────────────────────────
+
+def load_packaging_items(recipient_name: str) -> list[dict[str, Any]]:
+    """Retourne les items d'emballage disponibles chez un destinataire donné.
+
+    Lit depuis `packaging_items` dans destinataires.json, filtre par `active`.
+    Point d'intégration futur pour une API logisticien.
+    """
+    destinataires = load_destinataires()
+    for d in destinataires:
+        if d.get("name") == recipient_name:
+            items = d.get("packaging_items", [])
+            return [it for it in items if it.get("active", True)]
+    return []
+
+
+def build_packaging_summary(items_with_qty: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Construit le résumé des emballages sélectionnés (pour PDF et email).
+
+    Entrée : items avec clé ``qty`` renseignée par l'utilisateur.
+    Sortie : ``[{label, qty, unit}]`` pour les items avec qty > 0.
+    """
+    rows: list[dict[str, Any]] = []
+    for item in items_with_qty:
+        qty = int(item.get("qty") or 0)
+        if qty <= 0:
+            continue
+        rows.append({
+            "label": item.get("label", ""),
+            "qty": qty,
+            "unit": item.get("unit", "palette"),
+        })
+    return rows

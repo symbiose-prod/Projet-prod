@@ -20,6 +20,7 @@ def build_bl_enlevements_pdf(
     destinataire_lines: list[str],
     df_lines: pd.DataFrame,
     *,
+    packaging_lines: list[dict] | None = None,
     logo_path: str | None = "assets/signature/logo_symbiose.png",
     issuer_name: str = "FERMENT STATION",
     issuer_lines: list[str] | None = None,
@@ -229,5 +230,39 @@ def build_bl_enlevements_pdf(
     pdf.cell(widths[3], 8, _txt(f"{tot_cart:,}".replace(",", " ")), border=1, align="C")
     pdf.cell(widths[4], 8, _txt(f"{tot_pal:,}".replace(",", " ")), border=1, align="C")
     pdf.cell(widths[5], 8, _txt(f"{tot_poids:,}".replace(",", " ")), border=1, align="C")
+
+    # ---- Section Emballages à récupérer (optionnel)
+    if packaging_lines:
+        pdf.ln(10)
+
+        table_w = sum(widths)
+        pkg_widths = [table_w * 0.55, table_w * 0.25, table_w * 0.20]
+
+        # Sous-titre
+        _maybe_break(20)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.set_x(left)
+        pdf.cell(sum(pkg_widths), 8, _txt("EMBALLAGES A RECUPERER"), border=1, align="L", fill=True)
+        pdf.ln()
+
+        # En-têtes colonnes
+        pkg_headers = ["Designation", "Quantite", "Unite"]
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_fill_color(230, 230, 230)
+        pdf.set_x(left)
+        for h, w in zip(pkg_headers, pkg_widths):
+            pdf.cell(w, header_h, _txt(h), border=1, align="C", fill=True)
+        pdf.ln()
+
+        # Lignes
+        pdf.set_font("Helvetica", "", 10)
+        for pl in packaging_lines:
+            _maybe_break(line_h)
+            pdf.set_x(left)
+            pdf.cell(pkg_widths[0], line_h, _txt(pl.get("label", "")), border=1, align="L")
+            pdf.cell(pkg_widths[1], line_h, str(pl.get("qty", 0)), border=1, align="C")
+            pdf.cell(pkg_widths[2], line_h, _txt(pl.get("unit", "")), border=1, align="C")
+            pdf.ln()
 
     return bytes(pdf.output(dest="S"))

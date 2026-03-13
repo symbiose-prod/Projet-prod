@@ -17,6 +17,10 @@
         "annonces@sofripa.fr",
         "exploitation@sofripa.fr",
         "b.alves@sofripa.fr"
+      ],
+      "packaging_items": [
+        {"id": "pal_bt_33", "label": "Palette Bouteilles 33cl", "unit": "palette", "active": true},
+        {"id": "pal_bt_75", "label": "Palette Bouteilles 75cl", "unit": "palette", "active": true}
       ]
     }
   ]
