@@ -316,6 +316,17 @@ async def page_production():
             mp_check = _result.get("mp_check", {})
             ongoing = _result.get("ongoing", {})
 
+            # Nettoyer les overrides orphelins (goûts qui ne sont plus dans le calcul)
+            _valid_keys = set()
+            if not df_final.empty:
+                for _, _r_ov in df_final.iterrows():
+                    _valid_keys.add(f"{_r_ov['GoutCanon']}|{_r_ov['Produit']}|{_r_ov['Stock']}")
+            _stale = [k for k in overrides if k not in _valid_keys]
+            if _stale:
+                for k in _stale:
+                    del overrides[k]
+                app.storage.user["production_overrides"] = dict(overrides)
+
             # ── Affichage ─────────────────────────────────────────────
             main_container.clear()
             with main_container:
