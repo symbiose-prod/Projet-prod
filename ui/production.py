@@ -387,6 +387,8 @@ async def page_production():
                                 kpi_card("opacity", "Aromatisation (L)", f"{_vd['V_aroma']:.0f}", COLORS["orange"])
                                 kpi_card("local_drink", "V embouteillé (L)", f"{_vd['V_bottled']:.0f}", COLORS["blue"])
                                 kpi_card("straighten", "Volume cible (hL)", f"{_vd['V_bottled']/100:.2f}", COLORS["green"])
+                                _perte_tot = _vd['transfer_loss'] + _vd['bottling_loss']
+                                kpi_card("water_drop", "Perte théorique (L)", f"{_perte_tot:.0f}", COLORS["error"])
                             ui.label(
                                 f"Cuve {_vd['capacity']}L — "
                                 f"Perte transfert : {_vd['transfer_loss']}L — "
@@ -469,11 +471,36 @@ async def page_production():
                         COLORS["orange"],
                     )
 
-                # ── Vérification matières premières ───────────────────
+                # ── Vérification matières premières + emballages ──────
                 _mp_status = mp_check.get("status", "error")
                 _mp_items = mp_check.get("items", [])
                 _mp_err = mp_check.get("error_msg", "")
                 _mp_shortages = [it for it in _mp_items if not it["ok"]]
+
+                _emb_status = mp_check.get("emb_status", "ok")
+                _emb_items = mp_check.get("emballages", [])
+                _emb_shortages = [it for it in _emb_items if not it["ok"]]
+
+                # Slots Quasar réutilisés pour les tables statut/écart
+                _SLOT_STATUT = r'''
+                    <q-td :props="props">
+                        <q-badge
+                            :color="props.row._ok ? 'green-7' : 'orange-8'"
+                            :label="props.row.statut"
+                            text-color="white"
+                        />
+                    </q-td>
+                '''
+                _SLOT_ECART = r'''
+                    <q-td :props="props">
+                        <span :style="{
+                            color: props.row._ok ? '#16A34A' : '#F97316',
+                            fontWeight: props.row._ok ? 400 : 700,
+                        }">
+                            {{ props.row.ecart }}
+                        </span>
+                    </q-td>
+                '''
 
                 if _mp_status == "error":
                     if _mp_err:
@@ -482,122 +509,178 @@ async def page_production():
                             ui.label(f"Vérification MP indisponible — {_mp_err}").classes(
                                 "text-caption text-grey-5"
                             )
-                elif _mp_items:
-                    _mp_color = COLORS["success"] if _mp_status == "ok" else COLORS["orange"]
-                    _mp_icon = "check_circle" if _mp_status == "ok" else "warning"
-                    _mp_title = (
-                        "Matières premières disponibles"
-                        if _mp_status == "ok"
-                        else f"{len(_mp_shortages)} matière(s) première(s) insuffisante(s)"
-                    )
+                elif _mp_items or _emb_items:
+                    with ui.row().classes("w-full gap-4 items-start"):
 
-                    with ui.expansion(
-                        _mp_title,
-                        icon=_mp_icon,
-                        value=(_mp_status == "warning"),
-                    ).classes("w-full").style(
-                        f"border: 1px solid {_mp_color}40; border-radius: 8px"
-                    ):
-                        _mp_rows = [
-                            {
-                                "mp": it["libelle"],
-                                "besoin": f"{it['besoin']:.1f} {it['unite']}",
-                                "stock": f"{it['stock']:.1f} {it['unite']}",
-                                "ecart": f"{it['ecart']:+.1f} {it['unite']}",
-                                "statut": "OK" if it["ok"] else "Insuffisant",
-                                "_ok": it["ok"],
-                                "_key": str(it["id_mp"]),
-                            }
-                            for it in _mp_items
-                        ]
-                        _mp_columns = [
-                            {"name": "mp", "label": "Matière première", "field": "mp", "align": "left"},
-                            {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
-                            {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
-                            {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
-                            {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
-                        ]
-                        mp_table = ui.table(
-                            columns=_mp_columns,
-                            rows=_mp_rows,
-                            row_key="_key",
-                        ).classes("w-full").props("flat bordered dense")
+                        # ── Colonne gauche : Matières premières ──────────
+                        with ui.column().classes("flex-1"):
+                          if _mp_items:
+                            _mp_color = COLORS["success"] if _mp_status == "ok" else COLORS["orange"]
+                            _mp_icon = "check_circle" if _mp_status == "ok" else "warning"
+                            _mp_title = (
+                                "Matières premières disponibles"
+                                if _mp_status == "ok"
+                                else f"{len(_mp_shortages)} matière(s) première(s) insuffisante(s)"
+                            )
 
-                        mp_table.add_slot("body-cell-statut", r'''
-                            <q-td :props="props">
-                                <q-badge
-                                    :color="props.row._ok ? 'green-7' : 'orange-8'"
-                                    :label="props.row.statut"
-                                    text-color="white"
-                                />
-                            </q-td>
-                        ''')
-                        mp_table.add_slot("body-cell-ecart", r'''
-                            <q-td :props="props">
-                                <span :style="{
-                                    color: props.row._ok ? '#16A34A' : '#F97316',
-                                    fontWeight: props.row._ok ? 400 : 700,
-                                }">
-                                    {{ props.row.ecart }}
-                                </span>
-                            </q-td>
-                        ''')
+                            with ui.expansion(
+                                _mp_title,
+                                icon=_mp_icon,
+                                value=(_mp_status == "warning"),
+                            ).classes("w-full").style(
+                                f"border: 1px solid {_mp_color}40; border-radius: 8px"
+                            ):
+                                _mp_rows = [
+                                    {
+                                        "mp": it["libelle"],
+                                        "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                        "stock": f"{it['stock']:.1f} {it['unite']}",
+                                        "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                        "statut": "OK" if it["ok"] else "Insuffisant",
+                                        "_ok": it["ok"],
+                                        "_key": str(it["id_mp"]),
+                                    }
+                                    for it in _mp_items
+                                ]
+                                _mp_columns = [
+                                    {"name": "mp", "label": "Matière première", "field": "mp", "align": "left"},
+                                    {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
+                                    {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
+                                    {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
+                                    {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
+                                ]
+                                mp_table = ui.table(
+                                    columns=_mp_columns,
+                                    rows=_mp_rows,
+                                    row_key="_key",
+                                ).classes("w-full").props("flat bordered dense")
 
-                        # ── Détail MP par goût ──────────────────────────
-                        _mp_by_gout = mp_check.get("items_by_gout", {})
-                        if len(_mp_by_gout) >= 2:
-                            ui.separator().classes("q-my-sm")
-                            ui.label("Détail par goût").classes("text-subtitle2 text-grey-7 q-mt-xs")
-                            for _g_mp, _g_items_mp in _mp_by_gout.items():
-                                _g_shortages = [it for it in _g_items_mp if not it["ok"]]
-                                _g_mp_icon = "check_circle" if not _g_shortages else "warning"
-                                _g_mp_color = COLORS["success"] if not _g_shortages else COLORS["orange"]
-                                _g_mp_title = (
-                                    f"{_g_mp} — MP disponibles"
-                                    if not _g_shortages
-                                    else f"{_g_mp} — {len(_g_shortages)} insuffisante(s)"
-                                )
-                                with ui.expansion(
-                                    _g_mp_title, icon=_g_mp_icon, value=bool(_g_shortages),
-                                ).classes("w-full").style(
-                                    f"border: 1px solid {_g_mp_color}40; border-radius: 8px"
-                                ):
-                                    _g_mp_rows = [
-                                        {
-                                            "mp": it["libelle"],
-                                            "besoin": f"{it['besoin']:.1f} {it['unite']}",
-                                            "stock": f"{it['stock']:.1f} {it['unite']}",
-                                            "ecart": f"{it['ecart']:+.1f} {it['unite']}",
-                                            "statut": "OK" if it["ok"] else "Insuffisant",
-                                            "_ok": it["ok"],
-                                            "_key": f"{_g_mp}_{it['id_mp']}",
-                                        }
-                                        for it in _g_items_mp
-                                    ]
-                                    _g_tbl = ui.table(
-                                        columns=_mp_columns,
-                                        rows=_g_mp_rows,
-                                        row_key="_key",
-                                    ).classes("w-full").props("flat bordered dense")
-                                    _g_tbl.add_slot("body-cell-statut", r'''
-                                        <q-td :props="props">
-                                            <q-badge
-                                                :color="props.row._ok ? 'green-7' : 'orange-8'"
-                                                :label="props.row.statut"
-                                                text-color="white"
-                                            />
-                                        </q-td>
-                                    ''')
-                                    _g_tbl.add_slot("body-cell-ecart", r'''
-                                        <q-td :props="props">
-                                            <span :style="{
-                                                color: props.row._ok ? '#16A34A' : '#F97316',
-                                                fontWeight: props.row._ok ? 400 : 700,
-                                            }">
-                                                {{ props.row.ecart }}
-                                            </span>
-                                        </q-td>
-                                    ''')
+                                mp_table.add_slot("body-cell-statut", _SLOT_STATUT)
+                                mp_table.add_slot("body-cell-ecart", _SLOT_ECART)
+
+                                # Détail MP par goût
+                                _mp_by_gout = mp_check.get("items_by_gout", {})
+                                if len(_mp_by_gout) >= 2:
+                                    ui.separator().classes("q-my-sm")
+                                    ui.label("Détail par goût").classes("text-subtitle2 text-grey-7 q-mt-xs")
+                                    for _g_mp, _g_items_mp in _mp_by_gout.items():
+                                        _g_shortages = [it for it in _g_items_mp if not it["ok"]]
+                                        _g_mp_icon = "check_circle" if not _g_shortages else "warning"
+                                        _g_mp_color = COLORS["success"] if not _g_shortages else COLORS["orange"]
+                                        _g_mp_title = (
+                                            f"{_g_mp} — MP disponibles"
+                                            if not _g_shortages
+                                            else f"{_g_mp} — {len(_g_shortages)} insuffisante(s)"
+                                        )
+                                        with ui.expansion(
+                                            _g_mp_title, icon=_g_mp_icon, value=bool(_g_shortages),
+                                        ).classes("w-full").style(
+                                            f"border: 1px solid {_g_mp_color}40; border-radius: 8px"
+                                        ):
+                                            _g_mp_rows = [
+                                                {
+                                                    "mp": it["libelle"],
+                                                    "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                                    "stock": f"{it['stock']:.1f} {it['unite']}",
+                                                    "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                                    "statut": "OK" if it["ok"] else "Insuffisant",
+                                                    "_ok": it["ok"],
+                                                    "_key": f"{_g_mp}_{it['id_mp']}",
+                                                }
+                                                for it in _g_items_mp
+                                            ]
+                                            _g_tbl = ui.table(
+                                                columns=_mp_columns,
+                                                rows=_g_mp_rows,
+                                                row_key="_key",
+                                            ).classes("w-full").props("flat bordered dense")
+                                            _g_tbl.add_slot("body-cell-statut", _SLOT_STATUT)
+                                            _g_tbl.add_slot("body-cell-ecart", _SLOT_ECART)
+
+                        # ── Colonne droite : Emballages ──────────────────
+                        with ui.column().classes("flex-1"):
+                          if _emb_items:
+                            _emb_color = COLORS["success"] if _emb_status == "ok" else COLORS["orange"]
+                            _emb_icon = "check_circle" if _emb_status == "ok" else "warning"
+                            _emb_title = (
+                                "Emballages disponibles"
+                                if _emb_status == "ok"
+                                else f"{len(_emb_shortages)} emballage(s) insuffisant(s)"
+                            )
+
+                            with ui.expansion(
+                                _emb_title,
+                                icon=_emb_icon,
+                                value=(_emb_status == "warning"),
+                            ).classes("w-full").style(
+                                f"border: 1px solid {_emb_color}40; border-radius: 8px"
+                            ):
+                                _emb_rows = [
+                                    {
+                                        "mp": it["libelle"],
+                                        "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                        "stock": f"{it['stock']:.1f} {it['unite']}",
+                                        "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                        "statut": "OK" if it["ok"] else "Insuffisant",
+                                        "_ok": it["ok"],
+                                        "_key": f"emb_{it['id_mp']}",
+                                    }
+                                    for it in _emb_items
+                                ]
+                                _emb_columns = [
+                                    {"name": "mp", "label": "Emballage", "field": "mp", "align": "left"},
+                                    {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
+                                    {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
+                                    {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
+                                    {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
+                                ]
+                                emb_table = ui.table(
+                                    columns=_emb_columns,
+                                    rows=_emb_rows,
+                                    row_key="_key",
+                                ).classes("w-full").props("flat bordered dense")
+
+                                emb_table.add_slot("body-cell-statut", _SLOT_STATUT)
+                                emb_table.add_slot("body-cell-ecart", _SLOT_ECART)
+
+                                # Détail emballages par goût
+                                _emb_by_gout = mp_check.get("emballages_by_gout", {})
+                                if len(_emb_by_gout) >= 2:
+                                    ui.separator().classes("q-my-sm")
+                                    ui.label("Détail par goût").classes("text-subtitle2 text-grey-7 q-mt-xs")
+                                    for _g_emb, _g_items_emb in _emb_by_gout.items():
+                                        _g_emb_short = [it for it in _g_items_emb if not it["ok"]]
+                                        _g_emb_icon = "check_circle" if not _g_emb_short else "warning"
+                                        _g_emb_color = COLORS["success"] if not _g_emb_short else COLORS["orange"]
+                                        _g_emb_title = (
+                                            f"{_g_emb} — emballages disponibles"
+                                            if not _g_emb_short
+                                            else f"{_g_emb} — {len(_g_emb_short)} insuffisant(s)"
+                                        )
+                                        with ui.expansion(
+                                            _g_emb_title, icon=_g_emb_icon, value=bool(_g_emb_short),
+                                        ).classes("w-full").style(
+                                            f"border: 1px solid {_g_emb_color}40; border-radius: 8px"
+                                        ):
+                                            _g_emb_rows = [
+                                                {
+                                                    "mp": it["libelle"],
+                                                    "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                                    "stock": f"{it['stock']:.1f} {it['unite']}",
+                                                    "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                                    "statut": "OK" if it["ok"] else "Insuffisant",
+                                                    "_ok": it["ok"],
+                                                    "_key": f"emb_{_g_emb}_{it['id_mp']}",
+                                                }
+                                                for it in _g_items_emb
+                                            ]
+                                            _g_emb_tbl = ui.table(
+                                                columns=_emb_columns,
+                                                rows=_g_emb_rows,
+                                                row_key="_key",
+                                            ).classes("w-full").props("flat bordered dense")
+                                            _g_emb_tbl.add_slot("body-cell-statut", _SLOT_STATUT)
+                                            _g_emb_tbl.add_slot("body-cell-ecart", _SLOT_ECART)
 
                 # ── Images produits EasyBeer ─────────────────────────
                 product_images: dict[str, str] = {}  # produit_name → image_url

@@ -305,6 +305,8 @@ def _check_mp_availability(
     # 3. Pour chaque goût : recette → ingrédients → agréger besoins
     total_needs: dict[int, dict] = {}  # idMatierePremiere → {libelle, qty, unite}
     needs_by_gout: dict[str, dict[int, dict]] = {}  # goût → {idMP → {libelle, qty, unite}}
+    emb_needs: dict[int, dict] = {}  # emballages (CONDITIONNEMENT)
+    emb_needs_by_gout: dict[str, dict[int, dict]] = {}
 
     for g in gouts_cibles:
         vol_l = vol_par_gout.get(g, 0)
@@ -312,6 +314,7 @@ def _check_mp_availability(
             continue
 
         needs_by_gout[g] = {}
+        emb_needs_by_gout[g] = {}
         idx = _auto_match(g, prod_labels)
         id_produit = eb_products[idx]["idProduit"]
 
@@ -328,14 +331,22 @@ def _check_mp_availability(
                 if id_mp is None:
                     continue
 
-                # V1 : ingrédients uniquement (exclure emballages)
                 mp_type = (mp.get("type") or {}).get("code", "")
-                if mp_type.startswith("CONDITIONNEMENT"):
-                    continue
-
                 qty = float(ing.get("quantite", 0) or 0)
                 unite = (ing.get("unite") or {}).get("symbole", "")
                 libelle = mp.get("libelle", f"MP #{id_mp}")
+
+                if mp_type.startswith("CONDITIONNEMENT"):
+                    # Emballages : collecter séparément
+                    if id_mp in emb_needs:
+                        emb_needs[id_mp]["qty"] += qty
+                    else:
+                        emb_needs[id_mp] = {"libelle": libelle, "qty": qty, "unite": unite}
+                    if id_mp in emb_needs_by_gout[g]:
+                        emb_needs_by_gout[g][id_mp]["qty"] += qty
+                    else:
+                        emb_needs_by_gout[g][id_mp] = {"libelle": libelle, "qty": qty, "unite": unite}
+                    continue
 
                 if id_mp in total_needs:
                     total_needs[id_mp]["qty"] += qty
@@ -351,8 +362,12 @@ def _check_mp_availability(
             _log.warning("MP check: erreur recette goût %s: %s", g, exc, exc_info=True)
             continue
 
-    if not total_needs:
-        return {"status": "ok", "items": [], "items_by_gout": {}, "error_msg": ""}
+    if not total_needs and not emb_needs:
+        return {
+            "status": "ok", "items": [], "items_by_gout": {},
+            "emballages": [], "emballages_by_gout": {}, "emb_status": "ok",
+            "error_msg": "",
+        }
 
     # 4. Stock actuel
     try:
@@ -405,10 +420,51 @@ def _check_mp_availability(
             })
         _items_by_gout[g] = g_items
 
+    # 6. Comparer besoins emballages vs stock
+    emb_items: list[dict] = []
+    emb_has_shortage = False
+    for id_mp, need in sorted(emb_needs.items(), key=lambda x: x[1]["libelle"]):
+        stock = stock_by_id.get(id_mp, 0.0)
+        besoin = need["qty"]
+        ecart = stock - besoin
+        ok = ecart >= 0
+        if not ok:
+            emb_has_shortage = True
+        emb_items.append({
+            "id_mp": id_mp,
+            "libelle": need["libelle"],
+            "besoin": round(besoin, 2),
+            "stock": round(stock, 2),
+            "ecart": round(ecart, 2),
+            "unite": need["unite"],
+            "ok": ok,
+        })
+
+    _emb_items_by_gout: dict[str, list] = {}
+    for g, g_needs in emb_needs_by_gout.items():
+        g_items = []
+        for id_mp, need in sorted(g_needs.items(), key=lambda x: x[1]["libelle"]):
+            stock = stock_by_id.get(id_mp, 0.0)
+            besoin = need["qty"]
+            ecart = stock - besoin
+            g_items.append({
+                "id_mp": id_mp,
+                "libelle": need["libelle"],
+                "besoin": round(besoin, 2),
+                "stock": round(stock, 2),
+                "ecart": round(ecart, 2),
+                "unite": need["unite"],
+                "ok": ecart >= 0,
+            })
+        _emb_items_by_gout[g] = g_items
+
     return {
         "status": "warning" if has_shortage else "ok",
         "items": items,
         "items_by_gout": _items_by_gout,
+        "emballages": emb_items,
+        "emballages_by_gout": _emb_items_by_gout,
+        "emb_status": "warning" if emb_has_shortage else "ok",
         "error_msg": "",
     }
 
