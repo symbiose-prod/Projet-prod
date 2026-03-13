@@ -161,6 +161,8 @@ async def page_production():
         split_ratio_ref = {"ref": None}
         _split_label_ref = {"ref": None}
         _split_gout_order = {"order": None}  # [goût_split1, goût_split2]
+        _split_gout_a_ref = {"ref": None}  # sélecteur goût split 1
+        _split_gout_b_ref = {"ref": None}  # sélecteur goût split 2
 
         _SPLIT_TOTAL = (
             TANK_CONFIGS["Split 7200L"]["capacity"]
@@ -193,31 +195,38 @@ async def page_production():
                 nb_gouts_input_ref["ref"] = None
 
         def _build_split_slider():
-            """Affiche / masque le slider de répartition selon nb_gouts."""
-            # Supprimer l'ancien slider s'il existe
-            old = split_ratio_ref["ref"]
-            if old and old.parent_slot and old.parent_slot.parent:
-                try:
-                    old.parent_slot.parent.remove(old)
-                except Exception:
-                    pass
-            old_lbl = _split_label_ref["ref"]
-            if old_lbl and old_lbl.parent_slot and old_lbl.parent_slot.parent:
-                try:
-                    old_lbl.parent_slot.parent.remove(old_lbl)
-                except Exception:
-                    pass
-            split_ratio_ref["ref"] = None
-            _split_label_ref["ref"] = None
+            """Affiche / masque les contrôles split (goûts + slider) selon nb_gouts."""
+            # Nettoyage des anciens éléments
+            for _ref in (split_ratio_ref, _split_label_ref, _split_gout_a_ref, _split_gout_b_ref):
+                _old = _ref["ref"]
+                if _old and hasattr(_old, "parent_slot") and _old.parent_slot and _old.parent_slot.parent:
+                    try:
+                        _old.parent_slot.parent.remove(_old)
+                    except Exception:
+                        pass
+                _ref["ref"] = None
 
             nb_ref = nb_gouts_input_ref["ref"]
             nb_val = int(nb_ref.value) if nb_ref else 1
             if mode.value == "Split 7200L" and nb_val >= 2:
                 with split_container:
+                    # Sélecteurs de goûts
+                    ui.label("Choix des goûts").classes("text-caption text-grey-7 q-mt-sm")
+                    with ui.row().classes("w-full gap-2"):
+                        _split_gout_a_ref["ref"] = ui.select(
+                            all_gouts, value=None,
+                            label="Split 1",
+                        ).props("outlined dense").classes("flex-1")
+                        _split_gout_b_ref["ref"] = ui.select(
+                            all_gouts, value=None,
+                            label="Split 2",
+                        ).props("outlined dense").classes("flex-1")
+
+                    # Slider de répartition volume
                     _half = _SPLIT_TOTAL // 2  # 3400
                     _split_label_ref["ref"] = ui.label(
-                        f"Goût 1 : {_half} L  |  Goût 2 : {_half} L"
-                    ).classes("text-caption text-grey-7 q-mt-xs")
+                        f"Split 1 : {_half} L  |  Split 2 : {_half} L"
+                    ).classes("text-caption text-grey-7 q-mt-sm")
                     split_ratio_ref["ref"] = (
                         ui.slider(
                             min=1000, max=min(_SPLIT_TOTAL - 1000, _SPLIT_GARDE_CAP),
@@ -225,8 +234,10 @@ async def page_production():
                             on_change=lambda _: _update_split_label(),
                         ).props("label-always color=green-8").classes("w-full")
                     )
+
+                    # Bouton appliquer
                     ui.button(
-                        "Appliquer la répartition", icon="check",
+                        "Appliquer", icon="check",
                         on_click=lambda: _debounced_compute(),
                     ).props("unelevated color=green-8 dense").classes("w-full q-mt-xs")
 
@@ -254,16 +265,24 @@ async def page_production():
             else:
                 nb_gouts = _tank["nb_gouts"]
 
-            effective_nb_gouts = max(nb_gouts, len(forced_gouts)) if forced_gouts else nb_gouts
-
-            # Répartition personnalisée (Split 7200L, 2 goûts)
+            # Split 7200L : goûts choisis dans les sélecteurs split
             split_volumes = None
             split_flavor_order = None
-            if mode_prod == "Split 7200L" and effective_nb_gouts >= 2:
+            if mode_prod == "Split 7200L" and nb_gouts >= 2:
+                _ga = _split_gout_a_ref["ref"]
+                _gb = _split_gout_b_ref["ref"]
+                _ga_val = _ga.value if _ga else None
+                _gb_val = _gb.value if _gb else None
+                if _ga_val and _gb_val and _ga_val != _gb_val:
+                    # Les goûts choisis dans le split forcent l'optimiseur
+                    forced_gouts = [_ga_val, _gb_val]
+                    split_flavor_order = [_ga_val, _gb_val]
+
                 _slider = split_ratio_ref["ref"]
                 _v1 = int(_slider.value) if _slider else _SPLIT_TOTAL // 2
                 split_volumes = [float(_v1), float(_SPLIT_TOTAL - _v1)]
-                split_flavor_order = _split_gout_order["order"]  # peut être None
+
+            effective_nb_gouts = max(nb_gouts, len(forced_gouts)) if forced_gouts else nb_gouts
 
             # Filtrage produits exclus
             if excluded_products:
@@ -342,7 +361,7 @@ async def page_production():
                             ui.icon("info", size="sm").style(f"color: {COLORS['orange']}")
                             ui.label(note_msg).classes("text-body2")
 
-                # ── Inverser les goûts (Split 7200L, 2 goûts)
+                # ── Résumé split (Split 7200L, 2 goûts)
                 _is_split_display = (
                     mode_prod == "Split 7200L"
                     and len(gouts_cibles) >= 2
@@ -351,21 +370,10 @@ async def page_production():
                 )
                 if _is_split_display:
                     _g_list = list(gouts_cibles)
-
-                    def _swap_split_flavors():
-                        """Inverse les 2 goûts et relance le calcul."""
-                        _split_gout_order["order"] = list(reversed(_g_list))
-                        _debounced_compute()
-
-                    with ui.row().classes("w-full items-center gap-3"):
-                        ui.label(
-                            f"Split 1 : {_g_list[0]} ({int(split_volumes[0])} L) — "
-                            f"Split 2 : {_g_list[1]} ({int(split_volumes[1])} L)"
-                        ).classes("text-body2")
-                        ui.button(
-                            "Inverser les goûts", icon="swap_horiz",
-                            on_click=_swap_split_flavors,
-                        ).props("flat dense color=green-8")
+                    ui.label(
+                        f"Split 1 : {_g_list[0]} ({int(split_volumes[0])} L) — "
+                        f"Split 2 : {_g_list[1]} ({int(split_volumes[1])} L)"
+                    ).classes("text-body2 q-mb-xs")
 
                 # Détails volume (modes auto)
                 if volume_details:
