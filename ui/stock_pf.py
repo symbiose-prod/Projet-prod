@@ -46,19 +46,6 @@ def page_stock_pf():
         # ── Zone d'upload ──
         section_title("Import du fichier Sofripa", "upload_file")
 
-        upload_card = ui.card().classes("w-full").props("flat bordered")
-        with upload_card:
-            with ui.card_section():
-                ui.label(
-                    "Uploadez le fichier ARTICLES.csv exporté depuis l'interface Sofripa."
-                ).classes("text-body2 text-grey-7 q-mb-sm")
-
-                upload = ui.upload(
-                    label="ARTICLES.csv",
-                    auto_upload=True,
-                    max_files=1,
-                ).props('accept=".csv" flat bordered').classes("w-full")
-
         # ── Conteneur résultats ──
         results_container = ui.column().classes("w-full gap-4")
 
@@ -108,7 +95,19 @@ def page_stock_pf():
             spinner_row.delete()
             _render_results(data, state, kpi_row, table_container)
 
-        upload.on_upload(handle_upload)
+        upload_card = ui.card().classes("w-full").props("flat bordered")
+        with upload_card:
+            with ui.card_section():
+                ui.label(
+                    "Uploadez le fichier ARTICLES.csv exporté depuis l'interface Sofripa."
+                ).classes("text-body2 text-grey-7 q-mb-sm")
+
+                ui.upload(
+                    on_upload=handle_upload,
+                    label="ARTICLES.csv",
+                    auto_upload=True,
+                    max_files=1,
+                ).props('accept=".csv" flat bordered').classes("w-full")
 
 
 def _render_results(data: dict, state: dict, kpi_row, table_container):
