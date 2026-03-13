@@ -382,6 +382,7 @@ def _compute_production_sync(
     TANK_CONFIGS: dict,
     DEFAULT_LOSS_LARGE: int,
     DEFAULT_LOSS_SMALL: int,
+    split_volumes: list[float] | None = None,
 ) -> dict:
     """Passe 0 (en cours) + Passe 1 (optimiseur) + Passe 2 (EasyBeer) — aucun appel UI."""
     # ── PASSE 0 : Productions en cours (ajuste le stock disponible) ──
@@ -435,11 +436,15 @@ def _compute_production_sync(
         if _is_split_2:
             _C_garde = _split_cfg["garde_capacity"]
             _Lb_split = _split_cfg["bottling_loss_per_flavor"]
-            _V_start_base = (_C - _Lt) / effective_nb_gouts
+            _V_total_dispo = _C - _Lt  # 6800 L
+            if split_volumes and len(split_volumes) == effective_nb_gouts:
+                _split_vol_list = list(split_volumes)
+            else:
+                _split_vol_list = [_V_total_dispo / effective_nb_gouts] * effective_nb_gouts
         else:
             _C_garde = _C
             _Lb_split = _Lb
-            _V_start_base = None  # pas utilisé
+            _split_vol_list = []  # pas utilisé
 
         _eb_prods_p2: list = []
         _labels_p2: list = []
@@ -452,7 +457,7 @@ def _compute_production_sync(
                 _log.warning("Erreur chargement produits EasyBeer (passe 2)", exc_info=True)
                 _eb_available = False
 
-        for _gout_p2 in gouts_cibles:
+        for _gout_idx_p2, _gout_p2 in enumerate(gouts_cibles):
             _A_R, _R = 0.0, 0.0
             _id_prod_p2 = None
             _matched_idx = 0
@@ -468,7 +473,13 @@ def _compute_production_sync(
 
             # Calcul V_start et V_bottled
             if _is_split_2:
-                # Split : V_start fixé par la répartition, cappé par la cuve de garde
+                # Volume alloué à ce goût (répartition personnalisable)
+                _V_start_base = (
+                    _split_vol_list[_gout_idx_p2]
+                    if _gout_idx_p2 < len(_split_vol_list)
+                    else _split_vol_list[-1]
+                )
+                # Cappé par la capacité de la cuve de garde
                 _V_start_max, _ = compute_v_start_max(_C_garde, 0, _Lb_split, _A_R, _R)
                 _V_start = min(_V_start_base, _V_start_max)
                 _V_aroma = _A_R * (_V_start / _R) if _R > 0 else 0.0

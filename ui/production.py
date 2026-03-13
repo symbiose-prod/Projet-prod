@@ -156,21 +156,74 @@ async def page_production():
         # State persistant pour les overrides
         overrides: dict = app.storage.user.setdefault("production_overrides", {})
 
-        # State pour l'input nb goûts (Split 7200L)
+        # State pour les inputs Split 7200L
         nb_gouts_input_ref = {"ref": None}
+        split_ratio_ref = {"ref": None}
+        _split_label_ref = {"ref": None}
+
+        _SPLIT_TOTAL = (
+            TANK_CONFIGS["Split 7200L"]["capacity"]
+            - TANK_CONFIGS["Split 7200L"]["transfer_loss"]
+        )  # 6800 L
+        _SPLIT_GARDE_CAP = TANK_CONFIGS["Split 7200L"]["split"]["garde_capacity"]  # 5200
+
+        def _update_split_label(_=None):
+            lbl = _split_label_ref["ref"]
+            slider = split_ratio_ref["ref"]
+            if lbl and slider:
+                v1 = int(slider.value)
+                v2 = _SPLIT_TOTAL - v1
+                lbl.set_text(f"Goût 1 : {v1} L  |  Goût 2 : {v2} L")
 
         def _build_split_inputs():
             split_container.clear()
+            split_ratio_ref["ref"] = None
+            _split_label_ref["ref"] = None
             if mode.value == "Split 7200L":
                 with split_container:
                     nb_gouts_input_ref["ref"] = ui.select(
                         {1: "1 goût", 2: "2 goûts"},
                         value=TANK_CONFIGS["Split 7200L"]["nb_gouts"],
                         label="Nb goûts",
-                        on_change=lambda _: _debounced_compute(),
+                        on_change=lambda _: (_build_split_slider(), _debounced_compute()),
                     ).props("outlined dense").classes("w-full")
+                    _build_split_slider()
             else:
                 nb_gouts_input_ref["ref"] = None
+
+        def _build_split_slider():
+            """Affiche / masque le slider de répartition selon nb_gouts."""
+            # Supprimer l'ancien slider s'il existe
+            old = split_ratio_ref["ref"]
+            if old and old.parent_slot and old.parent_slot.parent:
+                try:
+                    old.parent_slot.parent.remove(old)
+                except Exception:
+                    pass
+            old_lbl = _split_label_ref["ref"]
+            if old_lbl and old_lbl.parent_slot and old_lbl.parent_slot.parent:
+                try:
+                    old_lbl.parent_slot.parent.remove(old_lbl)
+                except Exception:
+                    pass
+            split_ratio_ref["ref"] = None
+            _split_label_ref["ref"] = None
+
+            nb_ref = nb_gouts_input_ref["ref"]
+            nb_val = int(nb_ref.value) if nb_ref else 1
+            if mode.value == "Split 7200L" and nb_val >= 2:
+                with split_container:
+                    _half = _SPLIT_TOTAL // 2  # 3400
+                    _split_label_ref["ref"] = ui.label(
+                        f"Goût 1 : {_half} L  |  Goût 2 : {_half} L"
+                    ).classes("text-caption text-grey-7 q-mt-xs")
+                    split_ratio_ref["ref"] = (
+                        ui.slider(
+                            min=1000, max=min(_SPLIT_TOTAL - 1000, _SPLIT_GARDE_CAP),
+                            step=100, value=_half,
+                            on_change=lambda _: (_update_split_label(), _debounced_compute()),
+                        ).props("label-always color=green-8").classes("w-full")
+                    )
 
         async def do_compute():
             """Calcul complet : optimiseur + passe 2 + affichage (async)."""
@@ -198,6 +251,13 @@ async def page_production():
 
             effective_nb_gouts = max(nb_gouts, len(forced_gouts)) if forced_gouts else nb_gouts
 
+            # Répartition personnalisée (Split 7200L, 2 goûts)
+            split_volumes = None
+            if mode_prod == "Split 7200L" and effective_nb_gouts >= 2:
+                _slider = split_ratio_ref["ref"]
+                _v1 = int(_slider.value) if _slider else _SPLIT_TOTAL // 2
+                split_volumes = [float(_v1), float(_SPLIT_TOTAL - _v1)]
+
             # Filtrage produits exclus
             if excluded_products:
                 mask_excl = df_in.apply(
@@ -220,6 +280,7 @@ async def page_production():
                         TANK_CONFIGS=TANK_CONFIGS,
                         DEFAULT_LOSS_LARGE=DEFAULT_LOSS_LARGE,
                         DEFAULT_LOSS_SMALL=DEFAULT_LOSS_SMALL,
+                        split_volumes=split_volumes,
                     ),
                     timeout=60,
                 )
