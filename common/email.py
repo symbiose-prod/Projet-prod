@@ -76,16 +76,20 @@ def _post_brevo(path: str, payload: dict) -> dict:
         "accept": "application/json",
         "content-type": "application/json",
     }
+    conn: http.client.HTTPSConnection | None = None
     try:
-        with http.client.HTTPSConnection("api.brevo.com", timeout=20) as conn:  # type: ignore[attr-defined]
-            conn.request("POST", path, body=body, headers=headers)
-            resp = conn.getresponse()
-            raw = resp.read().decode("utf-8", errors="replace")
+        conn = http.client.HTTPSConnection("api.brevo.com", timeout=20)
+        conn.request("POST", path, body=body, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8", errors="replace")
     except EmailSendError:
         raise
     except (ConnectionError, OSError, http.client.HTTPException) as e:
         _log.error("Echec connexion Brevo: %s", e)
         raise EmailSendError(f"Echec connexion Brevo: {e}") from e
+    finally:
+        if conn is not None:
+            conn.close()
 
     if resp.status == 429:
         _log.warning("Brevo rate-limit atteint (HTTP 429)")
