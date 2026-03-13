@@ -178,7 +178,8 @@ def _render_easybeer_section(
     cuve_a_sel = None
     cuve_b_sel = None
 
-    if _cuves_fermentation:
+    # Pas de sélection de cuves en mode Split (pas pertinent)
+    if _cuves_fermentation and not _is_split_2_eb:
         ui.separator().classes("q-my-sm")
         ui.label("Affectation des cuves").classes("text-subtitle2")
 
