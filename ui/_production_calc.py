@@ -432,6 +432,11 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
         get_stock_produit_detail,
         is_configured,
     )
+    from common.easybeer.stocks import (
+        _STOCK_DETAIL_CACHE,
+        _STOCK_DETAIL_CACHE_TS,
+        _STOCK_DETAIL_CACHE_TTL,
+    )
 
     if not is_configured():
         return {"emb_status": "error", "emballages": [], "emb_error": "EasyBeer non configuré"}
@@ -489,6 +494,7 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
     # 3. Pour chaque ligne du plan : récupérer conditionnement et agréger besoins
     emb_needs: dict[int, dict] = {}  # idMatierePremiere → {libelle, qty, unite}
     bottle_needs: dict[int, float] = {}  # volume_cl → nb bouteilles
+    _seen_sids: set[int] = set()  # éviter les sleep redondants (cache hit)
 
     active_rows = df_final[df_final["Cartons à produire (arrondi)"] > 0]
     for _, row in active_rows.iterrows():
@@ -524,6 +530,15 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
                 id_produit, fmt_str, produit_name,
             )
             continue
+
+        # Éviter le rate-limit EasyBeer (max 10 req/s) — sleep seulement si pas en cache
+        _cached = (
+            sid in _STOCK_DETAIL_CACHE
+            and (_time.monotonic() - _STOCK_DETAIL_CACHE_TS.get(sid, 0)) < _STOCK_DETAIL_CACHE_TTL
+        )
+        if not _cached and sid not in _seen_sids:
+            _time.sleep(0.3)
+        _seen_sids.add(sid)
 
         try:
             detail = get_stock_produit_detail(sid)
