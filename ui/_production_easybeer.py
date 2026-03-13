@@ -299,6 +299,13 @@ def _render_easybeer_section(
                     await asyncio.sleep(3)
                 _is_first_flavor = False
                 vol_l = _vol_par_gout.get(g, 0)
+                # V_dilution : inclut la part de perte de transfert pour
+                # que les ingrédients de base correspondent au volume fermenté.
+                _vol_recipe = (
+                    volume_details[g].get("V_dilution", vol_l)
+                    if volume_details and g in volume_details
+                    else vol_l
+                )
                 _sel_idx = _product_indices[g]
                 id_produit = _eb_products[_sel_idx]["idProduit"]
                 _prod_label = _eb_products[_sel_idx].get("libelle", "")
@@ -315,7 +322,7 @@ def _render_easybeer_section(
                     etapes = prod_detail.get("etapes") or []
 
                     if recettes:
-                        base_ings = scale_recipe_ingredients(recettes[0], vol_l)
+                        base_ings = scale_recipe_ingredients(recettes[0], _vol_recipe)
                         for base_ing in base_ings:
                             _ingredients.extend(
                                 _lot_tracker.distribute_ingredient(base_ing)
