@@ -222,9 +222,13 @@ async def page_production():
                         ui.slider(
                             min=1000, max=min(_SPLIT_TOTAL - 1000, _SPLIT_GARDE_CAP),
                             step=100, value=_half,
-                            on_change=lambda _: (_update_split_label(), _debounced_compute()),
+                            on_change=lambda _: _update_split_label(),
                         ).props("label-always color=green-8").classes("w-full")
                     )
+                    ui.button(
+                        "Appliquer la répartition", icon="check",
+                        on_click=lambda: _debounced_compute(),
+                    ).props("unelevated color=green-8 dense").classes("w-full q-mt-xs")
 
         async def do_compute():
             """Calcul complet : optimiseur + passe 2 + affichage (async)."""
@@ -338,7 +342,7 @@ async def page_production():
                             ui.icon("info", size="sm").style(f"color: {COLORS['orange']}")
                             ui.label(note_msg).classes("text-body2")
 
-                # ── Assignation goûts ↔ splits (Split 7200L, 2 goûts)
+                # ── Inverser les goûts (Split 7200L, 2 goûts)
                 _is_split_display = (
                     mode_prod == "Split 7200L"
                     and len(gouts_cibles) >= 2
@@ -347,46 +351,21 @@ async def page_production():
                 )
                 if _is_split_display:
                     _g_list = list(gouts_cibles)
-                    _g_options = {g: g for g in _g_list}
 
-                    def _on_split_assign(idx_changed, new_val):
-                        """Quand un dropdown change, mettre à jour l'autre."""
-                        other = [g for g in _g_list if g != new_val]
-                        other_val = other[0] if other else new_val
-                        if idx_changed == 0:
-                            _split_sel_b.set_value(other_val)
-                        else:
-                            _split_sel_a.set_value(other_val)
-
-                    def _apply_split_order():
-                        """Applique l'ordre choisi et relance le calcul."""
-                        _split_gout_order["order"] = [
-                            _split_sel_a.value, _split_sel_b.value,
-                        ]
+                    def _swap_split_flavors():
+                        """Inverse les 2 goûts et relance le calcul."""
+                        _split_gout_order["order"] = list(reversed(_g_list))
                         _debounced_compute()
 
-                    with ui.card().classes("w-full").props("flat bordered"):
-                        with ui.card_section():
-                            ui.label("Assignation des goûts aux cuves").classes(
-                                "text-subtitle2"
-                            ).style(f"color: {COLORS['ink']}")
-                            with ui.row().classes("w-full gap-4 items-end q-mt-xs"):
-                                _split_sel_a = ui.select(
-                                    _g_options,
-                                    value=_g_list[0],
-                                    label=f"Split 1 — {int(split_volumes[0])} L",
-                                    on_change=lambda e: _on_split_assign(0, e.value),
-                                ).props("outlined dense").classes("flex-1")
-                                _split_sel_b = ui.select(
-                                    _g_options,
-                                    value=_g_list[1],
-                                    label=f"Split 2 — {int(split_volumes[1])} L",
-                                    on_change=lambda e: _on_split_assign(1, e.value),
-                                ).props("outlined dense").classes("flex-1")
-                                ui.button(
-                                    "Appliquer", icon="sync",
-                                    on_click=_apply_split_order,
-                                ).props("unelevated color=green-8 dense").classes("q-mb-xs")
+                    with ui.row().classes("w-full items-center gap-3"):
+                        ui.label(
+                            f"Split 1 : {_g_list[0]} ({int(split_volumes[0])} L) — "
+                            f"Split 2 : {_g_list[1]} ({int(split_volumes[1])} L)"
+                        ).classes("text-body2")
+                        ui.button(
+                            "Inverser les goûts", icon="swap_horiz",
+                            on_click=_swap_split_flavors,
+                        ).props("flat dense color=green-8")
 
                 # Détails volume (modes auto)
                 if volume_details:
