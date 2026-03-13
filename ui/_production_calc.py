@@ -448,15 +448,30 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
         return {"emb_status": "error", "emballages": [], "emb_error": str(exc)}
 
     stock_map: dict[tuple[int, str], int] = {}
-    for prod in bouteilles_data.get("consolidationsFilles", []):
-        for conso in prod.get("consolidationsFilles", []):
-            sid = conso.get("id")
-            id_produit = (conso.get("produit") or {}).get("idProduit")
-            contenance = float((conso.get("contenant") or {}).get("contenance", 0) or 0)
-            lot_qty = int((conso.get("lot") or {}).get("quantite", 0) or 0)
+    top_children = bouteilles_data.get("consolidationsFilles", [])
+    _log.info("Emballages: consolidation top-level = %d entries", len(top_children))
+
+    def _walk_consolidation(nodes: list, depth: int = 0) -> None:
+        for node in nodes:
+            sid = node.get("id")
+            id_produit = (node.get("produit") or {}).get("idProduit")
+            contenance = float((node.get("contenant") or {}).get("contenance", 0) or 0)
+            lot_qty = int((node.get("lot") or {}).get("quantite", 0) or 0)
+            libelle = node.get("libelle", "?")
+            sub = node.get("consolidationsFilles") or []
+            _log.info(
+                "Emballages: depth=%d lib=%s id=%s idProd=%s cont=%.2f lot=%d subs=%d",
+                depth, libelle, sid, id_produit, contenance, lot_qty, len(sub),
+            )
             if sid and id_produit and contenance and lot_qty:
                 fmt_str = f"{lot_qty}x{int(contenance * 100)}"
                 stock_map[(id_produit, fmt_str)] = sid
+                _log.info("Emballages: mapped (%s, %s) → sid=%s", id_produit, fmt_str, sid)
+            if sub:
+                _walk_consolidation(sub, depth + 1)
+
+    _walk_consolidation(top_children)
+    _log.info("Emballages: stock_map size = %d", len(stock_map))
 
     if not stock_map:
         _log.warning("Aucun stock produit trouvé dans la consolidation bouteilles")
