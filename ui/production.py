@@ -598,7 +598,7 @@ async def page_production():
                                             _g_tbl.add_slot("body-cell-statut", _SLOT_STATUT)
                                             _g_tbl.add_slot("body-cell-ecart", _SLOT_ECART)
 
-                        # ── Colonne droite : Emballages (stock EasyBeer) ──
+                        # ── Colonne droite : Emballages ──────────────────
                         with ui.column().classes("flex-1"):
                           if _emb_items:
                             _emb_color = COLORS["success"] if _emb_status == "ok" else COLORS["orange"]
@@ -606,7 +606,7 @@ async def page_production():
                             _emb_title = (
                                 "Emballages disponibles"
                                 if _emb_status == "ok"
-                                else f"{len(_emb_shortages)} emballage(s) sous seuil"
+                                else f"{len(_emb_shortages)} emballage(s) insuffisant(s)"
                             )
 
                             with ui.expansion(
@@ -619,9 +619,10 @@ async def page_production():
                                 _emb_rows = [
                                     {
                                         "mp": it["libelle"],
+                                        "besoin": f"{it['besoin']:,.0f} {it['unite']}".replace(",", " "),
                                         "stock": f"{it['stock']:,.0f} {it['unite']}".replace(",", " "),
-                                        "seuil": f"{it['seuil']:,.0f} {it['unite']}".replace(",", " ") if it["seuil"] > 0 else "—",
-                                        "statut": "OK" if it["ok"] else "Sous seuil",
+                                        "ecart": f"{it['ecart']:+,.0f} {it['unite']}".replace(",", " "),
+                                        "statut": "OK" if it["ok"] else "Insuffisant",
                                         "_ok": it["ok"],
                                         "_key": f"emb_{it['id_mp']}",
                                     }
@@ -629,8 +630,9 @@ async def page_production():
                                 ]
                                 _emb_columns = [
                                     {"name": "mp", "label": "Emballage", "field": "mp", "align": "left"},
+                                    {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
                                     {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
-                                    {"name": "seuil", "label": "Seuil bas", "field": "seuil", "align": "right"},
+                                    {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
                                     {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
                                 ]
                                 emb_table = ui.table(
@@ -640,6 +642,7 @@ async def page_production():
                                 ).classes("w-full").props("flat bordered dense")
 
                                 emb_table.add_slot("body-cell-statut", _SLOT_STATUT)
+                                emb_table.add_slot("body-cell-ecart", _SLOT_ECART)
 
                 # ── Images produits EasyBeer ─────────────────────────
                 product_images: dict[str, str] = {}  # produit_name → image_url

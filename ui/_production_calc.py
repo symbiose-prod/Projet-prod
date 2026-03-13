@@ -416,46 +416,163 @@ def _check_mp_availability(
     }
 
 
-def _check_emballages() -> dict:
-    """Charge les emballages (CONDITIONNEMENT_*) depuis le stock EasyBeer.
+def _check_emballages(df_final: pd.DataFrame) -> dict:
+    """Calcule les besoins en emballages depuis le plan de production.
+
+    Pour chaque produit fini dans df_final, récupère les éléments de
+    conditionnement (capsules, étiquettes, cartons) via l'API stock produit
+    EasyBeer, puis compare au stock actuel.
+    Ajoute aussi les bouteilles (CONTENANT) déduits du nombre de bouteilles.
 
     Retourne {"emb_status": "ok"|"warning"|"error", "emballages": [...]}.
-    Chaque item : {id_mp, libelle, stock, seuil, unite, ok}.
-    ok = stock >= seuil_bas.
+    Chaque item : {id_mp, libelle, besoin, stock, ecart, unite, ok}.
     """
-    from common.easybeer import get_all_matieres_premieres, is_configured
+    from common.easybeer import (
+        get_all_matieres_premieres,
+        get_stock_bouteilles,
+        get_stock_produit_detail,
+        is_configured,
+    )
 
     if not is_configured():
         return {"emb_status": "error", "emballages": [], "emb_error": "EasyBeer non configuré"}
 
+    if df_final.empty:
+        return {"emb_status": "ok", "emballages": []}
+
+    # 1. Construire la map consolidation : (idProduit, "12x33") → idStockProduit
+    try:
+        bouteilles_data = get_stock_bouteilles()
+    except Exception as exc:
+        _log.warning("Erreur get_stock_bouteilles pour emballages: %s", exc)
+        return {"emb_status": "error", "emballages": [], "emb_error": str(exc)}
+
+    stock_map: dict[tuple[int, str], int] = {}
+    for prod in bouteilles_data.get("consolidationsFilles", []):
+        for conso in prod.get("consolidationsFilles", []):
+            sid = conso.get("id")
+            id_produit = (conso.get("produit") or {}).get("idProduit")
+            contenance = float((conso.get("contenant") or {}).get("contenance", 0) or 0)
+            lot_qty = int((conso.get("lot") or {}).get("quantite", 0) or 0)
+            if sid and id_produit and contenance and lot_qty:
+                fmt_str = f"{lot_qty}x{int(contenance * 100)}"
+                stock_map[(id_produit, fmt_str)] = sid
+
+    if not stock_map:
+        _log.warning("Aucun stock produit trouvé dans la consolidation bouteilles")
+        return {"emb_status": "ok", "emballages": []}
+
+    # 2. Matcher goûts → produits EasyBeer
+    eb_products = _fetch_eb_products()
+    if not eb_products:
+        return {"emb_status": "error", "emballages": [], "emb_error": "Aucun produit EasyBeer"}
+    prod_labels = [p.get("libelle", "") for p in eb_products]
+
+    # 3. Pour chaque ligne du plan : récupérer conditionnement et agréger besoins
+    emb_needs: dict[int, dict] = {}  # idMatierePremiere → {libelle, qty, unite}
+    bottle_needs: dict[int, float] = {}  # volume_cl → nb bouteilles
+
+    active_rows = df_final[df_final["Cartons à produire (arrondi)"] > 0]
+    for _, row in active_rows.iterrows():
+        gout = str(row["GoutCanon"])
+        cartons = int(row["Cartons à produire (arrondi)"])
+        btl_per_carton = int(row["Bouteilles/carton"])
+        vol_carton_hl = float(row["Volume/carton (hL)"])
+
+        # Volume bouteille en cL pour le fmt_str
+        vol_btl_l = vol_carton_hl / btl_per_carton * 100 if btl_per_carton > 0 else 0
+        vol_cl = int(round(vol_btl_l * 100))
+        fmt_str = f"{btl_per_carton}x{vol_cl}"
+
+        # Agréger bouteilles par format
+        bottle_needs[vol_cl] = bottle_needs.get(vol_cl, 0) + cartons * btl_per_carton
+
+        # Trouver le idStockProduit
+        idx = _auto_match(gout, prod_labels)
+        id_produit = eb_products[idx]["idProduit"]
+
+        sid = stock_map.get((id_produit, fmt_str))
+        if sid is None:
+            _log.debug(
+                "Emballages: pas de stock produit pour (%s, %s) goût=%s",
+                id_produit, fmt_str, gout,
+            )
+            continue
+
+        try:
+            detail = get_stock_produit_detail(sid)
+        except Exception as exc:
+            _log.warning("Erreur detail stock %s: %s", sid, exc)
+            continue
+
+        for elem in detail.get("elementsConditionnement") or []:
+            mp = elem.get("elementMatierePremiere") or {}
+            id_mp = mp.get("idMatierePremiere")
+            if id_mp is None:
+                continue
+            qty_per_unit = float(elem.get("quantite", 0) or 0)
+            besoin = qty_per_unit * cartons
+            unite = (mp.get("unite") or {}).get("symbole", "")
+            libelle = (mp.get("libelle") or "").strip()
+
+            if id_mp in emb_needs:
+                emb_needs[id_mp]["qty"] += besoin
+            else:
+                emb_needs[id_mp] = {"libelle": libelle, "qty": besoin, "unite": unite}
+
+    # 4. Ajouter les bouteilles (type CONTENANT)
     try:
         all_mps = get_all_matieres_premieres()
     except Exception as exc:
-        return {"emb_status": "error", "emballages": [], "emb_error": str(exc)}
+        _log.warning("Erreur get_all_matieres_premieres pour emballages: %s", exc)
+        all_mps = []
 
-    emb_items: list[dict] = []
-    has_shortage = False
-
-    for mp in sorted(all_mps, key=lambda m: (m.get("libelle") or "")):
+    # Matcher bouteilles par volume dans le libellé
+    for mp in all_mps:
         mp_type = (mp.get("type") or {}).get("code", "")
-        if not mp_type.startswith("CONDITIONNEMENT"):
+        if mp_type != "CONTENANT":
             continue
         if not mp.get("actif", True):
             continue
-
-        stock = float(mp.get("quantiteVirtuelle", 0) or 0)
-        seuil = float(mp.get("seuilBas", 0) or 0)
+        libelle = (mp.get("libelle") or "").strip()
+        id_mp = mp.get("idMatierePremiere")
         unite = (mp.get("unite") or {}).get("symbole", "")
-        ok = stock >= seuil if seuil > 0 else True
+
+        # Trouver le volume correspondant (ex: "Bouteille 33cl" → 33)
+        for vol_cl, nb_btl in bottle_needs.items():
+            if f"{vol_cl}cl" in libelle.lower().replace(" ", ""):
+                if id_mp in emb_needs:
+                    emb_needs[id_mp]["qty"] += nb_btl
+                else:
+                    emb_needs[id_mp] = {"libelle": libelle, "qty": nb_btl, "unite": unite}
+                break
+
+    if not emb_needs:
+        return {"emb_status": "ok", "emballages": []}
+
+    # 5. Comparer au stock
+    stock_by_id: dict[int, float] = {
+        m["idMatierePremiere"]: float(m.get("quantiteVirtuelle", 0) or 0)
+        for m in all_mps
+        if m.get("idMatierePremiere") is not None
+    }
+
+    emb_items: list[dict] = []
+    has_shortage = False
+    for id_mp, need in sorted(emb_needs.items(), key=lambda x: x[1]["libelle"]):
+        stock = stock_by_id.get(id_mp, 0.0)
+        besoin = need["qty"]
+        ecart = stock - besoin
+        ok = ecart >= 0
         if not ok:
             has_shortage = True
-
         emb_items.append({
-            "id_mp": mp.get("idMatierePremiere"),
-            "libelle": (mp.get("libelle") or "").strip(),
+            "id_mp": id_mp,
+            "libelle": need["libelle"],
+            "besoin": round(besoin, 1),
             "stock": round(stock, 1),
-            "seuil": round(seuil, 1),
-            "unite": unite,
+            "ecart": round(ecart, 1),
+            "unite": need["unite"],
             "ok": ok,
         })
 
@@ -695,7 +812,7 @@ def _compute_production_sync(
     # ── PASSE 4 : Stock emballages (depuis stock EasyBeer, pas recettes) ──
     emb_check: dict = {"emb_status": "ok", "emballages": []}
     try:
-        emb_check = _check_emballages()
+        emb_check = _check_emballages(df_final)
     except Exception as exc:
         _log.warning("Erreur vérification emballages: %s", exc, exc_info=True)
         emb_check = {"emb_status": "error", "emballages": [], "emb_error": str(exc)}

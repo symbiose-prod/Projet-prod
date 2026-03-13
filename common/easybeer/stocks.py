@@ -101,9 +101,19 @@ def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
 
 # ─── Detail stock produit ────────────────────────────────────────────────────
 
+_STOCK_DETAIL_CACHE: dict[int, dict[str, Any]] = {}
+_STOCK_DETAIL_CACHE_TS: dict[int, float] = {}
+_STOCK_DETAIL_CACHE_TTL = 1800  # 30 minutes
+
+
 @retry_api
 def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
     """GET /stock/produit/edition/{id} → Detail complet d'un stock produit."""
+    now = time.monotonic()
+    cached_ts = _STOCK_DETAIL_CACHE_TS.get(id_stock_produit, 0.0)
+    if id_stock_produit in _STOCK_DETAIL_CACHE and (now - cached_ts) < _STOCK_DETAIL_CACHE_TTL:
+        return _STOCK_DETAIL_CACHE[id_stock_produit]
+
     ep = f"stock/produit/edition/{id_stock_produit}"
     r = get_session().get(
         f"{BASE}/stock/produit/edition/{id_stock_produit}",
@@ -111,7 +121,10 @@ def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
         timeout=10,
     )
     _check_response(r, ep)
-    return _safe_json(r, ep)
+    result = _safe_json(r, ep)
+    _STOCK_DETAIL_CACHE[id_stock_produit] = result
+    _STOCK_DETAIL_CACHE_TS[id_stock_produit] = now
+    return result
 
 
 # ─── Poids cartons (avec cache fichier) ──────────────────────────────────────
