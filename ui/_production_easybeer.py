@@ -293,7 +293,12 @@ def _render_easybeer_section(
             from common.lot_fifo import BatchLotTracker
             _lot_tracker = BatchLotTracker(fetch_lots_fn=get_mp_lots)
 
+            _is_first_flavor = True
             for g in _gouts_eb:
+                # Pause entre parfums pour éviter le rate-limit EasyBeer (HTTP 400)
+                if not _is_first_flavor:
+                    await asyncio.sleep(3)
+                _is_first_flavor = False
                 vol_l = _vol_par_gout.get(g, 0)
                 _sel_idx = _product_indices[g]
                 id_produit = _eb_products[_sel_idx]["idProduit"]
@@ -426,8 +431,8 @@ def _render_easybeer_section(
                 except (EasyBeerError, requests.RequestException, KeyError, ValueError) as _pe:
                     ui.notify(f"Planif. « {g} » : {_pe}", type="warning")
 
-                # Pause avant upload pour éviter le rate-limit EasyBeer (HTTP 429)
-                await asyncio.sleep(2)
+                # Pause avant upload pour éviter le rate-limit EasyBeer (HTTP 429/400)
+                await asyncio.sleep(3)
 
                 # Upload fiche Excel
                 try:

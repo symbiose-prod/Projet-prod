@@ -91,12 +91,18 @@ def upload_fichier_brassin(
             auth=_auth(),
             timeout=60,
         )
+        _body_low = (r.text or "")[:500].lower()
         _limited = (
             r.status_code == 429
-            or (r.status_code == 400 and "banned" in (r.text or "")[:500].lower())
+            or (
+                r.status_code == 400
+                and any(kw in _body_low for kw in ("limit", "banned", "rate"))
+            )
         )
         if not _limited or attempt >= len(_backoff):
             break
+        from ._client import _on_rate_limited
+        _on_rate_limited()
         delay = _backoff[attempt]
         _log.warning(
             "Upload %s : rate-limited HTTP %d (tentative %d/%d) — retry dans %ds",

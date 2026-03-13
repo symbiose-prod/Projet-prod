@@ -79,11 +79,11 @@ def _throttle() -> None:
 
 
 def _on_rate_limited() -> None:
-    """Called when a rate-limit response is detected; enforces a 2s cooldown."""
+    """Called when a rate-limit response is detected; enforces a 5s cooldown."""
     global _api_backoff_until
     with _api_lock:
-        _api_backoff_until = _time.monotonic() + 2.0
-    _log.warning("Rate-limit détecté — pause 2s avant prochains appels API")
+        _api_backoff_until = _time.monotonic() + 5.0
+    _log.warning("Rate-limit détecté — pause 5s avant prochains appels API")
 
 
 def _auth() -> tuple[str, str]:

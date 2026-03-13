@@ -109,9 +109,9 @@ class BatchLotTracker:
 
     def _get_pool(self, id_mp: int) -> LotPool:
         if id_mp not in self._pools:
-            # Throttle entre les appels API pour éviter le rate-limit (429)
+            # Throttle entre les appels API pour éviter le rate-limit (429/400)
             if self._pools:
-                _time.sleep(0.4)
+                _time.sleep(0.6)
             try:
                 lots = self._fetch(id_mp)
             except Exception:
