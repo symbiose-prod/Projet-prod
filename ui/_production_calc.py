@@ -305,8 +305,6 @@ def _check_mp_availability(
     # 3. Pour chaque goût : recette → ingrédients → agréger besoins
     total_needs: dict[int, dict] = {}  # idMatierePremiere → {libelle, qty, unite}
     needs_by_gout: dict[str, dict[int, dict]] = {}  # goût → {idMP → {libelle, qty, unite}}
-    emb_needs: dict[int, dict] = {}  # emballages (CONDITIONNEMENT)
-    emb_needs_by_gout: dict[str, dict[int, dict]] = {}
 
     for g in gouts_cibles:
         vol_l = vol_par_gout.get(g, 0)
@@ -314,7 +312,6 @@ def _check_mp_availability(
             continue
 
         needs_by_gout[g] = {}
-        emb_needs_by_gout[g] = {}
         idx = _auto_match(g, prod_labels)
         id_produit = eb_products[idx]["idProduit"]
 
@@ -336,16 +333,8 @@ def _check_mp_availability(
                 unite = (ing.get("unite") or {}).get("symbole", "")
                 libelle = mp.get("libelle", f"MP #{id_mp}")
 
+                # Ignorer les emballages (gérés via stock, pas recette)
                 if mp_type.startswith("CONDITIONNEMENT"):
-                    # Emballages : collecter séparément
-                    if id_mp in emb_needs:
-                        emb_needs[id_mp]["qty"] += qty
-                    else:
-                        emb_needs[id_mp] = {"libelle": libelle, "qty": qty, "unite": unite}
-                    if id_mp in emb_needs_by_gout[g]:
-                        emb_needs_by_gout[g][id_mp]["qty"] += qty
-                    else:
-                        emb_needs_by_gout[g][id_mp] = {"libelle": libelle, "qty": qty, "unite": unite}
                     continue
 
                 if id_mp in total_needs:
@@ -362,10 +351,9 @@ def _check_mp_availability(
             _log.warning("MP check: erreur recette goût %s: %s", g, exc, exc_info=True)
             continue
 
-    if not total_needs and not emb_needs:
+    if not total_needs:
         return {
             "status": "ok", "items": [], "items_by_gout": {},
-            "emballages": [], "emballages_by_gout": {}, "emb_status": "ok",
             "error_msg": "",
         }
 
@@ -420,52 +408,60 @@ def _check_mp_availability(
             })
         _items_by_gout[g] = g_items
 
-    # 6. Comparer besoins emballages vs stock
-    emb_items: list[dict] = []
-    emb_has_shortage = False
-    for id_mp, need in sorted(emb_needs.items(), key=lambda x: x[1]["libelle"]):
-        stock = stock_by_id.get(id_mp, 0.0)
-        besoin = need["qty"]
-        ecart = stock - besoin
-        ok = ecart >= 0
-        if not ok:
-            emb_has_shortage = True
-        emb_items.append({
-            "id_mp": id_mp,
-            "libelle": need["libelle"],
-            "besoin": round(besoin, 2),
-            "stock": round(stock, 2),
-            "ecart": round(ecart, 2),
-            "unite": need["unite"],
-            "ok": ok,
-        })
-
-    _emb_items_by_gout: dict[str, list] = {}
-    for g, g_needs in emb_needs_by_gout.items():
-        g_items = []
-        for id_mp, need in sorted(g_needs.items(), key=lambda x: x[1]["libelle"]):
-            stock = stock_by_id.get(id_mp, 0.0)
-            besoin = need["qty"]
-            ecart = stock - besoin
-            g_items.append({
-                "id_mp": id_mp,
-                "libelle": need["libelle"],
-                "besoin": round(besoin, 2),
-                "stock": round(stock, 2),
-                "ecart": round(ecart, 2),
-                "unite": need["unite"],
-                "ok": ecart >= 0,
-            })
-        _emb_items_by_gout[g] = g_items
-
     return {
         "status": "warning" if has_shortage else "ok",
         "items": items,
         "items_by_gout": _items_by_gout,
-        "emballages": emb_items,
-        "emballages_by_gout": _emb_items_by_gout,
-        "emb_status": "warning" if emb_has_shortage else "ok",
         "error_msg": "",
+    }
+
+
+def _check_emballages() -> dict:
+    """Charge les emballages (CONDITIONNEMENT_*) depuis le stock EasyBeer.
+
+    Retourne {"emb_status": "ok"|"warning"|"error", "emballages": [...]}.
+    Chaque item : {id_mp, libelle, stock, seuil, unite, ok}.
+    ok = stock >= seuil_bas.
+    """
+    from common.easybeer import get_all_matieres_premieres, is_configured
+
+    if not is_configured():
+        return {"emb_status": "error", "emballages": [], "emb_error": "EasyBeer non configuré"}
+
+    try:
+        all_mps = get_all_matieres_premieres()
+    except Exception as exc:
+        return {"emb_status": "error", "emballages": [], "emb_error": str(exc)}
+
+    emb_items: list[dict] = []
+    has_shortage = False
+
+    for mp in sorted(all_mps, key=lambda m: (m.get("libelle") or "")):
+        mp_type = (mp.get("type") or {}).get("code", "")
+        if not mp_type.startswith("CONDITIONNEMENT"):
+            continue
+        if not mp.get("actif", True):
+            continue
+
+        stock = float(mp.get("quantiteVirtuelle", 0) or 0)
+        seuil = float(mp.get("seuilBas", 0) or 0)
+        unite = (mp.get("unite") or {}).get("symbole", "")
+        ok = stock >= seuil if seuil > 0 else True
+        if not ok:
+            has_shortage = True
+
+        emb_items.append({
+            "id_mp": mp.get("idMatierePremiere"),
+            "libelle": (mp.get("libelle") or "").strip(),
+            "stock": round(stock, 1),
+            "seuil": round(seuil, 1),
+            "unite": unite,
+            "ok": ok,
+        })
+
+    return {
+        "emb_status": "warning" if has_shortage else "ok",
+        "emballages": emb_items,
     }
 
 
@@ -696,6 +692,14 @@ def _compute_production_sync(
         _log.warning("Erreur vérification MP: %s", exc, exc_info=True)
         mp_check = {"status": "error", "items": [], "error_msg": str(exc)}
 
+    # ── PASSE 4 : Stock emballages (depuis stock EasyBeer, pas recettes) ──
+    emb_check: dict = {"emb_status": "ok", "emballages": []}
+    try:
+        emb_check = _check_emballages()
+    except Exception as exc:
+        _log.warning("Erreur vérification emballages: %s", exc, exc_info=True)
+        emb_check = {"emb_status": "error", "emballages": [], "emb_error": str(exc)}
+
     return {
         "df_min": df_min,
         "cap_resume": cap_resume,
@@ -709,4 +713,5 @@ def _compute_production_sync(
         "df_final": df_final,
         "ongoing": ongoing,
         "mp_check": mp_check,
+        "emb_check": emb_check,
     }

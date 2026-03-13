@@ -337,6 +337,7 @@ async def page_production():
             volume_cible = _result["volume_cible"]
             df_final = _result["df_final"]
             mp_check = _result.get("mp_check", {})
+            emb_check = _result.get("emb_check", {})
             ongoing = _result.get("ongoing", {})
 
             # Nettoyer les overrides orphelins (goûts qui ne sont plus dans le calcul)
@@ -477,8 +478,8 @@ async def page_production():
                 _mp_err = mp_check.get("error_msg", "")
                 _mp_shortages = [it for it in _mp_items if not it["ok"]]
 
-                _emb_status = mp_check.get("emb_status", "ok")
-                _emb_items = mp_check.get("emballages", [])
+                _emb_status = emb_check.get("emb_status", "ok")
+                _emb_items = emb_check.get("emballages", [])
                 _emb_shortages = [it for it in _emb_items if not it["ok"]]
 
                 # Slots Quasar réutilisés pour les tables statut/écart
@@ -597,7 +598,7 @@ async def page_production():
                                             _g_tbl.add_slot("body-cell-statut", _SLOT_STATUT)
                                             _g_tbl.add_slot("body-cell-ecart", _SLOT_ECART)
 
-                        # ── Colonne droite : Emballages ──────────────────
+                        # ── Colonne droite : Emballages (stock EasyBeer) ──
                         with ui.column().classes("flex-1"):
                           if _emb_items:
                             _emb_color = COLORS["success"] if _emb_status == "ok" else COLORS["orange"]
@@ -605,7 +606,7 @@ async def page_production():
                             _emb_title = (
                                 "Emballages disponibles"
                                 if _emb_status == "ok"
-                                else f"{len(_emb_shortages)} emballage(s) insuffisant(s)"
+                                else f"{len(_emb_shortages)} emballage(s) sous seuil"
                             )
 
                             with ui.expansion(
@@ -618,10 +619,9 @@ async def page_production():
                                 _emb_rows = [
                                     {
                                         "mp": it["libelle"],
-                                        "besoin": f"{it['besoin']:.1f} {it['unite']}",
-                                        "stock": f"{it['stock']:.1f} {it['unite']}",
-                                        "ecart": f"{it['ecart']:+.1f} {it['unite']}",
-                                        "statut": "OK" if it["ok"] else "Insuffisant",
+                                        "stock": f"{it['stock']:,.0f} {it['unite']}".replace(",", " "),
+                                        "seuil": f"{it['seuil']:,.0f} {it['unite']}".replace(",", " ") if it["seuil"] > 0 else "—",
+                                        "statut": "OK" if it["ok"] else "Sous seuil",
                                         "_ok": it["ok"],
                                         "_key": f"emb_{it['id_mp']}",
                                     }
@@ -629,9 +629,8 @@ async def page_production():
                                 ]
                                 _emb_columns = [
                                     {"name": "mp", "label": "Emballage", "field": "mp", "align": "left"},
-                                    {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
                                     {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
-                                    {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
+                                    {"name": "seuil", "label": "Seuil bas", "field": "seuil", "align": "right"},
                                     {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
                                 ]
                                 emb_table = ui.table(
@@ -641,46 +640,6 @@ async def page_production():
                                 ).classes("w-full").props("flat bordered dense")
 
                                 emb_table.add_slot("body-cell-statut", _SLOT_STATUT)
-                                emb_table.add_slot("body-cell-ecart", _SLOT_ECART)
-
-                                # Détail emballages par goût
-                                _emb_by_gout = mp_check.get("emballages_by_gout", {})
-                                if len(_emb_by_gout) >= 2:
-                                    ui.separator().classes("q-my-sm")
-                                    ui.label("Détail par goût").classes("text-subtitle2 text-grey-7 q-mt-xs")
-                                    for _g_emb, _g_items_emb in _emb_by_gout.items():
-                                        _g_emb_short = [it for it in _g_items_emb if not it["ok"]]
-                                        _g_emb_icon = "check_circle" if not _g_emb_short else "warning"
-                                        _g_emb_color = COLORS["success"] if not _g_emb_short else COLORS["orange"]
-                                        _g_emb_title = (
-                                            f"{_g_emb} — emballages disponibles"
-                                            if not _g_emb_short
-                                            else f"{_g_emb} — {len(_g_emb_short)} insuffisant(s)"
-                                        )
-                                        with ui.expansion(
-                                            _g_emb_title, icon=_g_emb_icon, value=bool(_g_emb_short),
-                                        ).classes("w-full").style(
-                                            f"border: 1px solid {_g_emb_color}40; border-radius: 8px"
-                                        ):
-                                            _g_emb_rows = [
-                                                {
-                                                    "mp": it["libelle"],
-                                                    "besoin": f"{it['besoin']:.1f} {it['unite']}",
-                                                    "stock": f"{it['stock']:.1f} {it['unite']}",
-                                                    "ecart": f"{it['ecart']:+.1f} {it['unite']}",
-                                                    "statut": "OK" if it["ok"] else "Insuffisant",
-                                                    "_ok": it["ok"],
-                                                    "_key": f"emb_{_g_emb}_{it['id_mp']}",
-                                                }
-                                                for it in _g_items_emb
-                                            ]
-                                            _g_emb_tbl = ui.table(
-                                                columns=_emb_columns,
-                                                rows=_g_emb_rows,
-                                                row_key="_key",
-                                            ).classes("w-full").props("flat bordered dense")
-                                            _g_emb_tbl.add_slot("body-cell-statut", _SLOT_STATUT)
-                                            _g_emb_tbl.add_slot("body-cell-ecart", _SLOT_ECART)
 
                 # ── Images produits EasyBeer ─────────────────────────
                 product_images: dict[str, str] = {}  # produit_name → image_url
