@@ -77,39 +77,20 @@ def _render_easybeer_section(
     # ── Volume par gout ──────────────────────────────────────────
     _vol_par_gout: dict[str, float] = {}
 
-    if mode_prod != "Manuel" and volume_details:
+    if volume_details:
         for g in _gouts_eb:
             if g in volume_details:
                 _vol_par_gout[g] = volume_details[g]["V_start"]
             else:
                 _tank_eb = tank_configs.get(mode_prod) or tank_configs["Cuve de 7200L (1 goût)"]
                 _vol_par_gout[g] = float(_tank_eb["capacity"])
-        _perte_litres = tank_configs[mode_prod]["transfer_loss"] + tank_configs[mode_prod]["bottling_loss"]
+        # Pertes : lire depuis le premier goût de volume_details
+        _vd_first = list(volume_details.values())[0]
+        _perte_litres = _vd_first.get("transfer_loss", 0) + _vd_first.get("bottling_loss", 0)
     else:
         _perte_litres = DEFAULT_LOSS_LARGE if volume_cible > 50 else DEFAULT_LOSS_SMALL
-        if _nb_gouts_eb == 1:
-            _vol_par_gout[_gouts_eb[0]] = volume_cible * 100 + _perte_litres
-        else:
-            if _df_calc_eb_json:
-                _df_calc_eb_parsed = load_df(_df_calc_eb_json)
-                _proportions = {}
-                _total_x = 0.0
-                if "X_adj (hL)" in _df_calc_eb_parsed.columns:
-                    for g in _gouts_eb:
-                        mask = _df_calc_eb_parsed["GoutCanon"].astype(str) == g
-                        val = float(_df_calc_eb_parsed.loc[mask, "X_adj (hL)"].sum())
-                        _proportions[g] = val
-                        _total_x += val
-                if _total_x > 0:
-                    for g in _gouts_eb:
-                        part = (_proportions.get(g, 0) / _total_x) * volume_cible
-                        _vol_par_gout[g] = part * 100 + _perte_litres
-                else:
-                    for g in _gouts_eb:
-                        _vol_par_gout[g] = (volume_cible / _nb_gouts_eb) * 100 + _perte_litres
-            else:
-                for g in _gouts_eb:
-                    _vol_par_gout[g] = (volume_cible / _nb_gouts_eb) * 100 + _perte_litres
+        for g in _gouts_eb:
+            _vol_par_gout[g] = (volume_cible / _nb_gouts_eb) * 100 + _perte_litres
 
     # ── Charger les produits EasyBeer ────────────────────────────
     try:
@@ -168,19 +149,26 @@ def _render_easybeer_section(
     except (EasyBeerError, requests.RequestException):
         _log.debug("Erreur chargement materiels EasyBeer", exc_info=True)
 
-    _tank_cap_eb = 0
-    if mode_prod != "Manuel" and volume_details:
-        _vd_first = list(volume_details.values())[0]
-        _tank_cap_eb = _vd_first.get("capacity", 0)
-    elif mode_prod != "Manuel":
-        _tank_cfg_eb = tank_configs.get(mode_prod) or {}
-        _tank_cap_eb = _tank_cfg_eb.get("capacity", 0) if _tank_cfg_eb else 0
+    # Capacité cuve fermentation (A) — toujours la capacité du mode (7200 ou 5200)
+    _tank_cfg_eb = tank_configs.get(mode_prod) or {}
+    _cap_fermentation = _tank_cfg_eb.get("capacity", 0)
+
+    # Capacité cuve garde (B) — en split 2 goûts : 5200L, sinon même que fermentation
+    _split_cfg_eb = _tank_cfg_eb.get("split")
+    _is_split_2_eb = bool(_split_cfg_eb and len(_gouts_eb) >= 2)
+    _cap_garde = _split_cfg_eb["garde_capacity"] if _is_split_2_eb else _cap_fermentation
 
     _cuves_fermentation = [
         m for m in _materiels
         if m.get("type", {}).get("code") == "CUVE_FERMENTATION"
-        and abs(m.get("volume", 0) - _tank_cap_eb) < 100
-    ] if _tank_cap_eb > 0 else []
+        and abs(m.get("volume", 0) - _cap_fermentation) < 100
+    ] if _cap_fermentation > 0 else []
+
+    _cuves_garde = [
+        m for m in _materiels
+        if m.get("type", {}).get("code") == "CUVE_FERMENTATION"
+        and abs(m.get("volume", 0) - _cap_garde) < 100
+    ] if _cap_garde > 0 else []
 
     _cuve_dilution = next(
         (m for m in _materiels if m.get("type", {}).get("code") == "CUVE_FABRICATION"),
@@ -194,7 +182,7 @@ def _render_easybeer_section(
         ui.separator().classes("q-my-sm")
         ui.label("Affectation des cuves").classes("text-subtitle2")
 
-        _cuve_options = {
+        _cuve_a_options = {
             i: (
                 f"{m.get('identifiant', '')} ({m.get('volume', 0):.0f}L)"
                 f" — {m.get('etatCourant', {}).get('libelle', '?')}"
@@ -202,15 +190,23 @@ def _render_easybeer_section(
             for i, m in enumerate(_cuves_fermentation)
         }
 
+        _cuve_b_options = {
+            i: (
+                f"{m.get('identifiant', '')} ({m.get('volume', 0):.0f}L)"
+                f" — {m.get('etatCourant', {}).get('libelle', '?')}"
+            )
+            for i, m in enumerate(_cuves_garde)
+        }
+
         with ui.row().classes("w-full gap-4"):
             cuve_a_sel = ui.select(
-                _cuve_options, value=0,
+                _cuve_a_options, value=0,
                 label="Cuve fermentation (A)",
             ).props("outlined dense").classes("flex-1")
 
-            _default_b = 1 if len(_cuves_fermentation) > 1 else 0
+            _default_b = 1 if len(_cuves_garde) > 1 else 0
             cuve_b_sel = ui.select(
-                _cuve_options, value=_default_b,
+                _cuve_b_options, value=_default_b,
                 label="Cuve garde (B)",
             ).props("outlined dense").classes("flex-1")
 
@@ -280,8 +276,8 @@ def _render_easybeer_section(
                 if cuve_a_sel and _cuves_fermentation else None
             )
             _selected_cuve_b_id = (
-                _cuves_fermentation[cuve_b_sel.value].get("idMateriel")
-                if cuve_b_sel and _cuves_fermentation else None
+                _cuves_garde[cuve_b_sel.value].get("idMateriel")
+                if cuve_b_sel and _cuves_garde else None
             )
             _cuve_dilution_id = _cuve_dilution.get("idMateriel") if _cuve_dilution else None
 

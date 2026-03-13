@@ -41,7 +41,7 @@ DEFAULT_LOSS_SMALL = _biz["default_loss_small"]
 DDM_DAYS = _biz["ddm_days"]
 
 # ====== Configurations cuves ======
-TANK_CONFIGS = {**_biz["tanks"], "Manuel": None}
+TANK_CONFIGS = _biz["tanks"]
 
 TEMPLATE_PATH = "assets/Fiche_production.xlsx"
 
@@ -108,8 +108,8 @@ async def page_production():
                 value="Cuve de 7200L (1 goût)",
             ).props("dense")
 
-            # Inputs mode Manuel (visibles seulement en Manuel)
-            manual_container = ui.column().classes("w-full")
+            # Input nb goûts (visible seulement en Split 7200L)
+            split_container = ui.column().classes("w-full")
 
             ui.separator().classes("q-my-sm")
             ui.label("Filtres").classes("text-subtitle2 text-grey-7")
@@ -156,24 +156,21 @@ async def page_production():
         # State persistant pour les overrides
         overrides: dict = app.storage.user.setdefault("production_overrides", {})
 
-        # State pour les inputs mode Manuel
-        volume_input_ref = {"ref": None}
+        # State pour l'input nb goûts (Split 7200L)
         nb_gouts_input_ref = {"ref": None}
 
-        def _build_manual_inputs():
-            manual_container.clear()
-            if mode.value == "Manuel":
-                with manual_container:
-                    volume_input_ref["ref"] = ui.number(
-                        "Volume cible (hL)", value=64.0, min=1.0, max=1000.0, step=1.0,
-                        on_change=lambda _: _debounced_compute(),
-                    ).props("outlined dense").classes("w-full")
+        def _build_split_inputs():
+            split_container.clear()
+            if mode.value == "Split 7200L":
+                with split_container:
                     nb_gouts_input_ref["ref"] = ui.select(
                         {1: "1 goût", 2: "2 goûts"},
-                        value=1,
+                        value=TANK_CONFIGS["Split 7200L"]["nb_gouts"],
                         label="Nb goûts",
                         on_change=lambda _: _debounced_compute(),
                     ).props("outlined dense").classes("w-full")
+            else:
+                nb_gouts_input_ref["ref"] = None
 
         async def do_compute():
             """Calcul complet : optimiseur + passe 2 + affichage (async)."""
@@ -188,21 +185,16 @@ async def page_production():
             forced_gouts = forced_gouts_sel.value or []
             repartir_pro_rv = repartir_cb.value
 
-            if mode_prod == "Manuel":
-                vol_ref = volume_input_ref["ref"]
+            _tank = TANK_CONFIGS[mode_prod]
+            volume_cible = _tank["nominal_hL"]
+            if mode_prod == "Split 7200L":
                 nb_ref = nb_gouts_input_ref["ref"]
                 try:
-                    volume_cible = float(vol_ref.value) if vol_ref else 64.0
+                    nb_gouts = int(nb_ref.value) if nb_ref else _tank["nb_gouts"]
                 except (TypeError, ValueError):
-                    volume_cible = 64.0
-                try:
-                    nb_gouts = int(nb_ref.value) if nb_ref else 1
-                except (TypeError, ValueError):
-                    nb_gouts = 1
+                    nb_gouts = _tank["nb_gouts"]
             else:
-                _tank = TANK_CONFIGS[mode_prod]
                 nb_gouts = _tank["nb_gouts"]
-                volume_cible = _tank["nominal_hL"]
 
             effective_nb_gouts = max(nb_gouts, len(forced_gouts)) if forced_gouts else nb_gouts
 
@@ -786,7 +778,7 @@ async def page_production():
 
         # ── Watchers sidebar ──────────────────────────────────────────
         async def _on_mode_change(e=None):
-            _build_manual_inputs()
+            _build_split_inputs()
             await do_compute()
 
         # ── Debounce 300ms pour les watchers sidebar (M15) ──────────
@@ -810,5 +802,5 @@ async def page_production():
         forced_gouts_sel.on_value_change(_debounced_compute)
 
         # ── Rendu initial ─────────────────────────────────────────────
-        _build_manual_inputs()
+        _build_split_inputs()
         await do_compute()

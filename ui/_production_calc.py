@@ -264,7 +264,7 @@ def _check_mp_availability(
 
     # 1. Volume par goût (même logique que _render_easybeer_section)
     vol_par_gout: dict[str, float] = {}
-    if mode_prod != "Manuel" and volume_details:
+    if volume_details:
         for g in gouts_cibles:
             if g in volume_details:
                 vol_par_gout[g] = volume_details[g]["V_start"]
@@ -413,9 +413,9 @@ def _compute_production_sync(
         exclude_list=excluded_gouts,
     )
 
-    # ── PASSE 2 : Aromatisation (modes auto)
+    # ── PASSE 2 : Aromatisation (tous les goûts)
     volume_details: dict = {}
-    if mode_prod != "Manuel" and gouts_cibles:
+    if gouts_cibles:
         from common.easybeer import (
             compute_aromatisation_volume,
             compute_dilution_ingredients,
@@ -428,56 +428,89 @@ def _compute_production_sync(
         _C = _tank_cfg["capacity"]
         _Lt = _tank_cfg["transfer_loss"]
         _Lb = _tank_cfg["bottling_loss"]
-        _gout_p2 = gouts_cibles[0]
-        _A_R, _R = 0.0, 0.0
-        _id_prod_p2 = None
 
-        if _eb_conf_p2():
+        # Split 7200L avec 2+ goûts : fermentation 7200L → 2×5200L garde
+        _split_cfg = _tank_cfg.get("split")
+        _is_split_2 = bool(_split_cfg and effective_nb_gouts >= 2)
+        if _is_split_2:
+            _C_garde = _split_cfg["garde_capacity"]
+            _Lb_split = _split_cfg["bottling_loss_per_flavor"]
+            _V_start_base = (_C - _Lt) / effective_nb_gouts
+        else:
+            _C_garde = _C
+            _Lb_split = _Lb
+            _V_start_base = None  # pas utilisé
+
+        _eb_prods_p2: list = []
+        _labels_p2: list = []
+        _eb_available = _eb_conf_p2()
+        if _eb_available:
             try:
                 _eb_prods_p2 = _fetch_eb_products()
                 _labels_p2 = [p.get("libelle", "") for p in _eb_prods_p2]
-                _matched_idx = _auto_match(_gout_p2, _labels_p2)
-                _id_prod_p2 = _eb_prods_p2[_matched_idx]["idProduit"]
-                _A_R, _R = compute_aromatisation_volume(_id_prod_p2)
-            except (ValueError, TypeError, KeyError, IndexError) as exc:
-                _log.warning("Erreur calcul aromatisation pour %s: %s", _gout_p2, exc, exc_info=True)
-                _A_R, _R = 0.0, 0.0
+            except Exception:
+                _log.warning("Erreur chargement produits EasyBeer (passe 2)", exc_info=True)
+                _eb_available = False
 
-        _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
-        _volume_cible_recalc = _V_bottled / 100.0
+        for _gout_p2 in gouts_cibles:
+            _A_R, _R = 0.0, 0.0
+            _id_prod_p2 = None
+            _matched_idx = 0
 
-        _is_infusion_p2 = False
-        _dilution_p2: dict = {}
-        if _id_prod_p2 is not None:
-            try:
-                _prod_label_p2 = _eb_prods_p2[_matched_idx].get("libelle", "")
-                _is_infusion_p2 = (
-                    "infusion" in _prod_label_p2.lower()
-                    or _prod_label_p2.upper().startswith("EP")
-                )
-            except (IndexError, KeyError, AttributeError):
-                _log.debug("Erreur détection infusion pour %s", _gout_p2, exc_info=True)
-            try:
-                _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
-            except (ValueError, TypeError, KeyError) as exc:
-                _log.warning("Erreur calcul dilution p2 pour %s: %s", _gout_p2, exc, exc_info=True)
-                _dilution_p2 = {}
+            if _eb_available and _eb_prods_p2:
+                try:
+                    _matched_idx = _auto_match(_gout_p2, _labels_p2)
+                    _id_prod_p2 = _eb_prods_p2[_matched_idx]["idProduit"]
+                    _A_R, _R = compute_aromatisation_volume(_id_prod_p2)
+                except (ValueError, TypeError, KeyError, IndexError) as exc:
+                    _log.warning("Erreur calcul aromatisation pour %s: %s", _gout_p2, exc, exc_info=True)
+                    _A_R, _R = 0.0, 0.0
 
-        volume_details[_gout_p2] = {
-            "V_start": _V_start,
-            "A_R": _A_R,
-            "R": _R,
-            "V_aroma": _A_R * (_V_start / _R) if _R > 0 else 0.0,
-            "V_bottled": _V_bottled,
-            "capacity": _C,
-            "transfer_loss": _Lt,
-            "bottling_loss": _Lb,
-            "is_infusion": _is_infusion_p2,
-            "dilution_ingredients": _dilution_p2,
-            "id_produit": _id_prod_p2,
-        }
+            # Calcul V_start et V_bottled
+            if _is_split_2:
+                # Split : V_start fixé par la répartition, cappé par la cuve de garde
+                _V_start_max, _ = compute_v_start_max(_C_garde, 0, _Lb_split, _A_R, _R)
+                _V_start = min(_V_start_base, _V_start_max)
+                _V_aroma = _A_R * (_V_start / _R) if _R > 0 else 0.0
+                _V_bottled = max(_V_start + _V_aroma - _Lb_split, 0.0)
+            else:
+                _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
+                _V_aroma = _A_R * (_V_start / _R) if _R > 0 else 0.0
 
-        # Relance si le volume a changé
+            _is_infusion_p2 = False
+            _dilution_p2: dict = {}
+            if _id_prod_p2 is not None:
+                try:
+                    _prod_label_p2 = _eb_prods_p2[_matched_idx].get("libelle", "")
+                    _is_infusion_p2 = (
+                        "infusion" in _prod_label_p2.lower()
+                        or _prod_label_p2.upper().startswith("EP")
+                    )
+                except (IndexError, KeyError, AttributeError):
+                    _log.debug("Erreur détection infusion pour %s", _gout_p2, exc_info=True)
+                try:
+                    _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
+                except (ValueError, TypeError, KeyError) as exc:
+                    _log.warning("Erreur calcul dilution p2 pour %s: %s", _gout_p2, exc, exc_info=True)
+                    _dilution_p2 = {}
+
+            volume_details[_gout_p2] = {
+                "V_start": _V_start,
+                "A_R": _A_R,
+                "R": _R,
+                "V_aroma": _V_aroma,
+                "V_bottled": _V_bottled,
+                "capacity": _C_garde if _is_split_2 else _C,
+                "transfer_loss": 0 if _is_split_2 else _Lt,
+                "bottling_loss": _Lb_split if _is_split_2 else _Lb,
+                "is_infusion": _is_infusion_p2,
+                "dilution_ingredients": _dilution_p2,
+                "id_produit": _id_prod_p2,
+            }
+
+        # Relance si le volume total a changé
+        _total_bottled = sum(vd["V_bottled"] for vd in volume_details.values())
+        _volume_cible_recalc = _total_bottled / 100.0
         if abs(_volume_cible_recalc - volume_cible) > 0.01:
             volume_cible = _volume_cible_recalc
             try:

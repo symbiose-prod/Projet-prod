@@ -37,6 +37,15 @@ business:
       bottling_loss: 200
       nb_gouts: 1
       nominal_hL: 48.0
+    "Split 7200L":
+      capacity: 7200
+      transfer_loss: 400
+      bottling_loss: 400        # pour 1 goût (identique à 7200L)
+      nb_gouts: 2               # défaut (modifiable dans l'UI)
+      nominal_hL: 64.0
+      split:
+        garde_capacity: 5200
+        bottling_loss_per_flavor: 200
 
 # ─── Stocks — Fournisseurs principaux ────────────────────────────────────────
 stocks:
