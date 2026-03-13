@@ -243,6 +243,7 @@ import ui.auth  # noqa: F401 — /login, /reset/{token}
 import ui.production  # noqa: F401 — /production
 import ui.ramasse  # noqa: F401 — /ramasse
 import ui.ressources  # noqa: F401 — /ressources
+import ui.stock_pf  # noqa: F401 — /stock-pf
 import ui.stocks  # noqa: F401 — /stocks
 import ui.sync  # noqa: F401 — /sync
 

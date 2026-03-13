@@ -67,6 +67,7 @@ NAV_ITEMS = [
     ("factory",        "Production",           "/production"),
     ("local_shipping", "Fiche de ramasse",     "/ramasse"),
     ("inventory_2",    "Stocks",               "/stocks"),
+    ("compare_arrows", "Stock produits finis",  "/stock-pf"),
     ("menu_book",      "Ressources",           "/ressources"),
     ("label",          "Étiquettes",           "/sync"),
 ]
