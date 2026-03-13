@@ -603,6 +603,25 @@ def _compute_production_sync(
             except (ValueError, KeyError, pd.errors.MergeError) as exc:
                 _log.exception("Erreur compute_plan: %s", exc)
 
+    # ── Ajuster df_calc pour le mode Split ──────────────────────────
+    # L'optimiseur distribue le volume total au prorata des ventes.
+    # En mode split, le volume par goût est fixé par le slider :
+    # on rescale X_adj pour que chaque goût = V_bottled du split.
+    _tank_adj = TANK_CONFIGS.get(mode_prod) or {}
+    if (
+        _tank_adj.get("split")
+        and volume_details
+        and len(volume_details) >= 2
+        and not df_calc.empty
+    ):
+        for _g_adj in gouts_cibles:
+            if _g_adj in volume_details:
+                _v_target_hl = volume_details[_g_adj]["V_bottled"] / 100.0
+                _mask_adj = df_calc["GoutCanon"] == _g_adj
+                _current_hl = df_calc.loc[_mask_adj, "X_adj (hL)"].sum()
+                if _current_hl > 1e-9:
+                    df_calc.loc[_mask_adj, "X_adj (hL)"] *= _v_target_hl / _current_hl
+
     df_final = _build_final_table(df_all, df_calc, gouts_cibles, overrides)
 
     # ── PASSE 3 : Vérification disponibilité MP ──────────────────
