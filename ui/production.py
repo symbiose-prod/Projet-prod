@@ -160,6 +160,7 @@ async def page_production():
         nb_gouts_input_ref = {"ref": None}
         split_ratio_ref = {"ref": None}
         _split_label_ref = {"ref": None}
+        _split_gout_order = {"order": None}  # [goût_split1, goût_split2]
 
         _SPLIT_TOTAL = (
             TANK_CONFIGS["Split 7200L"]["capacity"]
@@ -253,10 +254,12 @@ async def page_production():
 
             # Répartition personnalisée (Split 7200L, 2 goûts)
             split_volumes = None
+            split_flavor_order = None
             if mode_prod == "Split 7200L" and effective_nb_gouts >= 2:
                 _slider = split_ratio_ref["ref"]
                 _v1 = int(_slider.value) if _slider else _SPLIT_TOTAL // 2
                 split_volumes = [float(_v1), float(_SPLIT_TOTAL - _v1)]
+                split_flavor_order = _split_gout_order["order"]  # peut être None
 
             # Filtrage produits exclus
             if excluded_products:
@@ -281,6 +284,7 @@ async def page_production():
                         DEFAULT_LOSS_LARGE=DEFAULT_LOSS_LARGE,
                         DEFAULT_LOSS_SMALL=DEFAULT_LOSS_SMALL,
                         split_volumes=split_volumes,
+                        split_flavor_order=split_flavor_order,
                     ),
                     timeout=60,
                 )
@@ -322,6 +326,53 @@ async def page_production():
                         with ui.card_section().classes("row items-center gap-2"):
                             ui.icon("info", size="sm").style(f"color: {COLORS['orange']}")
                             ui.label(note_msg).classes("text-body2")
+
+                # ── Assignation goûts ↔ splits (Split 7200L, 2 goûts)
+                _is_split_display = (
+                    mode_prod == "Split 7200L"
+                    and len(gouts_cibles) >= 2
+                    and volume_details
+                    and split_volumes
+                )
+                if _is_split_display:
+                    _g_list = list(gouts_cibles)
+                    _g_options = {g: g for g in _g_list}
+
+                    def _on_split_assign(idx_changed, new_val):
+                        """Quand un dropdown change, mettre à jour l'autre et recalculer."""
+                        other = [g for g in _g_list if g != new_val]
+                        other_val = other[0] if other else new_val
+                        if idx_changed == 0:
+                            _split_sel_b.set_value(other_val)
+                            _split_gout_order["order"] = [new_val, other_val]
+                        else:
+                            _split_sel_a.set_value(other_val)
+                            _split_gout_order["order"] = [other_val, new_val]
+
+                    with ui.card().classes("w-full").props("flat bordered"):
+                        with ui.card_section():
+                            ui.label("Assignation des goûts aux cuves").classes(
+                                "text-subtitle2"
+                            ).style(f"color: {COLORS['ink']}")
+                            with ui.row().classes("w-full gap-4 q-mt-xs"):
+                                _split_sel_a = ui.select(
+                                    _g_options,
+                                    value=_g_list[0],
+                                    label=f"Split 1 — {int(split_volumes[0])} L",
+                                    on_change=lambda e: (
+                                        _on_split_assign(0, e.value),
+                                        _debounced_compute(),
+                                    ),
+                                ).props("outlined dense").classes("flex-1")
+                                _split_sel_b = ui.select(
+                                    _g_options,
+                                    value=_g_list[1],
+                                    label=f"Split 2 — {int(split_volumes[1])} L",
+                                    on_change=lambda e: (
+                                        _on_split_assign(1, e.value),
+                                        _debounced_compute(),
+                                    ),
+                                ).props("outlined dense").classes("flex-1")
 
                 # Détails volume (modes auto)
                 if volume_details:
@@ -490,6 +541,62 @@ async def page_production():
                                 </span>
                             </q-td>
                         ''')
+
+                        # ── Détail MP par goût ──────────────────────────
+                        _mp_by_gout = mp_check.get("items_by_gout", {})
+                        if len(_mp_by_gout) >= 2:
+                            ui.separator().classes("q-my-sm")
+                            ui.label("Détail par goût").classes("text-subtitle2 text-grey-7 q-mt-xs")
+                            for _g_mp, _g_items_mp in _mp_by_gout.items():
+                                _g_shortages = [it for it in _g_items_mp if not it["ok"]]
+                                _g_mp_icon = "check_circle" if not _g_shortages else "warning"
+                                _g_mp_color = COLORS["success"] if not _g_shortages else COLORS["orange"]
+                                _g_mp_title = (
+                                    f"{_g_mp} — MP disponibles"
+                                    if not _g_shortages
+                                    else f"{_g_mp} — {len(_g_shortages)} insuffisante(s)"
+                                )
+                                with ui.expansion(
+                                    _g_mp_title, icon=_g_mp_icon, value=bool(_g_shortages),
+                                ).classes("w-full").style(
+                                    f"border: 1px solid {_g_mp_color}40; border-radius: 8px"
+                                ):
+                                    _g_mp_rows = [
+                                        {
+                                            "mp": it["libelle"],
+                                            "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                            "stock": f"{it['stock']:.1f} {it['unite']}",
+                                            "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                            "statut": "OK" if it["ok"] else "Insuffisant",
+                                            "_ok": it["ok"],
+                                            "_key": f"{_g_mp}_{it['id_mp']}",
+                                        }
+                                        for it in _g_items_mp
+                                    ]
+                                    _g_tbl = ui.table(
+                                        columns=_mp_columns,
+                                        rows=_g_mp_rows,
+                                        row_key="_key",
+                                    ).classes("w-full").props("flat bordered dense")
+                                    _g_tbl.add_slot("body-cell-statut", r'''
+                                        <q-td :props="props">
+                                            <q-badge
+                                                :color="props.row._ok ? 'green-7' : 'orange-8'"
+                                                :label="props.row.statut"
+                                                text-color="white"
+                                            />
+                                        </q-td>
+                                    ''')
+                                    _g_tbl.add_slot("body-cell-ecart", r'''
+                                        <q-td :props="props">
+                                            <span :style="{
+                                                color: props.row._ok ? '#16A34A' : '#F97316',
+                                                fontWeight: props.row._ok ? 400 : 700,
+                                            }">
+                                                {{ props.row.ecart }}
+                                            </span>
+                                        </q-td>
+                                    ''')
 
                 # ── Images produits EasyBeer ─────────────────────────
                 product_images: dict[str, str] = {}  # produit_name → image_url

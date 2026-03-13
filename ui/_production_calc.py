@@ -285,12 +285,14 @@ def _check_mp_availability(
 
     # 3. Pour chaque goût : recette → ingrédients → agréger besoins
     total_needs: dict[int, dict] = {}  # idMatierePremiere → {libelle, qty, unite}
+    needs_by_gout: dict[str, dict[int, dict]] = {}  # goût → {idMP → {libelle, qty, unite}}
 
     for g in gouts_cibles:
         vol_l = vol_par_gout.get(g, 0)
         if vol_l <= 0:
             continue
 
+        needs_by_gout[g] = {}
         idx = _auto_match(g, prod_labels)
         id_produit = eb_products[idx]["idProduit"]
 
@@ -320,12 +322,18 @@ def _check_mp_availability(
                     total_needs[id_mp]["qty"] += qty
                 else:
                     total_needs[id_mp] = {"libelle": libelle, "qty": qty, "unite": unite}
+
+                # Per-flavor tracking
+                if id_mp in needs_by_gout[g]:
+                    needs_by_gout[g][id_mp]["qty"] += qty
+                else:
+                    needs_by_gout[g][id_mp] = {"libelle": libelle, "qty": qty, "unite": unite}
         except Exception as exc:
             _log.warning("MP check: erreur recette goût %s: %s", g, exc, exc_info=True)
             continue
 
     if not total_needs:
-        return {"status": "ok", "items": [], "error_msg": ""}
+        return {"status": "ok", "items": [], "items_by_gout": {}, "error_msg": ""}
 
     # 4. Stock actuel
     try:
@@ -359,9 +367,29 @@ def _check_mp_availability(
             "ok": ok,
         })
 
+    # Construire items par goût (même structure, avec stock individuel)
+    _items_by_gout: dict[str, list] = {}
+    for g, g_needs in needs_by_gout.items():
+        g_items = []
+        for id_mp, need in sorted(g_needs.items(), key=lambda x: x[1]["libelle"]):
+            stock = stock_by_id.get(id_mp, 0.0)
+            besoin = need["qty"]
+            ecart = stock - besoin
+            g_items.append({
+                "id_mp": id_mp,
+                "libelle": need["libelle"],
+                "besoin": round(besoin, 2),
+                "stock": round(stock, 2),
+                "ecart": round(ecart, 2),
+                "unite": need["unite"],
+                "ok": ecart >= 0,
+            })
+        _items_by_gout[g] = g_items
+
     return {
         "status": "warning" if has_shortage else "ok",
         "items": items,
+        "items_by_gout": _items_by_gout,
         "error_msg": "",
     }
 
@@ -383,6 +411,7 @@ def _compute_production_sync(
     DEFAULT_LOSS_LARGE: int,
     DEFAULT_LOSS_SMALL: int,
     split_volumes: list[float] | None = None,
+    split_flavor_order: list[str] | None = None,
 ) -> dict:
     """Passe 0 (en cours) + Passe 1 (optimiseur) + Passe 2 (EasyBeer) — aucun appel UI."""
     # ── PASSE 0 : Productions en cours (ajuste le stock disponible) ──
@@ -413,6 +442,10 @@ def _compute_production_sync(
         manual_keep=forced_gouts or None,
         exclude_list=excluded_gouts,
     )
+
+    # Réordonnancement des goûts (Split 7200L — assignation utilisateur)
+    if split_flavor_order and set(split_flavor_order) == set(gouts_cibles):
+        gouts_cibles = list(split_flavor_order)
 
     # ── PASSE 2 : Aromatisation (tous les goûts)
     volume_details: dict = {}
