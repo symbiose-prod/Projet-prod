@@ -86,10 +86,10 @@ def apply_quasar_theme():
             -webkit-font-smoothing: antialiased;
         }}
 
-        /* ── Header : vert solide, pas de gradient ── */
+        /* ── Header : vert avec profondeur subtile ── */
         .q-header {{
-            background: {COLORS['green']} !important;
-            box-shadow: none !important;
+            background: linear-gradient(135deg, {COLORS['green']}, #166534) !important;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.10) !important;
         }}
 
         /* ── Sidebar : blanc pur ────────────────────── */
@@ -98,13 +98,17 @@ def apply_quasar_theme():
             border-right: 1px solid {COLORS['border']} !important;
         }}
 
-        /* ── Cards : subtiles ───────────────────────── */
+        /* ── Cards : ombre subtile + hover ─────────── */
         .q-card {{
-            border-radius: 8px !important;
-            box-shadow: none !important;
+            border-radius: 10px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }}
+        .q-card:hover {{
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
         }}
 
-        /* ── Quasar Table : clean style ────────────── */
+        /* ── Quasar Table : clean style amélioré ───── */
         .q-table {{
             font-family: 'Inter', system-ui, sans-serif;
             font-size: 13px;
@@ -113,33 +117,42 @@ def apply_quasar_theme():
         .q-table thead th {{
             color: {COLORS['ink2']} !important;
             font-weight: 600;
-            font-size: 12px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }}
+        .q-table tbody tr:hover {{
+            background: rgba(21, 128, 61, 0.03);
         }}
 
         /* ── KPI cards ──────────────────────────────── */
         .kpi-card {{
-            border-radius: 8px;
+            border-radius: 10px;
             border: 1px solid {COLORS['border']};
-            transition: border-color 0.15s ease;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }}
         .kpi-card:hover {{
-            border-color: #D1D5DB;
+            border-color: rgba(21, 128, 61, 0.25);
+            box-shadow: 0 2px 8px rgba(21, 128, 61, 0.06);
         }}
 
-        /* ── Section headers : bordure minimale ─────── */
+        /* ── Section headers : accent vert ──────────── */
         .section-header {{
-            border-left: 3px solid {COLORS['border']};
-            background: transparent;
-            border-radius: 0;
-            padding: 8px 12px;
+            border-left: 3px solid {COLORS['green']};
+            background: linear-gradient(90deg, rgba(21,128,61,0.04), transparent);
+            border-radius: 0 6px 6px 0;
+            padding: 8px 14px;
             margin-bottom: 12px;
         }}
 
-        /* ── Nav active : subtil ────────────────────── */
+        /* ── Nav active : teinte verte ─────────────── */
         .nav-active {{
-            background: {COLORS['bg']} !important;
+            background: rgba(21, 128, 61, 0.08) !important;
             font-weight: 500 !important;
-            border-radius: 6px;
+            border-radius: 8px;
+        }}
+        .nav-active .q-icon {{
+            color: {COLORS['green']} !important;
         }}
 
         /* ── Separators ─────────────────────────────── */
@@ -147,9 +160,45 @@ def apply_quasar_theme():
             background: {COLORS['border']} !important;
         }}
 
-        /* ── Inputs : coins arrondis ────────────────── */
+        /* ── Inputs : arrondis + focus vert ────────── */
         .q-field--outlined .q-field__control {{
-            border-radius: 6px !important;
+            border-radius: 8px !important;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }}
+        .q-field--outlined.q-field--focused .q-field__control {{
+            box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.10) !important;
+        }}
+
+        /* ── Boutons : style naturel ──────────────── */
+        .q-btn {{
+            text-transform: none !important;
+            letter-spacing: 0 !important;
+            border-radius: 8px !important;
+            transition: all 0.15s ease;
+        }}
+
+        /* ── Scrollbar discrète ────────────────────── */
+        ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+        ::-webkit-scrollbar-track {{ background: transparent; }}
+        ::-webkit-scrollbar-thumb {{
+            background: #D1D5DB; border-radius: 3px;
+        }}
+        ::-webkit-scrollbar-thumb:hover {{ background: #9CA3AF; }}
+
+        /* ── Badges / chips ───────────────────────── */
+        .q-badge {{ border-radius: 6px; font-weight: 500; }}
+        .q-chip {{ border-radius: 8px; }}
+
+        /* ── Tooltips ─────────────────────────────── */
+        .q-tooltip {{
+            font-size: 12px;
+            border-radius: 6px;
+            padding: 4px 10px;
+        }}
+
+        /* ── Dialog cards ─────────────────────────── */
+        .q-dialog .q-card {{
+            border-radius: 12px !important;
         }}
 
         /* ── Mobile : padding réduit ──────────────────── */
@@ -312,10 +361,10 @@ def password_strength_bar(password_input: ui.input) -> ui.element:
 
 
 def section_title(title: str, icon: str = ""):
-    """Titre de section minimaliste."""
+    """Titre de section avec accent vert."""
     with ui.element("div").classes("section-header row items-center gap-2"):
         if icon:
-            ui.icon(icon, size="xs").style(f"color: {COLORS['ink2']}")
+            ui.icon(icon, size="xs").style(f"color: {COLORS['green']}")
         ui.label(title).classes("text-subtitle1").style(
             f"color: {COLORS['ink']}; font-weight: 600"
         )
