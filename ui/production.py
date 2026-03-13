@@ -339,40 +339,43 @@ async def page_production():
                     _g_options = {g: g for g in _g_list}
 
                     def _on_split_assign(idx_changed, new_val):
-                        """Quand un dropdown change, mettre à jour l'autre et recalculer."""
+                        """Quand un dropdown change, mettre à jour l'autre."""
                         other = [g for g in _g_list if g != new_val]
                         other_val = other[0] if other else new_val
                         if idx_changed == 0:
                             _split_sel_b.set_value(other_val)
-                            _split_gout_order["order"] = [new_val, other_val]
                         else:
                             _split_sel_a.set_value(other_val)
-                            _split_gout_order["order"] = [other_val, new_val]
+
+                    def _apply_split_order():
+                        """Applique l'ordre choisi et relance le calcul."""
+                        _split_gout_order["order"] = [
+                            _split_sel_a.value, _split_sel_b.value,
+                        ]
+                        _debounced_compute()
 
                     with ui.card().classes("w-full").props("flat bordered"):
                         with ui.card_section():
                             ui.label("Assignation des goûts aux cuves").classes(
                                 "text-subtitle2"
                             ).style(f"color: {COLORS['ink']}")
-                            with ui.row().classes("w-full gap-4 q-mt-xs"):
+                            with ui.row().classes("w-full gap-4 items-end q-mt-xs"):
                                 _split_sel_a = ui.select(
                                     _g_options,
                                     value=_g_list[0],
                                     label=f"Split 1 — {int(split_volumes[0])} L",
-                                    on_change=lambda e: (
-                                        _on_split_assign(0, e.value),
-                                        _debounced_compute(),
-                                    ),
+                                    on_change=lambda e: _on_split_assign(0, e.value),
                                 ).props("outlined dense").classes("flex-1")
                                 _split_sel_b = ui.select(
                                     _g_options,
                                     value=_g_list[1],
                                     label=f"Split 2 — {int(split_volumes[1])} L",
-                                    on_change=lambda e: (
-                                        _on_split_assign(1, e.value),
-                                        _debounced_compute(),
-                                    ),
+                                    on_change=lambda e: _on_split_assign(1, e.value),
                                 ).props("outlined dense").classes("flex-1")
+                                ui.button(
+                                    "Appliquer", icon="sync",
+                                    on_click=_apply_split_order,
+                                ).props("unelevated color=green-8 dense").classes("q-mb-xs")
 
                 # Détails volume (modes auto)
                 if volume_details:
