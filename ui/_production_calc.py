@@ -45,13 +45,30 @@ def _fetch_eb_products() -> list[dict]:
     return data
 
 
+_SECONDARY_BRANDS = {"igeba", "niko", "inter", "water"}
+
+
 def _auto_match(gout: str, prod_labels: list[str]) -> int:
-    """Retourne l'index du produit EasyBeer dont le libellé contient le goût."""
+    """Retourne l'index du produit EasyBeer dont le libellé contient le goût.
+
+    Privilégie les produits « Kéfir » et exclut les marques secondaires
+    (Igeba, Niko, Inter, Water) pour éviter les faux positifs.
+    """
     g_low = gout.lower()
+    candidates: list[int] = []
     for i, lbl in enumerate(prod_labels):
         if g_low in lbl.lower():
+            candidates.append(i)
+    if not candidates:
+        return 0
+    if len(candidates) == 1:
+        return candidates[0]
+    # Plusieurs matches : préférer celui qui n'est pas une marque secondaire
+    for i in candidates:
+        lbl_low = prod_labels[i].lower()
+        if not any(brand in lbl_low for brand in _SECONDARY_BRANDS):
             return i
-    return 0
+    return candidates[0]
 
 
 # ─── Productions en cours (brassins EasyBeer) ───────────────────────────────
