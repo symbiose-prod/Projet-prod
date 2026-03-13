@@ -99,10 +99,12 @@ def page_accueil():
         with ui.card().classes("w-full").props("flat bordered"):
             with ui.card_section().classes("q-pa-md"):
                 ui.label(
-                    "Chargez vos données de ventes pour alimenter les pages "
-                    "Production. Le fichier contient les volumes vendus "
-                    "par produit sur la période choisie — il sert à calculer le plan "
-                    "de production optimal et les besoins en emballages."
+                    "Ferment Station centralise votre production : "
+                    "planification des brassins, calcul automatique des besoins "
+                    "en emballages et matières premières, génération des fiches "
+                    "de production et bons de livraison, suivi des stocks. "
+                    "Commencez par importer vos données de ventes ci-dessous "
+                    "pour alimenter le plan de production."
                 ).classes("text-body2").style(f"color: {COLORS['ink2']}; line-height: 1.6")
 
         # ── Import Easy Beer + Citation ──────────────────────────────
