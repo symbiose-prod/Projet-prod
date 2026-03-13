@@ -279,12 +279,14 @@ def _check_mp_availability(
     if nb_gouts == 0:
         return {"status": "ok", "items": [], "error_msg": ""}
 
-    # 1. Volume par goût (même logique que _render_easybeer_section)
+    # 1. Volume par goût pour mise à l'échelle recette.
+    #    En mode split, V_dilution inclut la part de perte de transfert
+    #    pour que le total des ingrédients de base = volume fermenté.
     vol_par_gout: dict[str, float] = {}
     if volume_details:
         for g in gouts_cibles:
             if g in volume_details:
-                vol_par_gout[g] = volume_details[g]["V_start"]
+                vol_par_gout[g] = volume_details[g].get("V_dilution", volume_details[g]["V_start"])
             else:
                 _tank = TANK_CONFIGS.get(mode_prod) or TANK_CONFIGS["Cuve de 7200L (1 goût)"]
                 vol_par_gout[g] = float(_tank["capacity"])
@@ -538,6 +540,16 @@ def _compute_production_sync(
                 _V_start, _V_bottled = compute_v_start_max(_C, _Lt, _Lb, _A_R, _R)
                 _V_aroma = _A_R * (_V_start / _R) if _R > 0 else 0.0
 
+            # En mode split, les ingrédients de base (sirop, fermentation)
+            # doivent être proportionnés au volume FERMENTÉ (7200 L),
+            # pas au volume en cuve de garde (3400 L).
+            # Chaque goût porte sa part de la perte de transfert.
+            _V_for_dilution = (
+                _V_start * _C / (_C - _Lt)
+                if _is_split_2 and (_C - _Lt) > 0
+                else _V_start
+            )
+
             _is_infusion_p2 = False
             _dilution_p2: dict = {}
             if _id_prod_p2 is not None:
@@ -550,15 +562,6 @@ def _compute_production_sync(
                 except (IndexError, KeyError, AttributeError):
                     _log.debug("Erreur détection infusion pour %s", _gout_p2, exc_info=True)
                 try:
-                    # En mode split, les ingrédients de base (sirop, fermentation)
-                    # doivent être proportionnés au volume FERMENTÉ (7200 L),
-                    # pas au volume en cuve de garde (3400 L).
-                    # Chaque goût porte sa part de la perte de transfert.
-                    _V_for_dilution = (
-                        _V_start * _C / (_C - _Lt)
-                        if _is_split_2 and (_C - _Lt) > 0
-                        else _V_start
-                    )
                     _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_for_dilution)
                 except (ValueError, TypeError, KeyError) as exc:
                     _log.warning("Erreur calcul dilution p2 pour %s: %s", _gout_p2, exc, exc_info=True)
@@ -566,6 +569,7 @@ def _compute_production_sync(
 
             volume_details[_gout_p2] = {
                 "V_start": _V_start,
+                "V_dilution": _V_for_dilution,
                 "A_R": _A_R,
                 "R": _R,
                 "V_aroma": _V_aroma,
