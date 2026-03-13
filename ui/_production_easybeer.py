@@ -290,10 +290,12 @@ def _render_easybeer_section(
             from common.lot_fifo import BatchLotTracker
             _lot_tracker = BatchLotTracker(fetch_lots_fn=get_mp_lots)
 
+            _nb_total = len(_gouts_eb)
             _is_first_flavor = True
-            for g in _gouts_eb:
+            for _g_idx, g in enumerate(_gouts_eb, 1):
                 # Pause entre parfums pour éviter le rate-limit EasyBeer (HTTP 400)
                 if not _is_first_flavor:
+                    _set_status(f"Pause anti rate-limit… ({_g_idx}/{_nb_total})")
                     await asyncio.sleep(3)
                 _is_first_flavor = False
                 vol_l = _vol_par_gout.get(g, 0)
@@ -304,6 +306,7 @@ def _render_easybeer_section(
                 _code = generate_brassin_code(g, _semaine_du_eb, _prod_label)
 
                 # Recette + étapes (via brassin_builder)
+                _set_status(f"Recette « {g} » ({_g_idx}/{_nb_total})…")
                 _ingredients = []
                 _planif_etapes = []
                 try:
@@ -328,6 +331,7 @@ def _render_easybeer_section(
                 _date_embout = date_embout_input.value
                 _date_embout_iso = _date_embout if isinstance(_date_embout, str) else _date_embout.isoformat()
 
+                _set_status(f"Création brassin « {g} » ({_g_idx}/{_nb_total})…")
                 payload = build_brassin_payload(
                     code=_code,
                     vol_l=vol_l,
@@ -354,6 +358,7 @@ def _render_easybeer_section(
                     continue
 
                 # Pause après création brassin pour éviter le rate-limit
+                _set_status(f"Conditionnement « {g} » ({_g_idx}/{_nb_total})…")
                 await asyncio.sleep(2)
 
                 try:
@@ -436,6 +441,7 @@ def _render_easybeer_section(
                     ui.notify(f"Planif. « {g} » : {_pe}", type="warning")
 
                 # Pause avant upload pour éviter le rate-limit EasyBeer (HTTP 429/400)
+                _set_status(f"Upload fiche « {g} » ({_g_idx}/{_nb_total})…")
                 await asyncio.sleep(3)
 
                 # Upload fiche Excel
@@ -514,15 +520,22 @@ def _render_easybeer_section(
                     ui.label(f"• {line}").classes("text-body2").style("font-weight: 500")
                 ui.label("Cette action est irréversible.").classes("text-caption text-grey-6 q-mt-xs")
 
+        def _set_status(msg: str):
+            _create_status.text = msg
+            _create_status.update()
+
         async def _confirmed_create():
             _confirm_dlg.close()
             _create_btn.disable()
             _create_spinner.set_visibility(True)
+            _create_status.set_visibility(True)
+            _set_status("Initialisation…")
             try:
                 await do_create_brassins()
             finally:
                 _create_btn.enable()
                 _create_spinner.set_visibility(False)
+                _create_status.set_visibility(False)
 
         _confirm_action.on_click(_confirmed_create)
 
@@ -534,3 +547,5 @@ def _render_easybeer_section(
             ).classes("flex-1").props("color=green-8 unelevated")
             _create_spinner = ui.spinner("dots", size="md", color="green-8")
             _create_spinner.set_visibility(False)
+        _create_status = ui.label("").classes("text-caption text-grey-7")
+        _create_status.set_visibility(False)
