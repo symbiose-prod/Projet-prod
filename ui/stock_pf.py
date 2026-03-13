@@ -59,7 +59,7 @@ def page_stock_pf():
 
         async def handle_upload(e):
             """Traite l'upload du CSV et lance la comparaison."""
-            content_bytes = e.content.read()
+            content_bytes = e.file.read()
             # Essayer UTF-8, fallback latin-1
             try:
                 csv_text = content_bytes.decode("utf-8")
