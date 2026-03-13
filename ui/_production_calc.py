@@ -492,7 +492,7 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
 
     active_rows = df_final[df_final["Cartons à produire (arrondi)"] > 0]
     for _, row in active_rows.iterrows():
-        gout = str(row["GoutCanon"])
+        produit_name = str(row["Produit"])
         cartons = int(row["Cartons à produire (arrondi)"])
         btl_per_carton = int(row["Bouteilles/carton"])
         vol_carton_hl = float(row["Volume/carton (hL)"])
@@ -505,15 +505,23 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
         # Agréger bouteilles par format
         bottle_needs[vol_cl] = bottle_needs.get(vol_cl, 0) + cartons * btl_per_carton
 
-        # Trouver le idStockProduit
-        idx = _auto_match(gout, prod_labels)
-        id_produit = eb_products[idx]["idProduit"]
+        # Trouver le idProduit en matchant le nom Produit (inclut la marque)
+        # On cherche le label EasyBeer le plus spécifique contenu dans le nom
+        _pn_low = produit_name.lower()
+        _best_idx, _best_len = 0, 0
+        for _i, _lbl in enumerate(prod_labels):
+            _ll = _lbl.lower()
+            if _ll in _pn_low and len(_ll) > _best_len:
+                _best_idx, _best_len = _i, len(_ll)
+            elif _pn_low in _ll and len(_pn_low) > _best_len:
+                _best_idx, _best_len = _i, len(_pn_low)
+        id_produit = eb_products[_best_idx]["idProduit"]
 
         sid = stock_map.get((id_produit, fmt_str))
         if sid is None:
             _log.debug(
-                "Emballages: pas de stock produit pour (%s, %s) goût=%s",
-                id_produit, fmt_str, gout,
+                "Emballages: pas de stock produit pour (%s, %s) produit=%s",
+                id_produit, fmt_str, produit_name,
             )
             continue
 
