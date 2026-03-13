@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import os
 
 from dateutil.tz import gettz
 
@@ -24,13 +25,33 @@ _DEFAULT_HOUR = 5
 _DEFAULT_MINUTE = 0
 
 
+def _get_production_tenant_name() -> str | None:
+    """Retourne le nom du tenant de production depuis ALLOWED_TENANTS.
+
+    En production ALLOWED_TENANTS = "Symbiose Kéfir".
+    """
+    raw = os.environ.get("ALLOWED_TENANTS", "")
+    if not raw:
+        return None
+    # Prendre le premier tenant autorisé (séparateur virgule)
+    return raw.split(",")[0].strip() or None
+
+
 def _get_schedule_hour() -> int:
-    """Récupère l'heure de sync depuis la DB (premier tenant)."""
+    """Récupère l'heure de sync depuis la DB pour le tenant de production."""
     try:
         from db.conn import run_sql
-        rows = run_sql(
-            "SELECT sync_schedule_hour FROM tenants LIMIT 1", {},
-        )
+        tenant_name = _get_production_tenant_name()
+        if tenant_name:
+            rows = run_sql(
+                "SELECT sync_schedule_hour FROM tenants WHERE name = :n LIMIT 1",
+                {"n": tenant_name},
+            )
+        else:
+            _log.warning("ALLOWED_TENANTS non défini, fallback sur ORDER BY name")
+            rows = run_sql(
+                "SELECT sync_schedule_hour FROM tenants ORDER BY name LIMIT 1", {},
+            )
         if rows and rows[0].get("sync_schedule_hour") is not None:
             return int(rows[0]["sync_schedule_hour"])
     except Exception:
@@ -83,10 +104,20 @@ async def _run_sync_job() -> dict | None:
 
 
 def _get_default_tenant_id() -> str | None:
-    """Récupère le tenant_id du premier tenant (mono-tenant en production)."""
+    """Récupère le tenant_id du tenant de production (via ALLOWED_TENANTS)."""
     try:
         from db.conn import run_sql
-        rows = run_sql("SELECT id FROM tenants LIMIT 1", {})
+        tenant_name = _get_production_tenant_name()
+        if tenant_name:
+            rows = run_sql(
+                "SELECT id FROM tenants WHERE name = :n LIMIT 1",
+                {"n": tenant_name},
+            )
+        else:
+            _log.warning("ALLOWED_TENANTS non défini, fallback sur ORDER BY name")
+            rows = run_sql(
+                "SELECT id FROM tenants ORDER BY name LIMIT 1", {},
+            )
         if rows:
             return str(rows[0]["id"])
     except Exception:
