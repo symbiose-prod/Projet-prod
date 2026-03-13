@@ -64,13 +64,23 @@ _api_backoff_until: float = 0.0  # monotonic timestamp until which we enforce a 
 
 
 def _throttle() -> None:
-    """Espace les appels API de min 200ms pour eviter le ban rate-limit (thread-safe)."""
+    """Espace les appels API de min 200ms pour eviter le ban rate-limit (thread-safe).
+
+    Si l'IP est bannie (backoff > 10s restant), lève une erreur immédiatement
+    au lieu de bloquer le serveur pendant 5 minutes.
+    """
     global _api_last_ts
     with _api_lock:
         now = _time.monotonic()
-        # If we're in a backoff window (after a rate-limit hit), wait it out
-        if _api_backoff_until > now:
-            _time.sleep(_api_backoff_until - now)
+        remaining = _api_backoff_until - now
+        if remaining > 10:
+            # Banni pour longtemps — échouer immédiatement
+            raise EasyBeerError(
+                f"EasyBeer rate-limit actif — réessayez dans {int(remaining)}s"
+            )
+        if remaining > 0:
+            # Petit cooldown — attendre
+            _time.sleep(remaining)
             now = _time.monotonic()
         wait = _API_MIN_INTERVAL - (now - _api_last_ts)
         if wait > 0:
@@ -78,12 +88,17 @@ def _throttle() -> None:
         _api_last_ts = _time.monotonic()
 
 
-def _on_rate_limited() -> None:
-    """Called when a rate-limit response is detected; enforces a 5s cooldown."""
+def _on_rate_limited(ban_seconds: float = 5.0) -> None:
+    """Called when a rate-limit response is detected; enforces cooldown matching ban duration."""
     global _api_backoff_until
+    # Minimum 5s, cap at 600s to avoid absurd waits
+    cooldown = max(5.0, min(ban_seconds, 600.0))
     with _api_lock:
-        _api_backoff_until = _time.monotonic() + 5.0
-    _log.warning("Rate-limit détecté — pause 5s avant prochains appels API")
+        new_until = _time.monotonic() + cooldown
+        # Only extend, never shorten an existing backoff
+        if new_until > _api_backoff_until:
+            _api_backoff_until = new_until
+    _log.warning("Rate-limit détecté — pause %.0fs avant prochains appels API", cooldown)
 
 
 def _auth() -> tuple[str, str]:
@@ -107,7 +122,11 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
     if r.status_code in (429, 400) and any(
         kw in body.lower() for kw in ("limit", "banned", "rate")
     ):
-        _on_rate_limited()
+        # Parse "Try again in X seconds" from response
+        import re
+        m = re.search(r"[Tt]ry again in (\d+)", body)
+        ban_secs = float(m.group(1)) if m else 5.0
+        _on_rate_limited(ban_secs)
     if "<!DOCTYPE" in body or "<html" in body.lower():
         raise EasyBeerError(
             f"EasyBeer {endpoint} \u2192 HTTP {r.status_code} : le serveur a renvoy\u00e9 une page HTML "
@@ -159,19 +178,24 @@ _indicator_payload = _base_payload
 # ─── Retry decorator for transient API errors ───────────────────────────────
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Return True for transient network/server errors worth retrying."""
+    """Return True for transient network/server errors worth retrying.
+
+    Rate-limit errors (429 / 400+banned) are NOT retried by tenacity:
+    the global _throttle() will block until the ban expires, so the
+    *next user action* will succeed without wasting retry attempts.
+    """
     if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
         return True
     if isinstance(exc, requests.HTTPError):
         resp = getattr(exc, "response", None)
-        if resp is not None and resp.status_code in (429, 500, 502, 503, 504):
+        if resp is not None and resp.status_code in (500, 502, 503, 504):
             return True
     if isinstance(exc, EasyBeerError):
         msg = str(exc)
-        if any(f" {c}" in msg for c in ("429", "500", "502", "503", "504")):
-            return True
-        # HTTP 400 rate-limit ("limit 10 request/s", "banned", etc.)
-        if " 400" in msg and any(kw in msg.lower() for kw in ("limit", "banned", "rate")):
+        # Don't retry rate-limit: ban lasts 300s, retrying in 1-10s is pointless
+        if any(kw in msg.lower() for kw in ("limit", "banned", "rate")):
+            return False
+        if any(f" {c}" in msg for c in ("500", "502", "503", "504")):
             return True
     return False
 
