@@ -353,6 +353,9 @@ def _render_easybeer_section(
                 if not isinstance(brassin_id, int) or not _id_entrepot:
                     continue
 
+                # Pause après création brassin pour éviter le rate-limit
+                await asyncio.sleep(2)
+
                 try:
                     _matrice = get_planification_matrice(brassin_id, _id_entrepot)
                     _cont_by_vol: dict[float, list[dict]] = {}
@@ -410,7 +413,11 @@ def _render_easybeer_section(
 
                     # ── Créer une planification par produit (principal + dérivés) ──
                     _ddm_iso = _sp_eb.get("ddm", "")
+                    _first_planif = True
                     for _pid, _elems in _elements_by_pid.items():
+                        if not _first_planif:
+                            await asyncio.sleep(1.5)
+                        _first_planif = False
                         add_planification_conditionnement({
                             "idBrassin": brassin_id,
                             "idProduit": _pid,
