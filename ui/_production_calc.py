@@ -429,7 +429,6 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
     """
     from common.easybeer import (
         get_all_matieres_premieres,
-        get_stock_bouteilles,
         get_stock_produit_detail,
         is_configured,
     )
@@ -441,40 +440,44 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
         return {"emb_status": "ok", "emballages": []}
 
     # 1. Construire la map consolidation : (idProduit, "12x33") → idStockProduit
+    #    via POST /stock/produits (produits finis, pas contenants physiques)
+    import os as _os
+    from common.easybeer._client import BASE, _auth, _check_response, _safe_json, get_session
+
     try:
-        bouteilles_data = get_stock_bouteilles()
+        _id_brasserie = int(_os.environ.get("EASYBEER_ID_BRASSERIE", "0"))
+        r = get_session().post(
+            f"{BASE}/stock/produits",
+            json={"idBrasserie": _id_brasserie},
+            auth=_auth(),
+            timeout=30,
+        )
+        _check_response(r, "stock/produits")
+        produits_data = _safe_json(r, "stock/produits")
     except Exception as exc:
-        _log.warning("Erreur get_stock_bouteilles pour emballages: %s", exc)
+        _log.warning("Erreur POST stock/produits pour emballages: %s", exc)
         return {"emb_status": "error", "emballages": [], "emb_error": str(exc)}
 
     stock_map: dict[tuple[int, str], int] = {}
-    top_children = bouteilles_data.get("consolidationsFilles", [])
-    _log.info("Emballages: consolidation top-level = %d entries", len(top_children))
-
-    def _walk_consolidation(nodes: list, depth: int = 0) -> None:
-        for node in nodes:
-            sid = node.get("id")
-            id_produit = (node.get("produit") or {}).get("idProduit")
-            contenance = float((node.get("contenant") or {}).get("contenance", 0) or 0)
-            lot_qty = int((node.get("lot") or {}).get("quantite", 0) or 0)
-            libelle = node.get("libelle", "?")
-            sub = node.get("consolidationsFilles") or []
-            _log.info(
-                "Emballages: depth=%d lib=%s id=%s idProd=%s cont=%.2f lot=%d subs=%d",
-                depth, libelle, sid, id_produit, contenance, lot_qty, len(sub),
-            )
-            if sid and id_produit and contenance and lot_qty:
+    for prod in produits_data.get("consolidationsFilles", []):
+        for conso in prod.get("consolidationsFilles", []):
+            sid = conso.get("id")
+            if not sid:
+                continue
+            produit = conso.get("produit") or {}
+            id_produit = produit.get("idProduit")
+            cont = conso.get("contenant") or {}
+            contenance = float(cont.get("contenance", 0) or 0)
+            lot = conso.get("lot") or {}
+            lot_qty = int(lot.get("quantite", 0) or 0)
+            if id_produit and contenance and lot_qty:
                 fmt_str = f"{lot_qty}x{int(contenance * 100)}"
                 stock_map[(id_produit, fmt_str)] = sid
-                _log.info("Emballages: mapped (%s, %s) → sid=%s", id_produit, fmt_str, sid)
-            if sub:
-                _walk_consolidation(sub, depth + 1)
 
-    _walk_consolidation(top_children)
-    _log.info("Emballages: stock_map size = %d", len(stock_map))
+    _log.info("Emballages: stock_map = %d produits finis mappés", len(stock_map))
 
     if not stock_map:
-        _log.warning("Aucun stock produit trouvé dans la consolidation bouteilles")
+        _log.warning("Aucun stock produit trouvé dans POST /stock/produits")
         return {"emb_status": "ok", "emballages": []}
 
     # 2. Matcher goûts → produits EasyBeer
