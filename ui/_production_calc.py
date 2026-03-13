@@ -550,7 +550,16 @@ def _compute_production_sync(
                 except (IndexError, KeyError, AttributeError):
                     _log.debug("Erreur détection infusion pour %s", _gout_p2, exc_info=True)
                 try:
-                    _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_start)
+                    # En mode split, les ingrédients de base (sirop, fermentation)
+                    # doivent être proportionnés au volume FERMENTÉ (7200 L),
+                    # pas au volume en cuve de garde (3400 L).
+                    # Chaque goût porte sa part de la perte de transfert.
+                    _V_for_dilution = (
+                        _V_start * _C / (_C - _Lt)
+                        if _is_split_2 and (_C - _Lt) > 0
+                        else _V_start
+                    )
+                    _dilution_p2 = compute_dilution_ingredients(_id_prod_p2, _V_for_dilution)
                 except (ValueError, TypeError, KeyError) as exc:
                     _log.warning("Erreur calcul dilution p2 pour %s: %s", _gout_p2, exc, exc_info=True)
                     _dilution_p2 = {}
