@@ -198,11 +198,14 @@ def get_all_suppliers_with_config(tenant_id: str | None = None) -> list[dict[str
         db_over = _normalize_ordering(db_overrides.get(g["name"], {}))
         merged = _deep_merge(yaml_ordering, db_over) if db_over else yaml_ordering
 
+        # DB override for 'active' flag takes precedence over YAML
+        active = db_over.get("active", g.get("active", True))
+
         result.append({
             "name": g["name"],
             "icon": g.get("icon", "business"),
             "category": g.get("category", "Autre"),
-            "active": g.get("active", True),
+            "active": active,
             "mp_types": g.get("mp_types", []),
             "patterns": g.get("patterns", []),
             "ordering": merged,

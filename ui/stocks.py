@@ -25,6 +25,13 @@ from ui._stocks_calc import (
 from ui.auth import require_auth
 from ui.theme import COLORS, kpi_card, page_layout
 
+# ─── Constants ─────────────────────────────────────────────────────────────────
+
+_ORDER_CC_LIST = [
+    "maxime@symbiose-kefir.fr",
+    "nicolas@symbiose-kefir.fr",
+]
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -311,6 +318,11 @@ def page_stocks():
                     ordering_cfgs = get_merged_ordering_configs(
                         str(app.storage.user.get("tenant_id", ""))
                     )
+                    # Show warnings from calc layer (e.g. consumption API failure)
+                    for g in filtered:
+                        for w in g.warnings:
+                            ui.notify(w, type="warning", icon="warning")
+
                     _render_results(
                         results_container, filtered, days, ordering_cfgs,
                     )
@@ -464,6 +476,28 @@ def _render_ai_order_section(
                 ui.label(
                     "Analyse IA indisponible — ANTHROPIC_API_KEY non configurée"
                 ).classes("text-body2").style(f"color: {COLORS['ink2']}")
+        return
+
+    # If no AI instructions configured, block and direct to Ressources page
+    if not ai_instructions.strip():
+        with ui.element("div").classes("w-full q-mt-xl q-mb-sm"):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("smart_toy", size="sm").style(f"color: {COLORS['amber']}")
+                ui.label(
+                    "Analyse IA indisponible"
+                ).classes("text-subtitle1").style(
+                    f"color: {COLORS['ink']}; font-weight: 600"
+                )
+            ui.label(
+                f"Aucune instruction IA configurée pour {supplier_name}. "
+                "Rendez-vous sur la page Ressources pour ajouter les instructions "
+                "de commande (conditionnement, minimums, contraintes)."
+            ).classes("text-body2 q-mt-xs").style(f"color: {COLORS['ink2']}")
+            ui.button(
+                "Configurer les instructions",
+                on_click=lambda: ui.navigate.to("/ressources"),
+                icon="settings",
+            ).props("flat color=amber-9").classes("q-mt-sm")
         return
 
     # ── Section header ────────────────────────────────────────
@@ -1028,6 +1062,7 @@ def _render_ai_order_section(
                     supplier_email_label.text = (
                         f"📧 {chat_state['supplier_email']}"
                     )
+                    supplier_email_label.style(f"color: {COLORS['ink2']}")
                 else:
                     supplier_email_label.text = "Email introuvable"
                     supplier_email_label.style(f"color: {COLORS['error']}")
@@ -1170,7 +1205,7 @@ def _render_ai_order_section(
                 f"color: {COLORS['ink2']}"
             )
             ui.label(
-                "CC : maxime@symbiose-kefir.fr, nicolas@symbiose-kefir.fr"
+                f"CC : {', '.join(_ORDER_CC_LIST)}"
             ).classes("text-body2").style(f"color: {COLORS['ink2']}")
             ui.separator().classes("q-my-sm")
             ui.html(chat_state["current_html_body"]).style(
@@ -1402,23 +1437,18 @@ def _render_ai_order_section(
             )
 
             filename = f"Bon_Commande_{ref}.pdf"
-            cc_list = [
-                "maxime@symbiose-kefir.fr",
-                "nicolas@symbiose-kefir.fr",
-            ]
-
             def _do_send():
                 send_html_with_pdf(
                     to_email=recipient,
                     subject=chat_state["current_subject"],
                     html_body=html_body,
                     attachments=[(filename, pdf_bytes)],
-                    cc=cc_list,
+                    cc=_ORDER_CC_LIST,
                 )
 
             await asyncio.to_thread(_do_send)
 
-            cc_text = ", ".join(cc_list)
+            cc_text = ", ".join(_ORDER_CC_LIST)
             ui.notify(
                 f"Commande envoyée à {recipient} (CC: {cc_text})",
                 type="positive",

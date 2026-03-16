@@ -54,6 +54,7 @@ class StockGroup:
     name: str
     icon: str
     items: list[StockItem] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -159,6 +160,7 @@ def _analyse_history(
 def _assign_groups(
     items: list[StockItem],
     stocks_config: dict[str, Any],
+    db_overrides: dict[str, dict] | None = None,
 ) -> list[StockGroup]:
     """Assign stock items to supplier groups.
 
@@ -169,10 +171,14 @@ def _assign_groups(
        - Only ``mp_types`` → type code must match
        - Only ``patterns`` → pattern must appear in label
     3. Final fallback: ungrouped bucket
+
+    If *db_overrides* is provided, the ``active`` flag from DB takes
+    precedence over the YAML default.
     """
     ungrouped_label = stocks_config.get("ungrouped_label", "Autres contenants")
+    db_overrides = db_overrides or {}
 
-    # Build per-supplier matching criteria
+    # Build per-supplier matching criteria (skip inactive suppliers)
     cfg_groups = stocks_config.get("supplier_groups") or []
     cfg_matchers: list[tuple[str, str, list[str], list[str]]] = [
         (
@@ -182,6 +188,7 @@ def _assign_groups(
             g.get("mp_types", []),
         )
         for g in cfg_groups
+        if db_overrides.get(g["name"], {}).get("active", g.get("active", True))
     ]
 
     # Collect items per group name
@@ -266,7 +273,7 @@ def compute_order_recommendation(
 
     lead_time = int(ordering_cfg.get("lead_time_days", 0))
     min_order = int(ordering_cfg.get("min_order",
-                    ordering_cfg.get("min_order_pallets", 1)))
+                    ordering_cfg.get("min_order_pallets", 0)))
     can_split = bool(ordering_cfg.get("can_split_references", False))
     ref_cfg = ordering_cfg.get("references") or ordering_cfg.get("pallets") or {}
     order_unit = ordering_cfg.get("order_unit", "palette")
@@ -300,7 +307,7 @@ def compute_order_recommendation(
         deadline = None
         if item.stock_days is not None:
             days_before = item.stock_days - lead_time
-            deadline = today + timedelta(days=int(days_before))
+            deadline = today + timedelta(days=math.floor(days_before))
 
         order_items.append(OrderItem(
             label=item.label,
@@ -328,13 +335,13 @@ def compute_order_recommendation(
         order_deadline = None
     elif min_days_before <= 0:
         urgency = "critical"
-        order_deadline = today + timedelta(days=int(min_days_before))
+        order_deadline = today + timedelta(days=math.floor(min_days_before))
     elif min_days_before <= 14:
         urgency = "warning"
-        order_deadline = today + timedelta(days=int(min_days_before))
+        order_deadline = today + timedelta(days=math.floor(min_days_before))
     else:
         urgency = "ok"
-        order_deadline = today + timedelta(days=int(min_days_before))
+        order_deadline = today + timedelta(days=math.floor(min_days_before))
 
     # --- Distribute units proportionally to daily consumption ---
     total_daily = sum(oi.daily_consumption for oi in order_items)
@@ -360,18 +367,22 @@ def compute_order_recommendation(
         for oi in order_items:
             oi.suggested_units = per_item
 
-    # Ensure total >= min_order
-    total_suggested = sum(oi.suggested_units for oi in order_items)
-    if total_suggested < min_order and order_items:
-        order_items[0].suggested_units += min_order - total_suggested
-
-    # Compute quantities and coverage
+    # Compute quantities and enforce per-reference minimums first
     for oi in order_items:
         oi.suggested_qty = oi.suggested_units * oi.qty_per_unit
         # Enforce per-reference minimum (e.g. Adesa labels)
         if oi.min_qty and oi.suggested_qty < oi.min_qty:
             oi.suggested_units = math.ceil(oi.min_qty / oi.qty_per_unit)
             oi.suggested_qty = oi.suggested_units * oi.qty_per_unit
+
+    # Ensure total >= min_order (after per-ref minimums are applied)
+    total_suggested = sum(oi.suggested_units for oi in order_items)
+    if total_suggested < min_order and order_items:
+        order_items[0].suggested_units += min_order - total_suggested
+        order_items[0].suggested_qty = order_items[0].suggested_units * order_items[0].qty_per_unit
+
+    # Compute coverage
+    for oi in order_items:
         if oi.daily_consumption > 0:
             oi.coverage_days = oi.suggested_qty / oi.daily_consumption
 
@@ -430,6 +441,7 @@ def fetch_and_compute(window_days: int) -> list[StockGroup]:
 
     for entry in contenants:
         libelle = entry.get("libelle", "")
+        contenant_id = entry.get("id")
         current_stock = float(entry.get("quantiteVirtuelle", 0) or 0)
         seuil_bas = float(entry.get("seuilBas", 0) or 0)
         consumption = consumption_map.get(libelle, 0.0)
@@ -446,6 +458,7 @@ def fetch_and_compute(window_days: int) -> list[StockGroup]:
             daily_consumption=daily,
             stock_days=stock_days,
             supplier=supplier_map.get(libelle),
+            eb_id=int(contenant_id) if contenant_id else None,
         )
         items.append(item)
 
@@ -462,7 +475,9 @@ def fetch_and_compute(window_days: int) -> list[StockGroup]:
 
     # Step 5 — group by supplier (dynamic + config fallback)
     stocks_config = get_stocks_config()
-    return _assign_groups(items, stocks_config)
+    from common.supplier_config import get_all_supplier_overrides
+    db_over = get_all_supplier_overrides()
+    return _assign_groups(items, stocks_config, db_overrides=db_over)
 
 
 # ---------------------------------------------------------------------------
@@ -516,11 +531,13 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
         return []
 
     # Step 2 — consumption synthesis over the period
+    _conso_failed = False
     try:
         conso_data = get_synthese_consommations_mp(window_days)
     except Exception:
         _log.exception("Erreur appel synthese-consommations-mp")
         conso_data = {}
+        _conso_failed = True
 
     # Build consumption map: libelle → total consumption
     # (the synthesis endpoint returns {libelle, quantite, unite, cout} — no ID)
@@ -612,4 +629,14 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
 
     # Step 5 — group by supplier
     stocks_config = get_stocks_config()
-    return _assign_groups(items, stocks_config)
+    from common.supplier_config import get_all_supplier_overrides
+    db_over = get_all_supplier_overrides()
+    groups = _assign_groups(items, stocks_config, db_overrides=db_over)
+
+    # Propagate consumption failure warning to all groups
+    if _conso_failed:
+        warn = "Données de consommation indisponibles — les durées de stock peuvent être inexactes."
+        for g in groups:
+            g.warnings.append(warn)
+
+    return groups
