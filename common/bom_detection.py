@@ -86,10 +86,11 @@ def _detect_from_stock_detail(
     format_code: str,
     lot_qty: int,
     id_stock_produit: int,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | None:
     """Fetch GET /stock/produit/edition/{id} and extract conditioning elements.
 
-    Returns BOM entry dicts ready for ``bulk_upsert_bom()``.
+    Returns BOM entry dicts ready for ``bulk_upsert_bom()``,
+    or ``None`` if rate-limited (caller should stop).
     """
     from common.easybeer.stocks import get_stock_produit_detail
 
@@ -100,6 +101,9 @@ def _detect_from_stock_detail(
             "Cannot fetch stock detail %d for %s %s: %s",
             id_stock_produit, product_label, format_code, exc,
         )
+        # Rate-limit → signal caller to stop
+        if "rate-limit" in str(exc).lower() or "banned" in str(exc).lower():
+            return None
         return []
 
     entries: list[dict[str, Any]] = []
@@ -218,9 +222,13 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
         if entries:
             all_entries.extend(entries)
             products_seen.add(id_produit)
+        elif entries is None:
+            # Rate-limited — stop fetching, save what we have
+            _log.warning("Rate-limited, stopping BOM detection early")
+            break
 
-        # Small delay to avoid hammering the API
-        time.sleep(0.3)
+        # 1.5s delay to stay under EasyBeer rate-limit (10 req/s)
+        time.sleep(1.5)
 
     # 3. Bulk upsert (respects existing validated/conditioning entries)
     if all_entries:
