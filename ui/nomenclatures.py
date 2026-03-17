@@ -41,15 +41,11 @@ def _load_easybeer_mp() -> list[dict[str, Any]]:
 
 
 def _load_product_formats() -> list[dict[str, Any]]:
-    """Load product formats from barcode matrix."""
+    """Load product formats from EasyBeer stock data."""
     try:
-        from common.bom_detection import detect_product_formats
-        from common.easybeer.conditioning import get_code_barre_matrice
-        from common.easybeer.products import get_all_products
+        from common.bom_detection import detect_product_formats_from_stocks
 
-        barcode_matrix = get_code_barre_matrice()
-        products = get_all_products()
-        return detect_product_formats(barcode_matrix, products)
+        return detect_product_formats_from_stocks()
     except Exception:
         _log.warning("Impossible de charger les formats produits", exc_info=True)
         return []

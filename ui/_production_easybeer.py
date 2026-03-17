@@ -445,51 +445,14 @@ def _render_easybeer_section(
                             type="positive",
                         )
 
-                        # ── Auto-enrichir le BOM depuis la matrice ──
+                        # ── Auto-enrichir le BOM depuis EasyBeer ──
                         try:
-                            from common.bom_detection import detect_bom_for_format
-                            from common.easybeer.stocks import get_all_matieres_premieres
-                            from common.product_bom import bulk_upsert_bom
-
-                            _all_mp = get_all_matieres_premieres()
-                            _bom_entries: list[dict] = []
-                            for _pid_bom, _elems_bom in _elements_by_pid.items():
-                                for _el in _elems_bom:
-                                    _id_cont_bom = _el.get("idContenant")
-                                    # Find contenance from container lookup
-                                    for _vol, _cands in _cont_by_vol.items():
-                                        for _c in _cands:
-                                            if _c.get("idContenant") == _id_cont_bom:
-                                                _vol_cl = int(_vol * 100)
-                                                # Find lot qty from pkg_lookup
-                                                for _pk_lbl in _pkg_lookup:
-                                                    _m_qty = re.search(r"(\d+)", _pk_lbl)
-                                                    if _m_qty:
-                                                        _lot_q = int(_m_qty.group(1))
-                                                        _fmt = f"{_lot_q}x{_vol_cl}"
-                                                        _prod_lbl = ""
-                                                        for _p in _eb_products:
-                                                            if _p.get("idProduit") == _pid_bom:
-                                                                _prod_lbl = _p.get("libelle", "")
-                                                                break
-                                                        _bom_entries.extend(
-                                                            detect_bom_for_format(
-                                                                _pid_bom, _prod_lbl, _fmt,
-                                                                _vol, _lot_q, _all_mp,
-                                                            )
-                                                        )
-                                                    break
-                                                break
-                                        break
-                            if _bom_entries:
-                                # Mark as conditioning-sourced
-                                for _be in _bom_entries:
-                                    _be["source"] = "conditioning"
-                                    _be["validated"] = True
-                                bulk_upsert_bom(_bom_entries)
+                            from common.bom_detection import run_full_detection
+                            _nb_bom, _nb_prod = run_full_detection()
+                            if _nb_bom:
                                 _log.info(
-                                    "Auto-captured %d BOM entries from conditioning « %s »",
-                                    len(_bom_entries), g,
+                                    "Auto-captured %d BOM entries for %d products after conditioning",
+                                    _nb_bom, _nb_prod,
                                 )
                         except Exception:
                             _log.debug("BOM auto-capture skipped", exc_info=True)

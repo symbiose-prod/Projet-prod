@@ -3,9 +3,9 @@ common/bom_detection.py
 =======================
 Auto-detection of BOM entries from EasyBeer data.
 
-Parses the barcode matrix to discover product formats, then matches
-each format to its packaging components (bottles, labels, caps, cartons)
-from the matières premières list using heuristics.
+Fetches the finished-product stock list (POST /stock/produits), then for
+each product-format calls GET /stock/produit/edition/{id} to read the
+conditioning elements (étiquettes, capsules, cartons) configured in EasyBeer.
 
 Detected entries are stored with ``validated=False`` so the user can
 review and confirm them on the /nomenclatures page.
@@ -13,35 +13,130 @@ review and confirm them on the /nomenclatures page.
 from __future__ import annotations
 
 import logging
-import re
-import unicodedata
+import os
+import time
 from typing import Any
 
 _log = logging.getLogger("ferment.bom_detection")
 
 
-# ─── Text normalization ────────────────────────────────────────────────────
+# ─── Fetch stock produits (finished products with formats) ────────────────
 
-def _strip_accents(s: str) -> str:
-    """Remove accents: 'Kéfir Pêche' → 'Kefir Peche'."""
-    return "".join(
-        ch for ch in unicodedata.normalize("NFKD", s)
-        if not unicodedata.combining(ch)
+def _fetch_stock_produits() -> dict[str, Any]:
+    """POST /stock/produits → all finished-product stock consolidations."""
+    from common.easybeer._client import BASE, _auth, _check_response, _safe_json, get_session
+
+    id_brasserie = int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))
+    r = get_session().post(
+        f"{BASE}/stock/produits",
+        json={"idBrasserie": id_brasserie},
+        auth=_auth(),
+        timeout=30,
     )
+    _check_response(r, "stock/produits")
+    return _safe_json(r, "stock/produits")
 
 
-def _normalize(s: str) -> str:
-    """Lowercase + strip accents + collapse whitespace."""
-    return re.sub(r"\s+", " ", _strip_accents(s).lower()).strip()
+def _build_stock_map(
+    produits_data: dict[str, Any],
+) -> dict[tuple[int, str], dict[str, Any]]:
+    """Build (idProduit, format_code) → {sid, libelle, contenance, lot_qty}.
+
+    Parses the consolidation tree from POST /stock/produits.
+    """
+    from common.easybeer.products import get_all_products
+
+    # idProduit → libelle lookup
+    id_to_label: dict[int, str] = {}
+    for p in get_all_products():
+        pid = p.get("idProduit")
+        lib = (p.get("libelle") or "").strip()
+        if pid and lib:
+            id_to_label[pid] = lib
+
+    stock_map: dict[tuple[int, str], dict[str, Any]] = {}
+    for prod in produits_data.get("consolidationsFilles", []):
+        for conso in prod.get("consolidationsFilles", []):
+            sid = conso.get("id")
+            if not sid:
+                continue
+            produit = conso.get("produit") or {}
+            id_produit = produit.get("idProduit")
+            cont = conso.get("contenant") or {}
+            contenance = float(cont.get("contenance", 0) or 0)
+            lot = conso.get("lot") or {}
+            lot_qty = int(lot.get("quantite", 0) or 0)
+            if id_produit and contenance and lot_qty:
+                fmt_str = f"{lot_qty}x{int(contenance * 100)}"
+                stock_map[(id_produit, fmt_str)] = {
+                    "sid": sid,
+                    "libelle": id_to_label.get(id_produit, f"Produit #{id_produit}"),
+                    "contenance": contenance,
+                    "lot_qty": lot_qty,
+                }
+
+    return stock_map
 
 
-# ─── Product format detection from barcode matrix ──────────────────────────
+# ─── Read conditioning elements from EasyBeer ─────────────────────────────
 
-def detect_product_formats(
-    barcode_matrix: dict[str, Any],
-    products: list[dict[str, Any]],
+def _detect_from_stock_detail(
+    id_produit: int,
+    product_label: str,
+    format_code: str,
+    lot_qty: int,
+    id_stock_produit: int,
 ) -> list[dict[str, Any]]:
-    """Parse barcode matrix → list of product-formats.
+    """Fetch GET /stock/produit/edition/{id} and extract conditioning elements.
+
+    Returns BOM entry dicts ready for ``bulk_upsert_bom()``.
+    """
+    from common.easybeer.stocks import get_stock_produit_detail
+
+    try:
+        detail = get_stock_produit_detail(id_stock_produit)
+    except Exception as exc:
+        _log.warning(
+            "Cannot fetch stock detail %d for %s %s: %s",
+            id_stock_produit, product_label, format_code, exc,
+        )
+        return []
+
+    entries: list[dict[str, Any]] = []
+    for elem in detail.get("elementsConditionnement") or []:
+        mp = elem.get("elementMatierePremiere") or {}
+        id_mp = mp.get("idMatierePremiere")
+        if id_mp is None:
+            continue
+        qty = float(elem.get("quantite", 0) or 0)
+        if qty <= 0:
+            continue
+        mp_label = (mp.get("libelle") or "").strip()
+
+        entries.append({
+            "id_produit": id_produit,
+            "format_code": format_code,
+            "product_label": product_label,
+            "id_mp": id_mp,
+            "mp_label": mp_label,
+            "qty_per_unit": qty,
+            "validated": False,
+            "source": "auto_detected",
+        })
+        _log.info(
+            "EasyBeer BOM: %s %s → %s (qty=%.0f)",
+            product_label, format_code, mp_label, qty,
+        )
+
+    return entries
+
+
+# ─── Product formats (still useful for the nomenclatures page) ────────────
+
+def detect_product_formats_from_stocks(
+    produits_data: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Build product-format list from POST /stock/produits data.
 
     Returns::
 
@@ -51,234 +146,88 @@ def detect_product_formats(
                 "libelle": "Kéfir Gingembre",
                 "formats": [
                     {"format_code": "12x33", "contenance": 0.33, "lot_qty": 12},
-                    {"format_code": "6x75", "contenance": 0.75, "lot_qty": 6},
                 ]
             },
             ...
         ]
     """
-    # Build idProduit → libelle lookup from products list
-    id_to_label: dict[int, str] = {}
-    for p in products:
-        pid = p.get("idProduit")
-        lib = (p.get("libelle") or "").strip()
-        if pid and lib:
-            id_to_label[pid] = lib
+    if produits_data is None:
+        produits_data = _fetch_stock_produits()
 
-    # Parse barcode matrix
-    product_formats: dict[int, dict[str, dict]] = {}  # id → {format_code: info}
+    stock_map = _build_stock_map(produits_data)
 
-    for prod_entry in barcode_matrix.get("produits", []):
-        for cb in prod_entry.get("codesBarres", []):
-            mod_produit = cb.get("modeleProduit") or {}
-            id_produit = mod_produit.get("idProduit")
-            if not id_produit:
-                continue
+    # Group by id_produit
+    by_product: dict[int, dict[str, Any]] = {}
+    for (pid, fmt), info in stock_map.items():
+        if pid not in by_product:
+            by_product[pid] = {
+                "id_produit": pid,
+                "libelle": info["libelle"],
+                "formats": {},
+            }
+        by_product[pid]["formats"][fmt] = {
+            "format_code": fmt,
+            "contenance": info["contenance"],
+            "lot_qty": info["lot_qty"],
+        }
 
-            mod_cont = cb.get("modeleContenant") or {}
-            contenance = round(float(mod_cont.get("contenance") or 0), 2)
-
-            mod_lot = cb.get("modeleLot") or {}
-            lot_libelle = (mod_lot.get("libelle") or "").strip()
-
-            if not contenance:
-                continue
-
-            # Derive format code
-            vol_cl = int(contenance * 100)
-            m_pkg = re.search(r"(\d+)", lot_libelle)
-            lot_qty = int(m_pkg.group(1)) if m_pkg else 0
-            if not (vol_cl and lot_qty):
-                continue
-
-            format_code = f"{lot_qty}x{vol_cl}"
-
-            if id_produit not in product_formats:
-                product_formats[id_produit] = {}
-            if format_code not in product_formats[id_produit]:
-                product_formats[id_produit][format_code] = {
-                    "format_code": format_code,
-                    "contenance": contenance,
-                    "lot_qty": lot_qty,
-                }
-
-    # Build result list
     result: list[dict[str, Any]] = []
-    for pid, formats in sorted(product_formats.items()):
-        libelle = id_to_label.get(pid, f"Produit #{pid}")
+    for pid, data in sorted(by_product.items()):
         result.append({
             "id_produit": pid,
-            "libelle": libelle,
-            "formats": sorted(formats.values(), key=lambda f: f["format_code"]),
+            "libelle": data["libelle"],
+            "formats": sorted(data["formats"].values(), key=lambda f: f["format_code"]),
         })
 
     result.sort(key=lambda r: r["libelle"])
     return result
 
 
-# ─── BOM detection for one product-format ──────────────────────────────────
-
-def _extract_flavor(product_label: str) -> str:
-    """Extract the flavor/variant portion of a product name.
-
-    'Kéfir de fruits Menthe Citron vert' → 'menthe citron vert'
-    'Infusion de Kéfir Pêche Verveine'  → 'peche verveine'
-
-    Strips common prefixes like 'Kéfir', 'Kéfir de fruits', 'Infusion de Kéfir'.
-    """
-    s = product_label.strip()
-    # Remove common prefixes (longest first)
-    for prefix in [
-        "Infusion de Kéfir de fruits",
-        "Infusion de Kéfir",
-        "Kéfir de fruits",
-        "Kéfir d'eau",
-        "Kéfir",
-    ]:
-        if s.lower().startswith(prefix.lower()):
-            s = s[len(prefix):].strip()
-            # Remove leading "de " or "d'" if present
-            s = re.sub(r"^(?:de\s+|d')", "", s, flags=re.IGNORECASE).strip()
-            break
-    return _normalize(s)
-
-
-def detect_bom_for_format(
-    id_produit: int,
-    product_label: str,
-    format_code: str,
-    contenance: float,
-    lot_qty: int,
-    all_mp: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Detect packaging components for one product-format.
-
-    Returns list of BOM entry dicts ready for ``bulk_upsert_bom()``.
-    """
-    entries: list[dict[str, Any]] = []
-    flavor = _extract_flavor(product_label)
-    vol_cl = int(contenance * 100)
-
-    for mp in all_mp:
-        if not mp.get("actif", True):
-            continue
-
-        mp_id = mp.get("idMatierePremiere")
-        mp_label = (mp.get("libelle") or "").strip()
-        mp_type = (mp.get("type") or {}).get("code", "")
-        mp_norm = _normalize(mp_label)
-
-        if not mp_id or not mp_label:
-            continue
-
-        matched_qty: float | None = None
-
-        # ── Bottles: match CONTENANT by volume ──
-        if mp_type == "CONTENANT":
-            # Check if the MP label mentions the right volume
-            if (
-                f"{contenance}" in mp_label
-                or f"{vol_cl}cl" in mp_label.lower()
-                or f"0.{vol_cl}" in mp_label
-            ):
-                # Exclude "SAFT" bottles unless product mentions SAFT
-                mp_is_saft = "saft" in mp_norm
-                product_is_saft = "saft" in _normalize(product_label)
-                if mp_is_saft == product_is_saft:
-                    matched_qty = lot_qty  # one bottle per unit in carton
-
-        # ── Labels: match CONDITIONNEMENT by flavor name ──
-        elif mp_type == "CONDITIONNEMENT":
-            is_etiquette = "etiquet" in mp_norm or "étiq" in mp_label.lower()
-            is_capsule = "capsul" in mp_norm or "bouchon" in mp_norm
-            is_carton = "carton" in mp_norm
-
-            if is_etiquette and flavor:
-                # Check if the label MP contains the flavor AND volume
-                if flavor in mp_norm and str(vol_cl) in mp_norm:
-                    matched_qty = lot_qty  # one label per bottle
-
-            elif is_capsule:
-                # Capsules: match by volume if specified, or generic
-                if str(vol_cl) in mp_norm or not re.search(r"\d+cl", mp_norm):
-                    matched_qty = lot_qty  # one cap per bottle
-
-            elif is_carton:
-                # Cartons: match by format (e.g., "12x33" or "12×33")
-                carton_match = re.search(r"(\d+)\s*[x×]\s*(\d+)", mp_norm)
-                if carton_match:
-                    c_qty = int(carton_match.group(1))
-                    c_vol = int(carton_match.group(2))
-                    if c_qty == lot_qty and c_vol == vol_cl:
-                        matched_qty = 1  # one carton per sales unit
-
-        if matched_qty is not None:
-            entries.append({
-                "id_produit": id_produit,
-                "format_code": format_code,
-                "product_label": product_label,
-                "id_mp": mp_id,
-                "mp_label": mp_label,
-                "qty_per_unit": matched_qty,
-                "validated": False,
-                "source": "auto_detected",
-            })
-            _log.info(
-                "Auto-detected: %s %s → %s (qty=%.0f)",
-                product_label, format_code, mp_label, matched_qty,
-            )
-
-    return entries
-
-
 # ─── Full detection orchestrator ───────────────────────────────────────────
 
 def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
-    """Run full BOM auto-detection from EasyBeer data.
+    """Run full BOM auto-detection from EasyBeer stock data.
 
-    1. Fetch barcode matrix + products + matières premières
-    2. Detect product formats
-    3. For each format, detect packaging components
-    4. Bulk upsert into DB (without overwriting validated or conditioning entries)
+    1. Fetch finished-product stock list (POST /stock/produits)
+    2. For each product-format, fetch conditioning elements via stock detail
+    3. Bulk upsert into DB (without overwriting validated or conditioning entries)
 
     Returns ``(total_detected, products_detected)``.
     """
-    from common.easybeer.conditioning import get_code_barre_matrice
-    from common.easybeer.products import get_all_products
-    from common.easybeer.stocks import get_all_matieres_premieres
     from common.product_bom import bulk_upsert_bom
 
-    _log.info("Starting full BOM detection...")
+    _log.info("Starting full BOM detection from EasyBeer...")
 
-    # Fetch data from EasyBeer
-    barcode_matrix = get_code_barre_matrice()
-    products = get_all_products()
-    all_mp = get_all_matieres_premieres()
+    # 1. Fetch all finished-product stocks
+    produits_data = _fetch_stock_produits()
+    stock_map = _build_stock_map(produits_data)
+    _log.info("Found %d product-formats in EasyBeer stock", len(stock_map))
 
-    # Detect product formats
-    product_formats = detect_product_formats(barcode_matrix, products)
-    _log.info("Detected %d products with formats", len(product_formats))
-
-    # Detect BOM for each product-format
+    # 2. For each product-format, fetch conditioning elements
     all_entries: list[dict[str, Any]] = []
-    for pf in product_formats:
-        for fmt in pf["formats"]:
-            entries = detect_bom_for_format(
-                id_produit=pf["id_produit"],
-                product_label=pf["libelle"],
-                format_code=fmt["format_code"],
-                contenance=fmt["contenance"],
-                lot_qty=fmt["lot_qty"],
-                all_mp=all_mp,
-            )
-            all_entries.extend(entries)
+    products_seen: set[int] = set()
 
-    # Bulk upsert (respects existing validated/conditioning entries)
+    for (id_produit, fmt), info in sorted(stock_map.items()):
+        entries = _detect_from_stock_detail(
+            id_produit=id_produit,
+            product_label=info["libelle"],
+            format_code=fmt,
+            lot_qty=info["lot_qty"],
+            id_stock_produit=info["sid"],
+        )
+        if entries:
+            all_entries.extend(entries)
+            products_seen.add(id_produit)
+
+        # Small delay to avoid hammering the API
+        time.sleep(0.3)
+
+    # 3. Bulk upsert (respects existing validated/conditioning entries)
     if all_entries:
         bulk_upsert_bom(all_entries, tenant_id=tenant_id)
 
     _log.info(
         "BOM detection complete: %d entries for %d products",
-        len(all_entries), len(product_formats),
+        len(all_entries), len(products_seen),
     )
-    return len(all_entries), len(product_formats)
+    return len(all_entries), len(products_seen)
