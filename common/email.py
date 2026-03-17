@@ -173,7 +173,7 @@ def _encode_attachments(attachments: list[tuple[str, bytes]] | None) -> list[dic
     return out
 
 def send_html_with_pdf(
-    to_email: str,
+    to_email: str | list[str],
     subject: str,
     html_body: str,
     attachments: list[tuple[str, bytes]] | None = None,
@@ -182,13 +182,18 @@ def send_html_with_pdf(
 ) -> dict:
     """
     Envoi générique HTML + pièces jointes (PDF ou autres).
+    - to_email: un email (str) ou une liste d'emails
     - attachments: liste [(filename, bytes), ...]
     - cc: liste d'emails en copie (optionnel)
     """
     _, sender_email, sender_name = _require_env()
+    if isinstance(to_email, str):
+        to_list = [{"email": to_email}]
+    else:
+        to_list = [{"email": addr} for addr in to_email]
     payload = {
         "sender": {"name": sender_name, "email": sender_email},
-        "to": [{"email": to_email}],
+        "to": to_list,
         "subject": subject,
         "htmlContent": html_body,
     }
@@ -209,7 +214,7 @@ def send_html_with_pdf(
         payload["replyTo"] = {"email": reply_to}
 
     data = _post_brevo("/v3/smtp/email", payload)
-    _log.info("Email envoyé à %s — sujet=%s (msg_id=%s)", to_email, subject, data.get("messageId"))
+    _log.info("Email envoyé à %s — sujet=%s (msg_id=%s)", to_email if isinstance(to_email, str) else ", ".join(to_email), subject, data.get("messageId"))
     return {"status": "sent", "provider_msg_id": data.get("messageId"), "response": data}
 
 def _strip_html_to_text(html: str) -> str:

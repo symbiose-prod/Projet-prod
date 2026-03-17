@@ -782,17 +782,14 @@ async def page_ramasse():
                             if sender_email and sender_email not in recipients:
                                 recipients.append(sender_email)
 
-                            # Envoi dans un thread pour ne pas bloquer l'event loop
-                            def _send_all():
-                                for rcpt in recipients:
-                                    send_html_with_pdf(
-                                        to_email=rcpt,
-                                        subject=subject,
-                                        html_body=body,
-                                        attachments=[(filename, pdf_bytes)],
-                                    )
-
-                            await asyncio.to_thread(_send_all)
+                            # Envoi unique avec tous les destinataires
+                            await asyncio.to_thread(
+                                send_html_with_pdf,
+                                to_email=recipients,
+                                subject=subject,
+                                html_body=body,
+                                attachments=[(filename, pdf_bytes)],
+                            )
 
                             ui.notify(
                                 f"Demande envoyée à {len(to_list)} destinataire(s) !",
