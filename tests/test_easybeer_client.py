@@ -99,7 +99,7 @@ class TestThrottle:
         assert calls == [], "First call should not trigger sleep"
 
     def test_rapid_second_call_sleeps(self, monkeypatch):
-        """Two calls within 200ms should trigger a sleep on the second one."""
+        """Two calls within 500ms should trigger a sleep on the second one."""
         clock = iter([100.0, 100.0, 100.05, 100.05])
         sleep_durations = []
 
@@ -109,10 +109,10 @@ class TestThrottle:
         )
 
         _throttle()  # first call — sets _api_last_ts = 100.0
-        _throttle()  # second call — now=100.05, wait = 0.2 - 0.05 = 0.15
+        _throttle()  # second call — now=100.05, wait = 0.5 - 0.05 = 0.45
 
         assert len(sleep_durations) == 1
-        assert sleep_durations[0] == pytest.approx(0.15, abs=0.01)
+        assert sleep_durations[0] == pytest.approx(0.45, abs=0.01)
 
     def test_after_sufficient_wait_no_sleep(self, monkeypatch):
         """If enough time has passed, no sleep needed."""
@@ -288,12 +288,19 @@ class TestIsRetryable:
 
     # ── HTTPError with retryable status codes ──
 
-    @pytest.mark.parametrize("code", [429, 500, 502, 503, 504])
+    @pytest.mark.parametrize("code", [500, 502, 503, 504])
     def test_http_error_retryable_codes(self, code):
         resp = MagicMock()
         resp.status_code = code
         exc = requests.HTTPError(response=resp)
         assert _is_retryable(exc) is True
+
+    def test_http_error_429_not_retryable(self):
+        """429 rate-limit is NOT retried — ban lasts 300s, retrying is pointless."""
+        resp = MagicMock()
+        resp.status_code = 429
+        exc = requests.HTTPError(response=resp)
+        assert _is_retryable(exc) is False
 
     def test_http_error_200_not_retryable(self):
         resp = MagicMock()
@@ -314,9 +321,10 @@ class TestIsRetryable:
 
     # ── EasyBeerError containing status codes ──
 
-    def test_easybeer_error_429_retryable(self):
+    def test_easybeer_error_429_not_retryable(self):
+        """Rate-limit errors are NOT retried — ban lasts 300s, retrying is pointless."""
         exc = EasyBeerError("EasyBeer /foo → HTTP 429 : rate limited")
-        assert _is_retryable(exc) is True
+        assert _is_retryable(exc) is False
 
     def test_easybeer_error_500_retryable(self):
         exc = EasyBeerError("EasyBeer /bar → HTTP 500 : internal")
@@ -400,4 +408,4 @@ class TestModuleConstants:
         assert client.TIMEOUT == 30
 
     def test_min_interval(self):
-        assert client._API_MIN_INTERVAL == 0.2
+        assert client._API_MIN_INTERVAL == 0.5

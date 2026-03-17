@@ -10,9 +10,10 @@ from typing import Any
 
 import requests as _requests
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, retry_api
 
 
+@retry_api
 def get_all_fournisseurs() -> list[dict[str, Any]]:
     """GET /parametres/fournisseur/liste/all -> Liste complete des fournisseurs."""
     ep = "parametres/fournisseur/liste/all"
@@ -120,6 +121,7 @@ def extract_supplier_address(fournisseur: dict[str, Any]) -> list[str]:
 
 # ─── File download ─────────────────────────────────────────────────────────
 
+@retry_api
 def get_fournisseur_edition(id_fournisseur: int) -> dict[str, Any]:
     """GET /parametres/fournisseur/edition/{id} -> Full supplier data (incl. fichiers)."""
     ep = f"parametres/fournisseur/edition/{id_fournisseur}"

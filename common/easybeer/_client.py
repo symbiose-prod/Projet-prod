@@ -57,7 +57,7 @@ def get_session() -> requests.Session:
 
 
 # ─── Rate-limiter global (thread-safe) ───────────────────────────────────────
-_API_MIN_INTERVAL = 0.2  # secondes (5 req/s max nominal)
+_API_MIN_INTERVAL = 0.5  # secondes (2 req/s max nominal — réduit pour éviter les bans)
 _api_last_ts: float = 0.0
 _api_lock = _threading.Lock()
 _api_backoff_until: float = 0.0  # monotonic timestamp until which we enforce a cooldown

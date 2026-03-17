@@ -7,11 +7,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session
+import time
+
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, retry_api
 
 _MAX_PAGINATION_PAGES = 50
 
 
+@retry_api
 def get_clients(
     page: int = 0,
     per_page: int = 100,
@@ -57,6 +60,8 @@ def get_all_clients(
         page += 1
         if page >= total_pages or not liste:
             break
+        # Pause entre pages pour éviter le rate-limit EasyBeer
+        time.sleep(0.3)
     else:
         _log.warning("get_all_clients : limite de %d pages atteinte", _MAX_PAGINATION_PAGES)
     return all_clients

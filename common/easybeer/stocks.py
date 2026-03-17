@@ -290,7 +290,7 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
             except (EasyBeerError, requests.RequestException) as _e:
                 _log.warning("Erreur fetch detail stock %s", sid, exc_info=True)
 
-            time.sleep(0.3)
+            time.sleep(0.5)
 
     _log.info("Fetch poids cartons termine : %d poids recuperes", len(weights))
     _save_weights_cache(weights)

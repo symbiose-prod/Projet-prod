@@ -8,7 +8,9 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session
+import time
+
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, retry_api
 
 
 def get_contenant_historique(
@@ -69,6 +71,8 @@ def get_contenant_historique(
         page += 1
         if page > total_pages or not items:
             break
+        # Pause entre pages pour éviter le rate-limit EasyBeer
+        time.sleep(0.3)
 
     _log.info(
         "contenant/historique : %d mouvements r\u00e9cup\u00e9r\u00e9s (filtre MP=%s, p\u00e9riode=%s\u2192%s)",
@@ -80,6 +84,7 @@ def get_contenant_historique(
     return all_items
 
 
+@retry_api
 def get_mp_historique_entree(
     categorie: str,
     *,
