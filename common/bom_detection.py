@@ -211,7 +211,14 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
     all_entries: list[dict[str, Any]] = []
     products_seen: set[int] = set()
 
+    from common.easybeer._client import is_rate_limited
+
     for (id_produit, fmt), info in sorted(stock_map.items()):
+        # Check rate-limit before each API call
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit actif, arrêt détection BOM (%d entries, %d produits)", len(all_entries), len(products_seen))
+            break
+
         entries = _detect_from_stock_detail(
             id_produit=id_produit,
             product_label=info["libelle"],
@@ -226,9 +233,6 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
             # Rate-limited — stop fetching, save what we have
             _log.warning("Rate-limited, stopping BOM detection early")
             break
-
-        # 1.5s delay to stay under EasyBeer rate-limit (10 req/s)
-        time.sleep(1.5)
 
     # 3. Bulk upsert (respects existing validated/conditioning entries)
     if all_entries:

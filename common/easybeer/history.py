@@ -8,9 +8,7 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-import time
-
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, retry_api
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
 
 
 def get_contenant_historique(
@@ -45,6 +43,11 @@ def get_contenant_historique(
     page = 1  # EasyBeer uses 1-indexed pages
 
     while True:
+        # Bail out early if rate-limited
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit actif, arrêt pagination historique (page %d, %d collectés)", page, len(all_items))
+            break
+
         r = get_session().post(
             f"{BASE}/{ep}",
             params={  # type: ignore[arg-type]
@@ -71,8 +74,6 @@ def get_contenant_historique(
         page += 1
         if page > total_pages or not items:
             break
-        # Pause entre pages pour éviter le rate-limit EasyBeer
-        time.sleep(0.3)
 
     _log.info(
         "contenant/historique : %d mouvements r\u00e9cup\u00e9r\u00e9s (filtre MP=%s, p\u00e9riode=%s\u2192%s)",

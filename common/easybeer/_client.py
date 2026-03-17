@@ -101,6 +101,18 @@ def _on_rate_limited(ban_seconds: float = 5.0) -> None:
     _log.warning("Rate-limit détecté — pause %.0fs avant prochains appels API", cooldown)
 
 
+def is_rate_limited() -> float:
+    """Return remaining ban seconds (0.0 if not rate-limited).
+
+    Call this **before** each API call inside loops to bail out early
+    instead of waiting for ``_throttle()`` to raise after a ban.
+    Thread-safe.
+    """
+    with _api_lock:
+        remaining = _api_backoff_until - _time.monotonic()
+    return max(0.0, remaining)
+
+
 def _auth() -> tuple[str, str]:
     _throttle()
     return (

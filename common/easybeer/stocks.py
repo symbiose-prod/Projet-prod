@@ -23,6 +23,7 @@ from ._client import (
     _log,
     _safe_json,
     get_session,
+    is_rate_limited,
     retry_api,
 )
 
@@ -265,8 +266,17 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
     data = _safe_json(r, "stock/produits")
 
     weights: dict[tuple[int, str], float] = {}
+    ban_detected = False
     for prod in data.get("consolidationsFilles", []):
+        if ban_detected:
+            break
         for conso in prod.get("consolidationsFilles", []):
+            # Check rate-limit before each API call
+            if is_rate_limited() > 0:
+                _log.warning("Rate-limit actif, arrêt fetch poids cartons (%d collectés)", len(weights))
+                ban_detected = True
+                break
+
             sid = conso.get("id")
             if not sid:
                 continue
@@ -289,8 +299,6 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
                     weights[(id_produit, fmt_str)] = poids
             except (EasyBeerError, requests.RequestException) as _e:
                 _log.warning("Erreur fetch detail stock %s", sid, exc_info=True)
-
-            time.sleep(0.5)
 
     _log.info("Fetch poids cartons termine : %d poids recuperes", len(weights))
     _save_weights_cache(weights)

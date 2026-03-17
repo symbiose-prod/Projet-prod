@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import time
-
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, retry_api
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
 
 _MAX_PAGINATION_PAGES = 50
 
@@ -50,6 +48,10 @@ def get_all_clients(
     all_clients: list[dict[str, Any]] = []
     page = 0
     while page < _MAX_PAGINATION_PAGES:
+        # Bail out early if rate-limited
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit actif, arrêt pagination clients (page %d, %d collectés)", page, len(all_clients))
+            break
         resp = get_clients(
             page=page, per_page=per_page, sort_by=sort_by,
             sort_mode=sort_mode, filtre=filtre,
@@ -60,8 +62,6 @@ def get_all_clients(
         page += 1
         if page >= total_pages or not liste:
             break
-        # Pause entre pages pour éviter le rate-limit EasyBeer
-        time.sleep(0.3)
     else:
         _log.warning("get_all_clients : limite de %d pages atteinte", _MAX_PAGINATION_PAGES)
     return all_clients

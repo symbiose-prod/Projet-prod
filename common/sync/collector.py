@@ -27,7 +27,7 @@ from common.easybeer.brassins import get_brassin_detail, get_brassins_en_cours
 from common.easybeer.conditioning import get_code_barre_matrice
 from common.easybeer.products import get_product_detail
 from common.easybeer.stocks import get_stock_produit_detail
-from common.easybeer._client import BASE, _auth, _check_response, _safe_json, get_session, TIMEOUT, EasyBeerError
+from common.easybeer._client import BASE, _auth, _check_response, _safe_json, get_session, TIMEOUT, EasyBeerError, is_rate_limited
 from common.ramasse import clean_product_label
 
 _log = logging.getLogger("ferment.sync")
@@ -144,9 +144,10 @@ def _get_product_detail_cached(id_produit: int) -> dict[str, Any]:
     """get_product_detail() avec cache mémoire intra-cycle."""
     if id_produit in _product_cache:
         return _product_cache[id_produit]
+    if is_rate_limited() > 0:
+        raise EasyBeerError("Rate-limit actif, skip product detail")
     detail = get_product_detail(id_produit)
     _product_cache[id_produit] = detail
-    time.sleep(0.5)  # Petit délai entre appels produit
     return detail
 
 
@@ -315,6 +316,16 @@ def _fetch_stock_codes() -> dict[tuple[int, str], str]:
     _log.info("Stock codes : %d items à interroger", len(items_to_fetch))
 
     for i, (sid, id_produit, fmt_str) in enumerate(items_to_fetch):
+        # Check rate-limit before each API call
+        if is_rate_limited() > 0:
+            _log.error(
+                "Rate-limit actif après %d/%d items. "
+                "Arrêt de la boucle, on continue avec %d codes collectés.",
+                i, len(items_to_fetch), len(codes),
+            )
+            ban_detected = True
+            break
+
         try:
             detail = get_stock_produit_detail(sid)
             code_article = (detail.get("codeArticle") or "").strip()
@@ -331,9 +342,6 @@ def _fetch_stock_codes() -> dict[tuple[int, str], str]:
                 ban_detected = True
                 break
             _log.warning("Erreur fetch detail stock %s : %s", sid, exc)
-
-        # Délai entre chaque appel — plus long que l'ancien 0.3s
-        time.sleep(_STOCK_DETAIL_DELAY)
 
     _log.info("Codes articles récupérés : %d entrées sur %d items", len(codes), total_items)
 
@@ -403,6 +411,11 @@ def collect_label_data() -> list[dict[str, Any]]:
     seen: set[str] = set()  # Dédoublonnage par (code_interne, lot)
 
     for brassin in brassins:
+        # Check rate-limit before each brassin
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit actif, arrêt traitement brassins (%d produits collectés)", len(products))
+            break
+
         id_brassin = brassin.get("idBrassin")
         brassin_produit = brassin.get("produit") or {}
         id_produit = brassin_produit.get("idProduit")
@@ -421,7 +434,6 @@ def collect_label_data() -> list[dict[str, Any]]:
 
         ddm = _compute_ddm(detail)
         lot = _ddm_to_lot(ddm)
-        time.sleep(0.5)  # Petit cooldown entre brassin detail et product detail
 
         # Produit principal + dérivés
         all_product_ids = _get_all_product_ids(id_produit)

@@ -109,9 +109,12 @@ class BatchLotTracker:
 
     def _get_pool(self, id_mp: int) -> LotPool:
         if id_mp not in self._pools:
-            # Throttle entre les appels API pour éviter le rate-limit (429/400)
-            if self._pools:
-                _time.sleep(0.6)
+            # Check rate-limit before API call
+            from common.easybeer._client import is_rate_limited
+            if is_rate_limited() > 0:
+                _log.warning("Rate-limit actif, skip fetch lots MP %d", id_mp)
+                self._pools[id_mp] = LotPool(id_mp, [])
+                return self._pools[id_mp]
             try:
                 lots = self._fetch(id_mp)
             except Exception:

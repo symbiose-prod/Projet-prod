@@ -10,7 +10,7 @@ from typing import Any
 
 import requests as _requests
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, retry_api
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
 
 
 @retry_api
@@ -250,6 +250,9 @@ def get_supplier_reference_texts(fournisseur: dict[str, Any]) -> list[dict[str, 
 
     results: list[dict[str, str]] = []
     for f in files[:3]:  # limit to 3 files max to avoid slowness
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit actif, arrêt téléchargement fichiers fournisseur")
+            break
         content = download_supplier_file(f)
         if not content:
             continue

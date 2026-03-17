@@ -13,6 +13,7 @@ from ._client import (
     EasyBeerError,
     get_session,
     is_configured,
+    is_rate_limited,
 )
 
 # --- brassins ---
@@ -82,7 +83,7 @@ from .stocks import (
 
 __all__ = [
     # client
-    "BASE", "TIMEOUT", "is_configured", "EasyBeerError", "get_session",
+    "BASE", "TIMEOUT", "is_configured", "is_rate_limited", "EasyBeerError", "get_session",
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_all_matieres_premieres",
     "get_mp_lots", "get_stock_produit_detail", "get_stock_bouteilles", "fetch_carton_weights",
