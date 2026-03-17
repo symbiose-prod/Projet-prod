@@ -69,6 +69,7 @@ NAV_ITEMS = [
     ("inventory_2",    "Stocks",               "/stocks"),
     ("compare_arrows", "Stock produits finis",  "/stock-pf"),
     ("menu_book",      "Ressources",           "/ressources"),
+    ("account_tree",   "Nomenclatures",        "/nomenclatures"),
     ("label",          "Étiquettes",           "/sync"),
 ]
 

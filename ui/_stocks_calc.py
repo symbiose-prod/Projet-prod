@@ -640,3 +640,227 @@ def fetch_and_compute_mp(window_days: int) -> list[StockGroup]:
             g.warnings.append(warn)
 
     return groups
+
+
+# ---------------------------------------------------------------------------
+# BOM-based entry-point: sales-driven autonomy (blocking — run in thread)
+# ---------------------------------------------------------------------------
+
+def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
+    """Compute stock autonomy based on finished-product SALES + BOM decomposition.
+
+    Instead of using production-based consumption (synthese-consommations-mp),
+    this function:
+    1. Fetches finished product autonomy (sales + stock) from EasyBeer
+    2. Loads the validated BOM (product → components with qty per carton)
+    3. Computes daily consumption of each component from PF daily sales
+    4. Adds virtual stock from PF stock (components locked in finished products)
+    5. Groups by supplier using the existing logic
+
+    Formula per component:
+        daily_consumption = Σ (PF_daily_sales × qty_per_carton)
+        virtual_pf_stock  = Σ (PF_stock × qty_per_carton)
+        total_stock       = raw_stock + virtual_pf_stock
+        autonomy_days     = total_stock / daily_consumption
+    """
+    import re
+
+    from common.data import get_stocks_config
+    from common.easybeer.products import get_all_products
+    from common.easybeer.stocks import get_all_matieres_premieres, get_autonomie_stocks
+    from common.product_bom import get_bom_lookup
+    from common.supplier_config import get_all_supplier_overrides
+
+    # ── Step 1: Fetch finished product autonomy ──
+    autonomie_data = get_autonomie_stocks(window_days)
+    pf_list = autonomie_data.get("produits") or []
+    _log.info("BOM calc: %d produits finis dans l'autonomie", len(pf_list))
+
+    # ── Step 2: Build PF lookup by idProduit ──
+    # autonomie returns libelle only (no idProduit), so we map via get_all_products
+    all_products = get_all_products()
+    label_to_pid: dict[str, int] = {}
+    for p in all_products:
+        lib = (p.get("libelle") or "").strip().lower()
+        pid = p.get("idProduit")
+        if lib and pid:
+            label_to_pid[lib] = pid
+
+    # Parse PF data: for each PF, derive daily_sales and stock
+    # Key = (idProduit, format_code)
+    pf_data: dict[tuple[int, str], dict] = {}
+
+    for pf in pf_list:
+        pf_label = (pf.get("libelle") or "").strip()
+        autonomie = float(pf.get("autonomie") or 0)
+        stock = float(pf.get("quantiteVirtuelle") or 0)
+
+        if not pf_label:
+            continue
+
+        # Match to idProduit
+        pid = label_to_pid.get(pf_label.lower())
+        if not pid:
+            # Try partial match (autonomie labels may include format info)
+            for lab, p_id in label_to_pid.items():
+                if lab in pf_label.lower() or pf_label.lower() in lab:
+                    pid = p_id
+                    break
+
+        if not pid:
+            _log.warning("BOM calc: PF '%s' non trouvé dans les produits", pf_label)
+            continue
+
+        # Derive format from PF label or volume
+        # Try to find format like "12x33" in the label
+        fmt_match = re.search(r"(\d+)\s*[x×]\s*(\d+)", pf_label)
+        if fmt_match:
+            format_code = f"{fmt_match.group(1)}x{fmt_match.group(2)}"
+        else:
+            # Fallback: try to derive from volume field
+            vol = float(pf.get("volume") or 0)
+            if vol > 0:
+                # Common: volume in hL, guess format from it
+                format_code = "unknown"
+            else:
+                format_code = "unknown"
+
+        daily_sales = stock / autonomie if autonomie > 0 else 0.0
+
+        key = (pid, format_code)
+        if key in pf_data:
+            # Same product-format seen twice: aggregate
+            pf_data[key]["daily_sales"] += daily_sales
+            pf_data[key]["stock"] += stock
+        else:
+            pf_data[key] = {
+                "label": pf_label,
+                "daily_sales": daily_sales,
+                "stock": stock,
+            }
+
+        _log.info(
+            "BOM calc PF: '%s' pid=%d fmt=%s → ventes=%.1f/j, stock=%.0f",
+            pf_label, pid, format_code, daily_sales, stock,
+        )
+
+    # ── Step 3: Load BOM lookup and MP stock ──
+    bom_lookup = get_bom_lookup()  # {id_mp: [{id_produit, format_code, qty_per_unit, ...}]}
+    all_mp = get_all_matieres_premieres()
+
+    # Build MP stock map
+    mp_stock: dict[int, dict] = {}
+    for mp in all_mp:
+        mp_id = mp.get("idMatierePremiere")
+        if not mp_id:
+            continue
+        mp_stock[mp_id] = {
+            "label": (mp.get("libelle") or "").strip(),
+            "stock": float(mp.get("quantiteVirtuelle") or 0),
+            "seuil_bas": float(mp.get("seuilBas") or 0),
+            "unit": (mp.get("unite") or {}).get("symbole", "u"),
+            "type_code": (mp.get("type") or {}).get("code", ""),
+        }
+
+    # ── Step 4: Compute autonomy per component ──
+    items: list[StockItem] = []
+
+    for id_mp, bom_entries in bom_lookup.items():
+        mp_info = mp_stock.get(id_mp)
+        if not mp_info:
+            _log.warning("BOM calc: MP id=%d non trouvée dans EasyBeer", id_mp)
+            continue
+
+        daily_consumption = 0.0
+        virtual_pf_stock = 0.0
+        contributing_pfs: list[str] = []
+
+        for entry in bom_entries:
+            pf_key = (entry["id_produit"], entry["format_code"])
+            pf = pf_data.get(pf_key)
+
+            if not pf:
+                # Try matching with "unknown" format fallback
+                for k, v in pf_data.items():
+                    if k[0] == entry["id_produit"]:
+                        pf = v
+                        break
+
+            if not pf:
+                continue
+
+            qty = entry["qty_per_unit"]
+            daily_consumption += pf["daily_sales"] * qty
+            virtual_pf_stock += pf["stock"] * qty
+            contributing_pfs.append(entry.get("product_label", ""))
+
+        raw_stock = mp_info["stock"]
+        total_stock = raw_stock + virtual_pf_stock
+        stock_days = total_stock / daily_consumption if daily_consumption > 0 else None
+
+        # Find supplier from entry history (reuse existing logic)
+        supplier = None
+        from common.easybeer.history import get_mp_historique_entree
+        from common.easybeer._client import _dates
+        try:
+            date_debut, date_fin = _dates(window_days)
+            for cat in ("Conditionnement", "Ingredient", "Divers"):
+                try:
+                    hist_entries = get_mp_historique_entree(
+                        cat, date_debut=date_debut, date_fin=date_fin,
+                    )
+                    for he in hist_entries:
+                        if (he.get("libelle") or "").strip() == mp_info["label"]:
+                            fournisseur = (he.get("fournisseur") or "").strip()
+                            if fournisseur:
+                                supplier = fournisseur
+                                break
+                    if supplier:
+                        break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        item = StockItem(
+            label=mp_info["label"],
+            current_stock=total_stock,
+            unit=mp_info["unit"],
+            seuil_bas=mp_info["seuil_bas"],
+            consumption=daily_consumption * window_days,
+            window_days=window_days,
+            daily_consumption=daily_consumption,
+            stock_days=stock_days,
+            supplier=supplier,
+            type_code=mp_info["type_code"],
+            eb_id=id_mp,
+        )
+        items.append(item)
+
+        _log.info(
+            "BOM calc MP '%s': raw=%.0f + pf_virtual=%.0f = %.0f, "
+            "conso=%.1f/j, jours=%s, PFs=%s",
+            mp_info["label"],
+            raw_stock,
+            virtual_pf_stock,
+            total_stock,
+            daily_consumption,
+            f"{stock_days:.1f}" if stock_days else "N/A",
+            ", ".join(set(contributing_pfs)) or "aucun",
+        )
+
+    # ── Step 5: Group by supplier ──
+    stocks_config = get_stocks_config()
+    db_over = get_all_supplier_overrides()
+    groups = _assign_groups(items, stocks_config, db_overrides=db_over)
+
+    # Add info about BOM source
+    if not bom_lookup:
+        warn = (
+            "Aucune nomenclature validée. Configurez les nomenclatures "
+            "sur la page Nomenclatures pour activer le calcul basé sur les ventes."
+        )
+        for g in groups:
+            g.warnings.append(warn)
+
+    return groups

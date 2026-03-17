@@ -227,6 +227,35 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS sync_schedule_hour SMALLINT NOT NUL
 -- Défaut 5h du matin (avant la production)
 
 -- =========================
+-- Nomenclatures produits (BOM packaging par produit-format)
+-- =========================
+CREATE TABLE IF NOT EXISTS product_bom (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  id_produit    INTEGER NOT NULL,
+  format_code   TEXT NOT NULL,
+  product_label TEXT NOT NULL DEFAULT '',
+  id_mp         INTEGER NOT NULL,
+  mp_label      TEXT NOT NULL DEFAULT '',
+  qty_per_unit  REAL NOT NULL DEFAULT 0,
+  validated     BOOLEAN NOT NULL DEFAULT FALSE,
+  source        TEXT NOT NULL DEFAULT 'manual',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bom_tenant_product_mp
+  ON product_bom(tenant_id, id_produit, format_code, id_mp);
+
+CREATE INDEX IF NOT EXISTS idx_bom_tenant ON product_bom(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_bom_mp     ON product_bom(id_mp);
+
+DROP TRIGGER IF EXISTS trg_bom_touch ON product_bom;
+CREATE TRIGGER trg_bom_touch
+BEFORE UPDATE ON product_bom
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -235,7 +264,8 @@ BEGIN
     GRANT ALL ON TABLE tenants, users, production_proposals,
                        password_resets, user_sessions, login_failures,
                        audit_log, supplier_configs,
-                       sync_operations, sync_api_keys TO shark;
+                       sync_operations, sync_api_keys,
+                       product_bom TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

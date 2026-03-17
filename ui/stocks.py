@@ -20,6 +20,7 @@ from common.easybeer import is_configured as eb_configured
 from ui._stocks_calc import (
     StockGroup,
     fetch_and_compute,
+    fetch_and_compute_bom,
     fetch_and_compute_mp,
 )
 from ui.auth import require_auth
@@ -297,8 +298,13 @@ def page_stocks():
                     # Choose fetcher based on supplier category
                     cfg = _supplier_cfg.get(selected, {})
                     is_contenant = cfg.get("category") == "Contenants"
-                    fetcher = fetch_and_compute if is_contenant else fetch_and_compute_mp
-                    timeout_secs = 60 if is_contenant else 120  # MP needs more time
+                    if is_contenant:
+                        fetcher = fetch_and_compute
+                        timeout_secs = 60
+                    else:
+                        # Use BOM-based (sales-driven) calculation
+                        fetcher = fetch_and_compute_bom
+                        timeout_secs = 120
                     groups: list[StockGroup] = await asyncio.wait_for(
                         asyncio.to_thread(fetcher, days),
                         timeout=timeout_secs,
