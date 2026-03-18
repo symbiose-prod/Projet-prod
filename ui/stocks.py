@@ -19,9 +19,7 @@ from common.data import get_stocks_config
 from common.easybeer import is_configured as eb_configured
 from ui._stocks_calc import (
     StockGroup,
-    fetch_and_compute,
     fetch_and_compute_bom,
-    fetch_and_compute_mp,
 )
 from ui.auth import require_auth
 from ui.theme import COLORS, kpi_card, page_layout
@@ -295,19 +293,9 @@ def page_stocks():
                 try:
                     days = int(period_radio.value or 60)
                     selected = selected_supplier["value"]
-                    # Choose fetcher based on supplier category
-                    cfg = _supplier_cfg.get(selected, {})
-                    is_contenant = cfg.get("category") == "Contenants"
-                    if is_contenant:
-                        fetcher = fetch_and_compute
-                        timeout_secs = 60
-                    else:
-                        # Use BOM-based (sales-driven) calculation
-                        fetcher = fetch_and_compute_bom
-                        timeout_secs = 120
                     groups: list[StockGroup] = await asyncio.wait_for(
-                        asyncio.to_thread(fetcher, days),
-                        timeout=timeout_secs,
+                        asyncio.to_thread(fetch_and_compute_bom, days),
+                        timeout=120,
                     )
                     filtered = [g for g in groups if g.name == selected]
                     total_items = sum(len(g.items) for g in filtered)

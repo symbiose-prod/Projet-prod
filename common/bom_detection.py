@@ -234,6 +234,14 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
             _log.warning("Rate-limited, stopping BOM detection early")
             break
 
+    # 2b. Auto-detect bottles (CONTENANT) from format codes
+    #     12x33 → 12 × Bouteille 33cl, 6x75 → 6 × Bouteille 75cl
+    bottle_entries = _detect_bottles_from_formats(stock_map)
+    if bottle_entries:
+        all_entries.extend(bottle_entries)
+        for be in bottle_entries:
+            products_seen.add(be["id_produit"])
+
     # 3. Bulk upsert (respects existing validated/conditioning entries)
     if all_entries:
         bulk_upsert_bom(all_entries, tenant_id=tenant_id)
@@ -243,3 +251,76 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
         len(all_entries), len(products_seen),
     )
     return len(all_entries), len(products_seen)
+
+
+def _detect_bottles_from_formats(
+    stock_map: dict[tuple[int, str], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Auto-detect bottle (CONTENANT) BOM entries from product formats.
+
+    For each product-format, derives the bottle type from contenance:
+    - contenance 0.33 → matches MP with "bouteille" + "33" in label
+    - contenance 0.75 → matches MP with "bouteille" + "75" in label
+
+    The quantity is the lot_qty (bottles per carton).
+    """
+    import re
+    from common.easybeer.stocks import get_all_matieres_premieres
+
+    all_mp = get_all_matieres_premieres()
+
+    # Build bottle lookup: contenance_cl → {id_mp, label}
+    # Bottles are CONTENANT type MP with "bouteille" in the label
+    bottles_by_cl: dict[int, dict[str, Any]] = {}
+    for mp in all_mp:
+        mp_type = (mp.get("type") or {}).get("code", "")
+        label = (mp.get("libelle") or "").strip()
+        mp_id = mp.get("idMatierePremiere")
+        if mp_type != "CONTENANT" or not mp_id:
+            continue
+        label_lower = label.lower()
+        if "bouteille" not in label_lower and "eau" not in label_lower:
+            continue
+        # Extract cl from label: "Bouteille 33cl" → 33, "EAU GAZEUSE 75cl" → 75
+        m = re.search(r"(\d+)\s*cl", label_lower)
+        if m:
+            cl = int(m.group(1))
+            bottles_by_cl[cl] = {"id_mp": mp_id, "label": label}
+        else:
+            # Try contenance field
+            cont = float(mp.get("contenance", 0) or 0)
+            if cont > 0:
+                cl = int(cont * 100)
+                bottles_by_cl[cl] = {"id_mp": mp_id, "label": label}
+
+    if not bottles_by_cl:
+        _log.warning("Aucune bouteille CONTENANT trouvée dans les MP EasyBeer")
+        return []
+
+    _log.info("Bouteilles détectées: %s", {cl: b["label"] for cl, b in bottles_by_cl.items()})
+
+    entries: list[dict[str, Any]] = []
+    for (id_produit, fmt), info in stock_map.items():
+        contenance_cl = int(info["contenance"] * 100)
+        bottle = bottles_by_cl.get(contenance_cl)
+        if not bottle:
+            _log.debug("Pas de bouteille %dcl pour %s %s", contenance_cl, info["libelle"], fmt)
+            continue
+
+        qty = info["lot_qty"]  # bottles per carton = lot_qty
+        entries.append({
+            "id_produit": id_produit,
+            "format_code": fmt,
+            "product_label": info["libelle"],
+            "id_mp": bottle["id_mp"],
+            "mp_label": bottle["label"],
+            "qty_per_unit": qty,
+            "validated": False,
+            "source": "auto_detected",
+        })
+        _log.info(
+            "BOM bouteille: %s %s → %s (qty=%d)",
+            info["libelle"], fmt, bottle["label"], qty,
+        )
+
+    return entries
