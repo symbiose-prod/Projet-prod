@@ -235,6 +235,26 @@ def delete_bom_entry(
     )
 
 
+def validate_all_bom(tenant_id: str | None = None) -> int:
+    """Mark ALL unvalidated BOM entries as validated for a tenant.
+
+    Returns the number of entries that were validated.
+    """
+    tid = tenant_id or _tenant_id()
+    rows = run_sql(
+        """
+        UPDATE product_bom
+        SET validated = TRUE
+        WHERE tenant_id = :t AND validated = FALSE
+        RETURNING id
+        """,
+        {"t": tid},
+    )
+    count = len(rows) if rows else 0
+    _log.info("Validated ALL BOM: %d entries (tenant=%s)", count, tid)
+    return count
+
+
 def validate_bom(
     id_produit: int,
     format_code: str,

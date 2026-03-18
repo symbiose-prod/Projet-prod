@@ -20,6 +20,7 @@ from common.product_bom import (
     delete_bom_entry,
     get_all_bom,
     upsert_bom_entry,
+    validate_all_bom,
     validate_bom,
 )
 from ui.auth import require_auth
@@ -105,6 +106,11 @@ def page_nomenclatures():
                 icon="sync",
             ).props("color=green-8 unelevated no-caps")
 
+            validate_all_btn = ui.button(
+                "Tout valider",
+                icon="done_all",
+            ).props("color=green-8 outline no-caps")
+
             sync_status = ui.label("").classes("text-caption").style(
                 f"color: {COLORS['ink2']}"
             )
@@ -183,6 +189,9 @@ def page_nomenclatures():
                             "text-subtitle1 q-ml-sm"
                         ).style(f"color: {COLORS['ink']}; font-weight: 600")
                         ui.element("div").style("flex-grow: 1")
+                        ui.icon(status_icon, size="xs").style(
+                            f"color: var(--q-{badge_color})"
+                        )
                         ui.badge(status_label).props(
                             f"color={badge_color}"
                         ).style("font-size: 11px")
@@ -221,6 +230,9 @@ def page_nomenclatures():
                             "text-caption"
                         ).style(f"color: {COLORS['ink2']}")
                         ui.element("div").style("flex-grow: 1")
+                        ui.icon(status_icon, size="xs").style(
+                            f"color: var(--q-{badge_color})"
+                        )
                         ui.badge(status_label).props(
                             f"color={badge_color}"
                         ).style("font-size: 10px")
@@ -480,6 +492,29 @@ def page_nomenclatures():
                 sync_btn.enable()
 
         sync_btn.on_click(_do_sync)
+
+        # ── Validate all handler ──
+        async def _do_validate_all():
+            validate_all_btn.disable()
+            try:
+                count = await asyncio.to_thread(validate_all_bom)
+                if count > 0:
+                    # Reload BOM from DB to refresh validated flags
+                    state["bom_entries"] = await asyncio.to_thread(get_all_bom)
+                    _rebuild_ui()
+                    ui.notify(
+                        f"{count} nomenclature(s) validée(s)",
+                        type="positive",
+                    )
+                else:
+                    ui.notify("Toutes les nomenclatures sont déjà validées", type="info")
+            except Exception as exc:
+                _log.exception("Erreur validation globale")
+                ui.notify(f"Erreur : {exc}", type="negative")
+            finally:
+                validate_all_btn.enable()
+
+        validate_all_btn.on_click(_do_validate_all)
 
         # ── Initial load (from DB only, no EasyBeer calls) ──
         async def _initial_load():
