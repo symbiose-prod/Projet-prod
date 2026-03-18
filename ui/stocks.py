@@ -370,6 +370,24 @@ def _render_results(
 ) -> None:
     """Render stock analysis results — flat layout, no expansion panels."""
     with container:
+        # ── Bandeau produits sans nomenclature ──────────────────
+        missing_warns = set()
+        for g in groups:
+            for w in g.warnings:
+                if "sans nomenclature validée" in w and "produit(s)" in w:
+                    missing_warns.add(w)
+        for w in missing_warns:
+            with ui.element("div").classes(
+                "w-full q-pa-md q-mb-md rounded-borders"
+            ).style(
+                "background: #FFF3E0; border-left: 4px solid #FF9800;"
+            ):
+                with ui.row().classes("items-start gap-2 no-wrap"):
+                    ui.icon("warning", size="sm").style("color: #E65100")
+                    ui.label(w).style(
+                        "color: #E65100; font-size: 13px; line-height: 1.5"
+                    )
+
         for group in groups:
             ordering = ordering_cfgs.get(group.name, {})
 

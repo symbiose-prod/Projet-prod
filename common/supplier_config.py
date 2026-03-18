@@ -206,8 +206,6 @@ def get_all_suppliers_with_config(tenant_id: str | None = None) -> list[dict[str
             "icon": g.get("icon", "business"),
             "category": g.get("category", "Autre"),
             "active": active,
-            "mp_types": g.get("mp_types", []),
-            "patterns": g.get("patterns", []),
             "ordering": merged,
         })
 
@@ -259,38 +257,55 @@ def generate_instructions_from_config(ordering: dict[str, Any]) -> str:
 def discover_supplier_refs(
     supplier: dict[str, Any],
     all_mp: list[dict[str, Any]],
+    supplier_map: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Discover EasyBeer MP that belong to a supplier group.
 
-    Uses the same mp_types + patterns logic as _assign_groups() in _stocks_calc.
+    Uses the dynamic supplier map (from EasyBeer purchase history) to match
+    MP labels to supplier names. Falls back to ordering references config
+    for refs already configured by eb_id or name.
+
+    *supplier_map* is ``{mp_label: fournisseur_name}`` from history.
+    If not provided, returns only refs already in the ordering config.
+
     Returns [{eb_id, label, unit}, ...] for active MP matching this supplier.
     """
-    mp_types = supplier.get("mp_types", [])
-    patterns = [p.lower() for p in supplier.get("patterns", [])]
+    supplier_name = supplier.get("name", "")
+    ordering = supplier.get("ordering") or {}
+    ordering_refs = ordering.get("references") or {}
 
-    if not mp_types and not patterns:
-        return []
+    # Build set of already-known eb_ids from ordering config
+    known_ids: set[int] = set()
+    for ref_data in ordering_refs.values():
+        ref_id = ref_data.get("eb_id")
+        if ref_id:
+            known_ids.add(int(ref_id))
 
     refs: list[dict[str, Any]] = []
     for mp in all_mp:
         if not mp.get("actif", True):
             continue
         label = (mp.get("libelle") or "").strip()
-        type_code = (mp.get("type") or {}).get("code", "")
-        label_lower = label.lower()
+        mp_id = mp.get("idMatierePremiere")
 
-        if mp_types and patterns:
-            match = type_code in mp_types and any(p in label_lower for p in patterns)
-        elif mp_types:
-            match = type_code in mp_types
-        elif patterns:
-            match = any(p in label_lower for p in patterns)
-        else:
-            match = False
+        # Match by dynamic supplier map (history-based)
+        matched = False
+        if supplier_map:
+            hist_supplier = supplier_map.get(label, "")
+            if hist_supplier.lower() == supplier_name.lower():
+                matched = True
 
-        if match:
+        # Also match by known eb_id from ordering config
+        if not matched and mp_id and mp_id in known_ids:
+            matched = True
+
+        # Also match by name in ordering references
+        if not matched and label in ordering_refs:
+            matched = True
+
+        if matched:
             refs.append({
-                "eb_id": mp.get("idMatierePremiere"),
+                "eb_id": mp_id,
                 "label": label,
                 "unit": (mp.get("unite") or {}).get("symbole", "u"),
             })

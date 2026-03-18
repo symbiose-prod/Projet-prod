@@ -363,6 +363,8 @@ def page_nomenclatures():
                 # Source badge
                 if source == "conditioning":
                     ui.badge("prod").props("color=green-7").style("font-size: 9px")
+                elif source == "recipe_api":
+                    ui.badge("recette").props("color=blue-7").style("font-size: 9px")
                 elif source == "auto_detected":
                     ui.badge("auto").props("color=amber-8").style("font-size: 9px")
 

@@ -48,14 +48,14 @@ business:
         bottling_loss_per_flavor: 200
 
 # ─── Stocks — Fournisseurs principaux ────────────────────────────────────────
+# Le matching MP → fournisseur est dynamique (historique entrées EasyBeer 365j).
+# Ce fichier ne contient que les contraintes de commande (non disponibles via API).
 stocks:
-  # Ordre important pour les patterns : le plus spécifique en premier
   supplier_groups:
     # ── Contenants (bouteilles) ──
     - name: "Verallia"
       icon: "water_drop"
       category: "Contenants"
-      patterns: ["EAU GAZEUSE"]         # 75cl eau gazeuse
       ordering:
         lead_time_days: 14
         min_order: 10
@@ -67,7 +67,6 @@ stocks:
     - name: "Wiegand-glas"
       icon: "inventory_2"
       category: "Contenants"
-      patterns: ["Bouteille"]           # 33cl + 75cl SAFT
       ordering:
         lead_time_days: 14
         min_order: 26                   # camion complet
@@ -79,13 +78,9 @@ stocks:
             qty_per_unit: 1421
 
     # ── Matières premières ──
-    # Matching : mp_types + patterns en logique AND quand les deux sont
-    # présents, ce qui évite les faux-positifs sans dépendre de l'ordre.
     - name: "Nature Favours"
       icon: "local_drink"
       category: "Matières premières"
-      mp_types: ["INGREDIENT_FRUIT"]
-      patterns: ["jus", "purée"]
       ordering:
         lead_time_days: 7
         min_order: 0
@@ -114,8 +109,6 @@ stocks:
     - name: "Cristalco"
       icon: "grain"
       category: "Matières premières"
-      mp_types: ["INGREDIENT_SUCRE"]
-      patterns: ["sucre"]
       ordering:
         lead_time_days: 10
         min_order: 4
@@ -128,7 +121,6 @@ stocks:
     - name: "Siroperie Meurens"
       icon: "local_cafe"
       category: "Matières premières"
-      patterns: ["sirop de figue"]
       ordering:
         lead_time_days: 10
         min_order: 40
@@ -142,7 +134,6 @@ stocks:
     - name: "Actibio"
       icon: "eco"
       category: "Matières premières"
-      patterns: ["figue"]
       ordering:
         lead_time_days: 20
         min_order: 2
@@ -155,19 +146,16 @@ stocks:
     - name: "Nexira"
       icon: "science"
       category: "Matières premières"
-      patterns: ["fibre"]
       active: false
 
     - name: "Yacon & Co"
       icon: "eco"
       category: "Matières premières"
-      patterns: ["yacon"]
       active: false
 
     - name: "Cailleau"
       icon: "spa"
       category: "Matières premières"
-      mp_types: ["INGREDIENT_HERBE"]
       ordering:
         lead_time_days: 10
         min_order: 0
@@ -185,8 +173,6 @@ stocks:
     - name: "ROBERTET SA"
       icon: "science"
       category: "Matières premières"
-      mp_types: ["INGREDIENT_AUTRE"]
-      patterns: ["arome", "infusion"]
       ordering:
         lead_time_days: 42
         min_order: 50
@@ -207,8 +193,6 @@ stocks:
     - name: "ADESA"
       icon: "label"
       category: "Emballages"
-      mp_types: ["CONDITIONNEMENT_ETIQUETTE", "CONDITIONNEMENT"]
-      patterns: ["etiquette", "étiquette"]
       ordering:
         lead_time_days: 20
         can_split_references: true
@@ -271,8 +255,6 @@ stocks:
     - name: "Turquet"
       icon: "widgets"
       category: "Emballages"
-      mp_types: ["CONDITIONNEMENT_CARTON", "CONDITIONNEMENT"]
-      patterns: ["carton"]
       ordering:
         lead_time_days: 20
         min_order: 0
@@ -295,8 +277,6 @@ stocks:
     - name: "AWK"
       icon: "circle"
       category: "Emballages"
-      mp_types: ["CONDITIONNEMENT_CAPSULE", "CONDITIONNEMENT"]
-      patterns: ["capsule", "bouchon"]
       ordering:
         lead_time_days: 42
         min_order: 2

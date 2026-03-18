@@ -100,12 +100,9 @@ def _assign_groups(
     """Assign stock items to supplier groups.
 
     Priority:
-    1. Dynamic supplier from ``item.supplier`` (extracted from history)
-    2. Config matching — ``mp_types`` and/or ``patterns``:
-       - Both specified → AND logic (type must match AND pattern must match)
-       - Only ``mp_types`` → type code must match
-       - Only ``patterns`` → pattern must appear in label
-    3. Final fallback: ungrouped bucket
+    1. Dynamic supplier from ``item.supplier`` (extracted from EasyBeer
+       purchase history over 365 days — set in step 4 of fetch_and_compute_bom)
+    2. Final fallback: ungrouped bucket
 
     If *db_overrides* is provided, the ``active`` flag from DB takes
     precedence over the YAML default.
@@ -113,18 +110,13 @@ def _assign_groups(
     ungrouped_label = stocks_config.get("ungrouped_label", "Autres contenants")
     db_overrides = db_overrides or {}
 
-    # Build per-supplier matching criteria (skip inactive suppliers)
+    # Build supplier name → icon lookup (skip inactive suppliers)
     cfg_groups = stocks_config.get("supplier_groups") or []
-    cfg_matchers: list[tuple[str, str, list[str], list[str]]] = [
-        (
-            g["name"],
-            g.get("icon", "category"),
-            [p.lower() for p in g.get("patterns", [])],
-            g.get("mp_types", []),
-        )
-        for g in cfg_groups
-        if db_overrides.get(g["name"], {}).get("active", g.get("active", True))
-    ]
+    cfg_icons: dict[str, str] = {}
+    for g in cfg_groups:
+        active = db_overrides.get(g["name"], {}).get("active", g.get("active", True))
+        if active:
+            cfg_icons[g["name"].lower()] = g.get("icon", "category")
 
     # Collect items per group name
     group_map: dict[str, StockGroup] = {}
@@ -137,37 +129,16 @@ def _assign_groups(
         if item.supplier:
             group_name = item.supplier
             # Try to find matching icon from config
-            for cfg_name, cfg_icon, _, _ in cfg_matchers:
-                if cfg_name.lower() == group_name.lower():
-                    group_icon = cfg_icon
-                    group_name = cfg_name  # use config casing
-                    break
+            icon = cfg_icons.get(group_name.lower())
+            if icon:
+                group_icon = icon
+                # Normalize casing to config name
+                for g in cfg_groups:
+                    if g["name"].lower() == group_name.lower():
+                        group_name = g["name"]
+                        break
 
-        # Priority 2: config matching (mp_types + patterns)
-        if not group_name:
-            label_lower = item.label.lower()
-            type_code = item.type_code or ""
-
-            for cfg_name, cfg_icon, patterns, mp_types in cfg_matchers:
-                if mp_types and patterns:
-                    # Both specified → AND logic
-                    match = (
-                        type_code in mp_types
-                        and any(p in label_lower for p in patterns)
-                    )
-                elif mp_types:
-                    match = type_code in mp_types
-                elif patterns:
-                    match = any(p in label_lower for p in patterns)
-                else:
-                    match = False
-
-                if match:
-                    group_name = cfg_name
-                    group_icon = cfg_icon
-                    break
-
-        # Priority 3: ungrouped
+        # Priority 2: ungrouped
         if not group_name:
             group_name = ungrouped_label
             group_icon = "more_horiz"
@@ -479,12 +450,14 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         }
 
     # ── Step 4: Build supplier map (one batch, not per-component) ──
+    # Use a 365-day window (not window_days) to catch suppliers for MP
+    # that haven't been ordered recently within the analysis period.
     from common.easybeer.history import get_mp_historique_entree
     from common.easybeer._client import _dates
 
     supplier_map: dict[str, str] = {}  # mp_label → fournisseur
     try:
-        date_debut, date_fin = _dates(window_days)
+        date_debut, date_fin = _dates(365)
         for cat in ("Conditionnement", "Ingredient", "Divers"):
             try:
                 hist_entries = get_mp_historique_entree(
@@ -499,7 +472,18 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     except Exception:
         _log.warning("Erreur récup dates pour historique", exc_info=True)
 
-    _log.info("BOM supplier map: %d libellés → fournisseur", len(supplier_map))
+    # Build id-based supplier map (survives MP label renames)
+    label_to_id: dict[str, int] = {v["label"]: k for k, v in mp_stock.items()}
+    supplier_map_by_id: dict[int, str] = {}
+    for label, supplier in supplier_map.items():
+        mp_id = label_to_id.get(label)
+        if mp_id:
+            supplier_map_by_id[mp_id] = supplier
+
+    _log.info(
+        "BOM supplier map: %d libellés, %d ids → fournisseur",
+        len(supplier_map), len(supplier_map_by_id),
+    )
 
     # ── Step 5: Compute autonomy per component ──
     items: list[StockItem] = []
@@ -537,8 +521,8 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         total_stock = raw_stock + virtual_pf_stock
         stock_days = total_stock / daily_consumption if daily_consumption > 0 else None
 
-        # Supplier: from batch history map
-        supplier = supplier_map.get(mp_info["label"])
+        # Supplier: prefer id-based match (survives renames), then label fallback
+        supplier = supplier_map_by_id.get(id_mp) or supplier_map.get(mp_info["label"])
 
         item = StockItem(
             label=mp_info["label"],
@@ -567,16 +551,43 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             ", ".join(set(contributing_pfs)) or "aucun",
         )
 
-    # ── Step 5: Group by supplier ──
+    # ── Step 6: Detect PF with sales but no validated BOM ──
+    bom_pf_keys: set[tuple[int, str]] = set()
+    for entries in bom_lookup.values():
+        for e in entries:
+            bom_pf_keys.add((e["id_produit"], e["format_code"]))
+
+    missing_pf = [
+        pf_data[k]["label"]
+        for k in pf_data
+        if k not in bom_pf_keys and pf_data[k]["daily_sales"] > 0
+    ]
+    if missing_pf:
+        _log.warning(
+            "BOM calc: %d PF sans nomenclature validée : %s",
+            len(missing_pf), ", ".join(missing_pf),
+        )
+
+    # ── Step 7: Group by supplier ──
     stocks_config = get_stocks_config()
     db_over = get_all_supplier_overrides()
     groups = _assign_groups(items, stocks_config, db_overrides=db_over)
 
-    # Add info about BOM source
+    # Add warnings
     if not bom_lookup:
         warn = (
             "Aucune nomenclature validée. Configurez les nomenclatures "
             "sur la page Nomenclatures pour activer le calcul basé sur les ventes."
+        )
+        for g in groups:
+            g.warnings.append(warn)
+
+    if missing_pf:
+        labels = ", ".join(sorted(missing_pf))
+        warn = (
+            f"{len(missing_pf)} produit(s) sans nomenclature validée "
+            f"(non inclus dans le calcul) : {labels}. "
+            "Configurez leur nomenclature sur la page Nomenclatures."
         )
         for g in groups:
             g.warnings.append(warn)

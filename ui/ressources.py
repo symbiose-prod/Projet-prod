@@ -40,6 +40,30 @@ def _load_easybeer_mp() -> list[dict[str, Any]]:
         return []
 
 
+def _load_supplier_map() -> dict[str, str]:
+    """Load dynamic MP label → supplier name map from EasyBeer purchase history (365 days)."""
+    try:
+        from common.easybeer._client import _dates
+        from common.easybeer.history import get_mp_historique_entree
+        from ui._stocks_calc import _extract_supplier_map_from_entries
+
+        supplier_map: dict[str, str] = {}
+        date_debut, date_fin = _dates(365)
+        for cat in ("Conditionnement", "Ingredient", "Divers"):
+            try:
+                entries = get_mp_historique_entree(cat, date_debut=date_debut, date_fin=date_fin)
+                partial = _extract_supplier_map_from_entries(entries)
+                for lib, sup in partial.items():
+                    if lib not in supplier_map:
+                        supplier_map[lib] = sup
+            except Exception:
+                _log.warning("Erreur historique entree MP %s", cat, exc_info=True)
+        return supplier_map
+    except Exception:
+        _log.warning("Impossible de charger le supplier map", exc_info=True)
+        return {}
+
+
 # ─── Supplier card builder ──────────────────────────────────────────────────
 
 def _build_supplier_card(
@@ -302,8 +326,9 @@ def page_ressources():
             ui.label(f"Erreur : {exc}").style(f"color: {COLORS['error']}")
             return
 
-        # Load EasyBeer MP for auto-discovery
+        # Load EasyBeer MP + dynamic supplier map for auto-discovery
         all_mp = _load_easybeer_mp()
+        sup_map = _load_supplier_map() if all_mp else {}
 
         # Group by category
         categories: dict[str, list[dict]] = {}
@@ -324,7 +349,9 @@ def page_ressources():
                         "references", {}
                     )
                     if all_mp:
-                        discovered = discover_supplier_refs(supplier, all_mp)
+                        discovered = discover_supplier_refs(
+                            supplier, all_mp, supplier_map=sup_map,
+                        )
                         live_refs = match_ref_config(discovered, ordering_refs)
                     else:
                         live_refs = []

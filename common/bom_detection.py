@@ -193,7 +193,9 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
     """Run full BOM auto-detection from EasyBeer stock data.
 
     1. Fetch finished-product stock list (POST /stock/produits)
-    2. For each product-format, fetch conditioning elements via stock detail
+    2a. For each product-format, fetch conditioning elements via stock detail
+    2b. Auto-detect bottles from format codes
+    2c. Auto-detect recipe ingredients (jus, sucre, arômes) from product recipes
     3. Bulk upsert into DB (without overwriting validated or conditioning entries)
 
     Returns ``(total_detected, products_detected)``.
@@ -242,6 +244,37 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
         for be in bottle_entries:
             products_seen.add(be["id_produit"])
 
+    # 2c. Auto-detect recipe ingredients (jus, sucre, arômes, etc.)
+    #     Uses product recipes to map MP → qty per carton
+    from common.easybeer.stocks import get_all_matieres_premieres
+
+    all_mp = get_all_matieres_premieres() or []
+    mp_ids = {mp["idMatierePremiere"] for mp in all_mp if mp.get("idMatierePremiere")}
+
+    products_fetched: set[int] = set()  # one recipe fetch per product (shared across formats)
+    for (id_produit, fmt), info in sorted(stock_map.items()):
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit actif, arrêt détection recette")
+            break
+
+        # Cache: only fetch recipe once per product (same recipe for all formats)
+        if id_produit not in products_fetched:
+            products_fetched.add(id_produit)
+
+        recipe_entries = _detect_from_recipe(
+            id_produit=id_produit,
+            product_label=info["libelle"],
+            format_code=fmt,
+            contenance=info["contenance"],
+            lot_qty=info["lot_qty"],
+            mp_ids=mp_ids,
+        )
+        if recipe_entries:
+            all_entries.extend(recipe_entries)
+            products_seen.add(id_produit)
+
+    _log.info("Recipe detection: %d products fetched", len(products_fetched))
+
     # 3. Bulk upsert (respects existing validated/conditioning entries)
     if all_entries:
         bulk_upsert_bom(all_entries, tenant_id=tenant_id)
@@ -251,6 +284,83 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
         len(all_entries), len(products_seen),
     )
     return len(all_entries), len(products_seen)
+
+
+def _detect_from_recipe(
+    id_produit: int,
+    product_label: str,
+    format_code: str,
+    contenance: float,
+    lot_qty: int,
+    mp_ids: set[int],
+) -> list[dict[str, Any]]:
+    """Extract recipe ingredients as BOM entries for a product-format.
+
+    Uses ``get_product_detail()`` to read the product recipe, then converts
+    each ingredient quantity from the recipe reference volume to qty per carton.
+
+    Only includes ingredients whose ``idMatierePremiere`` is in *mp_ids*
+    (i.e. tracked in EasyBeer stock — excludes water, etc.).
+
+    Formula::
+
+        qty_per_carton = (ingredient.quantite / volumeRecette) × (lot_qty × contenance)
+
+    Returns BOM entry dicts with ``source="recipe_api"``.
+    """
+    from common.easybeer.products import get_product_detail
+
+    try:
+        detail = get_product_detail(id_produit)
+    except Exception as exc:
+        _log.warning(
+            "Cannot fetch product detail %d for recipe BOM: %s",
+            id_produit, exc,
+        )
+        return []
+
+    recettes = detail.get("recettes") or []
+    if not recettes:
+        return []
+
+    recette = recettes[0]
+    volume_recette = float(recette.get("volumeRecette", 0) or 0)
+    if volume_recette <= 0:
+        return []
+
+    carton_volume = lot_qty * contenance  # litres per carton
+    ratio = carton_volume / volume_recette
+
+    entries: list[dict[str, Any]] = []
+    for ing in recette.get("ingredients") or []:
+        mp = ing.get("matierePremiere") or {}
+        id_mp = mp.get("idMatierePremiere")
+        if not id_mp or id_mp not in mp_ids:
+            continue
+
+        qty_recipe = float(ing.get("quantite", 0) or 0)
+        if qty_recipe <= 0:
+            continue
+
+        qty_per_carton = round(qty_recipe * ratio, 4)
+        mp_label = (mp.get("libelle") or "").strip()
+
+        entries.append({
+            "id_produit": id_produit,
+            "format_code": format_code,
+            "product_label": product_label,
+            "id_mp": id_mp,
+            "mp_label": mp_label,
+            "qty_per_unit": qty_per_carton,
+            "validated": False,
+            "source": "recipe_api",
+        })
+        _log.info(
+            "BOM recette: %s %s → %s (qty=%.4f, ratio=%.6f)",
+            product_label, format_code, mp_label, qty_per_carton, ratio,
+        )
+
+    return entries
 
 
 def _detect_bottles_from_formats(
