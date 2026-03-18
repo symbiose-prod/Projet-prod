@@ -762,7 +762,30 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             "type_code": (mp.get("type") or {}).get("code", ""),
         }
 
-    # ── Step 4: Compute autonomy per component ──
+    # ── Step 4: Build supplier map (one batch, not per-component) ──
+    from common.easybeer.history import get_mp_historique_entree
+    from common.easybeer._client import _dates
+
+    supplier_map: dict[str, str] = {}  # mp_label → fournisseur
+    try:
+        date_debut, date_fin = _dates(window_days)
+        for cat in ("Conditionnement", "Ingredient", "Divers"):
+            try:
+                hist_entries = get_mp_historique_entree(
+                    cat, date_debut=date_debut, date_fin=date_fin,
+                )
+                partial = _extract_supplier_map_from_entries(hist_entries)
+                for lib, sup in partial.items():
+                    if lib not in supplier_map:
+                        supplier_map[lib] = sup
+            except Exception:
+                _log.warning("Erreur historique entree MP %s", cat, exc_info=True)
+    except Exception:
+        _log.warning("Erreur récup dates pour historique", exc_info=True)
+
+    _log.info("BOM supplier map: %d libellés → fournisseur", len(supplier_map))
+
+    # ── Step 5: Compute autonomy per component ──
     items: list[StockItem] = []
 
     for id_mp, bom_entries in bom_lookup.items():
@@ -798,29 +821,8 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         total_stock = raw_stock + virtual_pf_stock
         stock_days = total_stock / daily_consumption if daily_consumption > 0 else None
 
-        # Find supplier from entry history (reuse existing logic)
-        supplier = None
-        from common.easybeer.history import get_mp_historique_entree
-        from common.easybeer._client import _dates
-        try:
-            date_debut, date_fin = _dates(window_days)
-            for cat in ("Conditionnement", "Ingredient", "Divers"):
-                try:
-                    hist_entries = get_mp_historique_entree(
-                        cat, date_debut=date_debut, date_fin=date_fin,
-                    )
-                    for he in hist_entries:
-                        if (he.get("libelle") or "").strip() == mp_info["label"]:
-                            fournisseur = (he.get("fournisseur") or "").strip()
-                            if fournisseur:
-                                supplier = fournisseur
-                                break
-                    if supplier:
-                        break
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        # Supplier: from batch history map
+        supplier = supplier_map.get(mp_info["label"])
 
         item = StockItem(
             label=mp_info["label"],

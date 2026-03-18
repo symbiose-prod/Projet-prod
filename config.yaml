@@ -207,7 +207,8 @@ stocks:
     - name: "ADESA"
       icon: "label"
       category: "Emballages"
-      mp_types: ["CONDITIONNEMENT_ETIQUETTE"]
+      mp_types: ["CONDITIONNEMENT_ETIQUETTE", "CONDITIONNEMENT"]
+      patterns: ["etiquette", "étiquette"]
       ordering:
         lead_time_days: 20
         can_split_references: true
@@ -270,7 +271,8 @@ stocks:
     - name: "Turquet"
       icon: "widgets"
       category: "Emballages"
-      mp_types: ["CONDITIONNEMENT_CARTON"]
+      mp_types: ["CONDITIONNEMENT_CARTON", "CONDITIONNEMENT"]
+      patterns: ["carton"]
       ordering:
         lead_time_days: 20
         min_order: 0
@@ -293,7 +295,8 @@ stocks:
     - name: "AWK"
       icon: "circle"
       category: "Emballages"
-      mp_types: ["CONDITIONNEMENT_CAPSULE"]
+      mp_types: ["CONDITIONNEMENT_CAPSULE", "CONDITIONNEMENT"]
+      patterns: ["capsule", "bouchon"]
       ordering:
         lead_time_days: 42
         min_order: 2
