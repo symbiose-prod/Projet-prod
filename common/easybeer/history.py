@@ -6,6 +6,7 @@ Stock container history (paginated) + matières premières entry history.
 from __future__ import annotations
 
 import datetime
+import os
 from typing import Any
 
 from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
@@ -101,7 +102,9 @@ def get_mp_historique_entree(
     """
     ep = f"stock/matieres-premieres/historique/entree/{categorie}"
 
-    filtre: dict[str, Any] = {}
+    filtre: dict[str, Any] = {
+        "idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013")),
+    }
     if date_debut or date_fin:
         filtre["periodeSelectionnee"] = {
             "dateDebut": date_debut or "2020-01-01T00:00:00.000Z",

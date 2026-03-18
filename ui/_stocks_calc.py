@@ -581,15 +581,17 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         )
 
     # ── Step 6: Detect PF with sales but no validated BOM ──
-    bom_pf_keys: set[tuple[int, str]] = set()
+    # Compare by product id only (pf_data keys have format "unknown"
+    # while BOM keys have real formats like "12x33")
+    bom_pids: set[int] = set()
     for entries in bom_lookup.values():
         for e in entries:
-            bom_pf_keys.add((e["id_produit"], e["format_code"]))
+            bom_pids.add(e["id_produit"])
 
     missing_pf = [
         pf_data[k]["label"]
         for k in pf_data
-        if k not in bom_pf_keys and pf_data[k]["daily_sales"] > 0
+        if k[0] not in bom_pids and pf_data[k]["daily_sales"] > 0
     ]
     if missing_pf:
         _log.warning(
