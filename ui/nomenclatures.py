@@ -215,7 +215,7 @@ def page_nomenclatures():
             key = (id_produit, format_code)
             entries = list(bom_by_key.get(key, []))
 
-            status_label, badge_color, _ = _bom_status(entries)
+            status_label, badge_color, status_icon = _bom_status(entries)
 
             with ui.card().classes("w-full q-mb-sm").props("flat bordered").style(
                 f"border: 1px solid {COLORS['border']}; border-radius: 6px"
