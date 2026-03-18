@@ -268,15 +268,14 @@ def compute_order_recommendation(
     if min_days_before is None:
         urgency = "ok"
         order_deadline = None
-    elif min_days_before <= 0:
-        urgency = "critical"
-        order_deadline = today + timedelta(days=math.floor(min_days_before))
-    elif min_days_before <= 14:
-        urgency = "warning"
-        order_deadline = today + timedelta(days=math.floor(min_days_before))
     else:
-        urgency = "ok"
         order_deadline = today + timedelta(days=math.floor(min_days_before))
+        if min_days_before <= 0:
+            urgency = "critical"
+        elif min_days_before <= 14:
+            urgency = "warning"
+        else:
+            urgency = "ok"
 
     # --- Distribute units proportionally to daily consumption ---
     total_daily = sum(oi.daily_consumption for oi in order_items)
@@ -392,13 +391,16 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     from common.supplier_config import get_all_supplier_overrides
 
     # ── Step 1: Fetch finished product autonomy ──
-    autonomie_data = get_autonomie_stocks(window_days)
+    autonomie_data = get_autonomie_stocks(window_days) or {}
     pf_list = autonomie_data.get("produits") or []
+    if not pf_list:
+        _log.warning("BOM calc: aucun produit fini dans l'autonomie EasyBeer")
+        return []
     _log.info("BOM calc: %d produits finis dans l'autonomie", len(pf_list))
 
     # ── Step 2: Build PF lookup by idProduit ──
     # autonomie returns libelle only (no idProduit), so we map via get_all_products
-    all_products = get_all_products()
+    all_products = get_all_products() or []
     label_to_pid: dict[str, int] = {}
     for p in all_products:
         lib = (p.get("libelle") or "").strip().lower()
@@ -437,13 +439,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         if fmt_match:
             format_code = f"{fmt_match.group(1)}x{fmt_match.group(2)}"
         else:
-            # Fallback: try to derive from volume field
-            vol = float(pf.get("volume") or 0)
-            if vol > 0:
-                # Common: volume in hL, guess format from it
-                format_code = "unknown"
-            else:
-                format_code = "unknown"
+            format_code = "unknown"
 
         daily_sales = stock / autonomie if autonomie > 0 else 0.0
 
@@ -466,7 +462,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
 
     # ── Step 3: Load BOM lookup and MP stock ──
     bom_lookup = get_bom_lookup()  # {id_mp: [{id_produit, format_code, qty_per_unit, ...}]}
-    all_mp = get_all_matieres_premieres()
+    all_mp = get_all_matieres_premieres() or []
 
     # Build MP stock map
     mp_stock: dict[int, dict] = {}

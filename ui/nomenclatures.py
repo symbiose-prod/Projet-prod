@@ -347,15 +347,18 @@ def page_nomenclatures():
                     ),
                 ).props("outlined dense").classes("col")
 
-                # Quantity input
-                ui.number(
+                # Quantity input (readonly for conditioning-sourced entries)
+                _is_readonly = source == "conditioning"
+                _qty_field = ui.number(
                     value=qty,
                     min=0,
                     on_change=lambda e, _entry=entry, _pid=id_produit,
                     _fc=format_code, _mp=mp_id, _pl=product_label: _change_qty(
                         e, _entry, _pid, _fc, _mp, _pl, mp_options,
                     ),
-                ).props("outlined dense").style("width: 100px")
+                ).props("outlined dense" + (" readonly" if _is_readonly else "")).style("width: 100px")
+                if _is_readonly:
+                    _qty_field.tooltip("Quantité synchronisée depuis EasyBeer")
 
                 # Source badge
                 if source == "conditioning":
@@ -390,6 +393,9 @@ def page_nomenclatures():
             new_mp = e.value
             if new_mp == old_mp or not new_mp:
                 return
+            if entry.get("source") == "conditioning":
+                ui.notify("Ce composant provient d'EasyBeer et ne peut pas être modifié.", type="warning")
+                return
             try:
                 delete_bom_entry(pid, fc, old_mp)
                 new_label = opts.get(new_mp, "")
@@ -411,15 +417,22 @@ def page_nomenclatures():
             new_qty = float(e.value or 0)
             if new_qty == entry.get("qty_per_unit", 0):
                 return
+            if new_qty <= 0:
+                ui.notify("La quantité doit être > 0", type="warning")
+                return
+            if entry.get("source") == "conditioning":
+                ui.notify("Quantité synchronisée depuis EasyBeer — non modifiable.", type="warning")
+                return
             try:
                 upsert_bom_entry(
                     id_produit=pid, format_code=fc, id_mp=mp_id,
                     qty_per_unit=new_qty,
                     product_label=pl, mp_label=opts.get(mp_id, ""),
                     validated=entry.get("validated", False),
-                    source="manual",
+                    source=entry.get("source", "manual"),
                 )
                 entry["qty_per_unit"] = new_qty
+                ui.notify("Quantité mise à jour", type="positive")
             except Exception as exc:
                 ui.notify(f"Erreur : {exc}", type="negative")
 
