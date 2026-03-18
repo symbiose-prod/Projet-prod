@@ -57,7 +57,7 @@ def get_session() -> requests.Session:
 
 
 # ─── Rate-limiter global (thread-safe) ───────────────────────────────────────
-_API_MIN_INTERVAL = 0.5  # secondes (2 req/s max nominal — réduit pour éviter les bans)
+_API_MIN_INTERVAL = 1.0  # secondes (1 req/s max — safe margin under EasyBeer 10 req/s limit)
 _api_last_ts: float = 0.0
 _api_lock = _threading.Lock()
 _api_backoff_until: float = 0.0  # monotonic timestamp until which we enforce a cooldown
@@ -89,10 +89,10 @@ def _throttle() -> None:
 
 
 def _on_rate_limited(ban_seconds: float = 5.0) -> None:
-    """Called when a rate-limit response is detected; enforces cooldown matching ban duration."""
+    """Called when a rate-limit response is detected; enforces cooldown."""
     global _api_backoff_until
-    # Minimum 5s, cap at 600s to avoid absurd waits
-    cooldown = max(5.0, min(ban_seconds, 600.0))
+    # Cap at 30s — EasyBeer says 300s but we just need to slow down, not freeze
+    cooldown = max(5.0, min(ban_seconds, 30.0))
     with _api_lock:
         new_until = _time.monotonic() + cooldown
         # Only extend, never shorten an existing backoff
