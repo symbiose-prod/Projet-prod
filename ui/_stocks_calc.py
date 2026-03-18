@@ -102,7 +102,11 @@ def _assign_groups(
     Priority:
     1. Dynamic supplier from ``item.supplier`` (extracted from EasyBeer
        purchase history over 365 days — set in step 4 of fetch_and_compute_bom)
-    2. Final fallback: ungrouped bucket
+    2. Config fallback — ``mp_types`` and/or ``patterns``:
+       - Both specified → AND logic (type must match AND pattern must match)
+       - Only ``mp_types`` → type code must match
+       - Only ``patterns`` → pattern must appear in label
+    3. Final fallback: ungrouped bucket
 
     If *db_overrides* is provided, the ``active`` flag from DB takes
     precedence over the YAML default.
@@ -110,13 +114,18 @@ def _assign_groups(
     ungrouped_label = stocks_config.get("ungrouped_label", "Autres contenants")
     db_overrides = db_overrides or {}
 
-    # Build supplier name → icon lookup (skip inactive suppliers)
+    # Build per-supplier matching criteria (skip inactive suppliers)
     cfg_groups = stocks_config.get("supplier_groups") or []
-    cfg_icons: dict[str, str] = {}
-    for g in cfg_groups:
-        active = db_overrides.get(g["name"], {}).get("active", g.get("active", True))
-        if active:
-            cfg_icons[g["name"].lower()] = g.get("icon", "category")
+    cfg_matchers: list[tuple[str, str, list[str], list[str]]] = [
+        (
+            g["name"],
+            g.get("icon", "category"),
+            [p.lower() for p in g.get("patterns", [])],
+            g.get("mp_types", []),
+        )
+        for g in cfg_groups
+        if db_overrides.get(g["name"], {}).get("active", g.get("active", True))
+    ]
 
     # Collect items per group name
     group_map: dict[str, StockGroup] = {}
@@ -129,16 +138,36 @@ def _assign_groups(
         if item.supplier:
             group_name = item.supplier
             # Try to find matching icon from config
-            icon = cfg_icons.get(group_name.lower())
-            if icon:
-                group_icon = icon
-                # Normalize casing to config name
-                for g in cfg_groups:
-                    if g["name"].lower() == group_name.lower():
-                        group_name = g["name"]
-                        break
+            for cfg_name, cfg_icon, _, _ in cfg_matchers:
+                if cfg_name.lower() == group_name.lower():
+                    group_icon = cfg_icon
+                    group_name = cfg_name  # use config casing
+                    break
 
-        # Priority 2: ungrouped
+        # Priority 2: config fallback (mp_types + patterns)
+        if not group_name:
+            label_lower = item.label.lower()
+            type_code = item.type_code or ""
+
+            for cfg_name, cfg_icon, patterns, mp_types in cfg_matchers:
+                if mp_types and patterns:
+                    match = (
+                        type_code in mp_types
+                        and any(p in label_lower for p in patterns)
+                    )
+                elif mp_types:
+                    match = type_code in mp_types
+                elif patterns:
+                    match = any(p in label_lower for p in patterns)
+                else:
+                    match = False
+
+                if match:
+                    group_name = cfg_name
+                    group_icon = cfg_icon
+                    break
+
+        # Priority 3: ungrouped
         if not group_name:
             group_name = ungrouped_label
             group_icon = "more_horiz"

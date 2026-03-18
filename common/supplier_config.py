@@ -206,6 +206,8 @@ def get_all_suppliers_with_config(tenant_id: str | None = None) -> list[dict[str
             "icon": g.get("icon", "business"),
             "category": g.get("category", "Autre"),
             "active": active,
+            "mp_types": g.get("mp_types", []),
+            "patterns": g.get("patterns", []),
             "ordering": merged,
         })
 
@@ -261,18 +263,20 @@ def discover_supplier_refs(
 ) -> list[dict[str, Any]]:
     """Discover EasyBeer MP that belong to a supplier group.
 
-    Uses the dynamic supplier map (from EasyBeer purchase history) to match
-    MP labels to supplier names. Falls back to ordering references config
-    for refs already configured by eb_id or name.
+    Matching priority:
+    1. Dynamic supplier map (from EasyBeer purchase history)
+    2. Known eb_id or name from ordering references config
+    3. Fallback: mp_types + patterns from config.yaml
 
     *supplier_map* is ``{mp_label: fournisseur_name}`` from history.
-    If not provided, returns only refs already in the ordering config.
 
     Returns [{eb_id, label, unit}, ...] for active MP matching this supplier.
     """
     supplier_name = supplier.get("name", "")
     ordering = supplier.get("ordering") or {}
     ordering_refs = ordering.get("references") or {}
+    mp_types = supplier.get("mp_types", [])
+    patterns = [p.lower() for p in supplier.get("patterns", [])]
 
     # Build set of already-known eb_ids from ordering config
     known_ids: set[int] = set()
@@ -288,20 +292,30 @@ def discover_supplier_refs(
         label = (mp.get("libelle") or "").strip()
         mp_id = mp.get("idMatierePremiere")
 
-        # Match by dynamic supplier map (history-based)
         matched = False
+
+        # Priority 1: dynamic supplier map (history-based)
         if supplier_map:
             hist_supplier = supplier_map.get(label, "")
             if hist_supplier.lower() == supplier_name.lower():
                 matched = True
 
-        # Also match by known eb_id from ordering config
+        # Priority 2: known eb_id or name from ordering config
         if not matched and mp_id and mp_id in known_ids:
             matched = True
-
-        # Also match by name in ordering references
         if not matched and label in ordering_refs:
             matched = True
+
+        # Priority 3: fallback mp_types + patterns
+        if not matched and (mp_types or patterns):
+            type_code = (mp.get("type") or {}).get("code", "")
+            label_lower = label.lower()
+            if mp_types and patterns:
+                matched = type_code in mp_types and any(p in label_lower for p in patterns)
+            elif mp_types:
+                matched = type_code in mp_types
+            elif patterns:
+                matched = any(p in label_lower for p in patterns)
 
         if matched:
             refs.append({
