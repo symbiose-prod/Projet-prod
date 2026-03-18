@@ -347,6 +347,11 @@ def page_nomenclatures():
             is_validated = entry.get("validated", False)
             source = entry.get("source", "manual")
 
+            # Ensure the current mp_id is in options (MP may have been
+            # archived/deleted in EasyBeer but still referenced in BOM)
+            if mp_id and mp_id not in mp_options:
+                mp_options[mp_id] = f"{mp_label} (id {mp_id})"
+
             with ui.row().classes("w-full items-center gap-2 no-wrap"):
                 # Component select
                 ui.select(
