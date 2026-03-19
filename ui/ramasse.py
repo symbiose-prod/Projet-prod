@@ -148,11 +148,18 @@ async def page_ramasse():
 
         # ── Chargement données (dans un thread pour ne pas bloquer l'event loop) ──
         def _load_all_eb_data():
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                f_brassins = pool.submit(_load_brassins)
+                f_cb = pool.submit(_load_cb_matrix)
+                f_entrepot = pool.submit(_load_entrepot)
+                f_weights = pool.submit(_load_eb_weights)
             return (
-                _load_brassins(),
-                _load_cb_matrix(),
-                _load_entrepot(),
-                _load_eb_weights(),
+                f_brassins.result(),
+                f_cb.result(),
+                f_entrepot.result(),
+                f_weights.result(),
             )
 
         (brassins, load_errors), cb_by_product, id_entrepot, eb_weights = (

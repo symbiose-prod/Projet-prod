@@ -6,16 +6,19 @@ Supplier (fournisseur) management endpoints + file download.
 from __future__ import annotations
 
 import base64 as _b64
+import time as _time
 from typing import Any
-
-import requests as _requests
 
 from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
 
+# ─── Cache fournisseurs (TTL 1h — les fournisseurs changent rarement) ────────
+_FOURNISSEURS_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
+_FOURNISSEURS_CACHE_TTL = 3600  # 1 heure
+
 
 @retry_api
-def get_all_fournisseurs() -> list[dict[str, Any]]:
-    """GET /parametres/fournisseur/liste/all -> Liste complete des fournisseurs."""
+def _get_all_fournisseurs_raw() -> list[dict[str, Any]]:
+    """GET /parametres/fournisseur/liste/all (appel HTTP brut)."""
     ep = "parametres/fournisseur/liste/all"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -24,6 +27,26 @@ def get_all_fournisseurs() -> list[dict[str, Any]]:
     )
     _check_response(r, ep)
     return _safe_json(r, ep)
+
+
+def get_all_fournisseurs() -> list[dict[str, Any]]:
+    """Liste complete des fournisseurs avec cache TTL 1h."""
+    if (
+        _FOURNISSEURS_CACHE["data"] is not None
+        and (_time.monotonic() - _FOURNISSEURS_CACHE["ts"]) < _FOURNISSEURS_CACHE_TTL
+    ):
+        return _FOURNISSEURS_CACHE["data"]
+    data = _get_all_fournisseurs_raw()
+    if data:
+        _FOURNISSEURS_CACHE["data"] = data
+        _FOURNISSEURS_CACHE["ts"] = _time.monotonic()
+    return data
+
+
+def invalidate_fournisseurs_cache() -> None:
+    """Invalide le cache fournisseurs."""
+    _FOURNISSEURS_CACHE["data"] = None
+    _FOURNISSEURS_CACHE["ts"] = 0.0
 
 
 def find_fournisseur_by_name(name: str) -> dict[str, Any] | None:

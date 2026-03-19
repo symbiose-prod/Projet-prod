@@ -57,6 +57,16 @@ from .recipes import (
     compute_v_start_max,
 )
 
+# --- stocks ---
+from .stocks import (
+    fetch_carton_weights,
+    get_all_matieres_premieres,
+    get_autonomie_stocks,
+    get_autonomie_stocks_excel,
+    get_mp_lots,
+    get_stock_produit_detail,
+)
+
 # --- suppliers ---
 from .suppliers import (
     download_supplier_file,
@@ -69,18 +79,7 @@ from .suppliers import (
     get_fournisseur_edition,
     get_supplier_files,
     get_supplier_reference_texts,
-)
-
-# --- stocks ---
-from .stocks import (
-    fetch_carton_weights,
-    get_all_matieres_premieres,
-    get_autonomie_stocks,
-    get_autonomie_stocks_excel,
-    get_mp_lots,
-    get_stock_bouteilles,
-    get_stock_produit_detail,
-    get_synthese_consommations_mp,
+    invalidate_fournisseurs_cache,
 )
 
 __all__ = [
@@ -88,8 +87,7 @@ __all__ = [
     "BASE", "TIMEOUT", "is_configured", "is_rate_limited", "EasyBeerError", "get_session",
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_all_matieres_premieres",
-    "get_mp_lots", "get_stock_produit_detail", "get_stock_bouteilles", "fetch_carton_weights",
-    "get_synthese_consommations_mp",
+    "get_mp_lots", "get_stock_produit_detail", "fetch_carton_weights",
     # history
     "get_contenant_historique", "get_mp_historique_entree",
     # clients
@@ -106,7 +104,7 @@ __all__ = [
     "get_planification_matrice", "add_planification_conditionnement",
     "get_code_barre_matrice", "upload_fichier_brassin",
     # suppliers
-    "get_all_fournisseurs", "find_fournisseur_by_name",
+    "get_all_fournisseurs", "find_fournisseur_by_name", "invalidate_fournisseurs_cache",
     "extract_supplier_email", "extract_supplier_contact_name", "extract_supplier_address",
     "get_fournisseur_edition", "get_supplier_files", "download_supplier_file",
     "extract_text_from_pdf", "get_supplier_reference_texts",

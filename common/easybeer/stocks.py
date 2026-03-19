@@ -56,34 +56,6 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     return _safe_json(r, "autonomie-stocks")
 
 
-# ─── Synthese consommation MP ─────────────────────────────────────────────────
-
-@retry_api
-def get_synthese_consommations_mp(window_days: int) -> dict[str, Any]:
-    """POST /indicateur/synthese-consommations-mp → Synthese conso MP par categorie.
-
-    Returns dict with keys: syntheseIngredient, syntheseConditionnement,
-    syntheseDivers, syntheseContenant. Each contains .elements[] with
-    idMatierePremiere, libelle, quantite, unite, cout.
-    """
-    ep = "indicateur/synthese-consommations-mp"
-    r = get_session().post(
-        f"{BASE}/{ep}",
-        params={"forceRefresh": False},
-        json=_indicator_payload(window_days),
-        auth=_auth(),
-        timeout=TIMEOUT,
-    )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
-    # Log summary
-    for key in ("syntheseIngredient", "syntheseConditionnement", "syntheseDivers", "syntheseContenant"):
-        cat = data.get(key) or {}
-        elements = cat.get("elements") or []
-        _log.info("synthese-conso-mp %s : %d elements", key, len(elements))
-    return data
-
-
 # ─── Lots matieres premieres ─────────────────────────────────────────────────
 
 @retry_api
@@ -135,39 +107,6 @@ _WEIGHTS_CACHE_PATH = os.path.join(
     "data", "_carton_weights_cache.json",
 )
 _WEIGHTS_CACHE_TTL = 24 * 3600  # 24 heures
-
-
-# ─── Stock bouteilles (contenants) ─────────────────────────────────────────────
-
-_BOUTEILLES_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
-_BOUTEILLES_CACHE_TTL = 300  # 5 minutes
-
-
-@retry_api
-def get_stock_bouteilles() -> dict[str, Any]:
-    """GET /stock/bouteilles?idUniteVolume=4 → Consolidation stocks contenants."""
-    if (
-        _BOUTEILLES_CACHE["data"] is not None
-        and (time.monotonic() - _BOUTEILLES_CACHE["ts"]) < _BOUTEILLES_CACHE_TTL
-    ):
-        return _BOUTEILLES_CACHE["data"]
-    ep = "stock/bouteilles"
-    r = get_session().get(
-        f"{BASE}/{ep}",
-        params={"idUniteVolume": 4, "colonneTri": "libelle"},
-        auth=_auth(),
-        timeout=TIMEOUT,
-    )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
-    if data:
-        _BOUTEILLES_CACHE["data"] = data
-        _BOUTEILLES_CACHE["ts"] = time.monotonic()
-    _log.info(
-        "get_stock_bouteilles : %d contenants chargés",
-        len(data.get("consolidationsFilles") or []),
-    )
-    return data
 
 
 # ─── Matieres premieres (toutes) ─────────────────────────────────────────────
