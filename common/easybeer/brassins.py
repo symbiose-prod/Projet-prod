@@ -170,9 +170,12 @@ def get_brassins_planifies(days_ahead: int = 90) -> list[dict[str, Any]]:
     data = _safe_json(r, ep)
     all_brassins = data if isinstance(data, list) else []
 
+    # Note: brassin/liste does not return etat in summary mode.
+    # Filter out small test brassins (< 100L) and cancelled ones.
     planifies = [
         b for b in all_brassins
-        if (b.get("etat") or {}).get("code") == "PLANIFIE"
+        if float(b.get("volume") or 0) >= 100
+        and not b.get("annule")
     ]
     _log.info(
         "Brassins planifiés: %d/%d (horizon %dj)",

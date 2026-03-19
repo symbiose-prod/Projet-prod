@@ -80,9 +80,9 @@ async def page_planification():
         # ── KPIs placeholder ──
         kpi_row = ui.row().classes("w-full gap-4 flex-wrap q-mb-md")
         with kpi_row:
-            kpi_nb = kpi_card("event", "Brassins planifiés", "—")
-            kpi_vol = kpi_card("local_drink", "Volume total", "—")
-            kpi_deficit = kpi_card("warning", "Composants en déficit", "—")
+            kpi_card("event", "Brassins planifiés", "—")
+            kpi_card("local_drink", "Volume total", "—")
+            kpi_card("warning", "Composants en déficit", "—")
 
         # ── Brassins section ──
         section_title("Brassins planifiés", "event_note")
@@ -115,9 +115,17 @@ async def page_planification():
                 total_vol = sum(b.volume for b in brassins)
                 nb_deficit = sum(1 for n in needs if n.stock_after < 0)
 
-                kpi_nb.text = str(len(brassins))
-                kpi_vol.text = f"{total_vol:,.0f} L".replace(",", "\u202f")
-                kpi_deficit.text = str(nb_deficit)
+                kpi_row.clear()
+                with kpi_row:
+                    kpi_card("event", "Brassins planifiés", str(len(brassins)))
+                    kpi_card(
+                        "local_drink", "Volume total",
+                        f"{total_vol:,.0f} L".replace(",", "\u202f"),
+                    )
+                    kpi_card(
+                        "warning", "Composants en déficit", str(nb_deficit),
+                        color=COLORS["error"] if nb_deficit > 0 else COLORS["green"],
+                    )
 
                 # Render brassins
                 _render_brassins(brassins_container, brassins, brassins_state)
