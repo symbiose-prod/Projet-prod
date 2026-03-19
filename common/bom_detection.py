@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from typing import Any
 
 _log = logging.getLogger("ferment.bom_detection")
@@ -218,7 +217,10 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
     for (id_produit, fmt), info in sorted(stock_map.items()):
         # Check rate-limit before each API call
         if is_rate_limited() > 0:
-            _log.warning("Rate-limit actif, arrêt détection BOM (%d entries, %d produits)", len(all_entries), len(products_seen))
+            _log.warning(
+                "Rate-limit actif, arrêt détection BOM (%d entries, %d produits)",
+                len(all_entries), len(products_seen),
+            )
             break
 
         entries = _detect_from_stock_detail(
@@ -375,6 +377,7 @@ def _detect_bottles_from_formats(
     The quantity is the lot_qty (bottles per carton).
     """
     import re
+
     from common.easybeer.stocks import get_all_matieres_premieres
 
     all_mp = get_all_matieres_premieres()

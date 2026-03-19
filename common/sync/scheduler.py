@@ -79,8 +79,8 @@ async def _run_sync_job() -> dict | None:
 
     try:
         # Import tardif pour éviter les imports circulaires au démarrage
-        from common.sync.collector import collect_label_data
         from common.sync import create_sync_operation
+        from common.sync.collector import collect_label_data
 
         products = await loop.run_in_executor(None, collect_label_data)
 

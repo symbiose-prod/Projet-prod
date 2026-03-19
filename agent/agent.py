@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 import requests
-
 from mdb_writer import MdbLockedError, replace_all
 
 # ─── Configuration ───────────────────────────────────────────────────────────
@@ -39,7 +38,7 @@ def load_config(path: str | Path | None = None) -> configparser.ConfigParser:
 
     if not config_path.exists():
         print(f"ERREUR: Fichier de configuration introuvable : {config_path}")
-        print(f"Copiez config.ini.example vers config.ini et configurez-le.")
+        print("Copiez config.ini.example vers config.ini et configurez-le.")
         sys.exit(1)
 
     config.read(config_path, encoding="utf-8")

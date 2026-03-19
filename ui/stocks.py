@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import date as _date
 
 from nicegui import app, ui
@@ -22,7 +21,7 @@ from ui._stocks_calc import (
     fetch_and_compute_bom,
 )
 from ui.auth import require_auth
-from ui.theme import COLORS, kpi_card, page_layout
+from ui.theme import COLORS, page_layout
 
 # ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1239,6 +1238,7 @@ def _render_ai_order_section(
 
     async def _preview_pdf():
         import base64
+
         from common.easybeer.suppliers import (
             extract_supplier_address,
             extract_supplier_contact_name,

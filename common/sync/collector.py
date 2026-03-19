@@ -23,11 +23,20 @@ import re
 import time
 from typing import Any
 
+from common.easybeer._client import (
+    BASE,
+    TIMEOUT,
+    EasyBeerError,
+    _auth,
+    _check_response,
+    _safe_json,
+    get_session,
+    is_rate_limited,
+)
 from common.easybeer.brassins import get_brassin_detail, get_brassins_en_cours
 from common.easybeer.conditioning import get_code_barre_matrice
 from common.easybeer.products import get_product_detail
 from common.easybeer.stocks import get_stock_produit_detail
-from common.easybeer._client import BASE, _auth, _check_response, _safe_json, get_session, TIMEOUT, EasyBeerError, is_rate_limited
 from common.ramasse import clean_product_label
 
 _log = logging.getLogger("ferment.sync")

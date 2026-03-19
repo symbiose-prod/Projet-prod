@@ -13,36 +13,12 @@ import json
 import logging
 from typing import Any
 
+from common._session import current_tenant_id as _tenant_id
+from common._session import current_user_id as _user_id
 from common.data import get_stocks_config
 from db.conn import run_sql
 
 _log = logging.getLogger("ferment.supplier_config")
-
-
-# ─── Helpers ────────────────────────────────────────────────────────────────
-
-def _tenant_id() -> str:
-    """Read tenant_id from the current NiceGUI session (same pattern as storage.py)."""
-    try:
-        from nicegui import app
-        tid = app.storage.user.get("tenant_id")
-        if tid:
-            return str(tid)
-    except Exception:
-        pass
-    # Fallback: use the default tenant
-    from common.storage import _ensure_tenant, DEFAULT_TENANT_NAME
-    return _ensure_tenant(DEFAULT_TENANT_NAME)
-
-
-def _user_id() -> str | None:
-    """Read current user id from session, or None."""
-    try:
-        from nicegui import app
-        uid = app.storage.user.get("id")
-        return str(uid) if uid else None
-    except Exception:
-        return None
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

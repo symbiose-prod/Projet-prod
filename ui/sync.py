@@ -9,10 +9,10 @@ import asyncio
 import logging
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import ui
 
 from ui.auth import require_auth
-from ui.theme import COLORS, page_layout, section_title, kpi_card
+from ui.theme import COLORS, kpi_card, page_layout, section_title
 
 _log = logging.getLogger("ferment.sync.ui")
 
@@ -143,8 +143,8 @@ def page_sync():
                     trigger_spinner.set_visibility(True)
                     trigger_status.set_visibility(False)
                     try:
-                        from common.sync.collector import collect_label_data
                         from common.sync import create_sync_operation
+                        from common.sync.collector import collect_label_data
 
                         products = await asyncio.wait_for(
                             asyncio.to_thread(collect_label_data),
@@ -450,8 +450,9 @@ def page_sync():
             section_title("Détail dernière opération", "list_alt")
 
             # Charger le payload depuis la DB
-            from db.conn import run_sql
             import json
+
+            from db.conn import run_sql
 
             payload_rows = run_sql(
                 "SELECT payload FROM sync_operations WHERE id = :id",

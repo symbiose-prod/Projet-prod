@@ -147,7 +147,7 @@ def _build_supplier_card(
                     ).style("font-size: 10px")
 
                 with ui.element("div").classes("q-mt-xs").style(
-                    f"display: flex; flex-wrap: wrap; gap: 6px;"
+                    "display: flex; flex-wrap: wrap; gap: 6px;"
                 ):
                     for ref in live_refs:
                         with ui.element("span").style(

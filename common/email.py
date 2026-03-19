@@ -214,7 +214,8 @@ def send_html_with_pdf(
         payload["replyTo"] = {"email": reply_to}
 
     data = _post_brevo("/v3/smtp/email", payload)
-    _log.info("Email envoyé à %s — sujet=%s (msg_id=%s)", to_email if isinstance(to_email, str) else ", ".join(to_email), subject, data.get("messageId"))
+    recipients = to_email if isinstance(to_email, str) else ", ".join(to_email)
+    _log.info("Email envoyé à %s — sujet=%s (msg_id=%s)", recipients, subject, data.get("messageId"))
     return {"status": "sent", "provider_msg_id": data.get("messageId"), "response": data}
 
 def _strip_html_to_text(html: str) -> str:

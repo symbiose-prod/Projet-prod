@@ -24,7 +24,7 @@ from common.product_bom import (
     validate_bom,
 )
 from ui.auth import require_auth
-from ui.theme import COLORS, page_layout, section_title
+from ui.theme import COLORS, page_layout
 
 _log = logging.getLogger("ferment.nomenclatures")
 

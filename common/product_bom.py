@@ -8,28 +8,13 @@ Example: Kéfir Gingembre 12x33 → Étiquette Kéfir Gingembre 33cl, qty_per_un
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
+from common._session import current_tenant_id as _tenant_id
 from db.conn import run_sql
 
 _log = logging.getLogger("ferment.product_bom")
-
-
-# ─── Helpers ────────────────────────────────────────────────────────────────
-
-def _tenant_id() -> str:
-    """Read tenant_id from the current NiceGUI session."""
-    try:
-        from nicegui import app
-        tid = app.storage.user.get("tenant_id")
-        if tid:
-            return str(tid)
-    except Exception:
-        pass
-    from common.storage import _ensure_tenant, DEFAULT_TENANT_NAME
-    return _ensure_tenant(DEFAULT_TENANT_NAME)
 
 
 # ─── Read ───────────────────────────────────────────────────────────────────

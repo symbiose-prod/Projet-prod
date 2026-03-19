@@ -60,7 +60,10 @@ _log_http = _logging.getLogger("ferment.http")
 app.add_static_files("/static", Path(__file__).resolve().parent / "static")
 
 # Pages publiques (pas besoin d'etre connecte)
-PUBLIC_PATHS = {"/login", "/_nicegui", "/favicon.ico", "/reset", "/health", "/static", "/service-worker.js", "/api/sync"}
+PUBLIC_PATHS = {
+    "/login", "/_nicegui", "/favicon.ico", "/reset",
+    "/health", "/static", "/service-worker.js", "/api/sync",
+}
 
 # Cookie remember-me : duree par defaut (30 jours)
 _REMEMBER_MAX_AGE = 30 * 86400
@@ -258,7 +261,9 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # ─── Import des pages (les @ui.page sont enregistrés à l'import) ────────────
 
-from nicegui import ui  # noqa: F811 — restaure nicegui.ui après imports locaux ui.*
+from nicegui import (
+    ui,  # noqa: F811 — restaure nicegui.ui après imports locaux ui.*  # noqa: F811 — re-restaure nicegui.ui après imports locaux ui.*
+)
 
 import ui.accueil  # noqa: F401 — /accueil
 import ui.auth  # noqa: F401 — /login, /reset/{token}
@@ -270,8 +275,6 @@ import ui.ressources  # noqa: F401 — /ressources
 import ui.stock_pf  # noqa: F401 — /stock-pf
 import ui.stocks  # noqa: F401 — /stocks
 import ui.sync  # noqa: F401 — /sync
-
-from nicegui import ui  # noqa: F811 — re-restaure nicegui.ui après imports locaux ui.*
 
 # ─── Health check ────────────────────────────────────────────────────────────
 
@@ -336,8 +339,9 @@ async def _sync_pending(request: Request):
     if err:
         return err
 
-    from db.conn import run_sql
     import json
+
+    from db.conn import run_sql
 
     rows = run_sql(
         """SELECT id, op_type, payload, product_count, created_at
@@ -434,8 +438,9 @@ async def _sync_trigger(request: Request):
         return JSONResponse({"error": "No tenant context"}, status_code=400)
 
     import asyncio
-    from common.sync.collector import collect_label_data
+
     from common.sync import create_sync_operation
+    from common.sync.collector import collect_label_data
 
     try:
         loop = asyncio.get_event_loop()

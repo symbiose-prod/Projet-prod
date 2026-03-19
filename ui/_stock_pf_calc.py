@@ -12,7 +12,6 @@ import csv
 import io
 import logging
 import os
-import re
 from typing import Any
 
 _log = logging.getLogger("ferment.stock_pf")
@@ -65,7 +64,12 @@ def _fetch_eb_stock_by_ref(
     Retourne : {ref6: {produit_label, quantiteReelle, quantiteVirtuelle, fmt_str}}
     """
     from common.easybeer._client import (
-        BASE, TIMEOUT, _auth, _check_response, _safe_json, get_session,
+        BASE,
+        TIMEOUT,
+        _auth,
+        _check_response,
+        _safe_json,
+        get_session,
     )
 
     payload = {"idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))}

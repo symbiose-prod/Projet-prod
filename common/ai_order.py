@@ -15,7 +15,10 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ui._stocks_calc import OrderRecommendation
 
 _log = logging.getLogger("ferment.ai_order")
 
@@ -366,7 +369,7 @@ def ai_order_to_recommendation(
     tool_result: dict[str, Any],
     supplier_name: str,
     lead_time_days: int,
-) -> "OrderRecommendation":
+) -> OrderRecommendation:
     """Convert AI tool_use output to an OrderRecommendation dataclass.
 
     This bridges the AI output to the existing PDF/email pipeline

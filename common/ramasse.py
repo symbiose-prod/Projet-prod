@@ -22,10 +22,14 @@ from dateutil.tz import gettz
 
 _log = logging.getLogger("ferment.ramasse")
 
+from common.data import get_business_config as _get_biz
 from common.easybeer import (
     get_brassin_detail,
     get_planification_matrice,
 )
+
+# DDM (Date de Durabilité Minimale) — loaded from config.yaml business.ddm_days
+_DDM_DAYS: int = _get_biz().get("ddm_days", 365)
 
 # ─── Config poids cartons ────────────────────────────────────────────────────
 # 5 valeurs distinctes extraites de l'ancien info_FDR.csv.
@@ -291,15 +295,15 @@ def build_ramasse_lines(
             )
             detail = brassin_summary
 
-        # DDM calculee = date debut fermentation + 365 jours
-        ddm_date = today_paris() + dt.timedelta(days=365)
+        # DDM calculée = date début fermentation + _DDM_DAYS jours
+        ddm_date = today_paris() + dt.timedelta(days=_DDM_DAYS)
         _raw_debut = detail.get("dateDebutFormulaire")
         if _raw_debut:
             try:
                 if isinstance(_raw_debut, (int, float)):
-                    ddm_date = dt.date.fromtimestamp(_raw_debut / 1000) + dt.timedelta(days=365)
+                    ddm_date = dt.date.fromtimestamp(_raw_debut / 1000) + dt.timedelta(days=_DDM_DAYS)
                 else:
-                    ddm_date = dt.date.fromisoformat(str(_raw_debut)[:10]) + dt.timedelta(days=365)
+                    ddm_date = dt.date.fromisoformat(str(_raw_debut)[:10]) + dt.timedelta(days=_DDM_DAYS)
             except (ValueError, TypeError, OSError):
                 pass
 

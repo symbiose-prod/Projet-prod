@@ -11,7 +11,6 @@ sont créés d'affilée (EasyBeer ne décrémente le stock qu'à la validation).
 from __future__ import annotations
 
 import logging
-import time as _time
 from collections.abc import Callable
 from typing import Any
 

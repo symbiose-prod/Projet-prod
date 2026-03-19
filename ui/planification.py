@@ -12,13 +12,12 @@ import asyncio
 import logging
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import ui
 
 _log = logging.getLogger("ferment.planification")
 
 from ui.auth import require_auth
-from ui.theme import COLORS, page_layout, section_title, kpi_card, confirm_dialog
-
+from ui.theme import COLORS, kpi_card, page_layout, section_title
 
 # ---------------------------------------------------------------------------
 # Helpers
