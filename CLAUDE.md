@@ -19,7 +19,7 @@ Ferment Station is a multi-tenant NiceGUI web application for fermentation produ
 
 ```
 app_nicegui.py          # Entry point — NiceGUI, auth middleware, health check
-ui/                     # NiceGUI pages (@ui.page decorators)
+pages/                  # NiceGUI pages (@ui.page decorators)
 common/                 # Shared utilities (auth, email, storage, EasyBeer client)
 core/                   # Business logic / algorithms (optimizer)
 db/                     # Database layer (SQLAlchemy + psycopg2)
@@ -31,20 +31,20 @@ ops/                    # Ops config (env.sample)
 docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 ```
 
-### Pages (ui/)
+### Pages (pages/)
 
 | File | Route | Purpose |
 |------|-------|---------|
-| `ui/auth.py` | `/login`, `/reset/{token}` | Login, signup, password reset |
-| `ui/accueil.py` | `/accueil` | Home — file upload, EasyBeer sync |
-| `ui/production.py` | `/production` | Production planning + EasyBeer brassin creation |
-| `ui/ramasse.py` | `/ramasse` | Harvest/collection sheet + BL PDF/Excel export |
-| `ui/stocks.py` | `/stocks` | Stock autonomy by supplier, order suggestions |
-| `ui/ressources.py` | `/ressources` | Supplier ordering constraints editor (lead time, min pallets) |
-| `ui/theme.py` | — | Design system, page layout, custom components |
-| `ui/_production_calc.py` | — | Production computation (no UI, thread-safe) |
-| `ui/_production_easybeer.py` | — | EasyBeer brassin creation section |
-| `ui/_stocks_calc.py` | — | Stock duration computation, movement history (no UI) |
+| `pages/auth.py` | `/login`, `/reset/{token}` | Login, signup, password reset |
+| `pages/accueil.py` | `/accueil` | Home — file upload, EasyBeer sync |
+| `pages/production.py` | `/production` | Production planning + EasyBeer brassin creation |
+| `pages/ramasse.py` | `/ramasse` | Harvest/collection sheet + BL PDF/Excel export |
+| `pages/stocks.py` | `/stocks` | Stock autonomy by supplier, order suggestions |
+| `pages/ressources.py` | `/ressources` | Supplier ordering constraints editor (lead time, min pallets) |
+| `pages/theme.py` | — | Design system, page layout, custom components |
+| `pages/_production_calc.py` | — | Production computation (no UI, thread-safe) |
+| `pages/_production_easybeer.py` | — | EasyBeer brassin creation section |
+| `pages/_stocks_calc.py` | — | Stock duration computation, movement history (no UI) |
 
 ### Common Modules
 
@@ -177,6 +177,10 @@ ssh ubuntu@92.222.229.87
 
 ### Déployer une mise à jour
 
+Le déploiement est **automatique via GitHub Actions** :
+`push main` → lint (ruff) → tests (pytest) → deploy SSH sur le VPS.
+
+Pour un déploiement manuel :
 ```bash
 cd /home/ubuntu/app && git pull && sudo systemctl restart ferment
 ```
@@ -235,15 +239,11 @@ sudo -u postgres psql -d "whole-tomato-leopard" -f /tmp/migrate.sql
 ### Workflow de développement
 
 ```bash
-# Créer une branche feature
-git checkout -b feature/nom-de-la-feature
-
 # Développer en local
 python app_nicegui.py
 
-# Pousser et déployer
+# Pousser — le CI lint + test + deploy automatiquement
 git push origin main
-ssh ubuntu@92.222.229.87 "cd /home/ubuntu/app && git pull && sudo systemctl restart ferment"
 ```
 
 ---
