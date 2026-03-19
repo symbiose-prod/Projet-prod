@@ -135,6 +135,7 @@ async def page_ramasse():
     if not user:
         return
 
+    _log.info("ramasse: page_layout start")
     with page_layout("Fiche de ramasse", "local_shipping", "/ramasse") as sidebar:
 
         # ── Guards ───────────────────────────────────────────────────
@@ -147,17 +148,22 @@ async def page_ramasse():
             return
 
         # ── Chargement données (dans un thread pour ne pas bloquer l'event loop) ──
+        _log.info("ramasse: starting _load_all_eb_data")
         def _load_all_eb_data():
-            return (
+            _log.info("ramasse: thread started")
+            result = (
                 _load_brassins(),
                 _load_cb_matrix(),
                 _load_entrepot(),
                 _load_eb_weights(),
             )
+            _log.info("ramasse: thread done")
+            return result
 
         (brassins, load_errors), cb_by_product, id_entrepot, eb_weights = (
             await asyncio.to_thread(_load_all_eb_data)
         )
+        _log.info("ramasse: data loaded, %d brassins", len(brassins))
 
         destinataires = load_destinataires()
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
