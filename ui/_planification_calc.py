@@ -253,34 +253,46 @@ def fetch_planning_data(
 
 
 def _build_supplier_map(mp_stock: dict[int, dict]) -> dict[int, str]:
-    """Build id_mp → fournisseur map from 365-day purchase history."""
-    from common.easybeer.history import get_mp_historique_entree
-    from common.easybeer._client import _dates
+    """Build id_mp → fournisseur map from config.yaml references.
 
-    supplier_map: dict[str, str] = {}  # label → fournisseur
-    try:
-        date_debut, date_fin = _dates(365)
-        for cat in ("Conditionnement", "Ingredient", "Divers"):
-            try:
-                entries = get_mp_historique_entree(
-                    cat, date_debut=date_debut, date_fin=date_fin,
-                )
-                for e in entries:
-                    lib = (e.get("libelle") or "").strip()
-                    four = (e.get("fournisseur") or "").strip()
-                    if lib and four and lib not in supplier_map:
-                        supplier_map[lib] = four
-            except Exception:
-                _log.warning("Erreur historique %s", cat, exc_info=True)
-    except Exception:
-        _log.warning("Erreur dates historique", exc_info=True)
+    Matches MP labels from EasyBeer against supplier reference names
+    in config.yaml (case-insensitive, normalized).
+    """
+    from common.data import get_stocks_config
 
-    # Convert to id-based map
-    label_to_id: dict[str, int] = {v["label"]: k for k, v in mp_stock.items()}
+    config = get_stocks_config()
+
+    # Build label → supplier from config references
+    label_to_supplier: dict[str, str] = {}
+    for group in config.get("supplier_groups", []):
+        name = group.get("name", "")
+        ordering = group.get("ordering") or {}
+        refs = ordering.get("references") or {}
+        for ref_label in refs:
+            label_to_supplier[ref_label.strip().lower()] = name
+
+    # Map id_mp → supplier by matching labels
     supplier_map_by_id: dict[int, str] = {}
-    for label, supplier in supplier_map.items():
-        mp_id = label_to_id.get(label)
-        if mp_id:
-            supplier_map_by_id[mp_id] = supplier
+    for mp_id, info in mp_stock.items():
+        label_lower = info["label"].lower()
+        # Exact match first
+        if label_lower in label_to_supplier:
+            supplier_map_by_id[mp_id] = label_to_supplier[label_lower]
+            continue
+        # Fallback: mp_types + patterns from config
+        mp_type = info.get("type_code", "")
+        for group in config.get("supplier_groups", []):
+            g_types = group.get("mp_types", [])
+            g_patterns = group.get("patterns", [])
+            if g_types and mp_type in g_types:
+                if not g_patterns or any(
+                    p.lower() in label_lower for p in g_patterns
+                ):
+                    supplier_map_by_id[mp_id] = group["name"]
+                    break
 
+    _log.info(
+        "Supplier map: %d/%d MPs mapped to suppliers",
+        len(supplier_map_by_id), len(mp_stock),
+    )
     return supplier_map_by_id
