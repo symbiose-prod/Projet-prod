@@ -1062,6 +1062,7 @@ async def page_production():
 
         mode.on_value_change(_on_mode_change)
         repartir_cb.on_value_change(_debounced_compute)
+        include_planned_cb.on_value_change(_debounced_compute)
         excluded_gouts_sel.on_value_change(_debounced_compute)
         excluded_products_sel.on_value_change(_debounced_compute)
         forced_gouts_sel.on_value_change(_debounced_compute)
