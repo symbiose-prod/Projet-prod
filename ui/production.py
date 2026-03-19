@@ -115,6 +115,12 @@ async def page_production():
             ui.label("Filtres").classes("text-subtitle2 text-grey-7")
 
             repartir_cb = ui.checkbox("Au prorata des ventes", value=True)
+            include_planned_cb = ui.checkbox(
+                "Inclure planifié dans le stock", value=False,
+            ).tooltip(
+                "Ajoute les volumes des brassins planifiés au stock disponible "
+                "pour réduire la production proposée"
+            )
 
             excluded_gouts_sel = ui.select(
                 all_gouts,
@@ -308,6 +314,7 @@ async def page_production():
                         DEFAULT_LOSS_SMALL=DEFAULT_LOSS_SMALL,
                         split_volumes=split_volumes,
                         split_flavor_order=split_flavor_order,
+                        include_planned=include_planned_cb.value,
                     ),
                     timeout=60,
                 )

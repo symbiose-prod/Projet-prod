@@ -156,17 +156,22 @@ def _fetch_ongoing_productions(df: pd.DataFrame) -> dict:
     return {"par_gout": par_gout, "detail": detail, "total_hl": total_hl}
 
 
-def _fetch_planned_productions() -> dict:
+def _fetch_planned_productions(df: pd.DataFrame | None = None) -> dict:
     """Récupère les brassins planifiés (non encore démarrés).
 
-    Retourne {"detail": [...], "total_hl": float}.
+    Retourne {"par_gout": {GoutCanon: vol_hL}, "detail": [...], "total_hl": float}.
     """
     from common.easybeer.brassins import get_brassins_planifies, get_brassin_detail
 
     raw_list = get_brassins_planifies(30)
     if not raw_list:
-        return {"detail": [], "total_hl": 0.0}
+        return {"par_gout": {}, "detail": [], "total_hl": 0.0}
 
+    gouts_connus = (
+        df["GoutCanon"].dropna().unique().tolist() if df is not None else []
+    )
+
+    par_gout: dict[str, float] = {}
     detail: list[dict] = []
     total_hl = 0.0
 
@@ -189,6 +194,8 @@ def _fetch_planned_productions() -> dict:
         volume_l = float(b.get("volume") or 0)
         if volume_l < 100:
             continue
+
+        gout = _match_brassin_to_gout(libelle, gouts_connus) if gouts_connus else ""
 
         # Date début
         date_debut = ""
@@ -233,9 +240,13 @@ def _fetch_planned_productions() -> dict:
         vol_hl = round(volume_l / 100.0, 2)
         total_hl += vol_hl
 
+        if gout:
+            par_gout[gout] = par_gout.get(gout, 0.0) + vol_hl
+
         detail.append({
             "nom": b.get("nom", ""),
             "produit": libelle,
+            "gout": gout or "—",
             "volume_l": int(volume_l),
             "volume_hl": vol_hl,
             "etat": "Planifié",
@@ -243,7 +254,7 @@ def _fetch_planned_productions() -> dict:
             "date_conditionnement": date_cond or "—",
         })
 
-    return {"detail": detail, "total_hl": round(total_hl, 2)}
+    return {"par_gout": par_gout, "detail": detail, "total_hl": round(total_hl, 2)}
 
 
 def _inject_ongoing_volumes(
@@ -716,6 +727,7 @@ def _compute_production_sync(
     DEFAULT_LOSS_SMALL: int,
     split_volumes: list[float] | None = None,
     split_flavor_order: list[str] | None = None,
+    include_planned: bool = False,
 ) -> dict:
     """Passe 0 (en cours) + Passe 1 (optimiseur) + Passe 2 (EasyBeer) — aucun appel UI."""
     # ── PASSE 0 : Productions en cours (ajuste le stock disponible) ──
@@ -733,16 +745,24 @@ def _compute_production_sync(
     except Exception as exc:
         _log.warning("Erreur fetch brassins en cours: %s", exc, exc_info=True)
 
-    # ── PASSE 0b : Productions planifiées (affichage uniquement) ──
-    planned: dict = {"detail": [], "total_hl": 0.0}
+    # ── PASSE 0b : Productions planifiées ──
+    planned: dict = {"par_gout": {}, "detail": [], "total_hl": 0.0}
     try:
         from common.easybeer import is_configured as _eb_conf_p0b
         if _eb_conf_p0b():
-            planned = _fetch_planned_productions()
+            planned = _fetch_planned_productions(df_in_filtered)
             if planned["detail"]:
                 _log.info(
                     "Productions planifiées : %d brassins (total %.1f hL)",
                     len(planned["detail"]), planned["total_hl"],
+                )
+            if include_planned and planned["par_gout"]:
+                df_in_filtered = _inject_ongoing_volumes(
+                    df_in_filtered, planned["par_gout"],
+                )
+                _log.info(
+                    "Volumes planifiés intégrés au stock : %s",
+                    planned["par_gout"],
                 )
     except Exception as exc:
         _log.warning("Erreur fetch brassins planifiés: %s", exc, exc_info=True)
