@@ -261,9 +261,8 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # ─── Import des pages (les @ui.page sont enregistrés à l'import) ────────────
 
-from nicegui import (
-    ui,  # noqa: F811 — restaure nicegui.ui après imports locaux ui.*  # noqa: F811 — re-restaure nicegui.ui après imports locaux ui.*
-)
+# Order is critical: nicegui.ui must be re-bound AFTER local ui.* imports
+from nicegui import ui  # noqa: F811, I001 — pre-bind nicegui.ui
 
 import ui.accueil  # noqa: F401 — /accueil
 import ui.auth  # noqa: F401 — /login, /reset/{token}
@@ -275,6 +274,8 @@ import ui.ressources  # noqa: F401 — /ressources
 import ui.stock_pf  # noqa: F401 — /stock-pf
 import ui.stocks  # noqa: F401 — /stocks
 import ui.sync  # noqa: F401 — /sync
+
+from nicegui import ui  # noqa: F811 — re-bind nicegui.ui after local ui.* imports
 
 # ─── Health check ────────────────────────────────────────────────────────────
 
