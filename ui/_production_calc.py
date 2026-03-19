@@ -8,7 +8,6 @@ Extrait de ui/production.py pour maintenabilité.
 from __future__ import annotations
 
 import logging
-import time as _time
 
 import pandas as pd
 
@@ -118,7 +117,7 @@ def _fetch_ongoing_productions(df: pd.DataFrame) -> dict:
             try:
                 import datetime as _dt
                 date_cond = _dt.datetime.fromtimestamp(
-                    raw_date / 1000, tz=_dt.timezone.utc
+                    raw_date / 1000, tz=_dt.UTC
                 ).strftime("%d/%m/%Y")
             except (OSError, ValueError):
                 pass
@@ -147,7 +146,7 @@ def _fetch_planned_productions(df: pd.DataFrame | None = None) -> dict:
 
     Retourne {"par_gout": {GoutCanon: vol_hL}, "detail": [...], "total_hl": float}.
     """
-    from common.easybeer.brassins import get_brassins_planifies, get_brassin_detail
+    from common.easybeer.brassins import get_brassin_detail, get_brassins_planifies
 
     raw_list = get_brassins_planifies(30)
     if not raw_list:
@@ -200,7 +199,7 @@ def _fetch_planned_productions(df: pd.DataFrame | None = None) -> dict:
             try:
                 import datetime as _dt
                 date_debut = _dt.datetime.fromtimestamp(
-                    raw_date / 1000, tz=_dt.timezone.utc
+                    raw_date / 1000, tz=_dt.UTC
                 ).strftime("%d/%m/%Y")
             except (OSError, ValueError):
                 pass
@@ -218,7 +217,7 @@ def _fetch_planned_productions(df: pd.DataFrame | None = None) -> dict:
             try:
                 import datetime as _dt
                 date_cond = _dt.datetime.fromtimestamp(
-                    raw_cond / 1000, tz=_dt.timezone.utc
+                    raw_cond / 1000, tz=_dt.UTC
                 ).strftime("%d/%m/%Y")
             except (OSError, ValueError):
                 pass
@@ -531,6 +530,7 @@ def _check_emballages(df_final: pd.DataFrame, *, all_mps_prefetched: list[dict] 
     # 1. Construire la map consolidation : (idProduit, "12x33") → idStockProduit
     #    via POST /stock/produits (produits finis, pas contenants physiques)
     import os as _os
+
     from common.easybeer._client import BASE, _auth, _check_response, _safe_json, get_session
 
     try:
@@ -738,42 +738,48 @@ def _compute_production_sync(
     include_planned: bool = False,
 ) -> dict:
     """Passe 0 (en cours) + Passe 1 (optimiseur) + Passe 2 (EasyBeer) — aucun appel UI."""
-    # ── PASSE 0 : Productions en cours (ajuste le stock disponible) ──
+    # ── PASSE 0 : Productions en cours + planifiées (fetch en parallèle) ──
     ongoing: dict = {"par_gout": {}, "detail": [], "total_hl": 0.0}
+    planned: dict = {"par_gout": {}, "detail": [], "total_hl": 0.0}
     try:
         from common.easybeer import is_configured as _eb_conf_p0
         if _eb_conf_p0():
-            ongoing = _fetch_ongoing_productions(df_in_filtered)
-            if ongoing["par_gout"]:
-                df_in_filtered = _inject_ongoing_volumes(df_in_filtered, ongoing["par_gout"])
-                _log.info(
-                    "Productions en cours intégrées : %s (total %.1f hL)",
-                    ongoing["par_gout"], ongoing["total_hl"],
-                )
-    except Exception as exc:
-        _log.warning("Erreur fetch brassins en cours: %s", exc, exc_info=True)
+            from concurrent.futures import ThreadPoolExecutor
 
-    # ── PASSE 0b : Productions planifiées ──
-    planned: dict = {"par_gout": {}, "detail": [], "total_hl": 0.0}
-    try:
-        from common.easybeer import is_configured as _eb_conf_p0b
-        if _eb_conf_p0b():
-            planned = _fetch_planned_productions(df_in_filtered)
-            if planned["detail"]:
-                _log.info(
-                    "Productions planifiées : %d brassins (total %.1f hL)",
-                    len(planned["detail"]), planned["total_hl"],
-                )
-            if include_planned and planned["par_gout"]:
-                df_in_filtered = _inject_ongoing_volumes(
-                    df_in_filtered, planned["par_gout"],
-                )
-                _log.info(
-                    "Volumes planifiés intégrés au stock : %s",
-                    planned["par_gout"],
-                )
+            with ThreadPoolExecutor(max_workers=2) as _pool_p0:
+                _f_ongoing = _pool_p0.submit(_fetch_ongoing_productions, df_in_filtered)
+                _f_planned = _pool_p0.submit(_fetch_planned_productions, df_in_filtered)
+
+            try:
+                ongoing = _f_ongoing.result()
+                if ongoing["par_gout"]:
+                    df_in_filtered = _inject_ongoing_volumes(df_in_filtered, ongoing["par_gout"])
+                    _log.info(
+                        "Productions en cours intégrées : %s (total %.1f hL)",
+                        ongoing["par_gout"], ongoing["total_hl"],
+                    )
+            except Exception as exc:
+                _log.warning("Erreur fetch brassins en cours: %s", exc, exc_info=True)
+
+            try:
+                planned = _f_planned.result()
+                if planned["detail"]:
+                    _log.info(
+                        "Productions planifiées : %d brassins (total %.1f hL)",
+                        len(planned["detail"]), planned["total_hl"],
+                    )
+                if include_planned and planned["par_gout"]:
+                    df_in_filtered = _inject_ongoing_volumes(
+                        df_in_filtered, planned["par_gout"],
+                    )
+                    _log.info(
+                        "Volumes planifiés intégrés au stock : %s",
+                        planned["par_gout"],
+                    )
+            except Exception as exc:
+                _log.warning("Erreur fetch brassins planifiés: %s", exc, exc_info=True)
     except Exception as exc:
-        _log.warning("Erreur fetch brassins planifiés: %s", exc, exc_info=True)
+        _log.warning("Erreur fetch productions: %s", exc, exc_info=True)
 
     # ── PASSE 1 : Optimiseur
     (

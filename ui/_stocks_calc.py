@@ -383,15 +383,30 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         autonomy_days     = total_stock / daily_consumption
     """
     import re
+    from concurrent.futures import ThreadPoolExecutor
 
     from common.data import get_stocks_config
+    from common.easybeer._client import _dates
+    from common.easybeer.history import get_mp_historique_entree
     from common.easybeer.products import get_all_products
     from common.easybeer.stocks import get_all_matieres_premieres, get_autonomie_stocks
     from common.product_bom import get_bom_lookup
     from common.supplier_config import get_all_supplier_overrides
 
+    # ── Step 0: Parallel fetch of all EasyBeer data ──
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        f_autonomie = pool.submit(get_autonomie_stocks, window_days)
+        f_products = pool.submit(get_all_products)
+        f_mp = pool.submit(get_all_matieres_premieres)
+        # 3 history categories in parallel
+        date_debut_365, date_fin_365 = _dates(365)
+        f_hist = {
+            cat: pool.submit(get_mp_historique_entree, cat, date_debut=date_debut_365, date_fin=date_fin_365)
+            for cat in ("Conditionnement", "Ingredient", "Divers")
+        }
+
     # ── Step 1: Fetch finished product autonomy ──
-    autonomie_data = get_autonomie_stocks(window_days) or {}
+    autonomie_data = f_autonomie.result() or {}
     pf_list = autonomie_data.get("produits") or []
     if not pf_list:
         _log.warning("BOM calc: aucun produit fini dans l'autonomie EasyBeer")
@@ -400,7 +415,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
 
     # ── Step 2: Build PF lookup by idProduit ──
     # autonomie returns libelle only (no idProduit), so we map via get_all_products
-    all_products = get_all_products() or []
+    all_products = f_products.result() or []
     label_to_pid: dict[str, int] = {}
     for p in all_products:
         lib = (p.get("libelle") or "").strip().lower()
@@ -462,7 +477,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
 
     # ── Step 3: Load BOM lookup and MP stock ──
     bom_lookup = get_bom_lookup()  # {id_mp: [{id_produit, format_code, qty_per_unit, ...}]}
-    all_mp = get_all_matieres_premieres() or []
+    all_mp = f_mp.result() or []
 
     # Build MP stock map
     mp_stock: dict[int, dict] = {}
@@ -481,25 +496,16 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     # ── Step 4: Build supplier map (one batch, not per-component) ──
     # Use a 365-day window (not window_days) to catch suppliers for MP
     # that haven't been ordered recently within the analysis period.
-    from common.easybeer.history import get_mp_historique_entree
-    from common.easybeer._client import _dates
-
     supplier_map: dict[str, str] = {}  # mp_label → fournisseur
-    try:
-        date_debut, date_fin = _dates(365)
-        for cat in ("Conditionnement", "Ingredient", "Divers"):
-            try:
-                hist_entries = get_mp_historique_entree(
-                    cat, date_debut=date_debut, date_fin=date_fin,
-                )
-                partial = _extract_supplier_map_from_entries(hist_entries)
-                for lib, sup in partial.items():
-                    if lib not in supplier_map:
-                        supplier_map[lib] = sup
-            except Exception:
-                _log.warning("Erreur historique entree MP %s", cat, exc_info=True)
-    except Exception:
-        _log.warning("Erreur récup dates pour historique", exc_info=True)
+    for cat, fut in f_hist.items():
+        try:
+            hist_entries = fut.result()
+            partial = _extract_supplier_map_from_entries(hist_entries)
+            for lib, sup in partial.items():
+                if lib not in supplier_map:
+                    supplier_map[lib] = sup
+        except Exception:
+            _log.warning("Erreur historique entree MP %s", cat, exc_info=True)
 
     # Build id-based supplier map (survives MP label renames)
     label_to_id: dict[str, int] = {v["label"]: k for k, v in mp_stock.items()}
