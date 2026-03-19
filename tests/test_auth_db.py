@@ -296,7 +296,7 @@ class TestChangePassword:
     @patch("common.auth.run_sql")
     def test_change_password(self, mock_sql: MagicMock):
         mock_sql.return_value = 1
-        change_password("u1", "newpassword1")
+        change_password("u1", "NewPassword1!")
         mock_sql.assert_called_once()
 
     def test_change_password_weak(self):

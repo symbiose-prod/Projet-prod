@@ -55,10 +55,15 @@ def validate_password(password: str) -> str:
     """Vérifie les règles de complexité du mot de passe. Lève ValueError si invalide."""
     if not password or len(password) < MIN_PASSWORD_LENGTH:
         raise ValueError(f"Le mot de passe doit faire au moins {MIN_PASSWORD_LENGTH} caractères.")
-    has_letter = any(c.isalpha() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_lower = any(c.islower() for c in password)
     has_digit = any(c.isdigit() for c in password)
-    if not has_letter or not has_digit:
-        raise ValueError("Le mot de passe doit contenir au moins une lettre et un chiffre.")
+    has_special = any(not c.isalnum() for c in password)
+    if not (has_upper and has_lower and has_digit and has_special):
+        raise ValueError(
+            "Le mot de passe doit contenir au moins une majuscule, une minuscule, "
+            "un chiffre et un caractère spécial."
+        )
     return password
 
 

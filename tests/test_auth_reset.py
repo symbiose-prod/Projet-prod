@@ -209,7 +209,7 @@ class TestConsumeToken:
         mock_engine.return_value.begin.return_value.__enter__ = lambda _: mock_conn
         mock_engine.return_value.begin.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.rowcount = 1
-        result = consume_token_and_set_password(1, "u1", "newpassword1")
+        result = consume_token_and_set_password(1, "u1", "NewPassword1!")
         assert result is True
         assert mock_conn.execute.call_count == 3  # UPDATE reset, UPDATE password, DELETE sessions
 
@@ -220,7 +220,7 @@ class TestConsumeToken:
         mock_engine.return_value.begin.return_value.__exit__ = MagicMock(return_value=False)
         mock_conn.execute.return_value.rowcount = 0  # token already used
         with pytest.raises(ValueError, match="utilisé|utilis"):
-            consume_token_and_set_password(1, "u1", "newpassword1")
+            consume_token_and_set_password(1, "u1", "NewPassword1!")
 
     def test_weak_password_raises(self):
         with pytest.raises(ValueError):

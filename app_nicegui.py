@@ -127,7 +127,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 _log.exception("Erreur validation session serveur")
                 # Grace period : si la derniere validation reussie date de
                 # moins de 30 min, on laisse passer temporairement.
-                _GRACE_SECONDS = 1800  # 30 min
+                _GRACE_SECONDS = 300  # 5 min
                 if last_check == 0 or (now - last_check) > _GRACE_SECONDS:
                     _log.warning(
                         "Grace period expiree (DB down), deconnexion de %s",
@@ -158,7 +158,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     path="/",
                     httponly=True,
                     secure=_is_prod,
-                    samesite="lax",
+                    samesite="strict",
                 )
         except (KeyError, TypeError, RuntimeError):
             _log.warning("Erreur pose cookie remember-me", exc_info=True)
@@ -184,11 +184,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "frame-ancestors 'none'"
         )
         if _IS_PRODUCTION:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
 
     @staticmethod
     def _handle_logout(request: Request) -> RedirectResponse:
         """Logout: revoque le token DB + vide la session NiceGUI + supprime le cookie."""
+        # Capturer l'email avant de vider le storage (pour l'audit)
+        _logout_email: str | None = None
+        _logout_tenant: str | None = None
+        try:
+            _logout_email = app.storage.user.get("email")
+            _logout_tenant = app.storage.user.get("tenant_id")
+        except (KeyError, RuntimeError):
+            pass
+
         fs_token = request.cookies.get("fs_session")
         if fs_token:
             try:
@@ -201,6 +210,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
             app.storage.user.clear()
         except (KeyError, RuntimeError):
             _log.debug("Impossible de vider storage user au logout", exc_info=True)
+
+        # Audit trail
+        if _logout_email:
+            try:
+                from common.audit import log_event
+                log_event(
+                    tenant_id=_logout_tenant,
+                    user_email=_logout_email,
+                    action="logout",
+                )
+            except Exception:
+                _log.debug("Erreur audit logout", exc_info=True)
+
         resp = RedirectResponse(url="/login", status_code=302)
         resp.delete_cookie("fs_session", path="/")
         return resp

@@ -68,7 +68,7 @@ class TestValidatePassword:
         assert MIN_PASSWORD_LENGTH >= 8
 
     def test_valid_password(self):
-        assert validate_password("MySecure80") == "MySecure80"
+        assert validate_password("MySecure80!") == "MySecure80!"
 
     def test_too_short_raises(self):
         with pytest.raises(ValueError, match="caractères"):
@@ -79,25 +79,26 @@ class TestValidatePassword:
             validate_password("")
 
     def test_all_digits_raises(self):
-        with pytest.raises(ValueError, match="lettre et un chiffre"):
+        with pytest.raises(ValueError, match="majuscule"):
             validate_password("1234567890")
 
     def test_all_letters_raises(self):
-        with pytest.raises(ValueError, match="lettre et un chiffre"):
+        with pytest.raises(ValueError, match="majuscule"):
             validate_password("abcdefghij")
 
-    def test_letters_and_digits_ok(self):
-        assert validate_password("abcdefgh12") == "abcdefgh12"
+    def test_no_special_char_raises(self):
+        with pytest.raises(ValueError, match="spécial"):
+            validate_password("Abcdefgh12")
 
     def test_special_chars_with_letter_and_digit_ok(self):
         assert validate_password("P@ssw0rd!!") == "P@ssw0rd!!"
 
     def test_exact_min_length_ok(self):
-        pwd = "a" * (MIN_PASSWORD_LENGTH - 1) + "1"
+        pwd = "A" + "a" * (MIN_PASSWORD_LENGTH - 3) + "1!"
         assert validate_password(pwd) == pwd
 
     def test_one_below_min_length_raises(self):
-        pwd = "a" * (MIN_PASSWORD_LENGTH - 2) + "1"
+        pwd = "A" + "a" * (MIN_PASSWORD_LENGTH - 4) + "1!"
         with pytest.raises(ValueError, match="caractères"):
             validate_password(pwd)
 
