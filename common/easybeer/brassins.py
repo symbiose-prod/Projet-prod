@@ -143,14 +143,17 @@ def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
 
 @retry_api
 def get_brassins_planifies(days_ahead: int = 90) -> list[dict[str, Any]]:
-    """POST /brassin/liste sur [aujourd'hui → +days_ahead].
+    """POST /brassin/liste sur [-30j → +days_ahead].
 
-    Retourne uniquement les brassins dont ``etat.code == 'PLANIFIE'``.
-    Chaque brassin inclut ``planificationsProductions`` (lignes de
-    conditionnement), ``ingredients``, ``produit``, etc.
+    Returns brassins (PLANIFIE + EN_COURS) that still have pending
+    production needs. Includes 30 days of lookback to catch EN_COURS
+    brassins that started recently but haven't been conditioned yet.
     """
     now = datetime.datetime.now(datetime.UTC)
-    date_debut = now.strftime("%Y-%m-%dT00:00:00.000Z")
+    # Look back 30 days to catch EN_COURS brassins
+    date_debut = (now - datetime.timedelta(days=30)).strftime(
+        "%Y-%m-%dT00:00:00.000Z"
+    )
     date_fin = (now + datetime.timedelta(days=days_ahead)).strftime(
         "%Y-%m-%dT23:59:59.999Z"
     )

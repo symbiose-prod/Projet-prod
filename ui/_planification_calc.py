@@ -48,6 +48,7 @@ class PlannedBrassin:
     volume: float               # total volume in liters
     date_debut: str             # ISO date or epoch
     date_conditionnement: str   # ISO date or epoch
+    etat: str = ""                  # PLANIFIE, EN_COURS, TERMINE
     conditioning: list[ConditioningLine] = field(default_factory=list)
     ingredients: list[dict] = field(default_factory=list)  # raw from API
     packaging: list[dict] = field(default_factory=list)    # from matieresPremieresPlanificationConditionnement
@@ -140,6 +141,7 @@ def _parse_brassin(raw: dict) -> PlannedBrassin:
         date_conditionnement=_parse_epoch_to_iso(
             raw.get("dateConditionnementPrevue") or ""
         ),
+        etat=(raw.get("etat") or {}).get("code", ""),
         conditioning=lines,
         ingredients=ingredients,
         packaging=packaging,
@@ -169,6 +171,8 @@ def fetch_planning_data(
         return [], []
 
     # ── 2. Fetch full detail for each (includes ingredients + conditioning) ──
+    # Include PLANIFIE (all needs) and EN_COURS (packaging only).
+    # Exclude TERMINE (already consumed).
     brassins: list[PlannedBrassin] = []
     for raw in raw_list:
         bid = raw.get("idBrassin")
@@ -176,16 +180,19 @@ def fetch_planning_data(
             continue
         try:
             detail = get_brassin_detail(bid)
-            brassins.append(_parse_brassin(detail))
+            brassin = _parse_brassin(detail)
         except Exception:
             _log.warning("Erreur fetch detail brassin %s", bid, exc_info=True)
-            # Fallback: parse the summary (less data)
-            brassins.append(_parse_brassin(raw))
+            brassin = _parse_brassin(raw)
+
+        if brassin.etat == "TERMINE":
+            continue  # already consumed — skip
+        brassins.append(brassin)
 
     _log.info(
-        "Parsed %d planned brassins: %s",
+        "Parsed %d brassins (PLANIFIE+EN_COURS): %s",
         len(brassins),
-        ", ".join(f"{b.code} ({b.volume:.0f}L)" for b in brassins),
+        ", ".join(f"{b.code} [{b.etat}] ({b.volume:.0f}L)" for b in brassins),
     )
 
     # ── 3. Compute component needs ──
@@ -193,17 +200,18 @@ def fetch_planning_data(
     needs_by_mp: dict[int, float] = {}  # id_mp → total quantity needed
 
     for brassin in brassins:
-        # 3a. Ingredients (from recipe): quantite is already the total
-        #     for the full brassin volume, no need to multiply
-        for ing in brassin.ingredients:
-            id_mp = ing["id_mp"]
-            if not id_mp:
-                continue
-            needed = ing["total_qty"]
-            needs_by_mp[id_mp] = needs_by_mp.get(id_mp, 0) + needed
+        # 3a. Ingredients (from recipe): only for PLANIFIE
+        #     EN_COURS ingredients are already reserved in quantiteVirtuelle
+        if brassin.etat == "PLANIFIE":
+            for ing in brassin.ingredients:
+                id_mp = ing["id_mp"]
+                if not id_mp:
+                    continue
+                needed = ing["total_qty"]
+                needs_by_mp[id_mp] = needs_by_mp.get(id_mp, 0) + needed
 
-        # 3b. Packaging from matieresPremieresPlanificationConditionnement
-        #     EasyBeer pre-calculates exact packaging needs — use directly
+        # 3b. Packaging: for both PLANIFIE and EN_COURS
+        #     (conditioning happens after brewing, not yet consumed)
         for pkg in brassin.packaging:
             id_mp = pkg["id_mp"]
             needs_by_mp[id_mp] = needs_by_mp.get(id_mp, 0) + pkg["total_qty"]
