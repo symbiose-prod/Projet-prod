@@ -218,7 +218,7 @@ def _render_brassins(
                             "text-caption text-weight-bold"
                         ).style(f"color: {COLORS['ink2']}")
                         for ing in brassin.ingredients:
-                            needed = ing["qty_per_liter"] * brassin.volume
+                            needed = ing["total_qty"]
                             if needed > 0:
                                 ui.label(
                                     f"  {ing['label']}  —  "

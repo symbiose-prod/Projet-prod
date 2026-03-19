@@ -106,7 +106,7 @@ def _parse_brassin(raw: dict) -> PlannedBrassin:
         ingredients.append({
             "id_mp": mp.get("idMatierePremiere", 0),
             "label": mp.get("libelle") or "",
-            "qty_per_liter": float(ing.get("quantite") or 0),
+            "total_qty": float(ing.get("quantite") or 0),  # already total for full brassin
             "unit": (mp.get("unite") or {}).get("symbole", ""),
         })
 
@@ -176,12 +176,13 @@ def fetch_planning_data(
     needs_by_mp: dict[int, float] = {}  # id_mp → total quantity needed
 
     for brassin in brassins:
-        # 3a. Ingredients (from recipe): qty_per_liter × volume
+        # 3a. Ingredients (from recipe): quantite is already the total
+        #     for the full brassin volume, no need to multiply
         for ing in brassin.ingredients:
             id_mp = ing["id_mp"]
             if not id_mp:
                 continue
-            needed = ing["qty_per_liter"] * brassin.volume
+            needed = ing["total_qty"]
             needs_by_mp[id_mp] = needs_by_mp.get(id_mp, 0) + needed
 
         # 3b. Packaging from matieresPremieresPlanificationConditionnement
