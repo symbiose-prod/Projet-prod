@@ -11,8 +11,8 @@ from typing import Any
 
 from nicegui import ui
 
-from ui.auth import require_auth
-from ui.theme import COLORS, kpi_card, page_layout, section_title
+from pages.auth import require_auth
+from pages.theme import COLORS, kpi_card, page_layout, section_title
 
 _log = logging.getLogger("ferment.sync.ui")
 

@@ -16,8 +16,8 @@ from nicegui import ui
 
 _log = logging.getLogger("ferment.planification")
 
-from ui.auth import require_auth
-from ui.theme import COLORS, kpi_card, page_layout, section_title
+from pages.auth import require_auth
+from pages.theme import COLORS, kpi_card, page_layout, section_title
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -100,7 +100,7 @@ async def page_planification():
             needs_container.clear()
 
             try:
-                from ui._planification_calc import fetch_planning_data
+                from pages._planification_calc import fetch_planning_data
 
                 days = int(horizon_radio.value or 90)
                 brassins, needs = await asyncio.wait_for(

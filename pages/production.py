@@ -23,14 +23,14 @@ from core.optimizer import (
     load_flavor_map_from_path,
     sanitize_gouts,
 )
-from ui._production_calc import (
+from pages._production_calc import (
     _compute_production_sync,
     _fetch_eb_products,
 )
-from ui._production_easybeer import _render_easybeer_section
-from ui.accueil import get_df_raw
-from ui.auth import require_auth
-from ui.theme import COLORS, date_picker_field, error_banner, kpi_card, page_layout, section_title
+from pages._production_easybeer import _render_easybeer_section
+from pages.accueil import get_df_raw
+from pages.auth import require_auth
+from pages.theme import COLORS, date_picker_field, error_banner, kpi_card, page_layout, section_title
 
 _log = logging.getLogger("ferment.production")
 

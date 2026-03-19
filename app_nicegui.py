@@ -261,21 +261,16 @@ app.add_middleware(RequestLoggingMiddleware)
 
 # ─── Import des pages (les @ui.page sont enregistrés à l'import) ────────────
 
-# Order is critical: nicegui.ui must be re-bound AFTER local ui.* imports
-from nicegui import ui  # noqa: F811, I001 — pre-bind nicegui.ui
-
-import ui.accueil  # noqa: F401 — /accueil
-import ui.auth  # noqa: F401 — /login, /reset/{token}
-import ui.nomenclatures  # noqa: F401 — /nomenclatures
-import ui.planification  # noqa: F401 — /planification
-import ui.production  # noqa: F401 — /production
-import ui.ramasse  # noqa: F401 — /ramasse
-import ui.ressources  # noqa: F401 — /ressources
-import ui.stock_pf  # noqa: F401 — /stock-pf
-import ui.stocks  # noqa: F401 — /stocks
-import ui.sync  # noqa: F401 — /sync
-
-from nicegui import ui  # noqa: F811 — re-bind nicegui.ui after local ui.* imports
+import pages.accueil  # noqa: F401 — /accueil
+import pages.auth  # noqa: F401 — /login, /reset/{token}
+import pages.nomenclatures  # noqa: F401 — /nomenclatures
+import pages.planification  # noqa: F401 — /planification
+import pages.production  # noqa: F401 — /production
+import pages.ramasse  # noqa: F401 — /ramasse
+import pages.ressources  # noqa: F401 — /ressources
+import pages.stock_pf  # noqa: F401 — /stock-pf
+import pages.stocks  # noqa: F401 — /stocks
+import pages.sync  # noqa: F401 — /sync
 
 # ─── Health check ────────────────────────────────────────────────────────────
 

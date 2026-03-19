@@ -16,9 +16,9 @@ from nicegui import ui
 _log = logging.getLogger("ferment.stock_pf")
 
 from common.easybeer import is_configured as eb_configured
-from ui._stock_pf_calc import fetch_stock_comparison
-from ui.auth import require_auth
-from ui.theme import COLORS, kpi_card, page_layout, section_title
+from pages._stock_pf_calc import fetch_stock_comparison
+from pages.auth import require_auth
+from pages.theme import COLORS, kpi_card, page_layout, section_title
 
 
 def _format_number(n: int) -> str:

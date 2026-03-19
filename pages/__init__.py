@@ -1,0 +1,1 @@
+# pages/ — NiceGUI frontend layer

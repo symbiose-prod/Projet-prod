@@ -22,8 +22,8 @@ from common.supplier_config import (
     match_ref_config,
     upsert_supplier_config,
 )
-from ui.auth import require_auth
-from ui.theme import COLORS, page_layout, section_title
+from pages.auth import require_auth
+from pages.theme import COLORS, page_layout, section_title
 
 _log = logging.getLogger("ferment.ressources")
 
@@ -45,7 +45,7 @@ def _load_supplier_map() -> dict[str, str]:
     try:
         from common.easybeer._client import _dates
         from common.easybeer.history import get_mp_historique_entree
-        from ui._stocks_calc import _extract_supplier_map_from_entries
+        from pages._stocks_calc import _extract_supplier_map_from_entries
 
         supplier_map: dict[str, str] = {}
         date_debut, date_fin = _dates(365)

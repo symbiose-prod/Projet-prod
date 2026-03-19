@@ -17,8 +17,8 @@ _log = logging.getLogger("ferment.accueil")
 from common.easybeer import is_configured as eb_configured
 from common.session_store import load_df, store_df
 from core.optimizer import read_input_excel_and_period_from_bytes
-from ui.auth import require_auth
-from ui.theme import COLORS, page_layout
+from pages.auth import require_auth
+from pages.theme import COLORS, page_layout
 
 # ─── Citations du jour ─────────────────────────────────────────────────────
 

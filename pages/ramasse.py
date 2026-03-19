@@ -41,8 +41,8 @@ from common.ramasse import (
     today_paris,
 )
 from common.xlsx_fill import build_bl_enlevements_pdf
-from ui.auth import require_auth
-from ui.theme import COLORS, confirm_dialog, page_layout, section_title
+from pages.auth import require_auth
+from pages.theme import COLORS, confirm_dialog, page_layout, section_title
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 

@@ -22,7 +22,7 @@ from common.auth import (
     validate_email,
     validate_password,
 )
-from ui.theme import COLORS, apply_quasar_theme, logo_svg, password_strength_bar
+from pages.theme import COLORS, apply_quasar_theme, logo_svg, password_strength_bar
 
 _log = logging.getLogger("ferment.auth")
 

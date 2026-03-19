@@ -16,12 +16,12 @@ _log = logging.getLogger("ferment.stocks")
 
 from common.data import get_stocks_config
 from common.easybeer import is_configured as eb_configured
-from ui._stocks_calc import (
+from pages._stocks_calc import (
     StockGroup,
     fetch_and_compute_bom,
 )
-from ui.auth import require_auth
-from ui.theme import COLORS, page_layout
+from pages.auth import require_auth
+from pages.theme import COLORS, page_layout
 
 # ─── Constants ─────────────────────────────────────────────────────────────────
 
