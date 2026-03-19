@@ -66,6 +66,7 @@ NAV_ITEMS = [
     ("home",           "Accueil",              "/accueil"),
     ("factory",        "Production",           "/production"),
     ("local_shipping", "Fiche de ramasse",     "/ramasse"),
+    ("event_note",     "Planification",        "/planification"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("compare_arrows", "Stock produits finis",  "/stock-pf"),
     ("menu_book",      "Ressources",           "/ressources"),

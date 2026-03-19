@@ -137,3 +137,61 @@ def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     )
     _check_response(r, ep)
     return _safe_json(r, ep)
+
+
+# ─── Brassins planifiés ──────────────────────────────────────────────────
+
+@retry_api
+def get_brassins_planifies(days_ahead: int = 90) -> list[dict[str, Any]]:
+    """POST /brassin/liste sur [aujourd'hui → +days_ahead].
+
+    Retourne uniquement les brassins dont ``etat.code == 'PLANIFIE'``.
+    Chaque brassin inclut ``planificationsProductions`` (lignes de
+    conditionnement), ``ingredients``, ``produit``, etc.
+    """
+    now = datetime.datetime.now(datetime.UTC)
+    date_debut = now.strftime("%Y-%m-%dT00:00:00.000Z")
+    date_fin = (now + datetime.timedelta(days=days_ahead)).strftime(
+        "%Y-%m-%dT23:59:59.999Z"
+    )
+
+    ep = "brassin/liste"
+    r = get_session().post(
+        f"{BASE}/{ep}",
+        json={
+            "dateDebut": date_debut,
+            "dateFin": date_fin,
+            "type": "PERIODE_LIBRE",
+        },
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
+    all_brassins = data if isinstance(data, list) else []
+
+    planifies = [
+        b for b in all_brassins
+        if (b.get("etat") or {}).get("code") == "PLANIFIE"
+    ]
+    _log.info(
+        "Brassins planifiés: %d/%d (horizon %dj)",
+        len(planifies), len(all_brassins), days_ahead,
+    )
+    return planifies
+
+
+@retry_api
+def delete_conditioning_line(id_planification: int) -> None:
+    """GET /brassin/planification-conditionnement/supprimer/{id}.
+
+    Supprime une ligne de planification de conditionnement.
+    """
+    ep = f"brassin/planification-conditionnement/supprimer/{id_planification}"
+    r = get_session().get(
+        f"{BASE}/{ep}",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    _log.info("Deleted conditioning line %d", id_planification)

@@ -19,10 +19,12 @@ from ._client import (
 # --- brassins ---
 from .brassins import (
     create_brassin,
+    delete_conditioning_line,
     get_brassin_detail,
     get_brassins_archives,
     get_brassins_en_cours,
     get_brassins_en_cours_cached,
+    get_brassins_planifies,
     invalidate_brassins_en_cours_cache,
 )
 
@@ -99,6 +101,7 @@ __all__ = [
     # brassins
     "create_brassin", "get_brassins_en_cours", "get_brassins_en_cours_cached",
     "invalidate_brassins_en_cours_cache", "get_brassins_archives", "get_brassin_detail",
+    "get_brassins_planifies", "delete_conditioning_line",
     # conditioning
     "get_planification_matrice", "add_planification_conditionnement",
     "get_code_barre_matrice", "upload_fichier_brassin",

@@ -241,6 +241,7 @@ from nicegui import ui  # noqa: F811 — restaure nicegui.ui après imports loca
 import ui.accueil  # noqa: F401 — /accueil
 import ui.auth  # noqa: F401 — /login, /reset/{token}
 import ui.nomenclatures  # noqa: F401 — /nomenclatures
+import ui.planification  # noqa: F401 — /planification
 import ui.production  # noqa: F401 — /production
 import ui.ramasse  # noqa: F401 — /ramasse
 import ui.ressources  # noqa: F401 — /ressources
