@@ -50,6 +50,7 @@ class PlannedBrassin:
     date_conditionnement: str   # ISO date or epoch
     conditioning: list[ConditioningLine] = field(default_factory=list)
     ingredients: list[dict] = field(default_factory=list)  # raw from API
+    packaging: list[dict] = field(default_factory=list)    # from matieresPremieresPlanificationConditionnement
 
 
 @dataclass
@@ -110,6 +111,21 @@ def _parse_brassin(raw: dict) -> PlannedBrassin:
             "unit": (mp.get("unite") or {}).get("symbole", ""),
         })
 
+    # Parse packaging from matieresPremieresPlanificationConditionnement
+    # (EasyBeer pre-calculates exact packaging needs per conditioning line)
+    packaging: list[dict] = []
+    for m in raw.get("matieresPremieresPlanificationConditionnement") or []:
+        mp_inner = m.get("matierePremiere") or {}
+        id_mp = m.get("idMatierePremiere") or mp_inner.get("idMatierePremiere")
+        label = m.get("libelle") or mp_inner.get("libelle") or ""
+        qty = float(m.get("quantite") or 0)
+        if id_mp and qty > 0:
+            packaging.append({
+                "id_mp": id_mp,
+                "label": label,
+                "total_qty": qty,
+            })
+
     return PlannedBrassin(
         id_brassin=raw.get("idBrassin", 0),
         code=raw.get("nom") or "",
@@ -126,6 +142,7 @@ def _parse_brassin(raw: dict) -> PlannedBrassin:
         ),
         conditioning=lines,
         ingredients=ingredients,
+        packaging=packaging,
     )
 
 
@@ -186,34 +203,10 @@ def fetch_planning_data(
             needs_by_mp[id_mp] = needs_by_mp.get(id_mp, 0) + needed
 
         # 3b. Packaging from matieresPremieresPlanificationConditionnement
-        #     (already included in the brassin detail as total quantities)
-        #     We handle this via conditioning lines + BOM
-        #     For now, use conditioning lines to estimate packaging needs
-        #     via the BOM lookup (same as stocks page)
-
-    # 3c. Packaging needs from BOM decomposition of conditioning lines
-    from common.product_bom import get_bom_lookup
-    bom_lookup = get_bom_lookup()  # {id_mp: [{id_produit, format_code, qty_per_unit}]}
-
-    # Invert BOM: for each (id_produit, format_code) → list of {id_mp, qty_per_unit}
-    bom_by_product: dict[int, list[dict]] = {}
-    for id_mp, entries in bom_lookup.items():
-        for entry in entries:
-            pid = entry["id_produit"]
-            bom_by_product.setdefault(pid, []).append({
-                "id_mp": id_mp,
-                "qty_per_unit": entry["qty_per_unit"],
-            })
-
-    for brassin in brassins:
-        for line in brassin.conditioning:
-            # Find BOM components for this product
-            components = bom_by_product.get(line.id_produit, [])
-            for comp in components:
-                id_mp = comp["id_mp"]
-                # qty_per_unit is per carton/pack sold → multiply by quantity
-                needed = comp["qty_per_unit"] * line.quantity
-                needs_by_mp[id_mp] = needs_by_mp.get(id_mp, 0) + needed
+        #     EasyBeer pre-calculates exact packaging needs — use directly
+        for pkg in brassin.packaging:
+            id_mp = pkg["id_mp"]
+            needs_by_mp[id_mp] = needs_by_mp.get(id_mp, 0) + pkg["total_qty"]
 
     # ── 4. Build ComponentNeed list ──
     all_mp = get_all_matieres_premieres() or []
