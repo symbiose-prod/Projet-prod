@@ -390,8 +390,7 @@ class TestPostBrevo:
         monkeypatch.setenv("BREVO_API_KEY", "test-key")
         monkeypatch.setenv("EMAIL_SENDER", "test@example.com")
         mock_conn = MagicMock()
-        mock_conn.__enter__ = MagicMock(side_effect=OSError("Connection refused"))
-        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.request.side_effect = OSError("Connection refused")
         with patch("common.email.http.client.HTTPSConnection", return_value=mock_conn):
             with pytest.raises(EmailSendError, match="Echec connexion"):
                 self._fn("/v3/smtp/email", {})

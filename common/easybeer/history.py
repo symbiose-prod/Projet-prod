@@ -7,9 +7,15 @@ from __future__ import annotations
 
 import datetime
 import os
+import time as _time
 from typing import Any
 
 from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
+
+# ─── Cache historique entrées MP (clé = catégorie, TTL 2h) ──────────────────
+_MP_HIST_CACHE: dict[str, list[dict[str, Any]]] = {}
+_MP_HIST_TS: dict[str, float] = {}
+_MP_HIST_TTL = 7200  # 2 heures — les bons de réception changent rarement
 
 
 def get_contenant_historique(
@@ -87,19 +93,13 @@ def get_contenant_historique(
 
 
 @retry_api
-def get_mp_historique_entree(
+def _get_mp_historique_entree_raw(
     categorie: str,
     *,
     date_debut: str | None = None,
     date_fin: str | None = None,
 ) -> list[dict[str, Any]]:
-    """POST /stock/matieres-premieres/historique/entree/{categorie}
-
-    Returns list of entry records with keys: libelle, fournisseur, date,
-    quantite, prixHT, identifiantLot, code, type, dluo.
-
-    ``categorie`` is one of: "Ingredient", "Conditionnement", "Divers".
-    """
+    """POST /stock/matieres-premieres/historique/entree/{categorie} (appel HTTP brut)."""
     ep = f"stock/matieres-premieres/historique/entree/{categorie}"
 
     filtre: dict[str, Any] = {
@@ -131,3 +131,42 @@ def get_mp_historique_entree(
         date_fin or "maintenant",
     )
     return result
+
+
+def get_mp_historique_entree(
+    categorie: str,
+    *,
+    date_debut: str | None = None,
+    date_fin: str | None = None,
+) -> list[dict[str, Any]]:
+    """Historique entrées MP avec cache TTL 2h par catégorie.
+
+    Le cache n'est utilisé que pour les requêtes 365j complètes (pas de dates
+    personnalisées) car c'est le pattern le plus fréquent (pages Ressources + Stocks).
+    """
+    # Ne cacher que les appels "standard" sans dates personnalisées
+    use_cache = date_debut is None and date_fin is None
+    if use_cache:
+        now = _time.monotonic()
+        cached = _MP_HIST_CACHE.get(categorie)
+        if cached is not None and (now - _MP_HIST_TS.get(categorie, 0)) < _MP_HIST_TTL:
+            _log.debug("mp/historique/entree/%s : cache hit (%d entrées)", categorie, len(cached))
+            return cached
+
+    result = _get_mp_historique_entree_raw(categorie, date_debut=date_debut, date_fin=date_fin)
+
+    if use_cache and result:
+        _MP_HIST_CACHE[categorie] = result
+        _MP_HIST_TS[categorie] = _time.monotonic()
+
+    return result
+
+
+def invalidate_mp_historique_cache(categorie: str | None = None) -> None:
+    """Invalide le cache historique entrées MP (une catégorie ou toutes)."""
+    if categorie is not None:
+        _MP_HIST_CACHE.pop(categorie, None)
+        _MP_HIST_TS.pop(categorie, None)
+    else:
+        _MP_HIST_CACHE.clear()
+        _MP_HIST_TS.clear()

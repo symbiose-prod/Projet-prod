@@ -127,8 +127,8 @@ def get_brassins_archives(
 
 
 @retry_api
-def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
-    """GET /brassin/{id} → Detail complet d'un brassin."""
+def _get_brassin_detail_raw(id_brassin: int) -> dict[str, Any]:
+    """GET /brassin/{id} → Detail complet d'un brassin (appel HTTP brut)."""
     ep = f"brassin/{id_brassin}"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -137,6 +137,35 @@ def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     )
     _check_response(r, ep)
     return _safe_json(r, ep)
+
+
+# ─── Cache détail brassin ─────────────────────────────────────────────────
+_BRASSIN_DETAIL_CACHE: dict[int, dict[str, Any]] = {}
+_BRASSIN_DETAIL_TS: dict[int, float] = {}
+_BRASSIN_DETAIL_TTL = 300  # 5 min
+
+
+def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
+    """Detail complet d'un brassin avec cache TTL 5 min."""
+    now = _time.monotonic()
+    cached = _BRASSIN_DETAIL_CACHE.get(id_brassin)
+    if cached is not None and (now - _BRASSIN_DETAIL_TS.get(id_brassin, 0)) < _BRASSIN_DETAIL_TTL:
+        return cached
+    data = _get_brassin_detail_raw(id_brassin)
+    if data:
+        _BRASSIN_DETAIL_CACHE[id_brassin] = data
+        _BRASSIN_DETAIL_TS[id_brassin] = now
+    return data
+
+
+def invalidate_brassin_detail_cache(id_brassin: int | None = None) -> None:
+    """Invalide le cache détail brassin (un ou tous)."""
+    if id_brassin is not None:
+        _BRASSIN_DETAIL_CACHE.pop(id_brassin, None)
+        _BRASSIN_DETAIL_TS.pop(id_brassin, None)
+    else:
+        _BRASSIN_DETAIL_CACHE.clear()
+        _BRASSIN_DETAIL_TS.clear()
 
 
 # ─── Brassins planifiés ──────────────────────────────────────────────────

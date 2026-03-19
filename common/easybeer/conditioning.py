@@ -8,7 +8,7 @@ from __future__ import annotations
 import time as _time
 from typing import Any
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, retry_api
+from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, _throttle, get_session, retry_api
 
 
 @retry_api
@@ -78,6 +78,7 @@ def upload_fichier_brassin(
     _backoff = (5, 15, 30)
 
     for attempt in range(len(_backoff) + 1):
+        _throttle()  # respecter le rate-limit global avant chaque tentative
         r = requests.post(
             f"{BASE}/{ep}",
             params=params,

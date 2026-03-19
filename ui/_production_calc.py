@@ -16,33 +16,19 @@ from core.optimizer import compute_plan
 
 _log = logging.getLogger("ferment.production")
 
-# ─── Cache produits EasyBeer ─────────────────────────────────────────────────
-
-_EB_PRODUCTS_CACHE: dict = {"data": None, "ts": 0.0}
-_EB_PRODUCTS_TTL = 3600  # 60 minutes — les produits changent rarement
+# ─── Produits EasyBeer (cache centralisé dans products.py) ───────────────────
 
 
 def invalidate_eb_products_cache() -> None:
     """Invalide le cache produits (appelé manuellement via bouton « Rafraîchir »)."""
-    _EB_PRODUCTS_CACHE["data"] = None
-    _EB_PRODUCTS_CACHE["ts"] = 0.0
+    from common.easybeer.products import invalidate_products_cache
+    invalidate_products_cache()
 
 
 def _fetch_eb_products() -> list[dict]:
-    """Produits EasyBeer avec cache TTL 60 min (évite les appels HTTP redondants).
-
-    Ne met PAS en cache les échecs (exception ou liste vide) pour que le
-    prochain appel retente l'API au lieu de servir un résultat vide.
-    """
-    now = _time.monotonic()
-    if _EB_PRODUCTS_CACHE["data"] is not None and (now - _EB_PRODUCTS_CACHE["ts"]) < _EB_PRODUCTS_TTL:
-        return _EB_PRODUCTS_CACHE["data"]
+    """Produits EasyBeer — délègue au cache centralisé dans products.py (TTL 1h)."""
     from common.easybeer import get_all_products
-    data = get_all_products()
-    if data:  # ne cache que les résultats non-vides
-        _EB_PRODUCTS_CACHE["data"] = data
-        _EB_PRODUCTS_CACHE["ts"] = now
-    return data
+    return get_all_products()
 
 
 _SECONDARY_BRANDS = {"igeba", "niko", "inter", "water"}
@@ -360,6 +346,7 @@ def _check_mp_availability(
     TANK_CONFIGS: dict,
     DEFAULT_LOSS_LARGE: int,
     DEFAULT_LOSS_SMALL: int,
+    all_mps_prefetched: list[dict] | None = None,
 ) -> dict:
     """Vérifie si les MP (ingrédients recette) suffisent pour la production.
 
@@ -458,9 +445,9 @@ def _check_mp_availability(
             "error_msg": "",
         }
 
-    # 4. Stock actuel
+    # 4. Stock actuel (réutilise le prefetch si disponible)
     try:
-        all_mps = get_all_matieres_premieres()
+        all_mps = all_mps_prefetched if all_mps_prefetched is not None else get_all_matieres_premieres()
     except Exception as exc:
         return {"status": "error", "items": [], "error_msg": f"Erreur stocks MP: {exc}"}
 
@@ -514,10 +501,11 @@ def _check_mp_availability(
         "items": items,
         "items_by_gout": _items_by_gout,
         "error_msg": "",
+        "_all_mps": all_mps,
     }
 
 
-def _check_emballages(df_final: pd.DataFrame) -> dict:
+def _check_emballages(df_final: pd.DataFrame, *, all_mps_prefetched: list[dict] | None = None) -> dict:
     """Calcule les besoins en emballages depuis le plan de production.
 
     Pour chaque produit fini dans df_final, récupère les éléments de
@@ -589,7 +577,20 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
 
     # 3. Pour chaque ligne du plan : récupérer conditionnement et agréger besoins
     emb_needs: dict[int, dict] = {}  # idMatierePremiere → {libelle, qty, unite}
-    bottle_needs: dict[int, float] = {}  # volume_cl → nb bouteilles
+
+    # Index des MPs CONTENANT par libellé normalisé pour matcher les bouteilles
+    try:
+        all_mps = all_mps_prefetched if all_mps_prefetched is not None else get_all_matieres_premieres()
+    except Exception as exc:
+        _log.warning("Erreur get_all_matieres_premieres pour emballages: %s", exc)
+        all_mps = []
+
+    contenant_mps: list[dict] = [
+        mp for mp in all_mps
+        if (mp.get("type") or {}).get("code") == "CONTENANT"
+        and mp.get("actif", True)
+        and mp.get("idMatierePremiere") is not None
+    ]
 
     active_rows = df_final[df_final["Cartons à produire (arrondi)"] > 0]
     for _, row in active_rows.iterrows():
@@ -603,11 +604,9 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
         vol_cl = int(round(vol_btl_l * 100))
         fmt_str = f"{btl_per_carton}x{vol_cl}"
 
-        # Agréger bouteilles par format
-        bottle_needs[vol_cl] = bottle_needs.get(vol_cl, 0) + cartons * btl_per_carton
+        nb_bouteilles = cartons * btl_per_carton
 
         # Trouver le idProduit en matchant le nom Produit (inclut la marque)
-        # On cherche le label EasyBeer le plus spécifique contenu dans le nom
         _pn_low = produit_name.lower()
         _best_idx, _best_len = 0, 0
         for _i, _lbl in enumerate(prod_labels):
@@ -632,6 +631,7 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
             _log.warning("Erreur detail stock %s: %s", sid, exc)
             continue
 
+        # 3a. Éléments conditionnement (capsules, étiquettes, cartons)
         for elem in detail.get("elementsConditionnement") or []:
             mp = elem.get("elementMatierePremiere") or {}
             id_mp = mp.get("idMatierePremiere")
@@ -647,32 +647,40 @@ def _check_emballages(df_final: pd.DataFrame) -> dict:
             else:
                 emb_needs[id_mp] = {"libelle": libelle, "qty": besoin, "unite": unite}
 
-    # 4. Ajouter les bouteilles (type CONTENANT)
-    try:
-        all_mps = get_all_matieres_premieres()
-    except Exception as exc:
-        _log.warning("Erreur get_all_matieres_premieres pour emballages: %s", exc)
-        all_mps = []
-
-    # Matcher bouteilles par volume dans le libellé
-    for mp in all_mps:
-        mp_type = (mp.get("type") or {}).get("code", "")
-        if mp_type != "CONTENANT":
-            continue
-        if not mp.get("actif", True):
-            continue
-        libelle = (mp.get("libelle") or "").strip()
-        id_mp = mp.get("idMatierePremiere")
-        unite = (mp.get("unite") or {}).get("symbole", "")
-
-        # Trouver le volume correspondant (ex: "Bouteille 33cl" → 33)
-        for vol_cl, nb_btl in bottle_needs.items():
-            if f"{vol_cl}cl" in libelle.lower().replace(" ", ""):
+        # 3b. Bouteille (contenant) — champ séparé du détail stock produit
+        #     Le champ "contenant" donne le type exact de bouteille pour ce produit,
+        #     on le matche à la bonne MP par libellé pour avoir l'idMatierePremiere.
+        contenant = detail.get("contenant") or {}
+        cont_libelle = (contenant.get("libelle") or "").strip()
+        if cont_libelle and nb_bouteilles > 0:
+            # Chercher la MP CONTENANT correspondant à ce libellé exact
+            cont_lib_low = cont_libelle.lower()
+            matched_mp = None
+            for cmp in contenant_mps:
+                cmp_lib = (cmp.get("libelle") or "").strip().lower()
+                if cmp_lib == cont_lib_low:
+                    matched_mp = cmp
+                    break
+            # Fallback : match partiel si pas de match exact
+            if matched_mp is None:
+                for cmp in contenant_mps:
+                    cmp_lib = (cmp.get("libelle") or "").strip().lower()
+                    if cont_lib_low in cmp_lib or cmp_lib in cont_lib_low:
+                        matched_mp = cmp
+                        break
+            if matched_mp:
+                id_mp = matched_mp["idMatierePremiere"]
+                unite = (matched_mp.get("unite") or {}).get("symbole", "")
+                libelle = (matched_mp.get("libelle") or "").strip()
                 if id_mp in emb_needs:
-                    emb_needs[id_mp]["qty"] += nb_btl
+                    emb_needs[id_mp]["qty"] += nb_bouteilles
                 else:
-                    emb_needs[id_mp] = {"libelle": libelle, "qty": nb_btl, "unite": unite}
-                break
+                    emb_needs[id_mp] = {"libelle": libelle, "qty": nb_bouteilles, "unite": unite}
+            else:
+                _log.warning(
+                    "Emballages: bouteille '%s' non trouvée dans les MP CONTENANT pour %s",
+                    cont_libelle, produit_name,
+                )
 
     if not emb_needs:
         return {"emb_status": "ok", "emballages": []}
@@ -960,12 +968,17 @@ def _compute_production_sync(
         mp_check = {"status": "error", "items": [], "error_msg": str(exc)}
 
     # ── PASSE 4 : Stock emballages (depuis stock EasyBeer, pas recettes) ──
+    #    Réutilise les MPs déjà chargées en passe 3 pour éviter un appel API redondant.
+    _prefetched_mps = mp_check.get("_all_mps")
     emb_check: dict = {"emb_status": "ok", "emballages": []}
     try:
-        emb_check = _check_emballages(df_final)
+        emb_check = _check_emballages(df_final, all_mps_prefetched=_prefetched_mps)
     except Exception as exc:
         _log.warning("Erreur vérification emballages: %s", exc, exc_info=True)
         emb_check = {"emb_status": "error", "emballages": [], "emb_error": str(exc)}
+
+    # Nettoyer le champ interne _all_mps (ne doit pas remonter à l'UI)
+    mp_check.pop("_all_mps", None)
 
     return {
         "df_min": df_min,

@@ -26,9 +26,12 @@ def _cache_valid(cache: dict[str, Any]) -> bool:
     return cache["data"] is not None and (_time.monotonic() - cache["ts"]) < _CACHE_TTL
 
 
+_products_cache: dict[str, Any] = {"data": None, "ts": 0.0}
+
+
 @retry_api
-def get_all_products() -> list[dict[str, Any]]:
-    """GET /parametres/produit/liste/all → Liste complete des produits."""
+def _get_all_products_raw() -> list[dict[str, Any]]:
+    """GET /parametres/produit/liste/all → Liste complete des produits (appel HTTP brut)."""
     ep = "parametres/produit/liste/all"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -38,6 +41,23 @@ def get_all_products() -> list[dict[str, Any]]:
     _check_response(r, ep)
     data = _safe_json(r, ep)
     return data if isinstance(data, list) else []
+
+
+def get_all_products() -> list[dict[str, Any]]:
+    """Liste complete des produits avec cache TTL 1h."""
+    if _cache_valid(_products_cache):
+        return _products_cache["data"]
+    data = _get_all_products_raw()
+    if data:
+        _products_cache["data"] = data
+        _products_cache["ts"] = _time.monotonic()
+    return data
+
+
+def invalidate_products_cache() -> None:
+    """Invalide le cache liste produits."""
+    _products_cache["data"] = None
+    _products_cache["ts"] = 0.0
 
 
 @retry_api

@@ -99,7 +99,7 @@ class TestThrottle:
         assert calls == [], "First call should not trigger sleep"
 
     def test_rapid_second_call_sleeps(self, monkeypatch):
-        """Two calls within 500ms should trigger a sleep on the second one."""
+        """Two calls within _API_MIN_INTERVAL should trigger a sleep on the second one."""
         clock = iter([100.0, 100.0, 100.05, 100.05])
         sleep_durations = []
 
@@ -109,14 +109,16 @@ class TestThrottle:
         )
 
         _throttle()  # first call — sets _api_last_ts = 100.0
-        _throttle()  # second call — now=100.05, wait = 0.5 - 0.05 = 0.45
+        _throttle()  # second call — now=100.05, wait = 1.0 - 0.05 = 0.95
 
         assert len(sleep_durations) == 1
-        assert sleep_durations[0] == pytest.approx(0.45, abs=0.01)
+        assert sleep_durations[0] == pytest.approx(
+            client._API_MIN_INTERVAL - 0.05, abs=0.01,
+        )
 
     def test_after_sufficient_wait_no_sleep(self, monkeypatch):
         """If enough time has passed, no sleep needed."""
-        clock = iter([100.0, 100.0, 100.5, 100.5])
+        clock = iter([100.0, 100.0, 101.0, 101.0])
         sleep_durations = []
 
         monkeypatch.setattr(client._time, "monotonic", lambda: next(clock))
@@ -125,7 +127,7 @@ class TestThrottle:
         )
 
         _throttle()  # first call
-        _throttle()  # now=100.5, elapsed=0.5 > 0.2 → no sleep
+        _throttle()  # now=101.0, elapsed=1.0 >= _API_MIN_INTERVAL → no sleep
 
         assert sleep_durations == []
 
@@ -408,4 +410,4 @@ class TestModuleConstants:
         assert client.TIMEOUT == 30
 
     def test_min_interval(self):
-        assert client._API_MIN_INTERVAL == 0.5
+        assert client._API_MIN_INTERVAL == 1.0
