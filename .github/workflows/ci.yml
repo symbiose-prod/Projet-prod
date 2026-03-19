@@ -26,4 +26,33 @@ jobs:
         run: ruff check .
 
       - name: Tests (pytest)
-        run: pytest tests/ -v --tb=short --co -q 2>/dev/null; pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short
+
+  deploy:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/app
+            git pull origin main
+            sudo systemctl restart ferment
+            sleep 3
+            # Verify the service started successfully
+            if sudo systemctl is-active --quiet ferment; then
+              echo "✅ Deploy successful — ferment is running"
+            else
+              echo "❌ Deploy FAILED — ferment did not start"
+              sudo journalctl -u ferment --no-pager -n 20
+              exit 1
+            fi
