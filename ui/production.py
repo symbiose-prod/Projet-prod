@@ -48,7 +48,7 @@ TEMPLATE_PATH = "assets/Fiche_production.xlsx"
 
 # ─── Page ───────────────────────────────────────────────────────────────────
 
-@ui.page("/production")
+@ui.page("/production", response_timeout=15.0)
 async def page_production():
     user = require_auth()
     if not user:
