@@ -156,6 +156,96 @@ def _fetch_ongoing_productions(df: pd.DataFrame) -> dict:
     return {"par_gout": par_gout, "detail": detail, "total_hl": total_hl}
 
 
+def _fetch_planned_productions() -> dict:
+    """Récupère les brassins planifiés (non encore démarrés).
+
+    Retourne {"detail": [...], "total_hl": float}.
+    """
+    from common.easybeer.brassins import get_brassins_planifies, get_brassin_detail
+
+    raw_list = get_brassins_planifies(30)
+    if not raw_list:
+        return {"detail": [], "total_hl": 0.0}
+
+    detail: list[dict] = []
+    total_hl = 0.0
+
+    for raw in raw_list:
+        bid = raw.get("idBrassin")
+        if not bid:
+            continue
+        try:
+            b = get_brassin_detail(bid)
+        except Exception:
+            b = raw
+
+        etat_obj = b.get("etat") or {}
+        etat_code = etat_obj.get("code", "")
+        if etat_code != "PLANIFIE":
+            continue
+
+        produit = b.get("produit") or {}
+        libelle = produit.get("libelle", "")
+        volume_l = float(b.get("volume") or 0)
+        if volume_l < 100:
+            continue
+
+        # Date début
+        date_debut = ""
+        raw_date = (
+            b.get("dateDebutPlanificationFormulaire")
+            or b.get("dateDebutCalendrier")
+            or b.get("dateDebutFormulaire")
+        )
+        if isinstance(raw_date, str) and raw_date:
+            try:
+                dt = raw_date[:10]
+                date_debut = f"{dt[8:10]}/{dt[5:7]}/{dt[:4]}"
+            except (IndexError, ValueError):
+                date_debut = raw_date[:10]
+        elif isinstance(raw_date, (int, float)) and raw_date > 0:
+            try:
+                import datetime as _dt
+                date_debut = _dt.datetime.fromtimestamp(
+                    raw_date / 1000, tz=_dt.timezone.utc
+                ).strftime("%d/%m/%Y")
+            except (OSError, ValueError):
+                pass
+
+        # Date conditionnement
+        date_cond = ""
+        raw_cond = b.get("dateConditionnementPrevue")
+        if isinstance(raw_cond, str) and raw_cond:
+            try:
+                dt = raw_cond[:10]
+                date_cond = f"{dt[8:10]}/{dt[5:7]}/{dt[:4]}"
+            except (IndexError, ValueError):
+                date_cond = raw_cond[:10]
+        elif isinstance(raw_cond, (int, float)) and raw_cond > 0:
+            try:
+                import datetime as _dt
+                date_cond = _dt.datetime.fromtimestamp(
+                    raw_cond / 1000, tz=_dt.timezone.utc
+                ).strftime("%d/%m/%Y")
+            except (OSError, ValueError):
+                pass
+
+        vol_hl = round(volume_l / 100.0, 2)
+        total_hl += vol_hl
+
+        detail.append({
+            "nom": b.get("nom", ""),
+            "produit": libelle,
+            "volume_l": int(volume_l),
+            "volume_hl": vol_hl,
+            "etat": "Planifié",
+            "date_debut": date_debut or "—",
+            "date_conditionnement": date_cond or "—",
+        })
+
+    return {"detail": detail, "total_hl": round(total_hl, 2)}
+
+
 def _inject_ongoing_volumes(
     df: pd.DataFrame, par_gout: dict[str, float],
 ) -> pd.DataFrame:
@@ -643,6 +733,20 @@ def _compute_production_sync(
     except Exception as exc:
         _log.warning("Erreur fetch brassins en cours: %s", exc, exc_info=True)
 
+    # ── PASSE 0b : Productions planifiées (affichage uniquement) ──
+    planned: dict = {"detail": [], "total_hl": 0.0}
+    try:
+        from common.easybeer import is_configured as _eb_conf_p0b
+        if _eb_conf_p0b():
+            planned = _fetch_planned_productions()
+            if planned["detail"]:
+                _log.info(
+                    "Productions planifiées : %d brassins (total %.1f hL)",
+                    len(planned["detail"]), planned["total_hl"],
+                )
+    except Exception as exc:
+        _log.warning("Erreur fetch brassins planifiés: %s", exc, exc_info=True)
+
     # ── PASSE 1 : Optimiseur
     (
         df_min, cap_resume, gouts_cibles, synth_sel,
@@ -855,6 +959,7 @@ def _compute_production_sync(
         "volume_cible": volume_cible,
         "df_final": df_final,
         "ongoing": ongoing,
+        "planned": planned,
         "mp_check": mp_check,
         "emb_check": emb_check,
     }

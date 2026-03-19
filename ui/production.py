@@ -339,6 +339,7 @@ async def page_production():
             mp_check = _result.get("mp_check", {})
             emb_check = _result.get("emb_check", {})
             ongoing = _result.get("ongoing", {})
+            planned = _result.get("planned", {})
 
             # Nettoyer les overrides orphelins (goûts qui ne sont plus dans le calcul)
             _valid_keys = set()
@@ -450,6 +451,49 @@ async def page_production():
                                 "ℹ️ Ces volumes ont été ajoutés au stock disponible "
                                 "pour le calcul : " + ", ".join(_gouts_ajustes)
                             ).classes("text-caption text-grey-6 q-mt-sm")
+
+                # ── Productions planifiées ────────────────────────────
+                _plan_detail = planned.get("detail", [])
+                _plan_total = planned.get("total_hl", 0.0)
+
+                if _plan_detail:
+                    _plan_nb = len(_plan_detail)
+                    _plan_title = (
+                        f"{_plan_nb} production{'s' if _plan_nb > 1 else ''}"
+                        f" planifiée{'s' if _plan_nb > 1 else ''} — {_plan_total:.1f} hL"
+                    )
+                    with ui.expansion(
+                        _plan_title,
+                        icon="event_note",
+                        value=False,
+                    ).classes("w-full").style(
+                        f"border: 1px solid {COLORS['green']}40; border-radius: 8px"
+                    ):
+                        _plan_rows = [
+                            {
+                                "brassin": d["nom"],
+                                "produit": d["produit"],
+                                "volume": f"{d['volume_l']:,} L".replace(",", " "),
+                                "etat": d["etat"],
+                                "date_debut": d.get("date_debut") or "—",
+                                "date_cond": d["date_conditionnement"] or "—",
+                                "_key": d["nom"],
+                            }
+                            for d in _plan_detail
+                        ]
+                        _plan_columns = [
+                            {"name": "brassin", "label": "Brassin", "field": "brassin", "align": "left"},
+                            {"name": "produit", "label": "Produit", "field": "produit", "align": "left"},
+                            {"name": "volume", "label": "Volume", "field": "volume", "align": "right"},
+                            {"name": "etat", "label": "État", "field": "etat", "align": "center"},
+                            {"name": "date_debut", "label": "Début prévu", "field": "date_debut", "align": "center"},
+                            {"name": "date_cond", "label": "Conditionnement prévu", "field": "date_cond", "align": "center"},
+                        ]
+                        ui.table(
+                            columns=_plan_columns,
+                            rows=_plan_rows,
+                            row_key="_key",
+                        ).classes("w-full").props("flat bordered dense")
 
                 # KPIs
                 total_btl = int(df_final["Bouteilles à produire (arrondi)"].sum()) if not df_final.empty else 0
