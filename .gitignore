@@ -31,5 +31,10 @@ agent/*.ldb
 agent/config.ini
 agent/logs/
 
+# Test / Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
 # Deployment (legacy)
 Procfile
