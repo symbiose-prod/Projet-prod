@@ -445,17 +445,8 @@ def _render_easybeer_section(
                             type="positive",
                         )
 
-                        # ── Auto-enrichir le BOM depuis EasyBeer ──
-                        try:
-                            from common.bom_detection import run_full_detection
-                            _nb_bom, _nb_prod = run_full_detection()
-                            if _nb_bom:
-                                _log.info(
-                                    "Auto-captured %d BOM entries for %d products after conditioning",
-                                    _nb_bom, _nb_prod,
-                                )
-                        except Exception:
-                            _log.debug("BOM auto-capture skipped", exc_info=True)
+                        # NOTE: BOM auto-detection supprimé ici — trop lent (30s+)
+                        # et bloquait la page. Utiliser /nomenclatures pour gérer le BOM.
                 except (EasyBeerError, requests.RequestException, KeyError, ValueError) as _pe:
                     ui.notify(f"Planif. « {g} » : {_pe}", type="warning")
 
