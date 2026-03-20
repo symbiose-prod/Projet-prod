@@ -256,6 +256,9 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
     # Cache recettes par produit (évite des appels API doublons si 2+ formats)
     recipe_cache: dict[int, dict[str, Any] | None] = {}
     products_fetched: set[int] = set()
+    # Produits sans recette (pour fallback dérivés → parent)
+    products_without_recipe: list[tuple[tuple[int, str], dict[str, Any]]] = []
+
     for (id_produit, fmt), info in sorted(stock_map.items()):
         if is_rate_limited() > 0:
             _log.warning("Rate-limit actif, arrêt détection recette")
@@ -274,6 +277,20 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
         if recipe_entries:
             all_entries.extend(recipe_entries)
             products_seen.add(id_produit)
+        else:
+            products_without_recipe.append(((id_produit, fmt), info))
+
+    # 2e. Fallback pour produits dérivés sans recette (Niko, Inter, Water)
+    #     Utilise le flavor_map pour trouver le produit Symbiose du même goût,
+    #     puis copie sa recette avec le bon ratio (contenance × lot_qty).
+    if products_without_recipe:
+        fallback_entries = _detect_recipe_from_parent(
+            products_without_recipe, stock_map, mp_ids, recipe_cache,
+        )
+        if fallback_entries:
+            all_entries.extend(fallback_entries)
+            for fe in fallback_entries:
+                products_seen.add(fe["id_produit"])
 
     _log.info("Recipe detection: %d products fetched", len(products_fetched))
 
@@ -286,6 +303,113 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
         len(all_entries), len(products_seen),
     )
     return len(all_entries), len(products_seen)
+
+
+def _detect_recipe_from_parent(
+    products_without_recipe: list[tuple[tuple[int, str], dict[str, Any]]],
+    stock_map: dict[tuple[int, str], dict[str, Any]],
+    mp_ids: set[int],
+    recipe_cache: dict[int, dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """Fallback : copier la recette d'un produit Symbiose parent pour les dérivés.
+
+    Les produits Niko / Inter / Water n'ont pas de recette propre dans EasyBeer.
+    On utilise le ``flavor_map.csv`` pour trouver le goût canonique, puis on cherche
+    un produit Symbiose avec le même goût qui possède une recette dans le cache.
+
+    Les quantités sont recalculées avec le ratio (contenance × lot_qty) du dérivé.
+    """
+    from common.data import read_flavor_map
+
+    fm = read_flavor_map()
+    if fm.empty:
+        _log.warning("flavor_map vide — impossible de résoudre les produits dérivés")
+        return []
+
+    # Construire label → canonical (case-insensitive)
+    label_to_canonical: dict[str, str] = {}
+    for _, row in fm.iterrows():
+        name = str(row.get("name", "")).strip().lower()
+        canon = str(row.get("canonical", "")).strip()
+        if name and canon:
+            label_to_canonical[name] = canon
+
+    # Construire canonical → id_produit pour les produits QUI ONT une recette
+    canonical_to_parent: dict[str, int] = {}
+    for (pid, _fmt), info in stock_map.items():
+        lbl = info["libelle"].strip().lower()
+        canon = label_to_canonical.get(lbl, "")
+        if not canon:
+            continue
+        # Vérifier que ce produit a une recette dans le cache
+        cached = recipe_cache.get(pid)
+        if cached and (cached.get("recettes") or []):
+            canonical_to_parent.setdefault(canon, pid)
+
+    _log.info(
+        "Fallback recette: %d produits sans recette, %d goûts parents disponibles",
+        len(products_without_recipe), len(canonical_to_parent),
+    )
+
+    entries: list[dict[str, Any]] = []
+    for (id_produit, fmt), info in products_without_recipe:
+        lbl = info["libelle"].strip().lower()
+        canon = label_to_canonical.get(lbl, "")
+        if not canon:
+            _log.debug("Pas de goût canonique pour %s — skip", info["libelle"])
+            continue
+        parent_pid = canonical_to_parent.get(canon)
+        if not parent_pid:
+            _log.debug("Pas de parent pour goût '%s' (%s) — skip", canon, info["libelle"])
+            continue
+
+        # Utiliser la recette du parent avec le ratio du dérivé
+        parent_detail = recipe_cache.get(parent_pid)
+        if not parent_detail:
+            continue
+        recettes = parent_detail.get("recettes") or []
+        if not recettes:
+            continue
+        recette = recettes[0]
+        volume_recette = float(recette.get("volumeRecette", 0) or 0)
+        if volume_recette <= 0:
+            continue
+
+        contenance = info["contenance"]
+        lot_qty = info["lot_qty"]
+        carton_volume = lot_qty * contenance
+        ratio = carton_volume / volume_recette
+
+        for ing in recette.get("ingredients") or []:
+            mp = ing.get("matierePremiere") or {}
+            id_mp = mp.get("idMatierePremiere")
+            if not id_mp or id_mp not in mp_ids:
+                continue
+            qty_recipe = float(ing.get("quantite", 0) or 0)
+            if qty_recipe <= 0:
+                continue
+
+            qty_per_carton = round(qty_recipe * ratio, 4)
+            mp_label = (mp.get("libelle") or "").strip()
+
+            entries.append({
+                "id_produit": id_produit,
+                "format_code": fmt,
+                "product_label": info["libelle"],
+                "id_mp": id_mp,
+                "mp_label": mp_label,
+                "qty_per_unit": qty_per_carton,
+                "validated": False,
+                "source": "recipe_api",
+            })
+
+        if entries and entries[-1]["id_produit"] == id_produit:
+            _log.info(
+                "BOM recette fallback: %s %s → copié depuis parent (goût '%s')",
+                info["libelle"], fmt, canon,
+            )
+
+    return entries
 
 
 def _detect_from_recipe(
