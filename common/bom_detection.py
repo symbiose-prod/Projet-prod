@@ -383,17 +383,16 @@ def _detect_bottles_from_formats(
 ) -> list[dict[str, Any]]:
     """Auto-detect bottle (CONTENANT) BOM entries from product formats.
 
-    For each product-format, derives the bottle type from contenance:
-    - contenance 0.33 → matches MP with "bouteille" + "33" in label
-    - contenance 0.75 → matches MP with "bouteille" + "75" in label
+    Mapping rules (contenance + lot_qty + marque) :
+    - 33cl (tout format)      → "Bouteille - 0.33L"  (Bavarian, Wiegand-glas)
+    - 75cl + 4x  + Symbiose   → "Bouteille 75cl SAFT - 0.75L"  (Wiegand-glas)
+    - 75cl + 6x  + Symbiose   → "Bouteille 75cl EAU GAZEUSE - 0.75L" (Verallia)
+    - 75cl + 6x  + Niko       → "Bouteille 75cl SAFT - 0.75L"  (Wiegand-glas)
 
-    The quantity is the lot_qty (bottles per carton).
+    The quantity per carton equals the lot_qty (1 bouteille par unité).
     """
-    import re
-
-    # Build bottle lookup: contenance_cl → {id_mp, label}
-    # Bottles are CONTENANT type MP with "bouteille" in the label
-    bottles_by_cl: dict[int, dict[str, Any]] = {}
+    # ── Index des bouteilles CONTENANT par label normalisé ──
+    bottle_by_key: dict[str, dict[str, Any]] = {}
     for mp in all_mp:
         mp_type = (mp.get("type") or {}).get("code", "")
         label = (mp.get("libelle") or "").strip()
@@ -401,48 +400,65 @@ def _detect_bottles_from_formats(
         if mp_type != "CONTENANT" or not mp_id:
             continue
         label_lower = label.lower()
-        if "bouteille" not in label_lower and "eau" not in label_lower:
-            continue
-        # Extract cl from label: "Bouteille 33cl" → 33, "EAU GAZEUSE 75cl" → 75
-        m = re.search(r"(\d+)\s*cl", label_lower)
-        if m:
-            cl = int(m.group(1))
-            bottles_by_cl[cl] = {"id_mp": mp_id, "label": label}
-        else:
-            # Try contenance field
-            cont = float(mp.get("contenance", 0) or 0)
-            if cont > 0:
-                cl = int(cont * 100)
-                bottles_by_cl[cl] = {"id_mp": mp_id, "label": label}
+        # Classer par mots-clés discriminants
+        if "0.33" in label_lower or "33cl" in label_lower:
+            bottle_by_key["33cl"] = {"id_mp": mp_id, "label": label}
+        elif "saft" in label_lower and ("0.75" in label_lower or "75cl" in label_lower):
+            bottle_by_key["75cl_saft"] = {"id_mp": mp_id, "label": label}
+        elif "eau" in label_lower and ("0.75" in label_lower or "75cl" in label_lower):
+            bottle_by_key["75cl_eau"] = {"id_mp": mp_id, "label": label}
 
-    if not bottles_by_cl:
+    _log.info("Bouteilles indexées: %s", {k: v["label"] for k, v in bottle_by_key.items()})
+
+    if not bottle_by_key:
         _log.warning("Aucune bouteille CONTENANT trouvée dans les MP EasyBeer")
         return []
 
-    _log.info("Bouteilles détectées: %s", {cl: b["label"] for cl, b in bottles_by_cl.items()})
+    # ── Détection de la marque par le libellé produit ──
+    def _is_niko(product_label: str) -> bool:
+        return "niko" in product_label.lower()
+
+    # ── Résolution bouteille par (contenance, lot_qty, marque) ──
+    def _resolve_bottle(
+        contenance_cl: int, lot_qty: int, product_label: str,
+    ) -> dict[str, Any] | None:
+        if contenance_cl == 33:
+            return bottle_by_key.get("33cl")
+        if contenance_cl == 75:
+            if _is_niko(product_label):
+                # Niko 75cl → toujours Saft
+                return bottle_by_key.get("75cl_saft")
+            # Symbiose 75cl : 4x = Saft, 6x = Eau gazeuse
+            if lot_qty <= 4:
+                return bottle_by_key.get("75cl_saft")
+            return bottle_by_key.get("75cl_eau")
+        return None
 
     entries: list[dict[str, Any]] = []
     for (id_produit, fmt), info in stock_map.items():
         contenance_cl = int(info["contenance"] * 100)
-        bottle = bottles_by_cl.get(contenance_cl)
+        lot_qty = info["lot_qty"]
+        bottle = _resolve_bottle(contenance_cl, lot_qty, info["libelle"])
         if not bottle:
-            _log.debug("Pas de bouteille %dcl pour %s %s", contenance_cl, info["libelle"], fmt)
+            _log.debug(
+                "Pas de bouteille pour %dcl lot=%d %s (%s)",
+                contenance_cl, lot_qty, info["libelle"], fmt,
+            )
             continue
 
-        qty = info["lot_qty"]  # bottles per carton = lot_qty
         entries.append({
             "id_produit": id_produit,
             "format_code": fmt,
             "product_label": info["libelle"],
             "id_mp": bottle["id_mp"],
             "mp_label": bottle["label"],
-            "qty_per_unit": qty,
+            "qty_per_unit": lot_qty,
             "validated": False,
             "source": "auto_detected",
         })
         _log.info(
             "BOM bouteille: %s %s → %s (qty=%d)",
-            info["libelle"], fmt, bottle["label"], qty,
+            info["libelle"], fmt, bottle["label"], lot_qty,
         )
 
     return entries
