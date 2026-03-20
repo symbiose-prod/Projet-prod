@@ -25,7 +25,7 @@ def _fetch_stock_produits() -> dict[str, Any]:
     """POST /stock/produits → all finished-product stock consolidations."""
     from common.easybeer._client import BASE, _auth, _check_response, _safe_json, get_session
 
-    id_brasserie = int(os.environ.get("EASYBEER_ID_BRASSERIE", "0"))
+    id_brasserie = int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013"))
     r = get_session().post(
         f"{BASE}/stock/produits",
         json={"idBrasserie": id_brasserie},
@@ -83,7 +83,6 @@ def _detect_from_stock_detail(
     id_produit: int,
     product_label: str,
     format_code: str,
-    lot_qty: int,
     id_stock_produit: int,
 ) -> list[dict[str, Any]] | None:
     """Fetch GET /stock/produit/edition/{id} and extract conditioning elements.
@@ -227,7 +226,6 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
             id_produit=id_produit,
             product_label=info["libelle"],
             format_code=fmt,
-            lot_qty=info["lot_qty"],
             id_stock_produit=info["sid"],
         )
         if entries:
@@ -238,22 +236,26 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
             _log.warning("Rate-limited, stopping BOM detection early")
             break
 
-    # 2b. Auto-detect bottles (CONTENANT) from format codes
+    # 2b. Fetch all MP once (réutilisé par bottles + recettes)
+    from common.easybeer.stocks import get_all_matieres_premieres
+
+    all_mp = get_all_matieres_premieres() or []
+
+    # 2c. Auto-detect bottles (CONTENANT) from format codes
     #     12x33 → 12 × Bouteille 33cl, 6x75 → 6 × Bouteille 75cl
-    bottle_entries = _detect_bottles_from_formats(stock_map)
+    bottle_entries = _detect_bottles_from_formats(stock_map, all_mp)
     if bottle_entries:
         all_entries.extend(bottle_entries)
         for be in bottle_entries:
             products_seen.add(be["id_produit"])
 
-    # 2c. Auto-detect recipe ingredients (jus, sucre, arômes, etc.)
+    # 2d. Auto-detect recipe ingredients (jus, sucre, arômes, etc.)
     #     Uses product recipes to map MP → qty per carton
-    from common.easybeer.stocks import get_all_matieres_premieres
-
-    all_mp = get_all_matieres_premieres() or []
     mp_ids = {mp["idMatierePremiere"] for mp in all_mp if mp.get("idMatierePremiere")}
 
-    products_fetched: set[int] = set()  # track unique products for logging
+    # Cache recettes par produit (évite des appels API doublons si 2+ formats)
+    recipe_cache: dict[int, dict[str, Any] | None] = {}
+    products_fetched: set[int] = set()
     for (id_produit, fmt), info in sorted(stock_map.items()):
         if is_rate_limited() > 0:
             _log.warning("Rate-limit actif, arrêt détection recette")
@@ -267,6 +269,7 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
             contenance=info["contenance"],
             lot_qty=info["lot_qty"],
             mp_ids=mp_ids,
+            recipe_cache=recipe_cache,
         )
         if recipe_entries:
             all_entries.extend(recipe_entries)
@@ -292,6 +295,7 @@ def _detect_from_recipe(
     contenance: float,
     lot_qty: int,
     mp_ids: set[int],
+    recipe_cache: dict[int, dict[str, Any] | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Extract recipe ingredients as BOM entries for a product-format.
 
@@ -301,22 +305,33 @@ def _detect_from_recipe(
     Only includes ingredients whose ``idMatierePremiere`` is in *mp_ids*
     (i.e. tracked in EasyBeer stock — excludes water, etc.).
 
+    *recipe_cache* avoids duplicate API calls for products with multiple formats.
+
     Formula::
 
         qty_per_carton = (ingredient.quantite / volumeRecette) × (lot_qty × contenance)
 
     Returns BOM entry dicts with ``source="recipe_api"``.
     """
-    from common.easybeer.products import get_product_detail
-
-    try:
-        detail = get_product_detail(id_produit)
-    except Exception as exc:
-        _log.warning(
-            "Cannot fetch product detail %d for recipe BOM: %s",
-            id_produit, exc,
-        )
-        return []
+    # Utiliser le cache si disponible
+    if recipe_cache is not None and id_produit in recipe_cache:
+        detail = recipe_cache[id_produit]
+        if detail is None:
+            return []  # Échec précédent mis en cache
+    else:
+        from common.easybeer.products import get_product_detail
+        try:
+            detail = get_product_detail(id_produit)
+        except Exception as exc:
+            _log.warning(
+                "Cannot fetch product detail %d for recipe BOM: %s",
+                id_produit, exc,
+            )
+            if recipe_cache is not None:
+                recipe_cache[id_produit] = None
+            return []
+        if recipe_cache is not None:
+            recipe_cache[id_produit] = detail
 
     recettes = detail.get("recettes") or []
     if not recettes:
@@ -364,6 +379,7 @@ def _detect_from_recipe(
 
 def _detect_bottles_from_formats(
     stock_map: dict[tuple[int, str], dict[str, Any]],
+    all_mp: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Auto-detect bottle (CONTENANT) BOM entries from product formats.
 
@@ -374,10 +390,6 @@ def _detect_bottles_from_formats(
     The quantity is the lot_qty (bottles per carton).
     """
     import re
-
-    from common.easybeer.stocks import get_all_matieres_premieres
-
-    all_mp = get_all_matieres_premieres()
 
     # Build bottle lookup: contenance_cl → {id_mp, label}
     # Bottles are CONTENANT type MP with "bouteille" in the label

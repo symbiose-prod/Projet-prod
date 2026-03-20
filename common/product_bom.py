@@ -85,24 +85,6 @@ def get_bom_lookup(tenant_id: str | None = None) -> dict[int, list[dict[str, Any
     return lookup
 
 
-def get_product_formats(tenant_id: str | None = None) -> dict[int, list[str]]:
-    """Return ``{id_produit: ["12x33", "6x75"]}`` for all products with BOM entries."""
-    tid = tenant_id or _tenant_id()
-    rows = run_sql(
-        """
-        SELECT DISTINCT id_produit, format_code
-        FROM product_bom
-        WHERE tenant_id = :t
-        ORDER BY id_produit, format_code
-        """,
-        {"t": tid},
-    )
-    out: dict[int, list[str]] = {}
-    for r in rows or []:
-        out.setdefault(r["id_produit"], []).append(r["format_code"])
-    return out
-
-
 # ─── Write ──────────────────────────────────────────────────────────────────
 
 def upsert_bom_entry(
@@ -117,7 +99,7 @@ def upsert_bom_entry(
     tenant_id: str | None = None,
 ) -> None:
     """Insert or update a single BOM entry (UPSERT)."""
-    if qty_per_unit < 0 or qty_per_unit > 10000:
+    if qty_per_unit <= 0 or qty_per_unit > 10000:
         raise ValueError(f"qty_per_unit invalide : {qty_per_unit}")
     tid = tenant_id or _tenant_id()
     run_sql(
@@ -248,27 +230,33 @@ def validate_bom(
     """Mark all BOM entries for a product-format as validated.
 
     Returns the number of entries validated. Raises ValueError if no entries exist.
+    Uses a single UPDATE RETURNING for atomicity.
     """
     tid = tenant_id or _tenant_id()
-    # Check that entries exist before validating
     rows = run_sql(
-        """
-        SELECT COUNT(*) AS cnt FROM product_bom
-        WHERE tenant_id = :t AND id_produit = :p AND format_code = :f
-        """,
-        {"t": tid, "p": id_produit, "f": format_code},
-    )
-    count = (rows[0]["cnt"] if rows else 0)
-    if count == 0:
-        raise ValueError("Aucun composant à valider pour ce format.")
-    run_sql(
         """
         UPDATE product_bom
         SET validated = TRUE
         WHERE tenant_id = :t AND id_produit = :p AND format_code = :f
+              AND validated = FALSE
+        RETURNING id
         """,
         {"t": tid, "p": id_produit, "f": format_code},
     )
+    count = len(rows) if rows else 0
+    if count == 0:
+        # Vérifier si des entrées existent (peut-être déjà toutes validées)
+        existing = run_sql(
+            """
+            SELECT COUNT(*) AS cnt FROM product_bom
+            WHERE tenant_id = :t AND id_produit = :p AND format_code = :f
+            """,
+            {"t": tid, "p": id_produit, "f": format_code},
+        )
+        total = (existing[0]["cnt"] if existing else 0)
+        if total == 0:
+            raise ValueError("Aucun composant à valider pour ce format.")
+        # Toutes déjà validées → retourne 0 sans erreur
     _log.info(
         "Validated BOM: produit=%d format=%s (%d entries, tenant=%s)",
         id_produit, format_code, count, tid,

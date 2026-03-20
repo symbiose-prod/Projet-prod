@@ -247,6 +247,7 @@ def page_nomenclatures():
                                 _render_entry_row(
                                     entry, id_produit, format_code,
                                     product_label, mp_options, entries,
+                                    render_fn=_render_entries,
                                 )
 
                             # Add component button
@@ -287,13 +288,17 @@ def page_nomenclatures():
                                             validated=False,
                                             source="manual",
                                         )
-                                        entries.append({
+                                        new_entry = {
+                                            "id_produit": id_produit,
+                                            "format_code": format_code,
                                             "id_mp": mp_id,
                                             "mp_label": mp_label,
                                             "qty_per_unit": qty,
                                             "validated": False,
                                             "source": "manual",
-                                        })
+                                        }
+                                        entries.append(new_entry)
+                                        state["bom_entries"].append(new_entry)
                                         _sel.value = None
                                         _render_entries()
                                         ui.notify(f"{mp_label} ajouté", type="positive")
@@ -309,28 +314,37 @@ def page_nomenclatures():
 
                     _render_entries()
 
-                    # Validate button
-                    with ui.row().classes("w-full justify-end q-mt-sm"):
-                        async def _validate(
-                            _pid=id_produit, _fc=format_code, _entries=entries,
-                        ):
-                            try:
-                                validate_bom(_pid, _fc)
-                                for e in _entries:
-                                    e["validated"] = True
-                                _render_entries()
-                                ui.notify(
-                                    f"{product_label} {format_code} validé",
-                                    type="positive",
-                                )
-                            except Exception as exc:
-                                ui.notify(f"Erreur : {exc}", type="negative")
+                    # Validate button (masqué si déjà tout validé)
+                    all_validated = entries and all(
+                        e.get("validated", False) for e in entries
+                    )
+                    if not all_validated:
+                        with ui.row().classes("w-full justify-end q-mt-sm"):
+                            async def _validate(
+                                _pid=id_produit, _fc=format_code, _entries=entries,
+                            ):
+                                try:
+                                    validate_bom(_pid, _fc)
+                                    for e in _entries:
+                                        e["validated"] = True
+                                    # Mettre à jour le state global et rebuild
+                                    # pour rafraîchir les badges parents
+                                    for se in state["bom_entries"]:
+                                        if se["id_produit"] == _pid and se["format_code"] == _fc:
+                                            se["validated"] = True
+                                    _rebuild_ui()
+                                    ui.notify(
+                                        f"{product_label} {format_code} validé",
+                                        type="positive",
+                                    )
+                                except Exception as exc:
+                                    ui.notify(f"Erreur : {exc}", type="negative")
 
-                        ui.button(
-                            "Valider ce format",
-                            icon="check",
-                            on_click=_validate,
-                        ).props("flat no-caps color=green-8")
+                            ui.button(
+                                "Valider ce format",
+                                icon="check",
+                                on_click=_validate,
+                            ).props("flat no-caps color=green-8")
 
         def _render_entry_row(
             entry: dict,
@@ -339,6 +353,7 @@ def page_nomenclatures():
             product_label: str,
             mp_options: dict[int, str],
             entries_list: list[dict],
+            render_fn=None,
         ):
             """Render one editable BOM entry row."""
             mp_id = entry["id_mp"]
@@ -347,20 +362,21 @@ def page_nomenclatures():
             is_validated = entry.get("validated", False)
             source = entry.get("source", "manual")
 
-            # Ensure the current mp_id is in options (MP may have been
-            # archived/deleted in EasyBeer but still referenced in BOM)
-            if mp_id and mp_id not in mp_options:
-                mp_options[mp_id] = f"{mp_label} (id {mp_id})"
+            # Copie locale des options pour les MP archivées (évite de muter le dict partagé)
+            local_opts = dict(mp_options)
+            if mp_id and mp_id not in local_opts:
+                local_opts[mp_id] = f"{mp_label} (id {mp_id})"
 
             with ui.row().classes("w-full items-center gap-2 no-wrap"):
                 # Component select
                 ui.select(
-                    options=mp_options,
+                    options=local_opts,
                     value=mp_id,
                     with_input=True,
                     on_change=lambda e, _entry=entry, _pid=id_produit,
-                    _fc=format_code, _old_mp=mp_id, _pl=product_label: _change_mp(
-                        e, _entry, _pid, _fc, _old_mp, _pl, mp_options,
+                    _fc=format_code, _old_mp=mp_id, _pl=product_label,
+                    _rfn=render_fn: _change_mp(
+                        e, _entry, _pid, _fc, _old_mp, _pl, local_opts, _rfn,
                     ),
                 ).props("outlined dense").classes("col")
 
@@ -395,10 +411,13 @@ def page_nomenclatures():
                 async def _delete(
                     _pid=id_produit, _fc=format_code,
                     _mp=mp_id, _entry=entry, _list=entries_list,
+                    _rfn=render_fn,
                 ):
                     try:
                         delete_bom_entry(_pid, _fc, _mp)
                         _list.remove(_entry)
+                        if _rfn:
+                            _rfn()
                         ui.notify("Composant supprimé", type="info")
                     except Exception as exc:
                         ui.notify(f"Erreur : {exc}", type="negative")
@@ -407,13 +426,14 @@ def page_nomenclatures():
                     icon="delete", on_click=_delete,
                 ).props("round flat color=red-6 size=xs")
 
-        def _change_mp(e, entry, pid, fc, old_mp, pl, opts):
+        def _change_mp(e, entry, pid, fc, old_mp, pl, opts, render_fn):
             """Handle component change in dropdown."""
             new_mp = e.value
             if new_mp == old_mp or not new_mp:
                 return
             if entry.get("source") == "conditioning":
                 ui.notify("Ce composant provient d'EasyBeer et ne peut pas être modifié.", type="warning")
+                e.sender.value = old_mp  # Rétablir la valeur d'origine
                 return
             try:
                 delete_bom_entry(pid, fc, old_mp)
@@ -427,6 +447,7 @@ def page_nomenclatures():
                 entry["id_mp"] = new_mp
                 entry["mp_label"] = new_label
                 entry["source"] = "manual"
+                render_fn()
                 ui.notify(f"Composant changé → {new_label}", type="positive")
             except Exception as exc:
                 ui.notify(f"Erreur : {exc}", type="negative")
@@ -501,6 +522,7 @@ def page_nomenclatures():
         # ── Validate all handler ──
         async def _do_validate_all():
             validate_all_btn.disable()
+            sync_status.text = "Validation en cours..."
             try:
                 count = await asyncio.to_thread(validate_all_bom)
                 if count > 0:
@@ -518,10 +540,11 @@ def page_nomenclatures():
                 ui.notify(f"Erreur : {exc}", type="negative")
             finally:
                 validate_all_btn.enable()
+                sync_status.text = ""
 
         validate_all_btn.on_click(_do_validate_all)
 
-        # ── Initial load (from DB only, no EasyBeer calls) ──
+        # ── Initial load (BOM from DB + MP/formats from EasyBeer) ──
         async def _initial_load():
             try:
                 all_mp, product_formats, bom_entries = await asyncio.gather(
