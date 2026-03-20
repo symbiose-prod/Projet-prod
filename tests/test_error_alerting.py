@@ -9,13 +9,17 @@ from unittest.mock import patch
 from common.error_alerting import _COOLDOWN_SECONDS, _should_send, send_error_alert
 
 
+def _reset_cooldown():
+    """Reset cooldown to a value guaranteed to be expired (far in the past)."""
+    import common.error_alerting as mod
+    mod._last_alert_ts = time.monotonic() - _COOLDOWN_SECONDS - 100
+
+
 class TestShouldSend:
     """Anti-flood cooldown logic."""
 
     def setup_method(self):
-        # Reset cooldown between tests
-        import common.error_alerting as mod
-        mod._last_alert_ts = 0.0
+        _reset_cooldown()
 
     def test_first_call_returns_true(self):
         assert _should_send() is True
@@ -36,8 +40,7 @@ class TestSendErrorAlert:
     """Fire-and-forget email sending."""
 
     def setup_method(self):
-        import common.error_alerting as mod
-        mod._last_alert_ts = 0.0
+        _reset_cooldown()
 
     @patch.dict("os.environ", {"ENV": "development"})
     def test_skipped_in_development(self):
