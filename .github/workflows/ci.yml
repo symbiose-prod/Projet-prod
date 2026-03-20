@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
     branches: [main]
 
@@ -32,7 +32,37 @@ jobs:
         run: pip-audit --strict --desc on 2>&1 || true
         # Non-blocking for now — logs vulnerabilities without failing the build
 
-  deploy:
+  deploy-staging:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: true
+
+    steps:
+      - name: Deploy to staging
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/app-staging
+            git fetch origin staging
+            git checkout staging
+            git pull origin staging
+            sudo systemctl restart ferment-staging
+            sleep 3
+            if sudo systemctl is-active --quiet ferment-staging; then
+              echo "✅ Staging deploy successful"
+            else
+              echo "❌ Staging deploy FAILED"
+              sudo journalctl -u ferment-staging --no-pager -n 20
+              exit 1
+            fi
+
+  deploy-production:
     needs: lint-and-test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -41,7 +71,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Deploy to VPS
+      - name: Deploy to production
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -52,11 +82,10 @@ jobs:
             git pull origin main
             sudo systemctl restart ferment
             sleep 3
-            # Verify the service started successfully
             if sudo systemctl is-active --quiet ferment; then
-              echo "✅ Deploy successful — ferment is running"
+              echo "✅ Production deploy successful"
             else
-              echo "❌ Deploy FAILED — ferment did not start"
+              echo "❌ Production deploy FAILED"
               sudo journalctl -u ferment --no-pager -n 20
               exit 1
             fi
