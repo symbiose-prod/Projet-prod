@@ -733,21 +733,37 @@ async def page_production():
                     for _, r in df_final.iterrows():
                         key = f"{r['GoutCanon']}|{r['Produit']}|{r['Stock']}"
                         produit_name = str(r["Produit"])
-                        is_niko = "NIKO" in produit_name.upper()
+                        produit_upper = produit_name.upper()
+                        if "NIKO" in produit_upper:
+                            brand = "Niko"
+                        elif "IGEBA" in produit_upper:
+                            brand = "IGEBA"
+                        elif any(kw in produit_upper for kw in ("WATER", "PROBIOTIC")):
+                            brand = "Inter"
+                        else:
+                            brand = "Symbiose Kéfir"
+                        # Hint pour distinguer visuellement les produits secondaires
+                        produit_hint = ""
+                        if brand != "Symbiose Kéfir":
+                            # Extraire le nom court sans le suffixe "- 0.0°"
+                            produit_hint = produit_name.split(" - ")[0].strip() if " - " in produit_name else produit_name
+
                         all_table_rows.append({
                             "gout": str(r["GoutCanon"]),
                             "produit": produit_name,
+                            "produit_hint": produit_hint,
                             "stock": str(r["Stock"]),
                             "forcer": overrides.get(key, None),
                             "cartons": int(r["Cartons à produire (arrondi)"]),
                             "bouteilles": int(r["Bouteilles à produire (arrondi)"]),
                             "volume": f"{float(r['Volume produit arrondi (hL)']):.3f}",
                             "_key": key,
-                            "_brand": "Niko" if is_niko else "Symbiose Kéfir",
+                            "_brand": brand,
                         })
 
-                    # Trier : Symbiose en premier, Niko ensuite
-                    all_table_rows.sort(key=lambda r: (0 if r["_brand"] == "Symbiose Kéfir" else 1, r["gout"]))
+                    # Trier : Symbiose d'abord, puis marques secondaires
+                    _BRAND_ORDER = {"Symbiose Kéfir": 0, "Niko": 1, "IGEBA": 2, "Inter": 3}
+                    all_table_rows.sort(key=lambda r: (_BRAND_ORDER.get(r["_brand"], 9), r["gout"]))
 
                     # Images par marque
                     brand_images: dict[str, list[dict]] = {}
@@ -842,6 +858,13 @@ async def page_production():
                                 </template>
                                 <template v-else-if="col.name === 'cartons'">
                                     <span style="font-weight: 600;">{{ props.row[col.field] }}</span>
+                                </template>
+                                <template v-else-if="col.name === 'gout'">
+                                    {{ props.row[col.field] }}
+                                    <span v-if="props.row.produit_hint"
+                                          style="color: #9CA3AF; font-size: 11px; margin-left: 4px;">
+                                        ({{ props.row.produit_hint }})
+                                    </span>
                                 </template>
                                 <template v-else>
                                     {{ props.row[col.field] }}
