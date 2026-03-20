@@ -414,6 +414,19 @@ def _check_mp_availability(
             if not recettes:
                 continue
 
+            vol_recette = recettes[0].get("volumeRecette", 0)
+            nb_ings = len(recettes[0].get("ingredients") or [])
+            raw_qtys = [
+                (i.get("matierePremiere", {}).get("libelle", "?"), i.get("quantite", 0))
+                for i in (recettes[0].get("ingredients") or [])[:5]
+            ]
+            _log.info(
+                "MP check detail: gout=%s, id_produit=%d, volumeRecette=%s, "
+                "nb_ingredients=%d, raw_qtys=%s, vol_l=%.1f, ratio=%.2f",
+                g, id_produit, vol_recette, nb_ings, raw_qtys,
+                vol_l, (vol_l / vol_recette if vol_recette else 0),
+            )
+
             scaled = scale_recipe_ingredients(recettes[0], vol_l)
             for ing in scaled:
                 mp = ing.get("matierePremiere") or {}
