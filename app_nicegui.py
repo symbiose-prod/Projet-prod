@@ -253,6 +253,24 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "[%s] %s %s → %d (%.0fms)",
                 request_id, request.method, path, response.status_code, duration_ms,
             )
+        # ── Alerte email sur erreur serveur (5xx) ──
+        if response.status_code >= 500 and not path.startswith("/_nicegui"):
+            try:
+                from common.error_alerting import send_error_alert
+                user_email = None
+                try:
+                    user_email = app.storage.user.get("email")
+                except Exception:
+                    pass
+                send_error_alert(
+                    method=request.method,
+                    path=path,
+                    status_code=response.status_code,
+                    request_id=request_id,
+                    user_email=user_email,
+                )
+            except Exception:
+                _log.debug("Erreur envoi alerte 500", exc_info=True)
         return response
 
 
