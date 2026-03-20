@@ -34,21 +34,72 @@ _SECONDARY_BRANDS = {"igeba", "niko", "inter", "water"}
 
 
 def _auto_match(gout: str, prod_labels: list[str]) -> int:
-    """Retourne l'index du produit EasyBeer dont le libellé contient le goût.
+    """Retourne l'index du produit EasyBeer dont le libellé correspond le mieux au goût.
 
-    Privilégie les produits « Kéfir » et exclut les marques secondaires
-    (Igeba, Niko, Inter, Water) pour éviter les faux positifs.
+    Stratégie en 3 passes :
+    1. Correspondance substring exacte (ex: "Original" in "Kéfir Original - 0.0°")
+    2. Tous les mots du goût présents dans le label (ex: "Infusion Mélisse" →
+       "Infusion" ∈ label AND "Mélisse" ∈ label, même si séparés par d'autres mots)
+    3. Score de mots communs (best effort)
+
+    Privilégie les produits non-secondaires (Igeba, Niko, Inter, Water).
     """
-    g_low = gout.lower()
-    candidates: list[int] = []
+    import unicodedata
+
+    def _normalize(s: str) -> str:
+        """Supprime accents et met en minuscule."""
+        nfkd = unicodedata.normalize("NFKD", s.lower())
+        return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+    g_norm = _normalize(gout)
+    g_words = set(g_norm.split())
+
+    # Passe 1 : correspondance substring exacte
+    candidates_exact: list[int] = []
     for i, lbl in enumerate(prod_labels):
-        if g_low in lbl.lower():
-            candidates.append(i)
-    if not candidates:
-        return 0
+        if g_norm in _normalize(lbl):
+            candidates_exact.append(i)
+
+    if candidates_exact:
+        return _pick_best(candidates_exact, prod_labels)
+
+    # Passe 2 : tous les mots du goût présents dans le label
+    candidates_words: list[int] = []
+    for i, lbl in enumerate(prod_labels):
+        lbl_norm = _normalize(lbl)
+        if all(w in lbl_norm for w in g_words):
+            candidates_words.append(i)
+
+    if candidates_words:
+        return _pick_best(candidates_words, prod_labels)
+
+    # Passe 3 : score de mots communs (au moins 1 mot en commun)
+    best_score = 0
+    best_idx = 0
+    for i, lbl in enumerate(prod_labels):
+        lbl_words = set(_normalize(lbl).split())
+        score = len(g_words & lbl_words)
+        # Bonus pour non-marque secondaire
+        lbl_low = lbl.lower()
+        if any(brand in lbl_low for brand in _SECONDARY_BRANDS):
+            score -= 0.5
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+    if best_score > 0:
+        _log.info("_auto_match: goût '%s' → best-effort match '%s' (score=%.1f)",
+                   gout, prod_labels[best_idx], best_score)
+    else:
+        _log.warning("_auto_match: goût '%s' → aucun match trouvé, fallback index 0 '%s'",
+                      gout, prod_labels[0] if prod_labels else "?")
+    return best_idx
+
+
+def _pick_best(candidates: list[int], prod_labels: list[str]) -> int:
+    """Parmi les candidats, préférer celui qui n'est pas une marque secondaire."""
     if len(candidates) == 1:
         return candidates[0]
-    # Plusieurs matches : préférer celui qui n'est pas une marque secondaire
     for i in candidates:
         lbl_low = prod_labels[i].lower()
         if not any(brand in lbl_low for brand in _SECONDARY_BRANDS):
@@ -407,25 +458,16 @@ def _check_mp_availability(
         needs_by_gout[g] = {}
         idx = _auto_match(g, prod_labels)
         id_produit = eb_products[idx]["idProduit"]
+        _log.info(
+            "MP check: goût '%s' → produit EasyBeer '%s' (id=%d, vol_l=%.0f L)",
+            g, prod_labels[idx], id_produit, vol_l,
+        )
 
         try:
             detail = get_product_detail(id_produit)
             recettes = detail.get("recettes") or []
             if not recettes:
                 continue
-
-            vol_recette = recettes[0].get("volumeRecette", 0)
-            nb_ings = len(recettes[0].get("ingredients") or [])
-            raw_qtys = [
-                (i.get("matierePremiere", {}).get("libelle", "?"), i.get("quantite", 0))
-                for i in (recettes[0].get("ingredients") or [])[:5]
-            ]
-            _log.info(
-                "MP check detail: gout=%s, id_produit=%d, volumeRecette=%s, "
-                "nb_ingredients=%d, raw_qtys=%s, vol_l=%.1f, ratio=%.2f",
-                g, id_produit, vol_recette, nb_ings, raw_qtys,
-                vol_l, (vol_l / vol_recette if vol_recette else 0),
-            )
 
             scaled = scale_recipe_ingredients(recettes[0], vol_l)
             for ing in scaled:
