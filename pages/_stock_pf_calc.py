@@ -1,5 +1,5 @@
 """
-ui/_stock_pf_calc.py
+pages/_stock_pf_calc.py
 ====================
 Logique de calcul pour la page Stock produits finis.
 

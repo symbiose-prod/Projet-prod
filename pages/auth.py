@@ -1,5 +1,5 @@
 """
-ui/auth.py
+pages/auth.py
 ==========
 Pages d'authentification NiceGUI : login, signup, mot de passe oublié.
 

@@ -1,5 +1,5 @@
 """
-ui/stocks.py
+pages/stocks.py
 ============
 Page Stocks — Analyse de l'autonomie des stocks contenants, groupés par fournisseur.
 Sélection du fournisseur dans la sidebar, puis analyse par période.

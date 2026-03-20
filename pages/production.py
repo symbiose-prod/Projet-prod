@@ -1,6 +1,6 @@
 """
-ui/production.py
-================
+pages/production.py
+===================
 Page Production — Planning et création brassins.
 
 Réutilise toute la logique métier de core/optimizer.py, common/easybeer.py,
@@ -182,7 +182,7 @@ async def page_production():
             if lbl and slider:
                 v1 = int(slider.value)
                 v2 = _SPLIT_TOTAL - v1
-                lbl.set_text(f"Goût 1 : {v1} L  |  Goût 2 : {v2} L")
+                lbl.set_text(f"Split 1 : {v1} L  |  Split 2 : {v2} L")
 
         def _build_split_inputs():
             split_container.clear()
@@ -230,8 +230,9 @@ async def page_production():
 
                     # Slider de répartition volume
                     _half = _SPLIT_TOTAL // 2  # 3400
+                    _half2 = _SPLIT_TOTAL - _half
                     _split_label_ref["ref"] = ui.label(
-                        f"Split 1 : {_half} L  |  Split 2 : {_half} L"
+                        f"Split 1 : {_half} L  |  Split 2 : {_half2} L"
                     ).classes("text-caption text-grey-7 q-mt-sm")
                     split_ratio_ref["ref"] = (
                         ui.slider(
@@ -279,7 +280,14 @@ async def page_production():
                 _gb = _split_gout_b_ref["ref"]
                 _ga_val = _ga.value if _ga else None
                 _gb_val = _gb.value if _gb else None
-                if _ga_val and _gb_val and _ga_val != _gb_val:
+                if _ga_val and _gb_val:
+                    if _ga_val == _gb_val:
+                        main_container.clear()
+                        with main_container:
+                            error_banner(
+                                "Les deux splits doivent avoir des goûts différents.",
+                            )
+                        return
                     # Les goûts choisis dans le split forcent l'optimiseur
                     forced_gouts = [_ga_val, _gb_val]
                     split_flavor_order = [_ga_val, _gb_val]
@@ -695,19 +703,19 @@ async def page_production():
                                 emb_table.add_slot("body-cell-statut", _SLOT_STATUT)
                                 emb_table.add_slot("body-cell-ecart", _SLOT_ECART)
 
-                # ── Images produits EasyBeer ─────────────────────────
-                product_images: dict[str, str] = {}  # produit_name → image_url
+                # ── Images produits EasyBeer (déjà en cache via _fetch_eb_products TTL) ──
+                product_images: dict[str, str] = {}
                 try:
-                    from common.easybeer import is_configured as _eb_img_conf
-                    if _eb_img_conf():
-                        _eb_prods_img = _fetch_eb_products()
-                        for p in _eb_prods_img:
-                            lbl = p.get("libelle", "")
-                            urls = p.get("imagesUrl") or []
-                            uri = p.get("imageUri") or ""
-                            img = urls[0] if urls else uri
-                            if img and lbl:
-                                product_images[lbl] = img
+                    # _fetch_eb_products() est déjà caché (TTL 1h) donc rapide
+                    # si déjà appelé par _compute_production_sync dans le thread
+                    _eb_prods_img = _fetch_eb_products()
+                    for p in _eb_prods_img:
+                        lbl = p.get("libelle", "")
+                        urls = p.get("imagesUrl") or []
+                        uri = p.get("imageUri") or ""
+                        img = urls[0] if urls else uri
+                        if img and lbl:
+                            product_images[lbl] = img
                 except Exception:
                     _log.debug("Erreur chargement image produit", exc_info=True)
 
@@ -937,8 +945,14 @@ async def page_production():
                                     "gouts": g_order,
                                     "semaine_du": sd_date.isoformat(),
                                     "ddm": ddm_date.isoformat(),
+                                    # Exclure dilution_ingredients si c'est une liste (non sérialisable
+                                    # proprement en JSON session) ; garder uniquement dict/None
                                     "volume_details": {
-                                        k: {kk: vv for kk, vv in v.items() if kk != "dilution_ingredients" or isinstance(vv, (dict, type(None)))}
+                                        k: {
+                                            kk: vv for kk, vv in v.items()
+                                            if kk != "dilution_ingredients"
+                                            or isinstance(vv, (dict, type(None)))
+                                        }
                                         for k, v in volume_details.items()
                                     },
                                     "mode_prod": mode_prod,
@@ -1043,6 +1057,9 @@ async def page_production():
 
         # ── Watchers sidebar ──────────────────────────────────────────
         async def _on_mode_change(e=None):
+            # Vider les overrides au changement de mode (les anciens volumes ne sont plus valides)
+            overrides.clear()
+            app.storage.user["production_overrides"] = {}
             _build_split_inputs()
             await do_compute()
 

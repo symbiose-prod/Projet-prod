@@ -1,5 +1,5 @@
 """
-ui/stock_pf.py
+pages/stock_pf.py
 ==============
 Page Stock produits finis — Comparaison EasyBeer vs Sofripa.
 

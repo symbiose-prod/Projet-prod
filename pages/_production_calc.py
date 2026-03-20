@@ -1,5 +1,5 @@
 """
-ui/_production_calc.py
+pages/_production_calc.py
 ======================
 Fonctions de calcul de production (pas d'UI).
 

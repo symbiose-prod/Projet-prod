@@ -1,5 +1,5 @@
 """
-ui/theme.py
+pages/theme.py
 ===========
 Charte graphique Ferment Station + layout partagé NiceGUI.
 

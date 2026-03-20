@@ -1,5 +1,5 @@
 """
-ui/ressources.py
+pages/ressources.py
 ================
 Page Ressources — Instructions de commande fournisseurs (prompts IA).
 

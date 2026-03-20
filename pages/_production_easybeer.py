@@ -1,5 +1,5 @@
 """
-ui/_production_easybeer.py
+pages/_production_easybeer.py
 ==========================
 Section EasyBeer de la page Production (création de brassins).
 

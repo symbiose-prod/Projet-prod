@@ -1,5 +1,5 @@
 """
-ui/nomenclatures.py
+pages/nomenclatures.py
 ===================
 Page Nomenclatures — Gestion du BOM (packaging par produit-format).
 

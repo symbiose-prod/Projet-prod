@@ -1,5 +1,5 @@
 """
-ui/ramasse.py
+pages/ramasse.py
 =============
 Page Fiche de ramasse — NiceGUI + Quasar Table.
 

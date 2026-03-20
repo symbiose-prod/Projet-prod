@@ -1,5 +1,5 @@
 """
-ui/_stocks_calc.py
+pages/_stocks_calc.py
 ==================
 Stock autonomy computation based on finished-product SALES + BOM decomposition.
 

@@ -1,5 +1,5 @@
 """
-ui/accueil.py
+pages/accueil.py
 =============
 Page Accueil — Import des données (Easy Beer ou Excel).
 """

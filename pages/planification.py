@@ -1,5 +1,5 @@
 """
-ui/planification.py
+pages/planification.py
 ===================
 Page Planification — Approvisionnement prévisionnel basé sur les brassins planifiés.
 

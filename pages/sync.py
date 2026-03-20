@@ -1,5 +1,5 @@
 """
-ui/sync.py
+pages/sync.py
 ==========
 Page Synchronisation étiquettes — monitoring, déclenchement manuel, gestion clés API.
 """
