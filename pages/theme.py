@@ -79,46 +79,40 @@ NAV_ITEMS = [
 
 def apply_quasar_theme():
     """Applique le thème Ferment Station — clean / minimaliste."""
-    # ── Loading bar globale (navigation entre pages) ───────────────────
+    # ── Loading overlay centré (navigation + opérations longues) ─────────
     ui.add_head_html("""
     <script>
-    // Affiche la loading bar Quasar à chaque navigation interne
-    document.addEventListener('DOMContentLoaded', function() {
-        // Intercepter les clics sur les liens de navigation internes
-        document.addEventListener('click', function(e) {
-            var link = e.target.closest('a[href], .q-btn');
-            if (link) {
-                // Quasar LoadingBar si disponible
-                if (window.Quasar && window.Quasar.LoadingBar) {
-                    window.Quasar.LoadingBar.start();
-                }
-            }
-        });
-        // Arrêter la loading bar quand la page est chargée
-        window.addEventListener('load', function() {
-            if (window.Quasar && window.Quasar.LoadingBar) {
-                window.Quasar.LoadingBar.stop();
-            }
-        });
-    });
-    // Fonction globale pour démarrer/stopper la loading bar depuis Python
+    // Overlay de chargement centré — créé en JS pur pour survivre aux navigations NiceGUI
     window._fsLoading = {
-        start: function() {
-            if (window.Quasar && window.Quasar.LoadingBar) {
-                window.Quasar.LoadingBar.setDefaults({color: '#15803D', size: '3px', position: 'top'});
-                window.Quasar.LoadingBar.start();
-            }
+        _el: null,
+        start: function(msg) {
+            this.stop(); // Nettoyer un éventuel overlay précédent
+            var overlay = document.createElement('div');
+            overlay.id = 'fs-loading-overlay';
+            overlay.innerHTML =
+                '<div style="display:flex;flex-direction:column;align-items:center;gap:16px;">' +
+                '  <div class="q-spinner q-spinner-dots" style="color:#15803D;font-size:48px;">' +
+                '    <svg viewBox="0 0 64 18" width="48" fill="currentColor">' +
+                '      <circle cx="9" cy="9" r="9"><animate attributeName="opacity" values="0.5;1;0.5" dur="1s" repeatCount="indefinite"/></circle>' +
+                '      <circle cx="32" cy="9" r="9"><animate attributeName="opacity" values="0.5;1;0.5" dur="1s" begin="0.2s" repeatCount="indefinite"/></circle>' +
+                '      <circle cx="55" cy="9" r="9"><animate attributeName="opacity" values="0.5;1;0.5" dur="1s" begin="0.4s" repeatCount="indefinite"/></circle>' +
+                '    </svg>' +
+                '  </div>' +
+                '  <span style="color:#6B7280;font-size:15px;font-weight:500;font-family:Inter,system-ui,sans-serif;">' +
+                    (msg || 'Chargement…') +
+                '  </span>' +
+                '</div>';
+            document.body.appendChild(overlay);
+            this._el = overlay;
         },
         stop: function() {
-            if (window.Quasar && window.Quasar.LoadingBar) {
-                window.Quasar.LoadingBar.stop();
-            }
+            var el = this._el || document.getElementById('fs-loading-overlay');
+            if (el) { el.remove(); this._el = null; }
         }
     };
-    // Auto-stop la loading bar quand NiceGUI a fini le rendu
-    if (window.Quasar && window.Quasar.LoadingBar) {
-        window.Quasar.LoadingBar.setDefaults({color: '#15803D', size: '3px', position: 'top'});
-    }
+    // Auto-retirer l'overlay quand NiceGUI a fini le rendu de la nouvelle page
+    // (le script est ré-exécuté à chaque page → on stoppe l'overlay précédent)
+    window._fsLoading.stop();
     </script>
     """)
 
@@ -255,23 +249,15 @@ def apply_quasar_theme():
             }}
         }}
 
-        /* ── Loading bar Quasar : couleur verte ──────── */
-        .q-loading-bar {{
-            background: {COLORS['green']} !important;
-            height: 3px !important;
-        }}
-
-        /* ── Page loading overlay ─────────────────────── */
-        .fs-page-loading {{
+        /* ── Loading overlay centré (navigation + async) ── */
+        #fs-loading-overlay, .fs-page-loading {{
             position: fixed;
             inset: 0;
-            z-index: 5000;
-            background: rgba(250, 250, 250, 0.7);
+            z-index: 9999;
+            background: rgba(250, 250, 250, 0.75);
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 16px;
             backdrop-filter: blur(2px);
             -webkit-backdrop-filter: blur(2px);
         }}
@@ -389,7 +375,7 @@ def loading_overlay(container, message: str = "Chargement…"):
 
 @asynccontextmanager
 async def page_loading(message: str = "Chargement en cours..."):
-    """Overlay plein écran + loading bar Quasar pour les opérations longues.
+    """Overlay centré plein écran pour les opérations longues.
 
     Usage dans une page async ::
 
@@ -397,24 +383,13 @@ async def page_loading(message: str = "Chargement en cours..."):
             await asyncio.to_thread(heavy_sync)
         # L'overlay disparaît automatiquement.
     """
-    # Démarrer la loading bar Quasar (barre verte en haut)
-    ui.run_javascript("window._fsLoading && window._fsLoading.start()")
-
-    # Overlay plein écran
-    overlay = ui.element("div").classes("fs-page-loading")
-    with overlay:
-        ui.spinner("dots", size="xl", color="green-8")
-        lbl = ui.label(message).classes("text-body1").style(
-            f"color: {COLORS['ink2']}; font-weight: 500"
-        )
+    # Créer l'overlay via JS (même visuel que la navigation)
+    _js_msg = message.replace("'", "\\'")
+    ui.run_javascript(f"window._fsLoading && window._fsLoading.start('{_js_msg}')")
     try:
-        yield lbl  # Permet de mettre à jour le message: lbl.text = "Étape 2..."
+        yield
     finally:
         ui.run_javascript("window._fsLoading && window._fsLoading.stop()")
-        try:
-            overlay.delete()
-        except Exception:
-            pass
 
 
 def password_strength_bar(password_input: ui.input) -> ui.element:
