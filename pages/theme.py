@@ -7,7 +7,7 @@ Composants réutilisables : page_layout(), kpi_card(), section_title()
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 from nicegui import app, ui
 
@@ -79,6 +79,50 @@ NAV_ITEMS = [
 
 def apply_quasar_theme():
     """Applique le thème Ferment Station — clean / minimaliste."""
+    # ── Loading bar globale (navigation entre pages) ───────────────────
+    ui.add_head_html("""
+    <script>
+    // Affiche la loading bar Quasar à chaque navigation interne
+    document.addEventListener('DOMContentLoaded', function() {
+        // Intercepter les clics sur les liens de navigation internes
+        document.addEventListener('click', function(e) {
+            var link = e.target.closest('a[href], .q-btn');
+            if (link) {
+                // Quasar LoadingBar si disponible
+                if (window.Quasar && window.Quasar.LoadingBar) {
+                    window.Quasar.LoadingBar.start();
+                }
+            }
+        });
+        // Arrêter la loading bar quand la page est chargée
+        window.addEventListener('load', function() {
+            if (window.Quasar && window.Quasar.LoadingBar) {
+                window.Quasar.LoadingBar.stop();
+            }
+        });
+    });
+    // Fonction globale pour démarrer/stopper la loading bar depuis Python
+    window._fsLoading = {
+        start: function() {
+            if (window.Quasar && window.Quasar.LoadingBar) {
+                window.Quasar.LoadingBar.setDefaults({color: '#15803D', size: '3px', position: 'top'});
+                window.Quasar.LoadingBar.start();
+            }
+        },
+        stop: function() {
+            if (window.Quasar && window.Quasar.LoadingBar) {
+                window.Quasar.LoadingBar.stop();
+            }
+        }
+    };
+    // Auto-stop la loading bar quand NiceGUI a fini le rendu
+    if (window.Quasar && window.Quasar.LoadingBar) {
+        window.Quasar.LoadingBar.setDefaults({color: '#15803D', size: '3px', position: 'top'});
+    }
+    </script>
+    """)
+
+    # ── Styles ─────────────────────────────────────────────────────────
     ui.add_head_html(f"""
     <style>
         /* ── Base ──────────────────────────────────── */
@@ -211,6 +255,27 @@ def apply_quasar_theme():
             }}
         }}
 
+        /* ── Loading bar Quasar : couleur verte ──────── */
+        .q-loading-bar {{
+            background: {COLORS['green']} !important;
+            height: 3px !important;
+        }}
+
+        /* ── Page loading overlay ─────────────────────── */
+        .fs-page-loading {{
+            position: fixed;
+            inset: 0;
+            z-index: 5000;
+            background: rgba(250, 250, 250, 0.7);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+        }}
+
     </style>
     <style>
         /* ── Override Quasar green → palette custom ───── */
@@ -320,6 +385,36 @@ def loading_overlay(container, message: str = "Chargement…"):
                 overlay.delete()
             except Exception:
                 pass
+
+
+@asynccontextmanager
+async def page_loading(message: str = "Chargement en cours..."):
+    """Overlay plein écran + loading bar Quasar pour les opérations longues.
+
+    Usage dans une page async ::
+
+        async with page_loading("Synchronisation EasyBeer..."):
+            await asyncio.to_thread(heavy_sync)
+        # L'overlay disparaît automatiquement.
+    """
+    # Démarrer la loading bar Quasar (barre verte en haut)
+    ui.run_javascript("window._fsLoading && window._fsLoading.start()")
+
+    # Overlay plein écran
+    overlay = ui.element("div").classes("fs-page-loading")
+    with overlay:
+        ui.spinner("dots", size="xl", color="green-8")
+        lbl = ui.label(message).classes("text-body1").style(
+            f"color: {COLORS['ink2']}; font-weight: 500"
+        )
+    try:
+        yield lbl  # Permet de mettre à jour le message: lbl.text = "Étape 2..."
+    finally:
+        ui.run_javascript("window._fsLoading && window._fsLoading.stop()")
+        try:
+            overlay.delete()
+        except Exception:
+            pass
 
 
 def password_strength_bar(password_input: ui.input) -> ui.element:
@@ -479,10 +574,15 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
 
         for nav_icon, nav_label, nav_path in NAV_ITEMS:
             is_active = current_path == nav_path
+
+            def _nav_click(p=nav_path):
+                ui.run_javascript("window._fsLoading && window._fsLoading.start()")
+                ui.navigate.to(p)
+
             btn = ui.button(
                 nav_label,
                 icon=nav_icon,
-                on_click=lambda p=nav_path: ui.navigate.to(p),
+                on_click=_nav_click,
             ).classes("w-full justify-start q-mb-xs").props(
                 f'flat align=left {"color=green-8" if is_active else "color=grey-8"}'
             ).style("font-size: 13px; text-transform: none; letter-spacing: 0")
