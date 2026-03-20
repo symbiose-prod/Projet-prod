@@ -4,9 +4,11 @@ from __future__ import annotations
 from common.ramasse import (
     CARTON_WEIGHTS_FALLBACK,
     PALETTE_CAPACITY,
+    build_packaging_summary,
     get_carton_weight,
     get_palette_capacity,
     load_destinataires,
+    load_packaging_items,
     today_paris,
 )
 
@@ -107,3 +109,51 @@ class TestTodayParis:
         result = today_paris()
         assert isinstance(result, dt.date)
         assert not isinstance(result, dt.datetime)
+
+
+# ─── build_packaging_summary ─────────────────────────────────────────────────
+
+
+class TestBuildPackagingSummary:
+
+    def test_filters_zero_qty(self):
+        items = [
+            {"label": "Palettes bois", "qty": 3, "unit": "palette"},
+            {"label": "Film", "qty": 0, "unit": "rouleau"},
+        ]
+        result = build_packaging_summary(items)
+        assert len(result) == 1
+        assert result[0]["label"] == "Palettes bois"
+        assert result[0]["qty"] == 3
+
+    def test_empty_input(self):
+        assert build_packaging_summary([]) == []
+
+    def test_all_zero(self):
+        items = [{"label": "A", "qty": 0}, {"label": "B", "qty": 0}]
+        assert build_packaging_summary(items) == []
+
+    def test_missing_qty_treated_as_zero(self):
+        items = [{"label": "A"}, {"label": "B", "qty": 5, "unit": "u"}]
+        result = build_packaging_summary(items)
+        assert len(result) == 1
+        assert result[0]["label"] == "B"
+
+    def test_default_unit_is_palette(self):
+        items = [{"label": "Test", "qty": 2}]
+        result = build_packaging_summary(items)
+        assert result[0]["unit"] == "palette"
+
+
+# ─── load_packaging_items ─────────────────────────────────────────────────────
+
+
+class TestLoadPackagingItems:
+
+    def test_unknown_recipient_returns_empty(self):
+        assert load_packaging_items("Inexistant Corp") == []
+
+    def test_returns_list(self):
+        # Should always return a list, even if recipient has no items
+        result = load_packaging_items("Sofripa")
+        assert isinstance(result, list)
