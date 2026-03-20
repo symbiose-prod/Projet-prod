@@ -382,6 +382,12 @@ def _check_mp_availability(
         for g in gouts_cibles:
             vol_par_gout[g] = (volume_cible / nb_gouts) * 100 + perte
 
+    _log.info(
+        "MP check: gouts=%s, volume_cible=%.1f hL, mode=%s, vol_par_gout=%s",
+        gouts_cibles, volume_cible, mode_prod,
+        {g: f"{v:.0f}L" for g, v in vol_par_gout.items()},
+    )
+
     # 2. Matcher goûts → produits EasyBeer
     eb_products = _fetch_eb_products()
     if not eb_products:
