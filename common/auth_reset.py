@@ -154,7 +154,7 @@ def verify_token(token: str) -> dict[str, Any] | None:
 
 def verify_reset_token(token: str) -> tuple[bool, Any]:
     """
-    Nouveau nom, utilisé par la page pages/06_Reset_password.py
+    Nouveau nom, utilisé par la page pages/auth.py
     Renvoie (True, {...}) ou (False, "message d'erreur")
     """
     data = verify_token(token)

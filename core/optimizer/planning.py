@@ -97,8 +97,6 @@ def compute_plan(df_in, window_days, volume_cible, nb_gouts, repartir_pro_rv, ma
         subset=["GoutCanon", "Volume/carton (hL)", "Volume vendu (hl)", "Volume disponible (hl)"]
     ).reset_index(drop=True)
 
-    df_all_formats = df.copy()  # noqa: F841
-
     if exclude_list:
         ex = {s.strip() for s in exclude_list}
         df = df[~df["GoutCanon"].astype(str).str.strip().isin(ex)]

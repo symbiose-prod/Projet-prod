@@ -253,16 +253,13 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
     all_mp = get_all_matieres_premieres() or []
     mp_ids = {mp["idMatierePremiere"] for mp in all_mp if mp.get("idMatierePremiere")}
 
-    products_fetched: set[int] = set()  # one recipe fetch per product (shared across formats)
+    products_fetched: set[int] = set()  # track unique products for logging
     for (id_produit, fmt), info in sorted(stock_map.items()):
         if is_rate_limited() > 0:
             _log.warning("Rate-limit actif, arrêt détection recette")
             break
 
-        # Cache: only fetch recipe once per product (same recipe for all formats)
-        if id_produit not in products_fetched:
-            products_fetched.add(id_produit)
-
+        products_fetched.add(id_produit)
         recipe_entries = _detect_from_recipe(
             id_produit=id_produit,
             product_label=info["libelle"],

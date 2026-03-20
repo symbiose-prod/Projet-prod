@@ -1,6 +1,6 @@
 """
-ui/_planification_calc.py
-=========================
+pages/_planification_calc.py
+============================
 Computation engine for the /planification page.
 
 Fetches planned brassins from EasyBeer and computes component needs
@@ -8,7 +8,7 @@ Fetches planned brassins from EasyBeer and computes component needs
 no NiceGUI UI code.
 
 Called via ``asyncio.to_thread(fetch_planning_data, days_ahead)``
-from ``ui/planification.py``.
+from ``pages/planification.py``.
 """
 from __future__ import annotations
 
@@ -262,18 +262,30 @@ def fetch_planning_data(
 
 
 def _build_supplier_map(mp_stock: dict[int, dict]) -> dict[int, str]:
-    """Build id_mp → fournisseur map from config.yaml references.
+    """Build id_mp → fournisseur map from config.yaml + DB overrides.
 
-    Matches MP labels from EasyBeer against supplier reference names
-    in config.yaml (case-insensitive, normalized).
+    Merges supplier_configs DB overrides (from /ressources page) on top of
+    config.yaml references, so manual supplier assignments are respected.
     """
     from common.data import get_stocks_config
+    from common.supplier_config import get_merged_supplier_configs
 
-    config = get_stocks_config()
+    # Merge config.yaml + DB overrides (same logic as /stocks and /ressources)
+    try:
+        merged = get_merged_supplier_configs()
+    except Exception:
+        _log.warning("Cannot load merged supplier configs, falling back to config.yaml only")
+        merged = None
 
-    # Build label → supplier from config references
+    if merged:
+        groups = merged
+    else:
+        config = get_stocks_config()
+        groups = config.get("supplier_groups", [])
+
+    # Build label → supplier from references
     label_to_supplier: dict[str, str] = {}
-    for group in config.get("supplier_groups", []):
+    for group in groups:
         name = group.get("name", "")
         ordering = group.get("ordering") or {}
         refs = ordering.get("references") or {}
@@ -290,7 +302,7 @@ def _build_supplier_map(mp_stock: dict[int, dict]) -> dict[int, str]:
             continue
         # Fallback: mp_types + patterns from config
         mp_type = info.get("type_code", "")
-        for group in config.get("supplier_groups", []):
+        for group in groups:
             g_types = group.get("mp_types", [])
             g_patterns = group.get("patterns", [])
             if g_types and mp_type in g_types:

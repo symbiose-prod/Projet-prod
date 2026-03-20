@@ -17,7 +17,6 @@ from .normalization import _norm_colname, _pick_column, fix_text
 
 # ======= flavor map =========================================================
 def load_flavor_map_from_path(path_csv: str) -> pd.DataFrame:
-    import csv  # noqa: F401
     encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
     seps = [",", ";", "\t", "|"]
     if not Path(path_csv).exists():
