@@ -156,6 +156,14 @@ async def page_production():
                 label="Forcer goûts",
             ).props("outlined dense use-chips").classes("w-full")
 
+            ui.separator().classes("q-my-sm")
+            launch_btn = ui.button(
+                "Lancer le calcul",
+                icon="play_arrow",
+                on_click=lambda: asyncio.ensure_future(do_compute()),
+            ).props("unelevated color=green-8").classes("w-full")\
+             .tooltip("Valide les paramètres et lance le calcul")
+
         # ── Conteneur principal (reconstruit à chaque recalcul) ───────
         main_container = ui.column().classes("w-full gap-5")
 
@@ -194,7 +202,7 @@ async def page_production():
                         {1: "1 goût", 2: "2 goûts"},
                         value=TANK_CONFIGS["Split 7200L"]["nb_gouts"],
                         label="Nb goûts",
-                        on_change=lambda _: (_build_split_slider(), _debounced_compute()),
+                        on_change=lambda _: _build_split_slider(),
                     ).props("outlined dense").classes("w-full")
                     _build_split_slider()
             else:
@@ -242,11 +250,8 @@ async def page_production():
                         ).props("label-always color=green-8").classes("w-full")
                     )
 
-                    # Bouton appliquer
-                    ui.button(
-                        "Appliquer", icon="check",
-                        on_click=lambda: _debounced_compute(),
-                    ).props("unelevated color=green-8 dense").classes("w-full q-mt-xs")
+                    # Le bouton "Lancer le calcul" en bas de la sidebar
+                    # couvre aussi le split — pas besoin d'un bouton dédié.
 
         async def do_compute():
             """Calcul complet : optimiseur + passe 2 + affichage (async)."""
@@ -1079,33 +1084,13 @@ async def page_production():
                             )
 
         # ── Watchers sidebar ──────────────────────────────────────────
-        async def _on_mode_change(e=None):
-            # Vider les overrides au changement de mode (les anciens volumes ne sont plus valides)
+        def _on_mode_change(e=None):
+            """Reconstruit les inputs Split sans lancer le calcul."""
             overrides.clear()
             app.storage.user["production_overrides"] = {}
             _build_split_inputs()
-            await do_compute()
-
-        # ── Debounce 300ms pour les watchers sidebar (M15) ──────────
-        _debounce_task: dict = {"task": None}
-
-        async def _debounced_compute(_=None):
-            """Debounce : annule le recalcul précédent, attend 300ms."""
-            if _debounce_task["task"] is not None:
-                _debounce_task["task"].cancel()
-
-            async def _delayed():
-                await asyncio.sleep(0.3)
-                await do_compute()
-
-            _debounce_task["task"] = asyncio.ensure_future(_delayed())
 
         mode.on_value_change(_on_mode_change)
-        repartir_cb.on_value_change(_debounced_compute)
-        include_planned_cb.on_value_change(_debounced_compute)
-        excluded_gouts_sel.on_value_change(_debounced_compute)
-        excluded_products_sel.on_value_change(_debounced_compute)
-        forced_gouts_sel.on_value_change(_debounced_compute)
 
         # ── Rendu initial ─────────────────────────────────────────────
         _build_split_inputs()
