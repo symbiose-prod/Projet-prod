@@ -15,22 +15,22 @@ import time
 _log = logging.getLogger("ferment.alerting")
 
 # ─── Anti-flood ──────────────────────────────────────────────────────────────
-_COOLDOWN_SECONDS = 300  # 5 minutes entre chaque alerte
-_last_alert_ts: float = 0.0
+_COOLDOWN_SECONDS = 300  # 5 minutes entre chaque alerte *par endpoint*
+_last_alert_ts: dict[str, float] = {}  # clé = "METHOD:path"
 _lock = threading.Lock()
 
-# Destinataire des alertes (toi)
-_ALERT_RECIPIENT = "nicolas@symbiose-kefir.fr"
+# Destinataire des alertes (configurable via env, fallback hardcoded)
+_ALERT_RECIPIENT = os.environ.get("ALERT_EMAIL", "nicolas@symbiose-kefir.fr")
 
 
-def _should_send() -> bool:
-    """Retourne True si le cooldown est écoulé (thread-safe)."""
-    global _last_alert_ts
+def _should_send(endpoint_key: str) -> bool:
+    """Retourne True si le cooldown est écoulé pour cet endpoint (thread-safe)."""
     now = time.monotonic()
     with _lock:
-        if now - _last_alert_ts < _COOLDOWN_SECONDS:
+        last = _last_alert_ts.get(endpoint_key, 0.0)
+        if now - last < _COOLDOWN_SECONDS:
             return False
-        _last_alert_ts = now
+        _last_alert_ts[endpoint_key] = now
         return True
 
 
@@ -46,8 +46,9 @@ def send_error_alert(
     """Envoie une alerte email pour une erreur serveur (fire-and-forget dans un thread)."""
     if os.environ.get("ENV") not in ("production", "staging"):
         return
-    if not _should_send():
-        _log.debug("Alerte 500 supprimée (cooldown actif)")
+    endpoint_key = f"{method}:{path}"
+    if not _should_send(endpoint_key):
+        _log.debug("Alerte 500 supprimée (cooldown actif pour %s)", endpoint_key)
         return
 
     def _send():

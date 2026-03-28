@@ -49,11 +49,21 @@ def _require_env() -> tuple[str, str, str]:
     return api_key, sender_email, _get_sender_name()
 
 def _is_brevo_retryable(exc: BaseException) -> bool:
-    """Return True for transient Brevo API errors worth retrying."""
+    """Return True for transient Brevo API errors worth retrying.
+
+    HTTP 429 (rate-limit) n'est PAS retryable : le retry immédiat ne fera
+    que rééchouer. Mieux vaut laisser remonter l'erreur à l'appelant.
+    """
     if isinstance(exc, (ConnectionError, OSError, http.client.HTTPException)):
         return True
-    if isinstance(exc, EmailSendError) and "429" in str(exc):
-        return True
+    if isinstance(exc, EmailSendError):
+        msg = str(exc)
+        # 429 = rate-limit → ne pas retenter
+        if "429" in msg:
+            return False
+        # 5xx serveur → retenter
+        if any(f" {c}" in msg for c in ("500", "502", "503", "504")):
+            return True
     return False
 
 

@@ -18,6 +18,7 @@ from nicegui import ui
 
 _log = logging.getLogger("ferment.ramasse")
 
+from common.auth import validate_email
 from common.easybeer import (
     EasyBeerError,
     fetch_carton_weights,
@@ -40,6 +41,7 @@ from common.ramasse import (
     parse_barcode_matrix,
     today_paris,
 )
+from common.ramasse_history import count_ramasses, get_ramasse, list_ramasses, save_ramasse
 from common.xlsx_fill import build_bl_enlevements_pdf
 from pages.auth import require_auth
 from pages.theme import COLORS, confirm_dialog, page_layout, section_title
@@ -170,8 +172,13 @@ async def page_ramasse():
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
 
         if load_errors:
-            for err in load_errors:
-                ui.label(f"Erreur API : {err}").classes("text-negative text-caption")
+            with ui.row().classes("w-full items-center gap-2 q-pa-sm").style(
+                "background: #FFF3CD; border-radius: 8px; border: 1px solid #FFEAA7"
+            ):
+                ui.icon("warning", color="orange-8", size="sm")
+                with ui.column().classes("gap-0"):
+                    for err in load_errors:
+                        ui.label(f"{err}").classes("text-caption text-orange-9")
 
         if not brassins:
             ui.label("Aucun brassin disponible dans EasyBeer.").classes("text-grey-6")
@@ -720,6 +727,13 @@ async def page_ramasse():
                         if not to_list:
                             ui.notify("Indique au moins un destinataire.", type="warning")
                             return
+                        # Valider chaque email avant envoi
+                        for addr in to_list:
+                            try:
+                                validate_email(addr)
+                            except ValueError:
+                                ui.notify(f"Adresse email invalide : {addr}", type="negative")
+                                return
 
                         row_data = table_ref["rows"]
                         active_rows = [r for r in row_data if int(r.get("cartons") or 0) > 0]
@@ -802,6 +816,33 @@ async def page_ramasse():
                                 f"Demande envoyée à {len(to_list)} destinataire(s) !",
                                 type="positive", icon="email", position="top",
                             )
+
+                            # ── Sauvegarder dans l'historique (fire-and-forget) ──
+                            try:
+                                _brassin_id_list = [str(x) for x in (brassin_select.value or [])]
+                                save_ramasse(
+                                    date_ramasse=d,
+                                    destinataire=dest_title,
+                                    recipients=recipients,
+                                    lines=[{
+                                        "ref": r["ref"],
+                                        "produit": r["produit"],
+                                        "ddm": r["ddm"],
+                                        "cartons": int(r["cartons"]),
+                                        "palettes": int(r["palettes"]),
+                                        "poids": int(r["poids"]),
+                                    } for r in active_rows],
+                                    total_cartons=sum(int(r["cartons"]) for r in active_rows),
+                                    total_palettes=tot_palettes,
+                                    total_poids_kg=sum(int(r["poids"]) for r in active_rows),
+                                    packaging=_pkg_lines_email or [],
+                                    pdf_bytes=pdf_bytes,
+                                    brassin_ids=_brassin_id_list,
+                                )
+                                _log.info("Ramasse sauvegardée dans l'historique")
+                            except Exception:
+                                _log.warning("Échec sauvegarde historique ramasse", exc_info=True)
+
                         except (EmailSendError, OSError, ValueError, KeyError) as exc:
                             _log.exception("Erreur envoi email ramasse")
                             ui.notify(f"Erreur envoi : {exc}", type="negative")
@@ -842,6 +883,7 @@ async def page_ramasse():
                     ).classes("flex-1").props("color=green-8 unelevated")
 
             except Exception as exc:  # broad catch: UI error boundary — inner blocks are narrowed
+                _log.exception("Erreur construction tableau ramasse")
                 with content_container:
                     ui.label(f"Erreur lors de la construction du tableau : {exc}").classes(
                         "text-negative text-body1 q-pa-md"
@@ -849,6 +891,147 @@ async def page_ramasse():
 
         # Watcher sur la sélection
         brassin_select.on_value_change(on_brassins_changed)
+
+        # ── Section Historique des ramasses ──────────────────────────
+        history_container = ui.column().classes("w-full q-mt-lg")
+
+        def _refresh_history():
+            """Charge et affiche l'historique des ramasses."""
+            history_container.clear()
+            with history_container:
+                try:
+                    total = count_ramasses()
+                except Exception:
+                    total = 0
+
+                if total == 0:
+                    return
+
+                with ui.expansion(
+                    f"Historique des ramasses ({total})",
+                    icon="history",
+                ).classes("w-full").props(
+                    "dense header-class='text-subtitle1'"
+                ).style(
+                    f"border: 1px solid {COLORS.get('border', '#E5E7EB')}; border-radius: 8px"
+                ) as hist_exp:
+
+                    hist_data_loaded = {"done": False}
+
+                    def _load_history_data():
+                        if hist_data_loaded["done"]:
+                            return
+                        hist_data_loaded["done"] = True
+                        try:
+                            items = list_ramasses(limit=20)
+                        except Exception:
+                            _log.warning("Erreur chargement historique ramasse", exc_info=True)
+                            ui.label("Erreur de chargement.").classes("text-negative text-caption")
+                            return
+
+                        if not items:
+                            ui.label("Aucune ramasse enregistrée.").classes("text-grey-6 q-pa-sm")
+                            return
+
+                        hist_cols = [
+                            {"name": "date", "label": "Date", "field": "date", "align": "left", "sortable": True},
+                            {"name": "dest", "label": "Destinataire", "field": "dest", "align": "left"},
+                            {"name": "cartons", "label": "Cartons", "field": "cartons", "align": "right"},
+                            {"name": "palettes", "label": "Palettes", "field": "palettes", "align": "right"},
+                            {"name": "poids", "label": "Poids (kg)", "field": "poids", "align": "right"},
+                            {"name": "actions", "label": "", "field": "actions", "align": "center"},
+                        ]
+
+                        hist_rows = []
+                        for item in items:
+                            dr = item.get("date_ramasse")
+                            date_str = dr.strftime("%d/%m/%Y") if hasattr(dr, "strftime") else str(dr)
+                            hist_rows.append({
+                                "id": str(item["id"]),
+                                "date": date_str,
+                                "dest": item.get("destinataire", ""),
+                                "cartons": item.get("total_cartons", 0),
+                                "palettes": item.get("total_palettes", 0),
+                                "poids": item.get("total_poids_kg", 0),
+                                "actions": "",
+                            })
+
+                        ht = ui.table(
+                            columns=hist_cols,
+                            rows=hist_rows,
+                            row_key="id",
+                            pagination={"rowsPerPage": 10},
+                        ).classes("w-full").props("flat bordered dense")
+
+                        ht.add_slot("body-cell-actions", r'''
+                            <q-td :props="props" style="text-align: center">
+                                <q-btn flat round dense icon="picture_as_pdf" size="sm" color="green-8"
+                                    @click="() => $parent.$emit('download_hist_pdf', {id: props.row.id})" >
+                                    <q-tooltip>Télécharger le PDF</q-tooltip>
+                                </q-btn>
+                                <q-btn flat round dense icon="forward_to_inbox" size="sm" color="blue-8"
+                                    @click="() => $parent.$emit('resend_hist', {id: props.row.id})" >
+                                    <q-tooltip>Renvoyer par email</q-tooltip>
+                                </q-btn>
+                            </q-td>
+                        ''')
+
+                        async def _on_download_hist_pdf(e):
+                            rid = e.args.get("id")
+                            try:
+                                rec = await asyncio.to_thread(get_ramasse, rid)
+                                if not rec or not rec.get("pdf_bytes"):
+                                    ui.notify("PDF non disponible.", type="warning")
+                                    return
+                                pdf_data = rec["pdf_bytes"]
+                                if isinstance(pdf_data, memoryview):
+                                    pdf_data = bytes(pdf_data)
+                                dr = rec.get("date_ramasse")
+                                fname = f"Ramasse_{dr}.pdf" if dr else "Ramasse.pdf"
+                                ui.download(pdf_data, fname)
+                            except Exception:
+                                _log.warning("Erreur téléchargement PDF historique", exc_info=True)
+                                ui.notify("Erreur lors du téléchargement.", type="negative")
+
+                        async def _on_resend_hist(e):
+                            rid = e.args.get("id")
+                            try:
+                                rec = await asyncio.to_thread(get_ramasse, rid)
+                                if not rec or not rec.get("pdf_bytes"):
+                                    ui.notify("PDF non disponible pour renvoi.", type="warning")
+                                    return
+                                recip = rec.get("recipients") or []
+                                if not recip:
+                                    ui.notify("Aucun destinataire enregistré.", type="warning")
+                                    return
+                                pdf_data = rec["pdf_bytes"]
+                                if isinstance(pdf_data, memoryview):
+                                    pdf_data = bytes(pdf_data)
+                                dr = rec.get("date_ramasse")
+                                fname = f"Fiche_de_ramasse_{dr}.pdf" if dr else "Fiche_de_ramasse.pdf"
+                                subject = f"Demande de ramasse — {dr} — Ferment Station (renvoi)"
+
+                                await asyncio.to_thread(
+                                    send_html_with_pdf,
+                                    to_email=recip,
+                                    subject=subject,
+                                    html_body="<p>Bonjour,</p><p>Ci-joint le renvoi de la fiche de ramasse.</p><p>Cordialement,<br>Ferment Station</p>",
+                                    attachments=[(fname, pdf_data)],
+                                )
+                                ui.notify(
+                                    f"Ramasse renvoyée à {len(recip)} destinataire(s) !",
+                                    type="positive", icon="email",
+                                )
+                            except Exception:
+                                _log.warning("Erreur renvoi email historique", exc_info=True)
+                                ui.notify("Erreur lors du renvoi.", type="negative")
+
+                        ht.on("download_hist_pdf", _on_download_hist_pdf)
+                        ht.on("resend_hist", _on_resend_hist)
+
+                    hist_exp.on_value_change(lambda e: _load_history_data() if e.value else None)
+
+        _refresh_history()
 
         # Rendu initial
         on_brassins_changed()

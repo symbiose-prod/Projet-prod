@@ -56,6 +56,17 @@ def get_business_config() -> dict[str, Any]:
     return result
 
 
+def invalidate_config_cache() -> None:
+    """Invalide tous les caches config (utile après reload ou mise à jour config.yaml)."""
+    get_business_config.cache_clear()
+    get_stocks_config.cache_clear()
+    get_security_config.cache_clear()
+    get_paths.cache_clear()
+    _read_table_cached.cache_clear()
+    _read_flavor_map_cached.cache_clear()
+    _log.info("Caches config invalidés")
+
+
 _STOCKS_DEFAULTS: dict[str, Any] = {
     "supplier_groups": [],
     "ungrouped_label": "Autres contenants",

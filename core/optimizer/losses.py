@@ -52,7 +52,7 @@ def compute_losses_table_v48(df_in_all: pd.DataFrame, window_days: float, price_
         return pd.DataFrame(columns=out_cols)
 
     agg["Prix moyen (€/hL)"] = float(price_hL)
-    agg["Perte (€)"] = (agg["manque_7j"] * agg["Prix moyen (€/hL)"]).round(0)
+    agg["Perte (€)"] = (agg["manque_7j"] * agg["Prix moyen (€/hL)"]).round(2)
 
     pertes = agg.rename(
         columns={

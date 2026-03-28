@@ -34,7 +34,7 @@ def read_input_excel_and_period_from_bytes(file_bytes: bytes):
         ws = wb[wb.sheetnames[0]]
         b2_val = ws["B2"].value
         wd = parse_days_from_b2(b2_val)
-    except Exception:
+    except (KeyError, AttributeError, TypeError, ValueError, IndexError):
         _log.debug("Erreur parsing periode depuis B2", exc_info=True)
         wd = None
     return df, (wd if wd and wd > 0 else DEFAULT_WINDOW_DAYS)

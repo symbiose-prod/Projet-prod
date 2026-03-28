@@ -36,6 +36,9 @@ def store_df(df: pd.DataFrame) -> str:
     return result
 
 
+_MAX_DECOMPRESS_SIZE = 50_000_000  # 50 MB — protection anti zip-bomb
+
+
 def load_df(stored: str) -> pd.DataFrame:
     """Deserialize a DataFrame from session storage (handles both compressed and raw)."""
     if not stored:
@@ -43,7 +46,14 @@ def load_df(stored: str) -> pd.DataFrame:
     if stored.startswith(_MAGIC):
         encoded = stored[len(_MAGIC):]
         compressed = base64.b64decode(encoded)
-        raw_json = zlib.decompress(compressed).decode("utf-8")
+        # Décompression avec limite de taille (protection zip-bomb)
+        decompressor = zlib.decompressobj()
+        raw_bytes = decompressor.decompress(compressed, _MAX_DECOMPRESS_SIZE)
+        if decompressor.unconsumed_tail:
+            raise ValueError(
+                f"Données compressées trop volumineuses (> {_MAX_DECOMPRESS_SIZE // 1_000_000} MB)"
+            )
+        raw_json = raw_bytes.decode("utf-8")
     else:
         # Backward compatibility: raw JSON (not compressed)
         raw_json = stored

@@ -82,7 +82,8 @@ def scale_recipe_ingredients(
     distribués séparément via BatchLotTracker).
     """
     vol_recette = recette.get("volumeRecette", 0)
-    ratio = vol_l / vol_recette if vol_recette > 0 else 1
+    # Cap le ratio à 100x pour éviter les overflows si vol_recette est minuscule
+    ratio = min(vol_l / vol_recette, 100.0) if vol_recette > 0.1 else 1.0
     result: list[dict] = []
     for ing in recette.get("ingredients") or []:
         result.append({

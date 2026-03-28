@@ -297,7 +297,10 @@ class TestChangePassword:
     def test_change_password(self, mock_sql: MagicMock):
         mock_sql.return_value = 1
         change_password("u1", "NewPassword1!")
-        mock_sql.assert_called_once()
+        # 2 calls: UPDATE password + SELECT for audit trail
+        assert mock_sql.call_count == 2
+        # First call is the UPDATE
+        assert "UPDATE users SET password_hash" in str(mock_sql.call_args_list[0])
 
     def test_change_password_weak(self):
         with pytest.raises(ValueError):

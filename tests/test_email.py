@@ -139,13 +139,15 @@ class TestIsBrevoRetryable:
     def test_http_exception_is_retryable(self):
         assert _is_brevo_retryable(http.client.HTTPException("bad gateway")) is True
 
-    def test_email_send_error_with_429_is_retryable(self):
+    def test_email_send_error_with_429_is_not_retryable(self):
+        """429 rate-limit should NOT be retried (retry won't help during a ban)."""
         exc = EmailSendError("Brevo rate-limit atteint (HTTP 429)")
-        assert _is_brevo_retryable(exc) is True
-
-    def test_email_send_error_without_429_is_not_retryable(self):
-        exc = EmailSendError("Brevo HTTP 500 — server error")
         assert _is_brevo_retryable(exc) is False
+
+    def test_email_send_error_with_500_is_retryable(self):
+        """500 server error should be retried."""
+        exc = EmailSendError("Brevo HTTP 500 — server error")
+        assert _is_brevo_retryable(exc) is True
 
     def test_value_error_is_not_retryable(self):
         assert _is_brevo_retryable(ValueError("bad value")) is False

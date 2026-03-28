@@ -64,27 +64,32 @@ _api_backoff_until: float = 0.0  # monotonic timestamp until which we enforce a 
 
 
 def _throttle() -> None:
-    """Espace les appels API de min 200ms pour eviter le ban rate-limit (thread-safe).
+    """Espace les appels API de min 1s pour eviter le ban rate-limit (thread-safe).
 
     Si l'IP est bannie (backoff > 10s restant), lève une erreur immédiatement
     au lieu de bloquer le serveur pendant 5 minutes.
+
+    Les sleep se font EN DEHORS du lock pour ne pas bloquer les autres threads.
     """
     global _api_last_ts
+    # Phase 1 : calculer les délais sous lock, sans dormir
     with _api_lock:
         now = _time.monotonic()
         remaining = _api_backoff_until - now
         if remaining > 10:
-            # Banni pour longtemps — échouer immédiatement
             raise EasyBeerError(
                 f"EasyBeer rate-limit actif — réessayez dans {int(remaining)}s"
             )
-        if remaining > 0:
-            # Petit cooldown — attendre
-            _time.sleep(remaining)
-            now = _time.monotonic()
-        wait = _API_MIN_INTERVAL - (now - _api_last_ts)
-        if wait > 0:
-            _time.sleep(wait)
+        backoff_wait = max(0.0, remaining)
+        interval_wait = max(0.0, _API_MIN_INTERVAL - (now - _api_last_ts))
+        sleep_total = max(backoff_wait, interval_wait)
+
+    # Phase 2 : dormir en dehors du lock (ne bloque pas les autres threads)
+    if sleep_total > 0:
+        _time.sleep(sleep_total)
+
+    # Phase 3 : enregistrer le timestamp sous lock
+    with _api_lock:
         _api_last_ts = _time.monotonic()
 
 
@@ -139,7 +144,8 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
         m = re.search(r"[Tt]ry again in (\d+)", body)
         ban_secs = float(m.group(1)) if m else 5.0
         _on_rate_limited(ban_secs)
-    if "<!DOCTYPE" in body or "<html" in body.lower():
+    content_type = r.headers.get("content-type", "")
+    if content_type.startswith("text/html") or "<!DOCTYPE" in body or "<html" in body.lower():
         raise EasyBeerError(
             f"EasyBeer {endpoint} \u2192 HTTP {r.status_code} : le serveur a renvoy\u00e9 une page HTML "
             f"(maintenance ou erreur proxy). R\u00e9essayez dans quelques minutes."

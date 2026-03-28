@@ -50,9 +50,10 @@ def _clean_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
-def _fake_response(*, ok: bool, status_code: int, text: str) -> SimpleNamespace:
+def _fake_response(*, ok: bool, status_code: int, text: str, content_type: str = "application/json") -> SimpleNamespace:
     """Lightweight stand-in for requests.Response."""
-    return SimpleNamespace(ok=ok, status_code=status_code, text=text)
+    headers = {"content-type": content_type}
+    return SimpleNamespace(ok=ok, status_code=status_code, text=text, headers=headers)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

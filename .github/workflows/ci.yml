@@ -29,8 +29,7 @@ jobs:
         run: pytest tests/ -v --tb=short
 
       - name: Security audit (pip-audit)
-        run: pip-audit --strict --desc on 2>&1 || true
-        # Non-blocking for now — logs vulnerabilities without failing the build
+        run: pip-audit --strict --desc on
 
   deploy-staging:
     needs: lint-and-test

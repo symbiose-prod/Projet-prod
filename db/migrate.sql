@@ -256,6 +256,33 @@ BEFORE UPDATE ON product_bom
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 -- =========================
+-- Historique des ramasses (fiches de ramasse envoyées)
+-- =========================
+CREATE TABLE IF NOT EXISTS ramasse_history (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+  date_ramasse    DATE NOT NULL,
+  destinataire    TEXT NOT NULL,
+  recipients      TEXT[] NOT NULL DEFAULT '{}',
+  line_count      INTEGER NOT NULL DEFAULT 0,
+  total_cartons   INTEGER NOT NULL DEFAULT 0,
+  total_palettes  INTEGER NOT NULL DEFAULT 0,
+  total_poids_kg  INTEGER NOT NULL DEFAULT 0,
+  lines           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  packaging       JSONB DEFAULT '[]'::jsonb,
+  pdf_bytes       BYTEA,
+  brassin_ids     TEXT[] DEFAULT '{}',
+  status          TEXT NOT NULL DEFAULT 'sent',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_date
+  ON ramasse_history(tenant_id, date_ramasse DESC);
+CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_created
+  ON ramasse_history(tenant_id, created_at DESC);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -265,7 +292,7 @@ BEGIN
                        password_resets, user_sessions, login_failures,
                        audit_log, supplier_configs,
                        sync_operations, sync_api_keys,
-                       product_bom TO shark;
+                       product_bom, ramasse_history TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

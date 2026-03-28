@@ -122,18 +122,25 @@ def get_engine() -> Engine:
         with _ENGINE_LOCK:
             # Double-check apres acquisition du lock
             if _ENGINE is None:
-                _ENGINE = create_engine(
-                    _build_url(),
-                    pool_pre_ping=True,
-                    pool_size=10,
-                    max_overflow=5,
-                    pool_recycle=1800,
-                    connect_args={
-                        "connect_timeout": 10,
-                        "options": "-c statement_timeout=60000",  # timeout requête 60s
-                    },
-                    future=True,
-                )
+                try:
+                    _ENGINE = create_engine(
+                        _build_url(),
+                        pool_pre_ping=True,
+                        pool_size=10,
+                        max_overflow=5,
+                        pool_recycle=1800,
+                        connect_args={
+                            "connect_timeout": 10,
+                            "options": "-c statement_timeout=60000",  # timeout requête 60s
+                        },
+                        future=True,
+                    )
+                except Exception as exc:
+                    # Ne jamais laisser le DSN (avec mdp) fuiter dans les logs
+                    raise RuntimeError(
+                        f"Impossible de créer le pool DB ({type(exc).__name__}). "
+                        f"Vérifiez les variables DB_HOST / DB_DATABASE / DB_USERNAME / DB_PASSWORD."
+                    ) from None
     return _ENGINE
 
 # Alias backward-compat si ailleurs tu fais `from db import engine`

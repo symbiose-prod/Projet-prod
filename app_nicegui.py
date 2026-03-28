@@ -544,12 +544,17 @@ def root():
 # ─── Lancement ──────────────────────────────────────────────────────────────
 
 def _get_storage_secret() -> str:
-    """Exige un vrai secret pour signer les cookies de session."""
+    """Exige un vrai secret pour signer les cookies de session (>= 32 chars)."""
     secret = os.environ.get("NICEGUI_SECRET", "").strip()
     if not secret:
         raise RuntimeError(
             "NICEGUI_SECRET manquant — génère-en un :\n"
             '  python3 -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+    if len(secret) < 32:
+        raise RuntimeError(
+            f"NICEGUI_SECRET trop court ({len(secret)} chars, 32 min). "
+            'Régénère : python3 -c "import secrets; print(secrets.token_urlsafe(32))"'
         )
     return secret
 

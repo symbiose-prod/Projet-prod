@@ -43,29 +43,36 @@ def get_brassins_en_cours() -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
-# ─── Cache brassins en cours ────────────────────────────────────────────────
+# ─── Cache brassins en cours (thread-safe) ──────────────────────────────────
+
+import threading as _threading
 
 _BRASSINS_EN_COURS_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
 _BRASSINS_EN_COURS_TTL = 300  # 5 min
+_BRASSINS_EN_COURS_LOCK = _threading.Lock()
 
 
 def get_brassins_en_cours_cached() -> list[dict[str, Any]]:
     """Brassins en cours avec cache TTL 5 min (évite les appels HTTP redondants)."""
     now = _time.monotonic()
-    cached = _BRASSINS_EN_COURS_CACHE["data"]
-    if cached is not None and (now - _BRASSINS_EN_COURS_CACHE["ts"]) < _BRASSINS_EN_COURS_TTL:
-        return cached
+    with _BRASSINS_EN_COURS_LOCK:
+        cached = _BRASSINS_EN_COURS_CACHE["data"]
+        if cached is not None and (now - _BRASSINS_EN_COURS_CACHE["ts"]) < _BRASSINS_EN_COURS_TTL:
+            return cached
+    # Fetch en dehors du lock pour ne pas bloquer les lectures concurrentes
     data = get_brassins_en_cours()
-    if data:
-        _BRASSINS_EN_COURS_CACHE["data"] = data
-        _BRASSINS_EN_COURS_CACHE["ts"] = now
+    with _BRASSINS_EN_COURS_LOCK:
+        if data:
+            _BRASSINS_EN_COURS_CACHE["data"] = data
+            _BRASSINS_EN_COURS_CACHE["ts"] = _time.monotonic()
     return data
 
 
 def invalidate_brassins_en_cours_cache() -> None:
     """Invalide le cache brassins en cours."""
-    _BRASSINS_EN_COURS_CACHE["data"] = None
-    _BRASSINS_EN_COURS_CACHE["ts"] = 0.0
+    with _BRASSINS_EN_COURS_LOCK:
+        _BRASSINS_EN_COURS_CACHE["data"] = None
+        _BRASSINS_EN_COURS_CACHE["ts"] = 0.0
 
 
 @retry_api
@@ -143,29 +150,33 @@ def _get_brassin_detail_raw(id_brassin: int) -> dict[str, Any]:
 _BRASSIN_DETAIL_CACHE: dict[int, dict[str, Any]] = {}
 _BRASSIN_DETAIL_TS: dict[int, float] = {}
 _BRASSIN_DETAIL_TTL = 300  # 5 min
+_BRASSIN_DETAIL_LOCK = _threading.Lock()
 
 
 def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
-    """Detail complet d'un brassin avec cache TTL 5 min."""
+    """Detail complet d'un brassin avec cache TTL 5 min (thread-safe)."""
     now = _time.monotonic()
-    cached = _BRASSIN_DETAIL_CACHE.get(id_brassin)
-    if cached is not None and (now - _BRASSIN_DETAIL_TS.get(id_brassin, 0)) < _BRASSIN_DETAIL_TTL:
-        return cached
+    with _BRASSIN_DETAIL_LOCK:
+        cached = _BRASSIN_DETAIL_CACHE.get(id_brassin)
+        if cached is not None and (now - _BRASSIN_DETAIL_TS.get(id_brassin, 0)) < _BRASSIN_DETAIL_TTL:
+            return cached
     data = _get_brassin_detail_raw(id_brassin)
-    if data:
-        _BRASSIN_DETAIL_CACHE[id_brassin] = data
-        _BRASSIN_DETAIL_TS[id_brassin] = now
+    with _BRASSIN_DETAIL_LOCK:
+        if data:
+            _BRASSIN_DETAIL_CACHE[id_brassin] = data
+            _BRASSIN_DETAIL_TS[id_brassin] = now
     return data
 
 
 def invalidate_brassin_detail_cache(id_brassin: int | None = None) -> None:
     """Invalide le cache détail brassin (un ou tous)."""
-    if id_brassin is not None:
-        _BRASSIN_DETAIL_CACHE.pop(id_brassin, None)
-        _BRASSIN_DETAIL_TS.pop(id_brassin, None)
-    else:
-        _BRASSIN_DETAIL_CACHE.clear()
-        _BRASSIN_DETAIL_TS.clear()
+    with _BRASSIN_DETAIL_LOCK:
+        if id_brassin is not None:
+            _BRASSIN_DETAIL_CACHE.pop(id_brassin, None)
+            _BRASSIN_DETAIL_TS.pop(id_brassin, None)
+        else:
+            _BRASSIN_DETAIL_CACHE.clear()
+            _BRASSIN_DETAIL_TS.clear()
 
 
 # ─── Brassins planifiés ──────────────────────────────────────────────────

@@ -257,7 +257,9 @@ def create_user(email: str, password: str, tenant_name_or_id: str, role: str = N
         """,
         {"t": tenant_id, "e": e, "ph": hash_password(password), "r": computed_role},
     )
-    return created[0]
+    user = created[0]
+    _audit_signup(user)
+    return user
 
 
 import logging as _logging
@@ -425,6 +427,8 @@ def change_password(user_id: str, new_password: str) -> None:
         "UPDATE users SET password_hash = :ph WHERE id = :id",
         {"ph": hash_password(new_password), "id": user_id},
     )
+    # Audit trail
+    _audit_password_reset(user_id)
 
 
 # ------------------------------------------------------------------------------
@@ -545,3 +549,28 @@ def _audit_login_failed(email: str, *, reason: str, tenant_id: str | None = None
         action=ACTION_LOGIN_FAILED,
         details={"reason": reason},
     )
+
+
+def _audit_signup(user: dict[str, Any]) -> None:
+    from common.audit import ACTION_SIGNUP, log_event
+    log_event(
+        tenant_id=str(user.get("tenant_id", "")),
+        user_email=user.get("email", ""),
+        action=ACTION_SIGNUP,
+        details={"role": user.get("role")},
+    )
+
+
+def _audit_password_reset(user_id: str) -> None:
+    from common.audit import ACTION_PASSWORD_RESET, log_event
+    # Récupérer l'email pour l'audit (best-effort)
+    try:
+        rows = run_sql("SELECT email, tenant_id FROM users WHERE id = :id LIMIT 1", {"id": user_id})
+        if rows:
+            log_event(
+                tenant_id=str(rows[0].get("tenant_id", "")),
+                user_email=rows[0].get("email", ""),
+                action=ACTION_PASSWORD_RESET,
+            )
+    except Exception:
+        _auth_log.debug("Audit password_reset échoué pour user_id=%s", user_id, exc_info=True)

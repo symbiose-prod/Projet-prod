@@ -8,32 +8,34 @@ from unittest.mock import patch
 
 from common.error_alerting import _COOLDOWN_SECONDS, _should_send, send_error_alert
 
+_TEST_ENDPOINT = "GET:/test"
+
 
 def _reset_cooldown():
-    """Reset cooldown to a value guaranteed to be expired (far in the past)."""
+    """Reset cooldown to a clean state (empty dict)."""
     import common.error_alerting as mod
-    mod._last_alert_ts = time.monotonic() - _COOLDOWN_SECONDS - 100
+    mod._last_alert_ts = {}
 
 
 class TestShouldSend:
-    """Anti-flood cooldown logic."""
+    """Anti-flood cooldown logic (per-endpoint)."""
 
     def setup_method(self):
         _reset_cooldown()
 
     def test_first_call_returns_true(self):
-        assert _should_send() is True
+        assert _should_send(_TEST_ENDPOINT) is True
 
     def test_second_call_within_cooldown_returns_false(self):
-        assert _should_send() is True
-        assert _should_send() is False
+        assert _should_send(_TEST_ENDPOINT) is True
+        assert _should_send(_TEST_ENDPOINT) is False
 
     def test_after_cooldown_returns_true(self):
         import common.error_alerting as mod
-        assert _should_send() is True
+        assert _should_send(_TEST_ENDPOINT) is True
         # Simulate cooldown elapsed
-        mod._last_alert_ts = time.monotonic() - _COOLDOWN_SECONDS - 1
-        assert _should_send() is True
+        mod._last_alert_ts[_TEST_ENDPOINT] = time.monotonic() - _COOLDOWN_SECONDS - 1
+        assert _should_send(_TEST_ENDPOINT) is True
 
 
 class TestSendErrorAlert:

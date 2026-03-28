@@ -4,7 +4,8 @@ common/audit.py
 Journal d'audit — traçabilité des actions métier.
 
 Chaque événement est persisté dans la table audit_log (INSERT fire-and-forget).
-Les échecs d'écriture sont loggés mais ne bloquent jamais l'appelant.
+En cas d'échec DB, une seconde tentative est effectuée puis un fallback vers le
+logger Python pour ne jamais perdre un événement d'audit silencieusement.
 """
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ _log = logging.getLogger("ferment.audit")
 ACTION_LOGIN = "login"
 ACTION_LOGIN_FAILED = "login_failed"
 ACTION_LOGOUT = "logout"
+ACTION_SIGNUP = "signup"
+ACTION_PASSWORD_RESET = "password_reset"
 ACTION_PRODUCTION_SAVED = "production_saved"
 ACTION_BRASSIN_CREATED = "brassin_created"
 ACTION_FILE_UPLOADED = "file_uploaded"
@@ -33,22 +36,35 @@ def log_event(
     action: str,
     details: dict[str, Any] | None = None,
 ) -> None:
-    """Insère un événement dans audit_log. Ne lève jamais d'exception."""
-    try:
-        run_sql(
-            """
-            INSERT INTO audit_log (tenant_id, user_email, action, details)
-            VALUES (:t, :e, :a, CAST(:d AS jsonb))
-            """,
-            {
-                "t": tenant_id,
-                "e": user_email,
-                "a": action[:50],
-                "d": _json_dumps(details or {}),
-            },
-        )
-    except (SQLAlchemyError, OSError):
-        _log.warning("Échec écriture audit_log: %s %s %s", action, user_email, details, exc_info=True)
+    """Insère un événement dans audit_log. Ne lève jamais d'exception.
+
+    Deux tentatives DB, puis fallback vers le logger en cas d'échec persistant
+    pour garantir qu'aucun événement d'audit n'est perdu silencieusement.
+    """
+    params = {
+        "t": tenant_id,
+        "e": user_email,
+        "a": action[:50],
+        "d": _json_dumps(details or {}),
+    }
+    sql = """
+        INSERT INTO audit_log (tenant_id, user_email, action, details)
+        VALUES (:t, :e, :a, CAST(:d AS jsonb))
+    """
+    for attempt in range(2):
+        try:
+            run_sql(sql, params)
+            return
+        except (SQLAlchemyError, OSError):
+            if attempt == 0:
+                _log.debug("Audit INSERT échec (tentative 1/2), retry…", exc_info=True)
+            else:
+                # Fallback : logger l'événement pour ne pas le perdre
+                _log.error(
+                    "AUDIT_FALLBACK action=%s user=%s tenant=%s details=%s",
+                    action, user_email, tenant_id, details,
+                    exc_info=True,
+                )
 
 
 def _json_dumps(obj: Any) -> str:

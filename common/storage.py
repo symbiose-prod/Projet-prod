@@ -22,10 +22,14 @@ SYSTEM_EMAIL = "system@symbiose.local"
 
 
 # ---------- Helpers encodage DataFrame ----------
+_PAYLOAD_VERSION = 1  # Versioning pour compatibilité future si le format pandas change
+
+
 def _encode_sp(sp: dict[str, Any]) -> dict[str, Any]:
     def _df(x):
         return x.to_json(orient="split") if isinstance(x, pd.DataFrame) else None
     return {
+        "_version": _PAYLOAD_VERSION,
         "semaine_du": sp.get("semaine_du"),
         "ddm": sp.get("ddm"),
         "gouts": list(sp.get("gouts", [])),
@@ -39,7 +43,12 @@ def _decode_sp(obj: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(s, str) or not s.strip():
             return None
         import io
-        return pd.read_json(io.StringIO(s), orient="split")
+        try:
+            return pd.read_json(io.StringIO(s), orient="split")
+        except (ValueError, KeyError) as exc:
+            _log.warning("Erreur désérialisation DataFrame (version=%s): %s",
+                         obj.get("_version", "?"), exc)
+            return None
     return {
         "semaine_du": obj.get("semaine_du"),
         "ddm": obj.get("ddm"),
@@ -222,12 +231,13 @@ def save_snapshot(name: str, sp: dict[str, Any]) -> tuple[bool, str]:
         return True, "Proposition mise à jour."
 
     # Insert atomique avec vérification de la limite MAX_SLOTS (pas de race condition)
+    # COUNT(id) au lieu de COUNT(DISTINCT name) pour éviter le contournement par renommage
     inserted = run_sql(
         """
         INSERT INTO production_proposals (tenant_id, created_by, payload, status, created_at, updated_at)
         SELECT :t, :u, CAST(:p AS JSONB), 'draft', now(), now()
         WHERE (
-            SELECT COUNT(DISTINCT payload->'_meta'->>'name')
+            SELECT COUNT(id)
             FROM production_proposals
             WHERE tenant_id = :t
         ) < :max_slots
