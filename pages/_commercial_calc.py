@@ -80,14 +80,15 @@ def _compute_growth_rate(
     ca_b: dict[int, float],
     current_month: int,
 ) -> float:
-    """Calcule le taux moyen d'évolution sur les 2 derniers mois complets.
+    """Calcule le taux moyen d'évolution sur les 2 derniers mois glissants.
 
-    Prend les 2 derniers mois où ca_b > 0 ET ca_a > 0.
+    Prend les 2 derniers mois (incluant le mois en cours) où ca_b > 0 ET ca_a > 0.
+    Ex: si on est en mars, prend mars et février.
     Retourne le taux moyen (ex: 0.15 pour +15%).
     """
     rates: list[float] = []
-    # Parcourir les mois de current_month-1 vers 1
-    for m in range(current_month - 1, 0, -1):
+    # Parcourir depuis le mois en cours vers le passé
+    for m in range(current_month, 0, -1):
         a = ca_a.get(m, 0)
         b = ca_b.get(m, 0)
         if a > 0 and b > 0:
