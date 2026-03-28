@@ -334,21 +334,54 @@ def _detect_recipe_from_parent(
         if name and canon:
             label_to_canonical[name] = canon
 
-    # Construire canonical → id_produit pour les produits QUI ONT une recette
+    # Construire canonical → id_produit pour les produits QUI ONT une recette.
+    # D'abord chercher dans le cache, puis fetch les parents manquants.
     canonical_to_parent: dict[str, int] = {}
+    # Passe 1 : produits déjà en cache
     for (pid, _fmt), info in stock_map.items():
         lbl = info["libelle"].strip().lower()
         canon = label_to_canonical.get(lbl, "")
         if not canon:
             continue
-        # Vérifier que ce produit a une recette dans le cache
         cached = recipe_cache.get(pid)
         if cached and (cached.get("recettes") or []):
             canonical_to_parent.setdefault(canon, pid)
 
+    # Passe 2 : pour les goûts des dérivés sans parent dans le cache,
+    # fetch la recette du produit Symbiose correspondant à la volée
+    needed_canons = set()
+    for (id_produit, fmt), info in products_without_recipe:
+        lbl = info["libelle"].strip().lower()
+        canon = label_to_canonical.get(lbl, "")
+        if canon and canon not in canonical_to_parent:
+            needed_canons.add(canon)
+
+    if needed_canons:
+        from common.easybeer.products import get_product_detail
+
+        for (pid, _fmt), info in stock_map.items():
+            lbl = info["libelle"].strip().lower()
+            canon = label_to_canonical.get(lbl, "")
+            if canon not in needed_canons or canon in canonical_to_parent:
+                continue
+            # Ce produit pourrait être un parent — tenter le fetch
+            if pid not in recipe_cache:
+                try:
+                    detail = get_product_detail(pid)
+                    recipe_cache[pid] = detail
+                except Exception as exc:
+                    _log.warning("Fetch recette parent %s (#%d): %s", info["libelle"], pid, exc)
+                    recipe_cache[pid] = None
+                    continue
+            cached = recipe_cache.get(pid)
+            if cached and (cached.get("recettes") or []):
+                canonical_to_parent[canon] = pid
+                _log.info("Parent trouvé pour '%s': %s (#%d)", canon, info["libelle"], pid)
+
     _log.info(
-        "Fallback recette: %d produits sans recette, %d goûts parents disponibles",
+        "Fallback recette: %d produits sans recette, %d goûts parents disponibles (canons: %s)",
         len(products_without_recipe), len(canonical_to_parent),
+        ", ".join(sorted(canonical_to_parent.keys())) or "aucun",
     )
 
     entries: list[dict[str, Any]] = []
@@ -501,6 +534,21 @@ def _detect_from_recipe(
     return entries
 
 
+def _index_bottle(
+    bottle_by_key: dict[str, dict[str, Any]],
+    mp_id: int,
+    label: str,
+) -> None:
+    """Classe une bouteille dans bottle_by_key par contenance/type."""
+    label_lower = label.lower()
+    if "0.33" in label_lower or "33cl" in label_lower:
+        bottle_by_key.setdefault("33cl", {"id_mp": mp_id, "label": label})
+    elif "saft" in label_lower and ("0.75" in label_lower or "75cl" in label_lower):
+        bottle_by_key.setdefault("75cl_saft", {"id_mp": mp_id, "label": label})
+    elif "eau" in label_lower and ("0.75" in label_lower or "75cl" in label_lower):
+        bottle_by_key.setdefault("75cl_eau", {"id_mp": mp_id, "label": label})
+
+
 def _detect_bottles_from_formats(
     stock_map: dict[tuple[int, str], dict[str, Any]],
     all_mp: list[dict[str, Any]],
@@ -515,27 +563,49 @@ def _detect_bottles_from_formats(
 
     The quantity per carton equals the lot_qty (1 bouteille par unité).
     """
-    # ── Index des bouteilles CONTENANT par label normalisé ──
+    # ── Index des bouteilles par label normalisé ──
+    # Accepte CONTENANT (type principal) et CONDITIONNEMENT (fallback si CONTENANT absent)
+    _BOTTLE_TYPES = {"CONTENANT", "CONDITIONNEMENT"}
     bottle_by_key: dict[str, dict[str, Any]] = {}
+
+    # Diagnostic : compter les types MP pour identifier le bon filtre
+    type_counts: dict[str, int] = {}
+    for mp in all_mp:
+        mp_type = (mp.get("type") or {}).get("code", "")
+        type_counts[mp_type] = type_counts.get(mp_type, 0) + 1
+
+    _log.info("Types MP EasyBeer: %s", type_counts)
+
+    # Passe 1 : chercher dans CONTENANT uniquement
     for mp in all_mp:
         mp_type = (mp.get("type") or {}).get("code", "")
         label = (mp.get("libelle") or "").strip()
         mp_id = mp.get("idMatierePremiere")
         if mp_type != "CONTENANT" or not mp_id:
             continue
-        label_lower = label.lower()
-        # Classer par mots-clés discriminants
-        if "0.33" in label_lower or "33cl" in label_lower:
-            bottle_by_key["33cl"] = {"id_mp": mp_id, "label": label}
-        elif "saft" in label_lower and ("0.75" in label_lower or "75cl" in label_lower):
-            bottle_by_key["75cl_saft"] = {"id_mp": mp_id, "label": label}
-        elif "eau" in label_lower and ("0.75" in label_lower or "75cl" in label_lower):
-            bottle_by_key["75cl_eau"] = {"id_mp": mp_id, "label": label}
+        _index_bottle(bottle_by_key, mp_id, label)
+
+    # Passe 2 : si aucun CONTENANT trouvé, fallback sur CONDITIONNEMENT
+    # en cherchant les MP dont le libellé contient "bouteille"
+    if not bottle_by_key:
+        _log.warning("Aucune MP de type CONTENANT — fallback sur CONDITIONNEMENT avec filtre 'bouteille'")
+        for mp in all_mp:
+            mp_type = (mp.get("type") or {}).get("code", "")
+            label = (mp.get("libelle") or "").strip()
+            mp_id = mp.get("idMatierePremiere")
+            if mp_type not in _BOTTLE_TYPES or not mp_id:
+                continue
+            if "bouteille" not in label.lower():
+                continue
+            _index_bottle(bottle_by_key, mp_id, label)
 
     _log.info("Bouteilles indexées: %s", {k: v["label"] for k, v in bottle_by_key.items()})
 
     if not bottle_by_key:
-        _log.warning("Aucune bouteille CONTENANT trouvée dans les MP EasyBeer")
+        _log.warning(
+            "Aucune bouteille trouvée dans les MP EasyBeer (types disponibles: %s)",
+            ", ".join(sorted(type_counts.keys())),
+        )
         return []
 
     # ── Détection de la marque par le libellé produit ──
