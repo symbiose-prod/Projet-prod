@@ -84,8 +84,9 @@ def _detect_from_stock_detail(
     product_label: str,
     format_code: str,
     id_stock_produit: int,
+    lot_qty: int = 0,
 ) -> list[dict[str, Any]] | None:
-    """Fetch GET /stock/produit/edition/{id} and extract conditioning elements.
+    """Fetch GET /stock/produit/edition/{id} and extract conditioning elements + bouteille.
 
     Returns BOM entry dicts ready for ``bulk_upsert_bom()``,
     or ``None`` if rate-limited (caller should stop).
@@ -105,6 +106,8 @@ def _detect_from_stock_detail(
         return []
 
     entries: list[dict[str, Any]] = []
+
+    # ── Éléments de conditionnement (étiquettes, capsules, cartons) ──
     for elem in detail.get("elementsConditionnement") or []:
         mp = elem.get("elementMatierePremiere") or {}
         id_mp = mp.get("idMatierePremiere")
@@ -128,6 +131,26 @@ def _detect_from_stock_detail(
         _log.info(
             "EasyBeer BOM: %s %s → %s (qty=%.0f)",
             product_label, format_code, mp_label, qty,
+        )
+
+    # ── Bouteille (contenant) — extraite du champ séparé du détail stock ──
+    contenant = detail.get("contenant") or {}
+    cont_id = contenant.get("idContenant")
+    cont_libelle = (contenant.get("libelle") or "").strip()
+    if cont_id and cont_libelle and lot_qty > 0:
+        entries.append({
+            "id_produit": id_produit,
+            "format_code": format_code,
+            "product_label": product_label,
+            "id_mp": cont_id,
+            "mp_label": cont_libelle,
+            "qty_per_unit": lot_qty,
+            "validated": False,
+            "source": "auto_detected",
+        })
+        _log.info(
+            "EasyBeer BOM bouteille: %s %s → %s (qty=%d)",
+            product_label, format_code, cont_libelle, lot_qty,
         )
 
     return entries
@@ -227,6 +250,7 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
             product_label=info["libelle"],
             format_code=fmt,
             id_stock_produit=info["sid"],
+            lot_qty=info.get("lot_qty", 0),
         )
         if entries:
             all_entries.extend(entries)
@@ -305,6 +329,12 @@ def run_full_detection(tenant_id: str | None = None) -> tuple[int, int]:
     return len(all_entries), len(products_seen)
 
 
+def _clean_eb_label(label: str) -> str:
+    """Nettoie le libellé EasyBeer : supprime le suffixe degré (ex. '- 0.0°')."""
+    import re
+    return re.sub(r"\s*-\s*\d+[\.,]?\d*\s*°?\s*$", "", label.strip()).strip()
+
+
 def _detect_recipe_from_parent(
     products_without_recipe: list[tuple[tuple[int, str], dict[str, Any]]],
     stock_map: dict[tuple[int, str], dict[str, Any]],
@@ -326,7 +356,7 @@ def _detect_recipe_from_parent(
         _log.warning("flavor_map vide — impossible de résoudre les produits dérivés")
         return []
 
-    # Construire label → canonical (case-insensitive)
+    # Construire label → canonical (case-insensitive, sans suffixe degré)
     label_to_canonical: dict[str, str] = {}
     for _, row in fm.iterrows():
         name = str(row.get("name", "")).strip().lower()
@@ -334,13 +364,23 @@ def _detect_recipe_from_parent(
         if name and canon:
             label_to_canonical[name] = canon
 
+    def _resolve_canon(libelle: str) -> str:
+        """Résout le goût canonique depuis un libellé EasyBeer (avec ou sans suffixe °)."""
+        lbl = libelle.strip().lower()
+        # Essai direct
+        canon = label_to_canonical.get(lbl, "")
+        if canon:
+            return canon
+        # Essai sans le suffixe degré (ex: "NIKO - Kéfir de fruits Gingembre - 0.0°" → sans " - 0.0°")
+        cleaned = _clean_eb_label(lbl)
+        return label_to_canonical.get(cleaned, "")
+
     # Construire canonical → id_produit pour les produits QUI ONT une recette.
     # D'abord chercher dans le cache, puis fetch les parents manquants.
     canonical_to_parent: dict[str, int] = {}
     # Passe 1 : produits déjà en cache
     for (pid, _fmt), info in stock_map.items():
-        lbl = info["libelle"].strip().lower()
-        canon = label_to_canonical.get(lbl, "")
+        canon = _resolve_canon(info["libelle"])
         if not canon:
             continue
         cached = recipe_cache.get(pid)
@@ -351,8 +391,7 @@ def _detect_recipe_from_parent(
     # fetch la recette du produit Symbiose correspondant à la volée
     needed_canons = set()
     for (id_produit, fmt), info in products_without_recipe:
-        lbl = info["libelle"].strip().lower()
-        canon = label_to_canonical.get(lbl, "")
+        canon = _resolve_canon(info["libelle"])
         if canon and canon not in canonical_to_parent:
             needed_canons.add(canon)
 
@@ -360,8 +399,7 @@ def _detect_recipe_from_parent(
         from common.easybeer.products import get_product_detail
 
         for (pid, _fmt), info in stock_map.items():
-            lbl = info["libelle"].strip().lower()
-            canon = label_to_canonical.get(lbl, "")
+            canon = _resolve_canon(info["libelle"])
             if canon not in needed_canons or canon in canonical_to_parent:
                 continue
             # Ce produit pourrait être un parent — tenter le fetch
@@ -386,8 +424,7 @@ def _detect_recipe_from_parent(
 
     entries: list[dict[str, Any]] = []
     for (id_produit, fmt), info in products_without_recipe:
-        lbl = info["libelle"].strip().lower()
-        canon = label_to_canonical.get(lbl, "")
+        canon = _resolve_canon(info["libelle"])
         if not canon:
             _log.debug("Pas de goût canonique pour %s — skip", info["libelle"])
             continue
