@@ -27,6 +27,7 @@ def get_ca_daily(
     *,
     include_avoir: bool = True,
     include_carnet: bool = True,
+    tags: str = "",
 ) -> dict[str, Any]:
     """POST /indicateur/chiffre-affaire → CA journalier sur une période libre.
 
@@ -49,6 +50,7 @@ def get_ca_daily(
         "inclureCommandeCarnet": include_carnet,
         "deduireDroitsAccise": False,
         "deduireFraisLivraison": False,
+        "tags": tags,
     }
 
     ep = "indicateur/chiffre-affaire"
