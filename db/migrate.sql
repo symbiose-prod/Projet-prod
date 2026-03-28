@@ -256,6 +256,42 @@ BEFORE UPDATE ON product_bom
 FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 -- =========================
+-- Cache clients EasyBeer (sync nocturne)
+-- =========================
+CREATE TABLE IF NOT EXISTS client_cache (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  id_client       INTEGER NOT NULL,
+  nom             TEXT NOT NULL DEFAULT '',
+  numero          TEXT NOT NULL DEFAULT '',
+  type_libelle    TEXT NOT NULL DEFAULT '',
+  type_parent     TEXT NOT NULL DEFAULT '',
+  tournee         TEXT NOT NULL DEFAULT '',
+  tags            TEXT[] NOT NULL DEFAULT '{}',
+  actif           BOOLEAN NOT NULL DEFAULT TRUE,
+  synced_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_tenant_client
+  ON client_cache(tenant_id, id_client);
+CREATE INDEX IF NOT EXISTS idx_cc_tenant
+  ON client_cache(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cc_tags
+  ON client_cache USING GIN (tags);
+
+-- Vue matérialisée des tags distincts (reconstruit à chaque sync)
+CREATE TABLE IF NOT EXISTS client_tags_cache (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  tag             TEXT NOT NULL,
+  client_count    INTEGER NOT NULL DEFAULT 0,
+  synced_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ctc_tenant_tag
+  ON client_tags_cache(tenant_id, tag);
+
+-- =========================
 -- Historique des ramasses (fiches de ramasse envoyées)
 -- =========================
 CREATE TABLE IF NOT EXISTS ramasse_history (
@@ -292,7 +328,8 @@ BEGIN
                        password_resets, user_sessions, login_failures,
                        audit_log, supplier_configs,
                        sync_operations, sync_api_keys,
-                       product_bom, ramasse_history TO shark;
+                       product_bom, ramasse_history,
+                       client_cache, client_tags_cache TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

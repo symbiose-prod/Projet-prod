@@ -8,6 +8,7 @@ Lance avec :  python3 app_nicegui.py
 """
 from __future__ import annotations
 
+import asyncio
 import logging as _logging
 import logging.config as _logging_config
 import os
@@ -493,16 +494,60 @@ def _do_cleanup() -> None:
 
 async def _periodic_cleanup() -> None:
     """Boucle infinie : relance le nettoyage toutes les _CLEANUP_INTERVAL secondes."""
-    import asyncio
     while True:
         await asyncio.sleep(_CLEANUP_INTERVAL)
         _do_cleanup()
 
 
+async def _daily_client_sync_loop() -> None:
+    """Boucle infinie : sync des clients EasyBeer tous les jours à 3h du matin (Paris)."""
+    import datetime as _dt
+
+    from dateutil.tz import gettz
+
+    _PARIS = gettz("Europe/Paris")
+    _SYNC_HOUR = 3
+    _SYNC_MINUTE = 0
+
+    while True:
+        try:
+            # Calculer le prochain 3h00 Paris
+            now = _dt.datetime.now(_PARIS)
+            target = now.replace(hour=_SYNC_HOUR, minute=_SYNC_MINUTE, second=0, microsecond=0)
+            if target <= now:
+                target += _dt.timedelta(days=1)
+            wait_seconds = (target - now).total_seconds()
+            _log.info("Client sync: prochain run à %s (dans %.0fh)", target.strftime("%H:%M"), wait_seconds / 3600)
+            await asyncio.sleep(wait_seconds)
+
+            # Résoudre le tenant
+            tenant_name = os.environ.get("ALLOWED_TENANTS", "").split(",")[0].strip()
+            if not tenant_name:
+                _log.debug("Client sync: pas de ALLOWED_TENANTS, skip")
+                continue
+
+            from common.auth import ensure_tenant_id
+            from common.client_cache import sync_clients
+            from common.easybeer import is_configured as _eb_ok
+
+            if not _eb_ok():
+                _log.debug("Client sync: EasyBeer non configuré, skip")
+                continue
+
+            tid = ensure_tenant_id(tenant_name)
+            _log.info("Client sync: démarrage pour tenant '%s'", tenant_name)
+            result = await asyncio.to_thread(sync_clients, tid)
+            _log.info("Client sync terminé: %s", result)
+
+        except Exception:
+            _log.exception("Erreur dans le sync nocturne clients")
+            # Attendre 1h avant de réessayer en cas d'erreur
+            await asyncio.sleep(3600)
+
+
 @app.on_startup
 async def _startup_cleanup():
     """Vérifications de sécurité + nettoyage initial + démarrage du timer périodique."""
-    import asyncio
 
     # ── Vérification : ALLOWED_TENANTS obligatoire en production ──
     if os.environ.get("ENV") == "production":
@@ -521,6 +566,9 @@ async def _startup_cleanup():
     # Démarrer le scheduler sync étiquettes (tous les jours à 12h Paris)
     from common.sync.scheduler import daily_sync_loop
     asyncio.ensure_future(daily_sync_loop())
+
+    # Démarrer le sync nocturne des clients EasyBeer (3h du matin Paris)
+    asyncio.ensure_future(_daily_client_sync_loop())
 
 
 # ─── Service Worker (servi depuis / pour scope racine) ──────────────────────
