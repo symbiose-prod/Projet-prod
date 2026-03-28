@@ -2,161 +2,232 @@
 pages/_commercial_calc.py
 =========================
 Calculs pour le dashboard commercial — fonctions pures, thread-safe.
+
+Logique de prévision :
+- Taux de croissance = moyenne des 2 derniers mois complets (CA_2026/CA_2025 - 1)
+- Prévision mois futur = CA_2025[m] × (1 + taux)
+- Mois en cours = réalisé + (prévision_totale - réalisé) comme part prévisionnelle
+- CA cible fin d'année = mois réalisés + prévisions mois restants
 """
 from __future__ import annotations
 
+import datetime
 import logging
 from typing import Any
 
 _log = logging.getLogger("ferment.commercial")
 
+_MOIS_LABELS = [
+    "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+]
 
-def _parse_ca_series(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extrait les coordonnées depuis un ModeleIndicateurResultat.
+_MOIS_MAP = {
+    "janv.": 1, "févr.": 2, "mars": 3, "avr.": 4, "mai": 5, "juin": 6,
+    "juil.": 7, "août": 8, "sept.": 9, "oct.": 10, "nov.": 11, "déc.": 12,
+    # fallbacks
+    "janvier": 1, "février": 2, "avril": 4, "juillet": 7,
+    "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12,
+}
 
-    EasyBeer retourne des données **journalières** :
-    - ``series[0].values`` = liste de ``{label: None, x: "DD/MM/YYYY", y: montant}``
+
+def _parse_monthly_series(data: dict[str, Any]) -> tuple[dict[int, float], dict[int, float]]:
+    """Parse le résultat de get_ca_mensuel() → (ca_current, ca_reference).
+
+    EasyBeer retourne 2 séries mensuelles :
+    - series[0] : année courante (ex: "janv. 2026" → y)
+    - series[1] : période de référence (ex: "janv. 2025" → y)
+
+    Retourne 2 dicts {mois(1-12): montant}.
     """
     series = data.get("series") or []
-    if not series and data.get("serie"):
-        series = [data["serie"]]
+    ca_current: dict[int, float] = {}
+    ca_ref: dict[int, float] = {}
 
-    if not series:
-        return []
+    for idx, serie in enumerate(series[:2]):
+        values = serie.get("values") or serie.get("data") or []
+        target = ca_current if idx == 0 else ca_ref
+        for v in values:
+            x = str(v.get("x") or "").strip().lower()
+            y = v.get("y")
+            if y is None:
+                continue
+            month = _extract_month_from_label(x)
+            if month is not None:
+                target[month] = float(y)
 
-    values = series[0].get("values") or series[0].get("data") or []
-    return values
-
-
-def _build_month_map(values: list[dict]) -> dict[int, float]:
-    """Agrège les données journalières par mois → {mois: CA total}.
-
-    Le champ ``x`` contient la date au format ``DD/MM/YYYY``.
-    Le champ ``y`` contient le CA du jour.
-    """
-    result: dict[int, float] = {}
-    for v in values:
-        y = v.get("y")
-        if y is None:
-            continue
-        amount = float(y)
-        if amount == 0:
-            continue
-
-        x = v.get("x") or v.get("label") or ""
-        month = _extract_month(str(x))
-        if month is not None:
-            result[month] = result.get(month, 0.0) + amount
-
-    return result
+    return ca_current, ca_ref
 
 
-def _extract_month(date_str: str) -> int | None:
-    """Extrait le mois (1-12) depuis une date DD/MM/YYYY ou YYYY-MM-DD."""
-    import re
-
-    if not date_str:
+def _extract_month_from_label(label: str) -> int | None:
+    """Extrait le mois depuis 'janv. 2026', 'févr. 2025', etc."""
+    if not label:
         return None
-
-    # DD/MM/YYYY
-    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", date_str)
-    if m:
-        return int(m.group(2))
-
-    # YYYY-MM-DD
-    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", date_str)
-    if m:
-        return int(m.group(2))
-
+    # Prendre le premier mot (avant l'espace + année)
+    parts = label.split()
+    if not parts:
+        return None
+    month_word = parts[0].rstrip(".")
+    # Chercher dans le mapping
+    for key, num in _MOIS_MAP.items():
+        if key.startswith(month_word) or month_word.startswith(key.rstrip(".")):
+            return num
     return None
+
+
+def _compute_growth_rate(
+    ca_a: dict[int, float],
+    ca_b: dict[int, float],
+    current_month: int,
+) -> float:
+    """Calcule le taux moyen d'évolution sur les 2 derniers mois complets.
+
+    Prend les 2 derniers mois où ca_b > 0 ET ca_a > 0.
+    Retourne le taux moyen (ex: 0.15 pour +15%).
+    """
+    rates: list[float] = []
+    # Parcourir les mois de current_month-1 vers 1
+    for m in range(current_month - 1, 0, -1):
+        a = ca_a.get(m, 0)
+        b = ca_b.get(m, 0)
+        if a > 0 and b > 0:
+            rates.append(b / a - 1)
+        if len(rates) >= 2:
+            break
+
+    if not rates:
+        return 0.0
+    return sum(rates) / len(rates)
 
 
 def fetch_ca_comparison(
     year_a: int = 2025,
     year_b: int = 2026,
 ) -> dict[str, Any]:
-    """Fetch CA pour deux années et construit le comparatif mensuel.
+    """Fetch CA mensuel 2025 vs 2026 avec prévisions.
 
     Retourne::
 
         {
-            "year_a": 2025,
-            "year_b": 2026,
+            "year_a": 2025, "year_b": 2026,
+            "current_month": 3, "current_day": 28,
             "months": [
-                {"month": 1, "label": "Janvier", "ca_a": 12345.0, "ca_b": 15000.0, "pct": 21.5},
+                {
+                    "month": 1, "label": "Janvier",
+                    "ca_a": 64501.0, "ca_b": 75775.0,
+                    "forecast": 0.0,            # 0 si mois passé
+                    "ca_b_realized": 75775.0,    # = ca_b pour mois passés
+                    "pct": 17.5,
+                },
                 ...
+                {   # Mois en cours (ex: mars)
+                    "month": 3, "ca_a": 100274.0,
+                    "ca_b": 164095.0,            # réalisé à date
+                    "forecast": 5000.0,           # estimation restante
+                    "ca_b_realized": 164095.0,
+                    "pct": 12.3,
+                },
+                {   # Mois futur
+                    "month": 4, "ca_a": 80000.0,
+                    "ca_b": 0.0,
+                    "forecast": 92000.0,          # CA_2025 × (1 + taux)
+                    "ca_b_realized": 0.0,
+                    "pct": 15.0,                  # taux prévisionnel
+                },
             ],
-            "ytd_a": 45000.0,
-            "ytd_b": 52000.0,
-            "ytd_pct": 15.6,
-            "current_month": 3,
+            "ytd_a": ..., "ytd_b": ..., "ytd_pct": ...,
+            "ca_cible": ...,  # CA cible fin d'année
+            "growth_rate": 0.15,  # taux 2 derniers mois
         }
     """
-    import datetime
-
-    from common.easybeer.indicators import get_chiffre_affaire
+    from common.easybeer.indicators import get_ca_mensuel
 
     now = datetime.datetime.now(datetime.UTC)
     current_month = now.month
+    current_day = now.day
 
-    # Appel CA année A (complète)
-    _log.info("Fetching CA %d...", year_a)
-    data_a = get_chiffre_affaire(
-        date_debut=f"{year_a}-01-01T00:00:00.000Z",
-        date_fin=f"{year_a}-12-31T23:59:59.999Z",
+    # ── Appel API : CA mensuel année B avec référence année A ──
+    _log.info("Fetching CA mensuel %d (avec référence %d)...", year_b, year_a)
+    data = get_ca_mensuel(year_b, include_avoir=True, include_carnet=True)
+    ca_b, ca_a = _parse_monthly_series(data)
+
+    _log.info(
+        "CA parsé: %d mois année %d, %d mois année %d",
+        len(ca_b), year_b, len(ca_a), year_a,
     )
-    ca_a = _build_month_map(_parse_ca_series(data_a))
 
-    # Appel CA année B (jusqu'à aujourd'hui)
-    _log.info("Fetching CA %d...", year_b)
-    data_b = get_chiffre_affaire(
-        date_debut=f"{year_b}-01-01T00:00:00.000Z",
-        date_fin=f"{year_b}-12-31T23:59:59.999Z",
-    )
-    ca_b = _build_month_map(_parse_ca_series(data_b))
+    # ── Taux de croissance (2 derniers mois complets) ──
+    growth_rate = _compute_growth_rate(ca_a, ca_b, current_month)
+    _log.info("Taux de croissance (2 derniers mois): %.1f%%", growth_rate * 100)
 
-    # Construire le tableau mensuel
-    _MOIS_LABELS = [
-        "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-        "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
-    ]
-
-    months = []
+    # ── Construire le tableau mensuel ──
+    months: list[dict[str, Any]] = []
     ytd_a = 0.0
     ytd_b = 0.0
+    ca_cible = 0.0
 
     for m in range(1, 13):
         a = ca_a.get(m, 0.0)
         b = ca_b.get(m, 0.0)
 
-        if a > 0:
-            pct = round((b - a) / a * 100, 1)
-        elif b > 0:
-            pct = 100.0  # de 0 à quelque chose = +100%
+        if m < current_month:
+            # Mois passé : tout est réalisé
+            forecast = 0.0
+            realized = b
+            ca_cible += b
+        elif m == current_month:
+            # Mois en cours : réalisé + estimation du reste
+            realized = b
+            forecast_total = a * (1 + growth_rate) if a > 0 else b
+            forecast = max(0.0, forecast_total - b)
+            ca_cible += b + forecast
         else:
-            pct = 0.0
+            # Mois futur : tout est prévisionnel
+            realized = 0.0
+            forecast = a * (1 + growth_rate) if a > 0 else 0.0
+            ca_cible += forecast
+
+        # % évolution
+        if m <= current_month:
+            # Mois avec données réelles
+            pct = round((b - a) / a * 100, 1) if a > 0 else (100.0 if b > 0 else 0.0)
+        else:
+            # Mois futur : taux prévisionnel
+            pct = round(growth_rate * 100, 1)
 
         months.append({
             "month": m,
             "label": _MOIS_LABELS[m],
             "ca_a": round(a, 2),
             "ca_b": round(b, 2),
+            "ca_b_realized": round(realized, 2),
+            "forecast": round(forecast, 2),
             "pct": pct,
         })
 
-        # Cumul YTD jusqu'au mois courant (de l'année B)
-        if m <= current_month:
+        # Cumul YTD (à date du jour, pas au mois complet)
+        if m < current_month:
             ytd_a += a
             ytd_b += b
+        elif m == current_month:
+            # Prorata du mois en cours pour year_a
+            import calendar
+            days_in_month = calendar.monthrange(year_a, m)[1]
+            ratio = current_day / days_in_month
+            ytd_a += a * ratio
+            ytd_b += b  # b est déjà le réalisé à date
 
     ytd_pct = round((ytd_b - ytd_a) / ytd_a * 100, 1) if ytd_a > 0 else (100.0 if ytd_b > 0 else 0.0)
 
     return {
         "year_a": year_a,
         "year_b": year_b,
+        "current_month": current_month,
+        "current_day": current_day,
         "months": months,
         "ytd_a": round(ytd_a, 2),
         "ytd_b": round(ytd_b, 2),
         "ytd_pct": ytd_pct,
-        "current_month": current_month,
+        "ca_cible": round(ca_cible, 2),
+        "growth_rate": round(growth_rate * 100, 1),
     }

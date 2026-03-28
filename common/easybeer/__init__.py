@@ -43,7 +43,7 @@ from .conditioning import (
 from .history import get_contenant_historique, get_mp_historique_entree
 
 # --- indicators ---
-from .indicators import get_chiffre_affaire
+from .indicators import get_ca_mensuel
 
 # --- products ---
 from .products import (
@@ -107,7 +107,7 @@ __all__ = [
     "get_planification_matrice", "add_planification_conditionnement",
     "get_code_barre_matrice", "upload_fichier_brassin",
     # indicators
-    "get_chiffre_affaire",
+    "get_ca_mensuel",
     # suppliers
     "get_all_fournisseurs", "find_fournisseur_by_name", "invalidate_fournisseurs_cache",
     "extract_supplier_email", "extract_supplier_contact_name", "extract_supplier_address",
