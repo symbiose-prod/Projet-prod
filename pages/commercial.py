@@ -128,8 +128,56 @@ async def page_commercial():
                             f"color: {pct_col}; font-weight: 600"
                         )
 
+        # ── Histogramme ──
+        section_title(f"CA mensuel {year_a} vs {year_b}", "bar_chart")
+
+        mois_labels = [m["label"][:3] for m in months]  # Jan, Fév, Mar...
+        ca_a_vals = [m["ca_a"] for m in months]
+        ca_b_vals = [m["ca_b"] if m["month"] <= current_month else 0 for m in months]
+
+        ui.echart({
+            "tooltip": {
+                "trigger": "axis",
+                "axisPointer": {"type": "shadow"},
+                "formatter": "{b}<br/>{a0}: {c0} €<br/>{a1}: {c1} €",
+            },
+            "legend": {
+                "data": [str(year_a), str(year_b)],
+                "top": 10,
+            },
+            "grid": {
+                "left": 80,
+                "right": 30,
+                "top": 50,
+                "bottom": 40,
+            },
+            "xAxis": {
+                "type": "category",
+                "data": mois_labels,
+            },
+            "yAxis": {
+                "type": "value",
+                "axisLabel": {"formatter": "{value} €"},
+            },
+            "series": [
+                {
+                    "name": str(year_a),
+                    "type": "bar",
+                    "data": ca_a_vals,
+                    "itemStyle": {"color": "#9CA3AF"},
+                    "barGap": "10%",
+                },
+                {
+                    "name": str(year_b),
+                    "type": "bar",
+                    "data": ca_b_vals,
+                    "itemStyle": {"color": COLORS["green"]},
+                },
+            ],
+        }).classes("w-full").style("height: 400px")
+
         # ── Tableau mensuel ──
-        section_title(f"CA mensuel {year_a} vs {year_b}", "table_chart")
+        section_title(f"Détail mensuel {year_a} vs {year_b}", "table_chart")
 
         columns = [
             {"name": "label", "label": "Mois", "field": "label", "align": "left", "sortable": False},

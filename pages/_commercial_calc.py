@@ -12,16 +12,15 @@ _log = logging.getLogger("ferment.commercial")
 
 
 def _parse_ca_series(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Extrait les coordonnées (label, montant) depuis un ModeleIndicateurResultat.
+    """Extrait les coordonnées depuis un ModeleIndicateurResultat.
 
-    EasyBeer retourne soit ``series`` (liste) soit ``serie`` (objet unique).
-    Chaque série a un champ ``values`` contenant des ``{label, x, y}``.
+    EasyBeer retourne des données **journalières** :
+    - ``series[0].values`` = liste de ``{label: None, x: "DD/MM/YYYY", y: montant}``
     """
     series = data.get("series") or []
     if not series and data.get("serie"):
         series = [data["serie"]]
 
-    # Prendre la première série (CA HT principal)
     if not series:
         return []
 
@@ -29,47 +28,47 @@ def _parse_ca_series(data: dict[str, Any]) -> list[dict[str, Any]]:
     return values
 
 
-def _month_index_from_label(label: str) -> int | None:
-    """Extrait le numéro de mois (1-12) depuis un label comme 'Janvier 2025' ou '01/2025'."""
-    if not label:
+def _build_month_map(values: list[dict]) -> dict[int, float]:
+    """Agrège les données journalières par mois → {mois: CA total}.
+
+    Le champ ``x`` contient la date au format ``DD/MM/YYYY``.
+    Le champ ``y`` contient le CA du jour.
+    """
+    result: dict[int, float] = {}
+    for v in values:
+        y = v.get("y")
+        if y is None:
+            continue
+        amount = float(y)
+        if amount == 0:
+            continue
+
+        x = v.get("x") or v.get("label") or ""
+        month = _extract_month(str(x))
+        if month is not None:
+            result[month] = result.get(month, 0.0) + amount
+
+    return result
+
+
+def _extract_month(date_str: str) -> int | None:
+    """Extrait le mois (1-12) depuis une date DD/MM/YYYY ou YYYY-MM-DD."""
+    import re
+
+    if not date_str:
         return None
 
-    label = label.strip().lower()
-
-    # Format "Janvier 2025", "Février 2025", etc.
-    _MOIS = {
-        "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4,
-        "mai": 5, "juin": 6, "juillet": 7, "août": 8, "aout": 8,
-        "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12, "decembre": 12,
-    }
-    for nom, num in _MOIS.items():
-        if nom in label:
-            return num
-
-    # Format "01/2025" ou "2025-01"
-    import re
-    m = re.match(r"(\d{1,2})[/\-](\d{4})", label)
+    # DD/MM/YYYY
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", date_str)
     if m:
-        return int(m.group(1))
-    m = re.match(r"(\d{4})[/\-](\d{1,2})", label)
+        return int(m.group(2))
+
+    # YYYY-MM-DD
+    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", date_str)
     if m:
         return int(m.group(2))
 
     return None
-
-
-def _build_month_map(values: list[dict]) -> dict[int, float]:
-    """Convertit une liste de coordonnées en {mois: montant}."""
-    result: dict[int, float] = {}
-    for v in values:
-        label = v.get("label", "")
-        y = v.get("y")
-        if y is None:
-            continue
-        month = _month_index_from_label(label)
-        if month is not None:
-            result[month] = float(y)
-    return result
 
 
 def fetch_ca_comparison(
