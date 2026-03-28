@@ -21,6 +21,51 @@ from ._client import (
 
 
 @retry_api
+def get_ca_daily(
+    date_debut: str,
+    date_fin: str,
+    *,
+    include_avoir: bool = True,
+    include_carnet: bool = True,
+) -> dict[str, Any]:
+    """POST /indicateur/chiffre-affaire → CA journalier sur une période libre.
+
+    Retourne des données journalières : series[0].values = [{x: "DD/MM/YYYY", y: montant}, ...].
+    """
+    bid = int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013"))
+
+    payload: dict[str, Any] = {
+        "idBrasserie": bid,
+        "periode": {
+            "type": "PERIODE_LIBRE",
+            "dateDebut": date_debut,
+            "dateFin": date_fin,
+        },
+        "typeMontant": "HT",
+        "inclureVenteDirecte": True,
+        "inclureCommande": True,
+        "inclureAvoir": include_avoir,
+        "inclureFactureAcompte": True,
+        "inclureCommandeCarnet": include_carnet,
+        "deduireDroitsAccise": False,
+        "deduireFraisLivraison": False,
+    }
+
+    ep = "indicateur/chiffre-affaire"
+    r = get_session().post(
+        f"{BASE}/{ep}",
+        params={"forceRefresh": False},
+        json=payload,
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
+    _log.info("CA daily %s → %s : %d séries", date_debut[:10], date_fin[:10], len(data.get("series") or []))
+    return data
+
+
+@retry_api
 def get_ca_mensuel(
     year: int,
     *,
