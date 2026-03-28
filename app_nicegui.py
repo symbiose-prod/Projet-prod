@@ -291,6 +291,7 @@ import pages.ressources  # noqa: F401 — /ressources
 import pages.stock_pf  # noqa: F401 — /stock-pf
 import pages.stocks  # noqa: F401 — /stocks
 import pages.sync  # noqa: F401 — /sync
+import pages.tags  # noqa: F401 — /tags
 
 # ─── Health check ────────────────────────────────────────────────────────────
 

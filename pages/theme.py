@@ -74,6 +74,7 @@ NAV_ITEMS: list[tuple] = [
     ("settings", "Paramètres", None, [
         ("menu_book",      "Ressources",           "/ressources"),
         ("account_tree",   "Nomenclatures",        "/nomenclatures"),
+        ("sell",           "Tags clients",          "/tags"),
         ("label",          "Étiquettes",           "/sync"),
     ]),
 ]
