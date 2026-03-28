@@ -62,16 +62,19 @@ COLORS = {
 
 # ─── Navigation ─────────────────────────────────────────────────────────────
 
-NAV_ITEMS = [
+NAV_ITEMS: list[tuple] = [
     ("home",           "Accueil",              "/accueil"),
     ("factory",        "Production",           "/production"),
     ("local_shipping", "Fiche de ramasse",     "/ramasse"),
     ("event_note",     "Planification",        "/planification"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("compare_arrows", "Stock produits finis",  "/stock-pf"),
-    ("menu_book",      "Ressources",           "/ressources"),
-    ("account_tree",   "Nomenclatures",        "/nomenclatures"),
-    ("label",          "Étiquettes",           "/sync"),
+    # Groupe dépliable — 4 éléments : (icon, label, None, children)
+    ("settings", "Paramètres", None, [
+        ("menu_book",      "Ressources",           "/ressources"),
+        ("account_tree",   "Nomenclatures",        "/nomenclatures"),
+        ("label",          "Étiquettes",           "/sync"),
+    ]),
 ]
 
 
@@ -547,22 +550,47 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
     # breakpoint=768 : en overlay sur mobile/tablette, persistant sur desktop
     with ui.left_drawer(value=True, bordered=True).props("breakpoint=768").classes("q-pa-md") as drawer:
 
-        for nav_icon, nav_label, nav_path in NAV_ITEMS:
+        def _render_nav_btn(nav_icon: str, nav_label: str, nav_path: str, *, indent: bool = False):
             is_active = current_path == nav_path
 
             def _nav_click(p=nav_path):
                 ui.run_javascript("window._fsLoading && window._fsLoading.start()")
                 ui.navigate.to(p)
 
+            cls = "w-full justify-start q-mb-xs"
+            if indent:
+                cls += " q-pl-lg"
             btn = ui.button(
                 nav_label,
                 icon=nav_icon,
                 on_click=_nav_click,
-            ).classes("w-full justify-start q-mb-xs").props(
+            ).classes(cls).props(
                 f'flat align=left {"color=green-8" if is_active else "color=grey-8"}'
             ).style("font-size: 13px; text-transform: none; letter-spacing: 0")
             if is_active:
                 btn.classes("nav-active")
+
+        for item in NAV_ITEMS:
+            if len(item) == 4:
+                # Groupe dépliable (icon, label, None, children)
+                grp_icon, grp_label, _, children = item
+                child_paths = [c[2] for c in children]
+                grp_active = current_path in child_paths
+                with ui.expansion(
+                    text=grp_label,
+                    icon=grp_icon,
+                    value=grp_active,
+                ).classes("w-full q-mb-xs").props(
+                    "dense header-class=\"text-body2 {}\"".format(
+                        "text-green-8" if grp_active else "text-grey-8"
+                    )
+                ).style("font-size: 13px"):
+                    for child_icon, child_label, child_path in children:
+                        _render_nav_btn(child_icon, child_label, child_path, indent=True)
+            else:
+                # Lien simple (icon, label, path)
+                nav_icon, nav_label, nav_path = item
+                _render_nav_btn(nav_icon, nav_label, nav_path)
 
         ui.separator().classes("q-my-md")
 
