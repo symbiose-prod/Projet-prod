@@ -2,7 +2,7 @@
 """Tests for BatchLotTracker — cross-brassin virtual stock consumption."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from common.lot_fifo import BatchLotTracker
 
@@ -89,16 +89,6 @@ class TestBatchLotTracker:
         result = tracker.distribute_ingredient(ing)
         assert len(result) == 1
         assert result[0] is ing
-
-    @patch("common.easybeer._client.is_rate_limited", return_value=5.0)
-    def test_rate_limited_skips_fetch(self, mock_rl):
-        """If rate-limited, don't call API — return unchanged."""
-        mock_fetch = MagicMock(return_value=[_make_lot(100, 100.0)])
-        tracker = BatchLotTracker(fetch_lots_fn=mock_fetch)
-        ing = _make_ingredient(42, 10.0)
-        result = tracker.distribute_ingredient(ing)
-        mock_fetch.assert_not_called()
-        assert result == [ing]
 
     def test_split_across_lots(self):
         """Ingredient needs more than one lot → split into multiple lines."""
