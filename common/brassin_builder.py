@@ -38,7 +38,7 @@ def _local_to_utc_iso(date_iso: str, hour: int, minute: int) -> str:
     local = _dt.datetime.fromisoformat(date_iso).replace(
         hour=hour, minute=minute, tzinfo=_PARIS,
     )
-    utc = local.astimezone(_dt.timezone.utc)
+    utc = local.astimezone(_dt.UTC)
     return utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
