@@ -90,13 +90,23 @@ class TestBuildBrassinPayload:
         )
         assert p["pourcentagePerte"] == 0
 
-    def test_date_formatting(self):
+    def test_date_formatting_winter(self):
+        # 10 mars 2026 = CET (UTC+1) → 08h30 local = 07h30 UTC
         p = build_brassin_payload(
             code="T", vol_l=100.0, perte_litres=0.0,
             semaine_du="2026-03-10", date_embout_iso="2026-03-24", id_produit=1,
         )
         assert p["dateDebutFormulaire"] == "2026-03-10T07:30:00.000Z"
-        assert p["dateConditionnementPrevue"] == "2026-03-24T23:00:00.000Z"
+        assert p["dateConditionnementPrevue"] == "2026-03-24T22:00:00.000Z"
+
+    def test_date_formatting_summer(self):
+        # 6 avril 2026 = CEST (UTC+2) → 08h30 local = 06h30 UTC
+        p = build_brassin_payload(
+            code="T", vol_l=100.0, perte_litres=0.0,
+            semaine_du="2026-04-06", date_embout_iso="2026-04-20", id_produit=1,
+        )
+        assert p["dateDebutFormulaire"] == "2026-04-06T06:30:00.000Z"
+        assert p["dateConditionnementPrevue"] == "2026-04-20T21:00:00.000Z"
 
     def test_ingredients_included_when_provided(self):
         ing = [{"idProduitIngredient": 1, "quantite": 10}]

@@ -10,6 +10,9 @@ from __future__ import annotations
 import datetime as _dt
 import re
 import unicodedata
+from zoneinfo import ZoneInfo
+
+_PARIS = ZoneInfo("Europe/Paris")
 
 
 def generate_brassin_code(
@@ -28,6 +31,15 @@ def generate_brassin_code(
     if "infusion" in product_label.lower():
         return "IP" + gout[:1].upper() + date_str
     return "K" + gout[:2].upper() + date_str
+
+
+def _local_to_utc_iso(date_iso: str, hour: int, minute: int) -> str:
+    """Convertit une date + heure locale (Europe/Paris) en timestamp UTC pour l'API."""
+    local = _dt.datetime.fromisoformat(date_iso).replace(
+        hour=hour, minute=minute, tzinfo=_PARIS,
+    )
+    utc = local.astimezone(_dt.timezone.utc)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def build_brassin_payload(
@@ -50,8 +62,8 @@ def build_brassin_payload(
         "nom": code,
         "volume": round(vol_l, 1),
         "pourcentagePerte": round(perte_litres / vol_l * 100, 2) if vol_l > 0 else 0,
-        "dateDebutFormulaire": f"{semaine_du}T07:30:00.000Z",
-        "dateConditionnementPrevue": f"{date_embout_iso}T23:00:00.000Z",
+        "dateDebutFormulaire": _local_to_utc_iso(semaine_du, 8, 30),
+        "dateConditionnementPrevue": _local_to_utc_iso(date_embout_iso, 23, 0),
         "produit": {"idProduit": id_produit},
         "type": {"code": "LOCALE"},
         "deduireMatierePremiere": True,
