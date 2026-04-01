@@ -109,6 +109,12 @@ def get_warehouses() -> list[dict[str, Any]]:
     if result:
         _warehouses_cache["data"] = result
         _warehouses_cache["ts"] = _time.monotonic()
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_put
+            cache_put(current_tenant_id(), "warehouses", result)
+        except Exception:
+            pass
     return result
 
 
@@ -192,4 +198,10 @@ def get_all_materiels() -> list[dict[str, Any]]:
     if result:
         _materiels_cache["data"] = result
         _materiels_cache["ts"] = _time.monotonic()
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_put
+            cache_put(current_tenant_id(), "materiels", result)
+        except Exception:
+            pass
     return result

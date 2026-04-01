@@ -53,6 +53,12 @@ def get_all_fournisseurs() -> list[dict[str, Any]]:
     if data:
         _FOURNISSEURS_CACHE["data"] = data
         _FOURNISSEURS_CACHE["ts"] = _time.monotonic()
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_put
+            cache_put(current_tenant_id(), "fournisseurs", data)
+        except Exception:
+            pass
     return data
 
 

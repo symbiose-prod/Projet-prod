@@ -77,15 +77,28 @@ def _sync_autonomie_stocks(tenant_id: str) -> tuple[int, str | None]:
 
 
 def _sync_products(tenant_id: str) -> tuple[int, str | None]:
-    """Sync product list + individual product details."""
-    from common.easybeer._client import is_rate_limited
-    from common.easybeer.products import _get_all_products_raw, get_product_detail
+    """Sync product list + individual product details.
+
+    Uses raw API calls to avoid polluting the in-memory cache with
+    all product details (which would grow indefinitely).
+    """
+    from common.easybeer._client import (
+        BASE,
+        TIMEOUT,
+        _auth,
+        _check_response,
+        _safe_json,
+        get_session,
+        is_rate_limited,
+    )
+    from common.easybeer.products import _get_all_products_raw
     from common.eb_cache import cache_put
 
     products = _get_all_products_raw()
     cache_put(tenant_id, "products", products)
 
-    # Also sync individual product details (recipes)
+    # Sync individual product details (recipes) via raw API calls
+    # to avoid filling _product_detail_cache in-memory indefinitely.
     count = len(products)
     for p in products:
         if is_rate_limited() > 0:
@@ -95,8 +108,12 @@ def _sync_products(tenant_id: str) -> tuple[int, str | None]:
         if not pid:
             continue
         try:
-            detail = get_product_detail(pid)
-            cache_put(tenant_id, "product_detail", detail, item_id=str(pid))
+            ep = f"parametres/produit/edition/{pid}"
+            r = get_session().get(f"{BASE}/{ep}", auth=_auth(), timeout=TIMEOUT)
+            _check_response(r, ep)
+            detail = _safe_json(r, ep)
+            if detail:
+                cache_put(tenant_id, "product_detail", detail, item_id=str(pid))
         except Exception:
             _log.debug("Skip product_detail %d", pid, exc_info=True)
 

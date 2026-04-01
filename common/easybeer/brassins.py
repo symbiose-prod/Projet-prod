@@ -68,7 +68,8 @@ def get_brassins_en_cours_cached() -> list[dict[str, Any]]:
     now = _time.monotonic()
     with _BRASSINS_EN_COURS_LOCK:
         cached = _BRASSINS_EN_COURS_CACHE["data"]
-        if cached is not None and (now - _BRASSINS_EN_COURS_CACHE["ts"]) < _BRASSINS_EN_COURS_TTL:
+        ts_before = _BRASSINS_EN_COURS_CACHE["ts"]
+        if cached is not None and (now - ts_before) < _BRASSINS_EN_COURS_TTL:
             return cached
     # L2: DB cache
     try:
@@ -77,8 +78,10 @@ def get_brassins_en_cours_cached() -> list[dict[str, Any]]:
         db_cached = cache_get(current_tenant_id(), "brassins_en_cours", max_age_s=600)
         if db_cached is not None:
             with _BRASSINS_EN_COURS_LOCK:
-                _BRASSINS_EN_COURS_CACHE["data"] = db_cached
-                _BRASSINS_EN_COURS_CACHE["ts"] = _time.monotonic()
+                # Only write L1 if no invalidation happened while we were reading L2
+                if _BRASSINS_EN_COURS_CACHE["ts"] == ts_before:
+                    _BRASSINS_EN_COURS_CACHE["data"] = db_cached
+                    _BRASSINS_EN_COURS_CACHE["ts"] = _time.monotonic()
             return db_cached
     except Exception:
         pass
@@ -182,7 +185,8 @@ def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     now = _time.monotonic()
     with _BRASSIN_DETAIL_LOCK:
         cached = _BRASSIN_DETAIL_CACHE.get(id_brassin)
-        if cached is not None and (now - _BRASSIN_DETAIL_TS.get(id_brassin, 0)) < _BRASSIN_DETAIL_TTL:
+        ts_before = _BRASSIN_DETAIL_TS.get(id_brassin, 0)
+        if cached is not None and (now - ts_before) < _BRASSIN_DETAIL_TTL:
             return cached
     # L2: DB cache
     try:
@@ -191,8 +195,10 @@ def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
         db_cached = cache_get(current_tenant_id(), "brassin_detail", item_id=str(id_brassin), max_age_s=600)
         if db_cached is not None:
             with _BRASSIN_DETAIL_LOCK:
-                _BRASSIN_DETAIL_CACHE[id_brassin] = db_cached
-                _BRASSIN_DETAIL_TS[id_brassin] = now
+                # Only write L1 if no invalidation happened while reading L2
+                if _BRASSIN_DETAIL_TS.get(id_brassin, 0) == ts_before:
+                    _BRASSIN_DETAIL_CACHE[id_brassin] = db_cached
+                    _BRASSIN_DETAIL_TS[id_brassin] = _time.monotonic()
             return db_cached
     except Exception:
         pass
@@ -201,7 +207,7 @@ def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
     with _BRASSIN_DETAIL_LOCK:
         if data:
             _BRASSIN_DETAIL_CACHE[id_brassin] = data
-            _BRASSIN_DETAIL_TS[id_brassin] = now
+            _BRASSIN_DETAIL_TS[id_brassin] = _time.monotonic()
     return data
 
 
