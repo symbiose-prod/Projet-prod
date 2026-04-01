@@ -260,14 +260,47 @@ def get_brassins_planifies(days_ahead: int = 90) -> list[dict[str, Any]]:
     data = _safe_json(r, ep)
     all_brassins = data if isinstance(data, list) else []
 
+    # Exclure les brassins passés qui ne sont plus en cours
+    en_cours_ids: set[int] = set()
+    try:
+        for b in get_brassins_en_cours_cached():
+            bid = b.get("idBrassin")
+            if bid:
+                en_cours_ids.add(bid)
+    except Exception:
+        _log.debug("Cannot fetch en_cours for planifiés filter", exc_info=True)
+
+    today_str = now.strftime("%Y%m%d")  # YYYYMMDD for comparison
+
+    def _is_future_or_en_cours(b: dict) -> bool:
+        """Keep brews that are today/future OR currently active."""
+        bid = b.get("idBrassin")
+        if bid and bid in en_cours_ids:
+            return True
+        # Parse date from brew name (last 8 digits = DDMMYYYY)
+        nom = b.get("nom") or ""
+        m = re.search(r"(\d{8})$", nom)
+        if m:
+            ddmmyyyy = m.group(1)
+            yyyymmdd = ddmmyyyy[4:8] + ddmmyyyy[2:4] + ddmmyyyy[0:2]
+            return yyyymmdd >= today_str
+        # Fallback: dateDebutFormulaire (epoch ms)
+        raw = b.get("dateDebutFormulaire")
+        if isinstance(raw, (int, float)) and raw > 0:
+            brew_date = datetime.datetime.fromtimestamp(raw / 1000, tz=datetime.UTC)
+            return brew_date.date() >= now.date()
+        # No date info → keep it
+        return True
+
     planifies = [
         b for b in all_brassins
         if float(b.get("volume") or 0) >= 100
         and not b.get("annule")
+        and _is_future_or_en_cours(b)
     ]
     _log.info(
-        "Brassins planifiés: %d/%d (horizon %dj)",
-        len(planifies), len(all_brassins), days_ahead,
+        "Brassins planifiés: %d/%d (horizon %dj, %d en cours)",
+        len(planifies), len(all_brassins), days_ahead, len(en_cours_ids),
     )
     # Écriture opportuniste dans le cache DB
     try:
