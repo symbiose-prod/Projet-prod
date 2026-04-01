@@ -133,7 +133,59 @@ GET(f"/produits?idBrasserie={ID_BRASSERIE}")
 GET(f"/produit/liste?idBrasserie={ID_BRASSERIE}")
 POST("/produit/export/excel", BASE_PAYLOAD)
 
+# ─── Webhooks ───────────────────────────────────────────────
+print("\n── Webhooks ────────────────────────────────────────────")
+# Lister les webhooks existants
+GET("/parametres/webhook/liste")
+
+# Chercher les types de webhooks disponibles dans les référentiels
+GET("/referentiel/webhook/type")
+GET("/referentiel/webhook/types")
+GET("/parametres/webhook/types")
+GET("/parametres/webhook/type")
+GET("/referentiel/type-webhook")
+
+# Tenter d'enregistrer un webhook de test pour voir les types acceptés
+# (avec un payload minimal pour voir l'erreur / les types attendus)
+print("\n── Test enregistrement webhook (payload minimal) ──────")
+POST("/parametres/webhook/enregistrer", {
+    "url": "https://example.com/webhook-test",
+    "libelle": "Test exploration",
+})
+# Tenter avec un type vide pour voir l'erreur
+POST("/parametres/webhook/enregistrer", {
+    "url": "https://example.com/webhook-test",
+    "libelle": "Test exploration",
+    "type": {"code": "", "libelle": ""},
+})
+# Types courants dans les ERP brassicoles
+for code in [
+    "BRASSIN", "STOCK", "COMMANDE", "CONDITIONNEMENT",
+    "PRODUIT", "MATIERE_PREMIERE", "VENTE", "FACTURE",
+    "ALL", "MOUVEMENT_STOCK", "LIVRAISON",
+]:
+    print(f"  → Test type '{code}'...")
+    r = POST("/parametres/webhook/enregistrer", {
+        "url": "https://example.com/webhook-test",
+        "libelle": f"Test {code}",
+        "type": {"code": code},
+    })
+    if r and r.status_code == 200:
+        print(f"  ✅ Type '{code}' ACCEPTÉ !")
+        # Supprimer immédiatement le webhook de test
+        try:
+            data = r.json()
+            wh_id = data.get("idWebhook") or data.get("id")
+            if wh_id:
+                GET(f"/parametres/webhook/supprimer/{wh_id}")
+                print(f"  🗑️  Webhook test {wh_id} supprimé")
+        except Exception:
+            pass
+
+# Lister à nouveau pour voir ce qui a été créé
+print("\n── Webhooks après tests ────────────────────────────────")
+GET("/parametres/webhook/liste")
+
 print(f"\n{'='*60}")
 print("  Exploration terminée.")
-print("  Envoie les lignes ✅ à Nicolas pour configurer les endpoints.")
 print(f"{'='*60}\n")

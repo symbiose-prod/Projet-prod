@@ -44,13 +44,32 @@ def _get_all_products_raw() -> list[dict[str, Any]]:
 
 
 def get_all_products() -> list[dict[str, Any]]:
-    """Liste complete des produits avec cache TTL 1h."""
+    """Liste complete des produits — L1 in-memory, L2 DB cache, L3 API."""
+    # L1: in-memory
     if _cache_valid(_products_cache):
         return _products_cache["data"]
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "products", max_age_s=7200)
+        if cached is not None:
+            _products_cache["data"] = cached
+            _products_cache["ts"] = _time.monotonic()
+            return cached
+    except Exception:
+        pass
+    # L3: API
     data = _get_all_products_raw()
     if data:
         _products_cache["data"] = data
         _products_cache["ts"] = _time.monotonic()
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_put
+            cache_put(current_tenant_id(), "products", data)
+        except Exception:
+            pass
     return data
 
 
@@ -62,9 +81,22 @@ def invalidate_products_cache() -> None:
 
 @retry_api
 def get_warehouses() -> list[dict[str, Any]]:
-    """GET /parametres/entrepot/liste → Liste de tous les entrepots (cache 1h)."""
+    """Entrepots — L1 in-memory, L2 DB cache, L3 API."""
+    # L1
     if _cache_valid(_warehouses_cache):
         return _warehouses_cache["data"]
+    # L2
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "warehouses", max_age_s=7200)
+        if cached is not None:
+            _warehouses_cache["data"] = cached
+            _warehouses_cache["ts"] = _time.monotonic()
+            return cached
+    except Exception:
+        pass
+    # L3
     ep = "parametres/entrepot/liste"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -82,11 +114,24 @@ def get_warehouses() -> list[dict[str, Any]]:
 
 @retry_api
 def get_product_detail(id_produit: int) -> dict[str, Any]:
-    """GET /parametres/produit/edition/{id} → Detail complet d'un produit (cache 30min)."""
+    """Detail produit — L1 in-memory, L2 DB cache, L3 API."""
+    # L1: in-memory
     now = _time.monotonic()
     cached = _product_detail_cache.get(id_produit)
     if cached is not None and (now - _product_detail_ts.get(id_produit, 0)) < _PRODUCT_DETAIL_TTL:
         return cached
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        db_cached = cache_get(current_tenant_id(), "product_detail", item_id=str(id_produit), max_age_s=7200)
+        if db_cached is not None:
+            _product_detail_cache[id_produit] = db_cached
+            _product_detail_ts[id_produit] = now
+            return db_cached
+    except Exception:
+        pass
+    # L3: API
     ep = f"parametres/produit/edition/{id_produit}"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -98,6 +143,12 @@ def get_product_detail(id_produit: int) -> dict[str, Any]:
     if data:
         _product_detail_cache[id_produit] = data
         _product_detail_ts[id_produit] = now
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_put
+            cache_put(current_tenant_id(), "product_detail", data, item_id=str(id_produit))
+        except Exception:
+            pass
     return data
 
 
@@ -113,9 +164,22 @@ def invalidate_product_detail_cache(id_produit: int | None = None) -> None:
 
 @retry_api
 def get_all_materiels() -> list[dict[str, Any]]:
-    """GET /parametres/materiel/liste/all → Liste complete du materiel (cache 1h)."""
+    """Matériel — L1 in-memory, L2 DB cache, L3 API."""
+    # L1
     if _cache_valid(_materiels_cache):
         return _materiels_cache["data"]
+    # L2
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "materiels", max_age_s=7200)
+        if cached is not None:
+            _materiels_cache["data"] = cached
+            _materiels_cache["ts"] = _time.monotonic()
+            return cached
+    except Exception:
+        pass
+    # L3
     ep = "parametres/materiel/liste/all"
     r = get_session().get(
         f"{BASE}/{ep}",

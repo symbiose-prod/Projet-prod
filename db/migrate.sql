@@ -319,6 +319,37 @@ CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_created
   ON ramasse_history(tenant_id, created_at DESC);
 
 -- =========================
+-- Cache EasyBeer générique (JSONB)
+-- =========================
+CREATE TABLE IF NOT EXISTS eb_cache (
+  id         BIGSERIAL PRIMARY KEY,
+  tenant_id  UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  cache_key  TEXT NOT NULL,
+  item_id    TEXT NOT NULL DEFAULT '',
+  data       JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ebc_tenant_key_item
+  ON eb_cache(tenant_id, cache_key, item_id);
+
+-- Metadata de sync EasyBeer
+CREATE TABLE IF NOT EXISTS eb_sync_meta (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  cache_key       TEXT NOT NULL,
+  last_sync_at    TIMESTAMPTZ,
+  sync_duration_s REAL,
+  item_count      INTEGER NOT NULL DEFAULT 0,
+  error_count     INTEGER NOT NULL DEFAULT 0,
+  last_error      TEXT,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_esm_tenant_key
+  ON eb_sync_meta(tenant_id, cache_key);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -329,7 +360,8 @@ BEGIN
                        audit_log, supplier_configs,
                        sync_operations, sync_api_keys,
                        product_bom, ramasse_history,
-                       client_cache, client_tags_cache TO shark;
+                       client_cache, client_tags_cache,
+                       eb_cache, eb_sync_meta TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

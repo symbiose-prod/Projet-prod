@@ -571,6 +571,10 @@ async def _startup_cleanup():
     # Démarrer le sync nocturne des clients EasyBeer (3h du matin Paris)
     asyncio.ensure_future(_daily_client_sync_loop())
 
+    # Démarrer la boucle de cache EasyBeer (sync toutes les 60s)
+    from common.eb_sync_loop import eb_cache_sync_loop
+    asyncio.ensure_future(eb_cache_sync_loop())
+
 
 # ─── Service Worker (servi depuis / pour scope racine) ──────────────────────
 

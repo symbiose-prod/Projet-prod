@@ -139,20 +139,32 @@ def get_mp_historique_entree(
     date_debut: str | None = None,
     date_fin: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Historique entrées MP avec cache TTL 2h par catégorie.
+    """Historique entrées MP — L1 in-memory, L2 DB cache, L3 API.
 
     Le cache n'est utilisé que pour les requêtes 365j complètes (pas de dates
     personnalisées) car c'est le pattern le plus fréquent (pages Ressources + Stocks).
     """
-    # Ne cacher que les appels "standard" sans dates personnalisées
     use_cache = date_debut is None and date_fin is None
     if use_cache:
+        # L1: in-memory
         now = _time.monotonic()
         cached = _MP_HIST_CACHE.get(categorie)
         if cached is not None and (now - _MP_HIST_TS.get(categorie, 0)) < _MP_HIST_TTL:
             _log.debug("mp/historique/entree/%s : cache hit (%d entrées)", categorie, len(cached))
             return cached
+        # L2: DB cache
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_get
+            db_cached = cache_get(current_tenant_id(), "mp_historique", item_id=categorie, max_age_s=7200)
+            if db_cached is not None:
+                _MP_HIST_CACHE[categorie] = db_cached
+                _MP_HIST_TS[categorie] = _time.monotonic()
+                return db_cached
+        except Exception:
+            pass
 
+    # L3: API
     result = _get_mp_historique_entree_raw(categorie, date_debut=date_debut, date_fin=date_fin)
 
     if use_cache and result:

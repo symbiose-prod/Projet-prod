@@ -30,12 +30,25 @@ def _get_all_fournisseurs_raw() -> list[dict[str, Any]]:
 
 
 def get_all_fournisseurs() -> list[dict[str, Any]]:
-    """Liste complete des fournisseurs avec cache TTL 1h."""
+    """Fournisseurs — L1 in-memory, L2 DB cache, L3 API."""
+    # L1
     if (
         _FOURNISSEURS_CACHE["data"] is not None
         and (_time.monotonic() - _FOURNISSEURS_CACHE["ts"]) < _FOURNISSEURS_CACHE_TTL
     ):
         return _FOURNISSEURS_CACHE["data"]
+    # L2
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "fournisseurs", max_age_s=7200)
+        if cached is not None:
+            _FOURNISSEURS_CACHE["data"] = cached
+            _FOURNISSEURS_CACHE["ts"] = _time.monotonic()
+            return cached
+    except Exception:
+        pass
+    # L3
     data = _get_all_fournisseurs_raw()
     if data:
         _FOURNISSEURS_CACHE["data"] = data

@@ -44,7 +44,17 @@ def get_autonomie_stocks_excel(window_days: int) -> bytes:
 
 @retry_api
 def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
-    """POST /indicateur/autonomie-stocks → JSON avec autonomie par produit fini."""
+    """Autonomie stocks — L2 DB cache, L3 API."""
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "autonomie_stocks", item_id=str(window_days), max_age_s=1800)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
+    # L3: API
     r = get_session().post(
         f"{BASE}/indicateur/autonomie-stocks",
         params={"forceRefresh": False},
@@ -53,7 +63,14 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
         timeout=TIMEOUT,
     )
     _check_response(r, "autonomie-stocks")
-    return _safe_json(r, "autonomie-stocks")
+    data = _safe_json(r, "autonomie-stocks")
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_put
+        cache_put(current_tenant_id(), "autonomie_stocks", data, item_id=str(window_days))
+    except Exception:
+        pass
+    return data
 
 
 # ─── Lots matieres premieres ─────────────────────────────────────────────────
@@ -117,9 +134,22 @@ _MP_CACHE_TTL = 3600  # 1 heure
 
 @retry_api
 def get_all_matieres_premieres() -> list[dict[str, Any]]:
-    """GET /stock/matieres-premieres/all → Liste de toutes les matieres premieres."""
+    """Matières premières — L1 in-memory, L2 DB cache, L3 API."""
+    # L1: in-memory
     if _MP_CACHE["data"] is not None and (time.monotonic() - _MP_CACHE["ts"]) < _MP_CACHE_TTL:
         return _MP_CACHE["data"]
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "mp_all", max_age_s=7200)
+        if cached is not None:
+            _MP_CACHE["data"] = cached
+            _MP_CACHE["ts"] = time.monotonic()
+            return cached
+    except Exception:
+        pass
+    # L3: API
     ep = "stock/matieres-premieres/all"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -132,6 +162,12 @@ def get_all_matieres_premieres() -> list[dict[str, Any]]:
     if result:
         _MP_CACHE["data"] = result
         _MP_CACHE["ts"] = time.monotonic()
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_put
+            cache_put(current_tenant_id(), "mp_all", result)
+        except Exception:
+            pass
     _log.info("get_all_matieres_premieres : %d MP chargées", len(result))
     return result
 

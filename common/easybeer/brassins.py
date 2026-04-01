@@ -26,7 +26,17 @@ def create_brassin(payload: dict[str, Any]) -> dict[str, Any]:
         timeout=TIMEOUT,
     )
     _check_response(r, ep)
-    return _safe_json(r, ep)
+    result = _safe_json(r, ep)
+    # Invalider le cache DB des brassins
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_delete
+        tid = current_tenant_id()
+        cache_delete(tid, "brassins_en_cours")
+        cache_delete(tid, "brassins_planifies")
+    except Exception:
+        pass
+    return result
 
 
 @retry_api
@@ -53,13 +63,26 @@ _BRASSINS_EN_COURS_LOCK = _threading.Lock()
 
 
 def get_brassins_en_cours_cached() -> list[dict[str, Any]]:
-    """Brassins en cours avec cache TTL 5 min (évite les appels HTTP redondants)."""
+    """Brassins en cours — L1 in-memory, L2 DB cache, L3 API."""
+    # L1: in-memory
     now = _time.monotonic()
     with _BRASSINS_EN_COURS_LOCK:
         cached = _BRASSINS_EN_COURS_CACHE["data"]
         if cached is not None and (now - _BRASSINS_EN_COURS_CACHE["ts"]) < _BRASSINS_EN_COURS_TTL:
             return cached
-    # Fetch en dehors du lock pour ne pas bloquer les lectures concurrentes
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        db_cached = cache_get(current_tenant_id(), "brassins_en_cours", max_age_s=600)
+        if db_cached is not None:
+            with _BRASSINS_EN_COURS_LOCK:
+                _BRASSINS_EN_COURS_CACHE["data"] = db_cached
+                _BRASSINS_EN_COURS_CACHE["ts"] = _time.monotonic()
+            return db_cached
+    except Exception:
+        pass
+    # L3: API
     data = get_brassins_en_cours()
     with _BRASSINS_EN_COURS_LOCK:
         if data:
@@ -154,12 +177,26 @@ _BRASSIN_DETAIL_LOCK = _threading.Lock()
 
 
 def get_brassin_detail(id_brassin: int) -> dict[str, Any]:
-    """Detail complet d'un brassin avec cache TTL 5 min (thread-safe)."""
+    """Détail brassin — L1 in-memory, L2 DB cache, L3 API."""
+    # L1: in-memory
     now = _time.monotonic()
     with _BRASSIN_DETAIL_LOCK:
         cached = _BRASSIN_DETAIL_CACHE.get(id_brassin)
         if cached is not None and (now - _BRASSIN_DETAIL_TS.get(id_brassin, 0)) < _BRASSIN_DETAIL_TTL:
             return cached
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        db_cached = cache_get(current_tenant_id(), "brassin_detail", item_id=str(id_brassin), max_age_s=600)
+        if db_cached is not None:
+            with _BRASSIN_DETAIL_LOCK:
+                _BRASSIN_DETAIL_CACHE[id_brassin] = db_cached
+                _BRASSIN_DETAIL_TS[id_brassin] = now
+            return db_cached
+    except Exception:
+        pass
+    # L3: API
     data = _get_brassin_detail_raw(id_brassin)
     with _BRASSIN_DETAIL_LOCK:
         if data:
@@ -183,14 +220,24 @@ def invalidate_brassin_detail_cache(id_brassin: int | None = None) -> None:
 
 @retry_api
 def get_brassins_planifies(days_ahead: int = 90) -> list[dict[str, Any]]:
-    """POST /brassin/liste sur [-30j → +days_ahead].
+    """Brassins planifiés — L2 DB cache, L3 API.
 
     Returns brassins (PLANIFIE + EN_COURS) that still have pending
     production needs. Includes 30 days of lookback to catch EN_COURS
     brassins that started recently but haven't been conditioned yet.
     """
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "brassins_planifies", max_age_s=1200)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
+
+    # L3: API
     now = datetime.datetime.now(datetime.UTC)
-    # Look back 30 days to catch EN_COURS brassins
     date_debut = (now - datetime.timedelta(days=30)).strftime(
         "%Y-%m-%dT00:00:00.000Z"
     )
@@ -213,8 +260,6 @@ def get_brassins_planifies(days_ahead: int = 90) -> list[dict[str, Any]]:
     data = _safe_json(r, ep)
     all_brassins = data if isinstance(data, list) else []
 
-    # Note: brassin/liste does not return etat in summary mode.
-    # Filter out small test brassins (< 100L) and cancelled ones.
     planifies = [
         b for b in all_brassins
         if float(b.get("volume") or 0) >= 100
@@ -224,6 +269,13 @@ def get_brassins_planifies(days_ahead: int = 90) -> list[dict[str, Any]]:
         "Brassins planifiés: %d/%d (horizon %dj)",
         len(planifies), len(all_brassins), days_ahead,
     )
+    # Écriture opportuniste dans le cache DB
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_put
+        cache_put(current_tenant_id(), "brassins_planifies", planifies)
+    except Exception:
+        pass
     return planifies
 
 
