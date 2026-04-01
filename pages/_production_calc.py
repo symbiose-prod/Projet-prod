@@ -33,6 +33,28 @@ def _fetch_eb_products() -> list[dict]:
 _SECONDARY_BRANDS = {"igeba", "niko", "inter", "water"}
 
 
+def _parse_iso_to_dmy(raw: str | int | float | None) -> str:
+    """Parse une date ISO, epoch-ms ou string en format DD/MM/YYYY.
+
+    Gère les chaînes courtes, les timestamps epoch en millisecondes,
+    et retourne une chaîne vide si le format est invalide.
+    """
+    if isinstance(raw, str) and len(raw) >= 10:
+        try:
+            return f"{raw[8:10]}/{raw[5:7]}/{raw[:4]}"
+        except (IndexError, ValueError):
+            return ""
+    if isinstance(raw, (int, float)) and raw > 0:
+        try:
+            import datetime as _dt
+            return _dt.datetime.fromtimestamp(
+                raw / 1000, tz=_dt.UTC
+            ).strftime("%d/%m/%Y")
+        except (OSError, ValueError, OverflowError):
+            return ""
+    return ""
+
+
 def _auto_match(gout: str, prod_labels: list[str]) -> int:
     """Retourne l'index du produit EasyBeer dont le libellé correspond le mieux au goût.
 
@@ -156,22 +178,7 @@ def _fetch_ongoing_productions(df: pd.DataFrame) -> dict:
         etat_libelle = etat_obj.get("libelle", "En cours")
 
         # Date conditionnement prévue
-        date_cond = ""
-        raw_date = b.get("dateConditionnementPrevue")
-        if isinstance(raw_date, str) and raw_date:
-            try:
-                dt = raw_date[:10]  # "2026-03-15T..."  → "2026-03-15"
-                date_cond = f"{dt[8:10]}/{dt[5:7]}/{dt[:4]}"
-            except (IndexError, ValueError):
-                date_cond = raw_date[:10]
-        elif isinstance(raw_date, (int, float)) and raw_date > 0:
-            try:
-                import datetime as _dt
-                date_cond = _dt.datetime.fromtimestamp(
-                    raw_date / 1000, tz=_dt.UTC
-                ).strftime("%d/%m/%Y")
-            except (OSError, ValueError):
-                pass
+        date_cond = _parse_iso_to_dmy(b.get("dateConditionnementPrevue"))
 
         vol_hl = round(volume_l / 100.0, 2)
 
@@ -234,44 +241,14 @@ def _fetch_planned_productions(df: pd.DataFrame | None = None) -> dict:
         gout = _match_brassin_to_gout(libelle, gouts_connus) if gouts_connus else ""
 
         # Date début
-        date_debut = ""
-        raw_date = (
+        date_debut = _parse_iso_to_dmy(
             b.get("dateDebutPlanificationFormulaire")
             or b.get("dateDebutCalendrier")
             or b.get("dateDebutFormulaire")
         )
-        if isinstance(raw_date, str) and raw_date:
-            try:
-                dt = raw_date[:10]
-                date_debut = f"{dt[8:10]}/{dt[5:7]}/{dt[:4]}"
-            except (IndexError, ValueError):
-                date_debut = raw_date[:10]
-        elif isinstance(raw_date, (int, float)) and raw_date > 0:
-            try:
-                import datetime as _dt
-                date_debut = _dt.datetime.fromtimestamp(
-                    raw_date / 1000, tz=_dt.UTC
-                ).strftime("%d/%m/%Y")
-            except (OSError, ValueError):
-                pass
 
         # Date conditionnement
-        date_cond = ""
-        raw_cond = b.get("dateConditionnementPrevue")
-        if isinstance(raw_cond, str) and raw_cond:
-            try:
-                dt = raw_cond[:10]
-                date_cond = f"{dt[8:10]}/{dt[5:7]}/{dt[:4]}"
-            except (IndexError, ValueError):
-                date_cond = raw_cond[:10]
-        elif isinstance(raw_cond, (int, float)) and raw_cond > 0:
-            try:
-                import datetime as _dt
-                date_cond = _dt.datetime.fromtimestamp(
-                    raw_cond / 1000, tz=_dt.UTC
-                ).strftime("%d/%m/%Y")
-            except (OSError, ValueError):
-                pass
+        date_cond = _parse_iso_to_dmy(b.get("dateConditionnementPrevue"))
 
         vol_hl = round(volume_l / 100.0, 2)
         total_hl += vol_hl

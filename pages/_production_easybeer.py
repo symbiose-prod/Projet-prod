@@ -132,9 +132,9 @@ def _render_easybeer_section(
     _product_indices: dict[str, int] = {}
     for g in _gouts_eb:
         vol_l = _vol_par_gout.get(g, 0)
-        matched_idx = _auto_match(g, _prod_labels)
+        matched_idx = _auto_match(g, _prod_labels) if _prod_labels else 0
         _product_indices[g] = matched_idx
-        matched_label = _prod_labels[matched_idx] if _prod_labels else "—"
+        matched_label = _prod_labels[matched_idx] if _prod_labels and matched_idx < len(_prod_labels) else "—"
         with ui.row().classes("w-full items-center gap-3 q-mt-xs"):
             with ui.column().classes("gap-0"):
                 ui.label(g).classes("text-subtitle2").style(f"color: {colors['ink']}; font-weight: 600")
@@ -274,11 +274,15 @@ def _render_easybeer_section(
 
             _selected_cuve_a_id = (
                 _cuves_fermentation[cuve_a_sel.value].get("idMateriel")
-                if cuve_a_sel and _cuves_fermentation else None
+                if cuve_a_sel and _cuves_fermentation
+                and 0 <= cuve_a_sel.value < len(_cuves_fermentation)
+                else None
             )
             _selected_cuve_b_id = (
                 _cuves_garde[cuve_b_sel.value].get("idMateriel")
-                if cuve_b_sel and _cuves_garde else None
+                if cuve_b_sel and _cuves_garde
+                and 0 <= cuve_b_sel.value < len(_cuves_garde)
+                else None
             )
             _cuve_dilution_id = _cuve_dilution.get("idMateriel") if _cuve_dilution else None
 
@@ -352,16 +356,22 @@ def _render_easybeer_section(
 
                 try:
                     result = create_brassin(payload)
-                    brassin_id = result.get("id", "?")
-                    created_ids.append(brassin_id)
-                    ui.notify(f"Brassin « {g} » créé (ID {brassin_id})", type="positive")
+                    brassin_id = result.get("id")
+                    if brassin_id is not None and not isinstance(brassin_id, int):
+                        try:
+                            brassin_id = int(brassin_id)
+                        except (ValueError, TypeError):
+                            _log.warning("Brassin ID non numérique: %s (%s)", brassin_id, type(brassin_id))
+                            brassin_id = None
+                    created_ids.append(brassin_id or "?")
+                    ui.notify(f"Brassin « {g} » créé (ID {brassin_id or '?'})", type="positive")
                 except (EasyBeerError, requests.RequestException) as exc:
                     _log.exception("Échec création brassin %s", g)
                     errors.append(f"{g} : {exc}")
                     continue
 
                 # Planification conditionnement
-                if not isinstance(brassin_id, int) or not _id_entrepot:
+                if not brassin_id or not _id_entrepot:
                     continue
 
                 # Pause après création brassin pour éviter le rate-limit
@@ -513,7 +523,7 @@ def _render_easybeer_section(
 
         # Dialogue de confirmation avec preview détaillée (action irréversible dans l'ERP)
         _detail_lines = [
-            f"{g} — {_vol_par_gout.get(g, 0):.0f} L — {_prod_labels[_product_indices[g]] if _product_indices.get(g) is not None and _prod_labels else '—'}"
+            f"{g} — {_vol_par_gout.get(g, 0):.0f} L — {_prod_labels[_product_indices[g]] if _prod_labels and _product_indices.get(g) is not None and _product_indices[g] < len(_prod_labels) else '—'}"
             for g in _gouts_eb
         ]
         _confirm_dlg, _confirm_msg, _confirm_action = confirm_dialog(
