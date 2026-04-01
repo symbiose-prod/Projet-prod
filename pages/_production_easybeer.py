@@ -545,15 +545,22 @@ def _render_easybeer_section(
             _create_status.update()
 
         async def _confirmed_create():
-            _confirm_dlg.close()
-            _create_btn.disable()
-            _create_spinner.set_visibility(True)
-            _create_status.set_visibility(True)
-            _set_status("Initialisation…")
+            # Désactiver immédiatement le bouton du dialogue pour éviter les double-clics
+            _confirm_action.disable()
+            _confirm_action.props("loading")
             try:
+                # Petit délai pour que l'UI se mette à jour avant de fermer le dialogue
+                await asyncio.sleep(0.1)
+                _confirm_dlg.close()
+                _create_btn.disable()
+                _create_spinner.set_visibility(True)
+                _create_status.set_visibility(True)
+                _set_status("Initialisation…")
                 await do_create_brassins()
             finally:
                 _create_btn.enable()
+                _confirm_action.enable()
+                _confirm_action.props(remove="loading")
                 _create_spinner.set_visibility(False)
                 _create_status.set_visibility(False)
 
