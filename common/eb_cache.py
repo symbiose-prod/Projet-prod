@@ -67,9 +67,9 @@ def cache_put(
     run_sql(
         """
         INSERT INTO eb_cache (tenant_id, cache_key, item_id, data, fetched_at)
-        VALUES (:t, :k, :i, :d::jsonb, now())
+        VALUES (:t, :k, :i, CAST(:d AS jsonb), now())
         ON CONFLICT (tenant_id, cache_key, item_id) DO UPDATE
-        SET data       = :d::jsonb,
+        SET data       = CAST(:d AS jsonb),
             fetched_at = now()
         """,
         {
