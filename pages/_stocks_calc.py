@@ -37,14 +37,16 @@ class StockItem:
     current_stock: float  # stock brut (quantité physique en entrepôt)
     unit: str             # "u"
     seuil_bas: float
-    consumption: float    # total consumed over period
+    consumption: float    # total consumed over period (unit MP)
+    sales_hl: float       # ventes PF en hL sur la période
     window_days: int
     daily_consumption: float
     stock_days: float | None  # current_stock / daily_consumption, or None
     supplier: str | None = None  # dynamically extracted from history
     type_code: str = ""  # EasyBeer type.code (e.g. "INGREDIENT_FRUIT")
     eb_id: int | None = None  # EasyBeer idMatierePremiere (stable across renames)
-    virtual_pf_stock: float = 0.0  # stock contenu dans les PF déjà fabriqués
+    max_recipe_qty_7200: float | None = None  # qté MP nécessaire pour la recette la plus gourmande à 7200L
+    max_recipe_product: str = ""  # nom du produit de la recette la plus gourmande
 
 
 @dataclass
@@ -458,16 +460,19 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             format_code = "unknown"
 
         daily_sales = stock / autonomie if autonomie > 0 else 0.0
+        volume_hl = float(pf.get("volume") or 0)
+        daily_sales_hl = volume_hl / autonomie if autonomie > 0 else 0.0
 
         key = (pid, format_code)
         if key in pf_data:
-            # Same product-format seen twice: aggregate
             pf_data[key]["daily_sales"] += daily_sales
+            pf_data[key]["daily_sales_hl"] += daily_sales_hl
             pf_data[key]["stock"] += stock
         else:
             pf_data[key] = {
                 "label": pf_label,
                 "daily_sales": daily_sales,
+                "daily_sales_hl": daily_sales_hl,
                 "stock": stock,
             }
 
@@ -526,6 +531,10 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     # ── Step 5: Compute autonomy per component ──
     items: list[StockItem] = []
 
+    # Pre-load product details for recipe analysis (cached L2, no API call)
+    from common.easybeer.products import get_product_detail
+    _recipe_cache: dict[int, dict] = {}
+
     for id_mp, bom_entries in bom_lookup.items():
         mp_info = mp_stock.get(id_mp)
         if not mp_info:
@@ -533,7 +542,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             continue
 
         daily_consumption = 0.0
-        virtual_pf_stock = 0.0
+        daily_sales_hl_total = 0.0
         contributing_pfs: list[str] = []
 
         for entry in bom_entries:
@@ -541,8 +550,6 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             pf = pf_data.get(pf_key)
 
             if not pf:
-                # Fallback: chercher un autre format du même produit.
-                # Priorité : "unknown" > premier format trouvé.
                 _fallback_first = None
                 for k, v in pf_data.items():
                     if k[0] == entry["id_produit"]:
@@ -561,11 +568,44 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             if qty <= 0:
                 continue
             daily_consumption += pf["daily_sales"] * qty
-            virtual_pf_stock += pf["stock"] * qty
+            daily_sales_hl_total += pf["daily_sales_hl"]
             contributing_pfs.append(entry.get("product_label", ""))
 
         raw_stock = mp_info["stock"]
         stock_days = raw_stock / daily_consumption if daily_consumption > 0 else None
+        sales_hl = daily_sales_hl_total * window_days
+
+        # Colonne 4 : quantité MP nécessaire pour la recette la plus gourmande à 7200L
+        max_recipe_qty = None
+        max_recipe_product = ""
+        _seen_products: set[int] = set()
+        for entry in bom_entries:
+            pid = entry["id_produit"]
+            if pid in _seen_products:
+                continue
+            _seen_products.add(pid)
+            try:
+                if pid not in _recipe_cache:
+                    _recipe_cache[pid] = get_product_detail(pid)
+                detail = _recipe_cache[pid]
+                recettes = detail.get("recettes") or []
+                if not recettes:
+                    continue
+                recette = recettes[0]
+                vol_recette = float(recette.get("volumeRecette") or 0)
+                if vol_recette <= 0:
+                    continue
+                for ing in recette.get("ingredients") or []:
+                    ing_mp = ing.get("matierePremiere") or {}
+                    if ing_mp.get("idMatierePremiere") == id_mp:
+                        qty_recipe = float(ing.get("quantite") or 0)
+                        qty_7200 = (qty_recipe / vol_recette) * 7200
+                        if max_recipe_qty is None or qty_7200 > max_recipe_qty:
+                            max_recipe_qty = qty_7200
+                            max_recipe_product = entry.get("product_label", "")
+                        break
+            except Exception:
+                _log.debug("Recipe lookup failed for product %d", pid, exc_info=True)
 
         # Supplier: prefer id-based match (survives renames), then label fallback
         supplier = supplier_map_by_id.get(id_mp) or supplier_map.get(mp_info["label"])
@@ -576,13 +616,15 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             unit=mp_info["unit"],
             seuil_bas=mp_info["seuil_bas"],
             consumption=daily_consumption * window_days,
+            sales_hl=sales_hl,
             window_days=window_days,
             daily_consumption=daily_consumption,
             stock_days=stock_days,
             supplier=supplier,
             type_code=mp_info["type_code"],
             eb_id=id_mp,
-            virtual_pf_stock=virtual_pf_stock,
+            max_recipe_qty_7200=max_recipe_qty,
+            max_recipe_product=max_recipe_product,
         )
         items.append(item)
 

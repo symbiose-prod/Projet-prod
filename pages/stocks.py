@@ -415,22 +415,34 @@ def _render_results(
                  "align": "left", "sortable": True},
                 {"name": "stock", "label": "Stock actuel", "field": "stock",
                  "align": "right"},
-                {"name": "conso", "label": f"Conso ({window_days} j)",
-                 "field": "conso", "align": "right"},
+                {"name": "sales", "label": f"Ventes ({window_days} j)",
+                 "field": "sales", "align": "right"},
                 {"name": "daily", "label": "Conso / jour", "field": "daily",
                  "align": "right"},
+                {"name": "cuve", "label": "Cuve 7200L", "field": "cuve",
+                 "align": "center"},
                 {"name": "days", "label": "Autonomie", "field": "days",
                  "align": "right", "sortable": True},
             ]
             rows = []
             for item in group.items:
+                # Colonne cuve 7200L : stock suffisant pour la recette la plus gourmande ?
+                if item.max_recipe_qty_7200 is not None and item.max_recipe_qty_7200 > 0:
+                    _can_produce = item.current_stock >= item.max_recipe_qty_7200
+                    _cuve_label = "OK" if _can_produce else "Non"
+                else:
+                    _can_produce = None
+                    _cuve_label = "—"
+
                 rows.append({
                     "label": _short_label(item.label),
                     "stock": _format_number(item.current_stock, item.unit),
-                    "conso": _format_number(item.consumption, item.unit),
+                    "sales": f"{item.sales_hl:,.1f} hL",
                     "daily": f"{item.daily_consumption:,.1f} {item.unit}/j",
+                    "cuve": _cuve_label,
                     "days": _format_days(item.stock_days),
                     "_days_raw": item.stock_days,
+                    "_can_produce": _can_produce,
                 })
             table = ui.table(
                 columns=columns,
@@ -452,6 +464,23 @@ def _render_results(
                         class="text-weight-bold"
                         style="font-size: 13px; padding: 4px 10px"
                     />
+                </q-td>
+                """,
+            )
+
+            # Slot custom pour colorer la colonne Cuve 7200L
+            table.add_slot(
+                "body-cell-cuve",
+                """
+                <q-td :props="props" class="text-center">
+                    <q-badge
+                        v-if="props.row._can_produce != null"
+                        :color="props.row._can_produce ? 'green-7' : 'red-6'"
+                        :label="props.row.cuve"
+                        class="text-weight-bold"
+                        style="font-size: 13px; padding: 4px 10px"
+                    />
+                    <span v-else class="text-grey-5">—</span>
                 </q-td>
                 """,
             )
