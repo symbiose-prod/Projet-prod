@@ -12,9 +12,14 @@ _TEST_ENDPOINT = "GET:/test"
 
 
 def _reset_cooldown():
-    """Reset cooldown to a clean state (empty dict)."""
+    """Reset cooldown — set last_alert to distant past to avoid false cooldown.
+
+    In fresh CI containers, time.monotonic() can be < _COOLDOWN_SECONDS,
+    so a default of 0.0 would trigger the cooldown check (now - 0 < 300).
+    We set the sentinel to a far-negative value to avoid this.
+    """
     import common.error_alerting as mod
-    mod._last_alert_ts = {}
+    mod._last_alert_ts.clear()
 
 
 class TestShouldSend:

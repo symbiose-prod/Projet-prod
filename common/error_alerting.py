@@ -27,8 +27,8 @@ def _should_send(endpoint_key: str) -> bool:
     """Retourne True si le cooldown est écoulé pour cet endpoint (thread-safe)."""
     now = time.monotonic()
     with _lock:
-        last = _last_alert_ts.get(endpoint_key, 0.0)
-        if now - last < _COOLDOWN_SECONDS:
+        last = _last_alert_ts.get(endpoint_key)
+        if last is not None and now - last < _COOLDOWN_SECONDS:
             return False
         _last_alert_ts[endpoint_key] = now
         return True
