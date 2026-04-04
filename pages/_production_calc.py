@@ -664,8 +664,10 @@ def _check_emballages(df_final: pd.DataFrame, *, all_mps_prefetched: list[dict] 
         from common.easybeer.stocks import get_bottle_stock
         bottle_stock = get_bottle_stock()
         for cont_id, qty in bottle_stock.items():
-            if cont_id not in stock_by_id:
-                stock_by_id[cont_id] = qty
+            # Les clés peuvent être des strings (JSON) ou des ints (API)
+            int_id = int(cont_id)
+            if int_id not in stock_by_id:
+                stock_by_id[int_id] = float(qty)
     except Exception:
         _log.debug("Erreur chargement stock bouteilles", exc_info=True)
 
