@@ -485,12 +485,14 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         mp_id = mp.get("idMatierePremiere")
         if not mp_id:
             continue
+        _unite = mp.get("unite")
+        _type = mp.get("type")
         mp_stock[mp_id] = {
             "label": (mp.get("libelle") or "").strip(),
             "stock": float(mp.get("quantiteVirtuelle") or 0),
             "seuil_bas": float(mp.get("seuilBas") or 0),
-            "unit": (mp.get("unite") or {}).get("symbole", "u"),
-            "type_code": (mp.get("type") or {}).get("code", ""),
+            "unit": _unite.get("symbole", "u") if isinstance(_unite, dict) else "u",
+            "type_code": _type.get("code", "") if isinstance(_type, dict) else "",
         }
 
     # ── Step 4: Build supplier map (one batch, not per-component) ──
@@ -538,16 +540,25 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             pf = pf_data.get(pf_key)
 
             if not pf:
-                # Try matching with "unknown" format fallback
+                # Fallback: chercher un autre format du même produit.
+                # Priorité : "unknown" > premier format trouvé.
+                _fallback_first = None
                 for k, v in pf_data.items():
                     if k[0] == entry["id_produit"]:
-                        pf = v
-                        break
+                        if k[1] == "unknown":
+                            pf = v
+                            break
+                        if _fallback_first is None:
+                            _fallback_first = v
+                if not pf:
+                    pf = _fallback_first
 
             if not pf:
                 continue
 
-            qty = entry["qty_per_unit"]
+            qty = float(entry.get("qty_per_unit") or 0)
+            if qty <= 0:
+                continue
             daily_consumption += pf["daily_sales"] * qty
             virtual_pf_stock += pf["stock"] * qty
             contributing_pfs.append(entry.get("product_label", ""))
