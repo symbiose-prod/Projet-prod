@@ -279,10 +279,24 @@ def _save_weights_cache(weights: dict[tuple[int, str], float]) -> None:
 
 
 def fetch_carton_weights() -> dict[tuple[int, str], float]:
-    """Recupere les poids cartons depuis EasyBeer (avec cache fichier 24h)."""
+    """Poids cartons — L2 DB cache (24h), fichier cache (fallback), L3 API."""
+    # L2: DB cache (prioritaire sur le cache fichier)
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        db_cached = cache_get(current_tenant_id(), "carton_weights", max_age_s=86400)
+        if db_cached is not None:
+            weights: dict[tuple[int, str], float] = {}
+            for entry in db_cached:
+                weights[(entry["pid"], entry["fmt"])] = entry["w"]
+            _log.debug("Cache DB poids cartons: %d entrées", len(weights))
+            return weights
+    except Exception:
+        pass
+    # Fichier cache (fallback)
     cached = _load_weights_cache()
     if cached is not None:
-        _log.debug("Cache poids cartons valide (%d entrees)", len(cached))
+        _log.debug("Cache fichier poids cartons valide (%d entrees)", len(cached))
         return cached
 
     _log.info("Fetch poids cartons depuis EasyBeer (cache expire ou absent)")
@@ -334,4 +348,12 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
 
     _log.info("Fetch poids cartons termine : %d poids recuperes", len(weights))
     _save_weights_cache(weights)
+    # Écriture L2 DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_put
+        db_data = [{"pid": pid, "fmt": fmt, "w": w} for (pid, fmt), w in weights.items()]
+        cache_put(current_tenant_id(), "carton_weights", db_data)
+    except Exception:
+        pass
     return weights

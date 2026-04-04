@@ -40,6 +40,9 @@ _CATEGORIES: list[tuple[str, int, str]] = [
     ("warehouses",        3600, "_sync_warehouses"),
     ("materiels",         3600, "_sync_materiels"),
     ("mp_historique",     3600, "_sync_mp_historique"),
+    ("brassins_archives", 3600, "_sync_brassins_archives"),
+    ("code_barre_matrice", 86400, "_sync_code_barre_matrice"),
+    ("carton_weights",   86400, "_sync_carton_weights"),
 ]
 
 _TICK_INTERVAL = 60  # seconds between wake-ups
@@ -191,6 +194,34 @@ def _sync_mp_historique(tenant_id: str) -> tuple[int, str | None]:
     return total, None
 
 
+def _sync_brassins_archives(tenant_id: str) -> tuple[int, str | None]:
+    """Sync archived brews (3 most recent, 60-day window)."""
+    from common.easybeer.brassins import get_brassins_archives
+    from common.eb_cache import cache_put
+    data = get_brassins_archives(nombre=3, jours=60)
+    cache_put(tenant_id, "brassins_archives", data, item_id="3_60")
+    return len(data), None
+
+
+def _sync_code_barre_matrice(tenant_id: str) -> tuple[int, str | None]:
+    """Sync barcode matrix (rarely changes)."""
+    from common.easybeer.conditioning import get_code_barre_matrice
+    from common.eb_cache import cache_put
+    data = get_code_barre_matrice()
+    cache_put(tenant_id, "code_barre_matrice", data)
+    return 1, None
+
+
+def _sync_carton_weights(tenant_id: str) -> tuple[int, str | None]:
+    """Sync carton weights (heavy operation, 24h cache)."""
+    from common.easybeer.stocks import fetch_carton_weights
+    from common.eb_cache import cache_put
+    weights = fetch_carton_weights()
+    db_data = [{"pid": pid, "fmt": fmt, "w": w} for (pid, fmt), w in weights.items()]
+    cache_put(tenant_id, "carton_weights", db_data)
+    return len(weights), None
+
+
 # ─── Sync dispatcher ──────────────────────────────────────────────────────
 
 # Map function names to actual callables
@@ -205,6 +236,9 @@ _SYNC_FNS: dict[str, Callable[[str], tuple[int, str | None]]] = {
     "_sync_warehouses": _sync_warehouses,
     "_sync_materiels": _sync_materiels,
     "_sync_mp_historique": _sync_mp_historique,
+    "_sync_brassins_archives": _sync_brassins_archives,
+    "_sync_code_barre_matrice": _sync_code_barre_matrice,
+    "_sync_carton_weights": _sync_carton_weights,
 }
 
 

@@ -106,7 +106,18 @@ def get_brassins_archives(
     nombre: int = 3,
     jours: int = 60,
 ) -> list[dict[str, Any]]:
-    """Retourne les *nombre* brassins les plus recents qui ne sont plus en cours."""
+    """Brassins archivés — L2 DB cache (1h), L3 API."""
+    # L2: DB cache
+    _item_key = f"{nombre}_{jours}"
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "brassins_archives", item_id=_item_key, max_age_s=3600)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
+    # L3: API
     # 1. IDs des brassins en cours
     en_cours_ids: set[int] = set()
     try:
@@ -156,7 +167,14 @@ def get_brassins_archives(
         return "0"
 
     archived.sort(key=_sort_key, reverse=True)
-    return archived[:nombre]
+    result = archived[:nombre]
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_put
+        cache_put(current_tenant_id(), "brassins_archives", result, item_id=_item_key)
+    except Exception:
+        pass
+    return result
 
 
 @retry_api

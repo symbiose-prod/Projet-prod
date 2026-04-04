@@ -13,7 +13,18 @@ from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, _t
 
 @retry_api
 def get_planification_matrice(id_brassin: int, id_entrepot: int) -> dict[str, Any]:
-    """GET /brassin/planification-conditionnement/matrice → Matrice contenants x packagings."""
+    """Matrice conditionnement — L2 DB cache, L3 API."""
+    # L2: DB cache
+    _item_key = f"{id_brassin}_{id_entrepot}"
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "planification_matrice", item_id=_item_key, max_age_s=3600)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
+    # L3: API
     ep = "brassin/planification-conditionnement/matrice"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -22,7 +33,14 @@ def get_planification_matrice(id_brassin: int, id_entrepot: int) -> dict[str, An
         timeout=TIMEOUT,
     )
     _check_response(r, ep)
-    return _safe_json(r, ep)
+    data = _safe_json(r, ep)
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_put
+        cache_put(current_tenant_id(), "planification_matrice", data, item_id=_item_key)
+    except Exception:
+        pass
+    return data
 
 
 @retry_api
@@ -45,7 +63,17 @@ def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
 
 @retry_api
 def get_code_barre_matrice() -> dict[str, Any]:
-    """GET /parametres/code-barre/matrice → Matrice complete des codes-barres."""
+    """Matrice codes-barres — L2 DB cache (24h), L3 API."""
+    # L2: DB cache (les codes-barres changent très rarement)
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "code_barre_matrice", max_age_s=86400)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
+    # L3: API
     ep = "parametres/code-barre/matrice"
     r = get_session().get(
         f"{BASE}/{ep}",
@@ -53,7 +81,14 @@ def get_code_barre_matrice() -> dict[str, Any]:
         timeout=TIMEOUT,
     )
     _check_response(r, ep)
-    return _safe_json(r, ep)
+    data = _safe_json(r, ep)
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_put
+        cache_put(current_tenant_id(), "code_barre_matrice", data)
+    except Exception:
+        pass
+    return data
 
 
 def upload_fichier_brassin(
