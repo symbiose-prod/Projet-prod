@@ -79,12 +79,22 @@ jobs:
           script: |
             cd /home/ubuntu/app
             git pull origin main
-            sudo systemctl restart ferment
-            sleep 3
-            if sudo systemctl is-active --quiet ferment; then
-              echo "✅ Production deploy successful"
-            else
-              echo "❌ Production deploy FAILED"
-              sudo journalctl -u ferment --no-pager -n 20
-              exit 1
-            fi
+            sudo systemctl stop ferment
+            # Attendre que le port 8503 soit libéré (max 10s)
+            for i in $(seq 1 10); do
+              if ! sudo fuser 8503/tcp >/dev/null 2>&1; then break; fi
+              sleep 1
+            done
+            sudo systemctl start ferment
+            sleep 5
+            for i in 1 2 3; do
+              if sudo systemctl is-active --quiet ferment; then
+                echo "✅ Production deploy successful"
+                exit 0
+              fi
+              echo "⏳ Waiting for ferment to start (attempt $i/3)..."
+              sleep 5
+            done
+            echo "❌ Production deploy FAILED"
+            sudo journalctl -u ferment --no-pager -n 30
+            exit 1
