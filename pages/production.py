@@ -30,7 +30,7 @@ from pages._production_calc import (
 from pages._production_easybeer import _render_easybeer_section
 from pages.accueil import get_df_raw
 from pages.auth import require_auth
-from pages.theme import COLORS, date_picker_field, error_banner, kpi_card, page_layout, section_title
+from pages.theme import COLORS, date_picker_field, error_banner, page_layout, section_title
 
 _log = logging.getLogger("ferment.production")
 
@@ -383,40 +383,28 @@ async def page_production():
                             ui.icon("info", size="sm").style(f"color: {COLORS['orange']}")
                             ui.label(note_msg).classes("text-body2")
 
-                # ── Résumé split (Split 7200L, 2 goûts)
-                _is_split_display = (
-                    mode_prod == "Split 7200L"
-                    and len(gouts_cibles) >= 2
-                    and volume_details
-                    and split_volumes
-                )
-                if _is_split_display:
-                    _g_list = list(gouts_cibles)
-                    ui.label(
-                        f"Split 1 : {_g_list[0]} ({int(split_volumes[0])} L) — "
-                        f"Split 2 : {_g_list[1]} ({int(split_volumes[1])} L)"
-                    ).classes("text-body2 q-mb-xs")
-
-                # Détails volume (modes auto)
-                if volume_details:
-                    for _g_vd, _vd in volume_details.items():
-                        with ui.expansion(
-                            f"Détails du calcul de volume — {_g_vd}",
-                            icon="straighten",
-                        ).classes("w-full"):
+                # ── Production proposée ──────────────────────────────
+                if gouts_cibles and volume_details:
+                    with ui.card().classes("w-full").props("flat bordered"):
+                        with ui.card_section().classes("q-pa-md"):
+                            with ui.row().classes("items-center gap-2 q-mb-sm"):
+                                ui.icon("factory", size="md").style(f"color: {COLORS['green']}")
+                                ui.label("Production proposée").classes("text-h6").style(
+                                    f"color: {COLORS['ink']}"
+                                )
                             with ui.row().classes("w-full gap-4"):
-                                kpi_card("science", "V départ (L)", f"{_vd['V_start']:.0f}", COLORS["green"])
-                                kpi_card("opacity", "Aromatisation (L)", f"{_vd['V_aroma']:.0f}", COLORS["orange"])
-                                kpi_card("local_drink", "V embouteillé (L)", f"{_vd['V_bottled']:.0f}", COLORS["blue"])
-                                kpi_card("straighten", "Volume cible (hL)", f"{_vd['V_bottled']/100:.2f}", COLORS["green"])
-                                _perte_tot = _vd['transfer_loss'] + _vd['bottling_loss']
-                                kpi_card("water_drop", "Perte théorique (L)", f"{_perte_tot:.0f}", COLORS["error"])
-                            ui.label(
-                                f"Cuve {_vd['capacity']}L — "
-                                f"Perte transfert : {_vd['transfer_loss']}L — "
-                                f"Perte embouteillage : {_vd['bottling_loss']}L — "
-                                f"Recette : {_vd['R']:.0f}L (réf) avec {_vd['A_R']:.1f}L d'aromatisation"
-                            ).classes("text-caption text-grey-6 q-mt-sm")
+                                for _g_prop in gouts_cibles:
+                                    _vd_prop = volume_details.get(_g_prop, {})
+                                    _vol_prop = _vd_prop.get("V_bottled", 0)
+                                    with ui.card().classes("q-pa-md").props("flat bordered").style(
+                                        f"border: 2px solid {COLORS['green']}40; border-radius: 8px; flex: 1"
+                                    ):
+                                        ui.label(_g_prop).classes("text-subtitle1").style(
+                                            f"color: {COLORS['ink']}; font-weight: 700"
+                                        )
+                                        ui.label(f"{_vol_prop:,.0f} L".replace(",", " ")).classes(
+                                            "text-h5"
+                                        ).style(f"color: {COLORS['green']}; font-weight: 700")
 
                 # ── Productions en cours ────────────────────────────
                 _ong_detail = ongoing.get("detail", [])
@@ -515,26 +503,8 @@ async def page_production():
                             row_key="_key",
                         ).classes("w-full").props("flat bordered dense")
 
-                # KPIs
-                total_btl = int(df_final["Bouteilles à produire (arrondi)"].sum()) if not df_final.empty else 0
-                total_vol = float(df_final["Volume produit arrondi (hL)"].sum()) if not df_final.empty else 0.0
-                nb_actifs = int((df_final["Cartons à produire (arrondi)"] > 0).sum()) if not df_final.empty else 0
+                # KPI forcés (pour le message sous le tableau)
                 nb_forcés = int(df_final["_forcé"].sum()) if not df_final.empty else 0
-
-                with ui.row().classes("w-full gap-4"):
-                    kpi_card(
-                        "local_drink", "Bouteilles à produire",
-                        f"{total_btl:,}".replace(",", " "), COLORS["green"],
-                    )
-                    kpi_card(
-                        "water_drop", "Volume total (hL)",
-                        f"{total_vol:.2f}", COLORS["blue"],
-                    )
-                    kpi_card(
-                        "category", "Formats en production",
-                        f"{nb_actifs}" + (f" ({nb_forcés} forcé{'s' if nb_forcés > 1 else ''})" if nb_forcés else ""),
-                        COLORS["orange"],
-                    )
 
                 # ── Vérification matières premières + emballages ──────
                 _mp_status = mp_check.get("status", "error")
