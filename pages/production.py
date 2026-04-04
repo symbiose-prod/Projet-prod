@@ -1094,4 +1094,14 @@ async def page_production():
 
         # ── Rendu initial ─────────────────────────────────────────────
         _build_split_inputs()
-        await do_compute()
+        # Pas de calcul automatique : l'utilisateur configure ses options
+        # dans la sidebar puis clique « Lancer le calcul ».
+        with main_container:
+            with ui.card().classes("w-full q-pa-lg").props("flat bordered"):
+                with ui.column().classes("items-center gap-3"):
+                    ui.icon("tune", size="xl").classes("text-grey-5")
+                    ui.label("Configurez vos paramètres").classes("text-h6 text-grey-6")
+                    ui.label(
+                        "Sélectionnez le mode de production, les filtres et les goûts "
+                        "dans le panneau de gauche, puis cliquez sur « Lancer le calcul »."
+                    ).classes("text-body2 text-grey-5 text-center")
