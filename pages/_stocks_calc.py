@@ -34,7 +34,7 @@ class StockItem:
     """Computed stock metrics for a single contenant type."""
 
     label: str            # consolidation libelle (e.g. "Bouteille - 0.33L")
-    current_stock: float
+    current_stock: float  # stock brut (quantité physique en entrepôt)
     unit: str             # "u"
     seuil_bas: float
     consumption: float    # total consumed over period
@@ -44,6 +44,7 @@ class StockItem:
     supplier: str | None = None  # dynamically extracted from history
     type_code: str = ""  # EasyBeer type.code (e.g. "INGREDIENT_FRUIT")
     eb_id: int | None = None  # EasyBeer idMatierePremiere (stable across renames)
+    virtual_pf_stock: float = 0.0  # stock contenu dans les PF déjà fabriqués
 
 
 @dataclass
@@ -565,6 +566,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
 
         raw_stock = mp_info["stock"]
         total_stock = raw_stock + virtual_pf_stock
+        # L'autonomie utilise le stock total (brut + PF virtuel)
         stock_days = total_stock / daily_consumption if daily_consumption > 0 else None
 
         # Supplier: prefer id-based match (survives renames), then label fallback
@@ -572,7 +574,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
 
         item = StockItem(
             label=mp_info["label"],
-            current_stock=total_stock,
+            current_stock=raw_stock,
             unit=mp_info["unit"],
             seuil_bas=mp_info["seuil_bas"],
             consumption=daily_consumption * window_days,
@@ -582,6 +584,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             supplier=supplier,
             type_code=mp_info["type_code"],
             eb_id=id_mp,
+            virtual_pf_stock=virtual_pf_stock,
         )
         items.append(item)
 
