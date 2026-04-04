@@ -544,15 +544,17 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         daily_consumption = 0.0
         daily_sales_hl_total = 0.0
         contributing_pfs: list[str] = []
+        _seen_pf_ids: set[int] = set()  # éviter de compter les ventes N fois par format
 
         for entry in bom_entries:
-            pf_key = (entry["id_produit"], entry["format_code"])
+            pid = entry["id_produit"]
+            pf_key = (pid, entry["format_code"])
             pf = pf_data.get(pf_key)
 
             if not pf:
                 _fallback_first = None
                 for k, v in pf_data.items():
-                    if k[0] == entry["id_produit"]:
+                    if k[0] == pid:
                         if k[1] == "unknown":
                             pf = v
                             break
@@ -567,6 +569,15 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             qty = float(entry.get("qty_per_unit") or 0)
             if qty <= 0:
                 continue
+
+            # Si ce PF a déjà été compté (autre format du même produit),
+            # ne pas recompter les ventes. On ne garde que la première
+            # entrée BOM par produit car l'autonomie EasyBeer agrège
+            # tous les formats en un seul chiffre de ventes.
+            if pid in _seen_pf_ids:
+                continue
+            _seen_pf_ids.add(pid)
+
             daily_consumption += pf["daily_sales"] * qty
             daily_sales_hl_total += pf["daily_sales_hl"]
             contributing_pfs.append(entry.get("product_label", ""))
