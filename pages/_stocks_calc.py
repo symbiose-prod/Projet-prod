@@ -380,15 +380,13 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     from common.easybeer._client import _dates
     from common.easybeer.history import get_mp_historique_entree
     from common.easybeer.products import get_all_products
-    from common.easybeer.stocks import get_all_matieres_premieres
+    from common.easybeer.stocks import get_all_matieres_premieres, get_autonomie_stocks
     from common.product_bom import get_bom_lookup
     from common.supplier_config import get_all_supplier_overrides
-    from pages.accueil import get_df_raw
 
-    # ── Step 0: Load sales data from Accueil DataFrame + EasyBeer ──
-    df_raw, _df_window = get_df_raw()
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # ── Step 0: Parallel fetch of all EasyBeer data ──
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        f_autonomie = pool.submit(get_autonomie_stocks, window_days)
         f_products = pool.submit(get_all_products)
         f_mp = pool.submit(get_all_matieres_premieres)
         date_debut_365, date_fin_365 = _dates(365)
@@ -397,10 +395,20 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             for cat in ("Conditionnement", "Ingredient", "Divers")
         }
 
-    # ── Step 1: Build sales data from DataFrame (Volume vendu en hL) ──
-    all_products = f_products.result() or []
+    # ── Step 1: Build sales data from autonomie JSON ──
+    # Dans le JSON autonomie EasyBeer :
+    #   volume        = Volume VENDU (hL) sur la période
+    #   volumeVirtuel = Volume en STOCK (hL)
+    #   quantite      = Cartons VENDUS sur la période
+    #   quantiteVirtuelle = Cartons en STOCK
+    autonomie_data = f_autonomie.result() or {}
+    pf_list = autonomie_data.get("produits") or []
+    if not pf_list:
+        _log.warning("BOM calc: aucun produit fini dans l'autonomie EasyBeer")
+        return []
+    _log.info("BOM calc: %d produits finis dans l'autonomie (%dj)", len(pf_list), window_days)
 
-    # Map product label → idProduit
+    all_products = f_products.result() or []
     label_to_pid: dict[str, int] = {}
     for p in all_products:
         lib = (p.get("libelle") or "").strip().lower()
@@ -408,68 +416,71 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         if lib and pid:
             label_to_pid[lib] = pid
 
-    # Agréger ventes par produit (idProduit) depuis le DataFrame Accueil
-    # Colonnes : Produit, Stock, Quantité vendue, Volume vendu (hl)
-    # pf_sales[pid] = {label, total_ventes_hl, total_qty_vendue}
+    # Agréger ventes par produit (tous formats) pour les ingrédients
+    # pf_sales[pid] = {label, ventes_hl, qty_vendue}
     pf_sales: dict[int, dict] = {}
-    # pf_data pour le packaging (BOM) : (pid, format_code) → {daily_sales, ...}
+    # pf_data par format pour le packaging (BOM)
     pf_data: dict[tuple[int, str], dict] = {}
 
-    if df_raw is not None and "Volume vendu (hl)" in df_raw.columns:
-        for _, row in df_raw.iterrows():
-            produit = str(row.get("Produit", "")).strip()
-            if not produit:
-                continue
+    for pf in pf_list:
+        pf_label = (pf.get("libelle") or "").strip()
+        if not pf_label:
+            continue
 
-            # Match produit → idProduit
-            pid = label_to_pid.get(produit.lower())
-            if not pid:
-                # Partial match
-                for lab, p_id in label_to_pid.items():
-                    if lab in produit.lower() or produit.lower() in lab:
-                        pid = p_id
-                        break
-            if not pid:
-                continue
+        pid = label_to_pid.get(pf_label.lower())
+        if not pid:
+            for lab, p_id in label_to_pid.items():
+                if lab in pf_label.lower() or pf_label.lower() in lab:
+                    pid = p_id
+                    break
+        if not pid:
+            _log.warning("BOM calc: PF '%s' non trouvé dans les produits", pf_label)
+            continue
 
-            vol_vendu = float(row.get("Volume vendu (hl)", 0) or 0)
-            qty_vendue = float(row.get("Quantité vendue", 0) or 0)
+        # volume = ventes hL sur la période, quantite = cartons vendus
+        ventes_hl = float(pf.get("volume") or 0)
+        qty_vendue = float(pf.get("quantite") or 0)
 
-            # Agréger par produit (tous formats confondus) pour les ingrédients
-            if pid in pf_sales:
-                pf_sales[pid]["ventes_hl"] += vol_vendu
-                pf_sales[pid]["qty_vendue"] += qty_vendue
+        # Agréger par produit (tous formats) pour les ingrédients
+        if pid in pf_sales:
+            pf_sales[pid]["ventes_hl"] += ventes_hl
+            pf_sales[pid]["qty_vendue"] += qty_vendue
+        else:
+            pf_sales[pid] = {
+                "label": pf_label,
+                "ventes_hl": ventes_hl,
+                "qty_vendue": qty_vendue,
+            }
+
+        # Par format pour le packaging
+        for sp in pf.get("stocksProduits") or []:
+            sp_label = sp.get("libelle") or ""
+            fmt_match = re.search(r"(\d+)\s*[x×]\s*(\d+)", sp_label)
+            if fmt_match:
+                format_code = f"{fmt_match.group(1)}x{fmt_match.group(2)}"
             else:
-                pf_sales[pid] = {
-                    "label": produit,
-                    "ventes_hl": vol_vendu,
-                    "qty_vendue": qty_vendue,
-                }
+                lot = sp.get("lot") or {}
+                cont = sp.get("contenant") or {}
+                lot_qty = int(lot.get("quantite", 0) or 0)
+                contenance = float(cont.get("contenance", 0) or 0)
+                format_code = f"{lot_qty}x{int(contenance * 100)}" if lot_qty and contenance else "unknown"
 
-            # Aussi construire pf_data par format pour le packaging (BOM)
-            stock_col = str(row.get("Stock", "")).strip()
-            fmt_match = re.search(r"(\d+)\s*[x×]\s*(\d+)", stock_col)
-            format_code = f"{fmt_match.group(1)}x{fmt_match.group(2)}" if fmt_match else "unknown"
-            daily_sales = qty_vendue / max(window_days, 1)
-            daily_sales_hl = vol_vendu / max(window_days, 1)
+            sp_qty = float(sp.get("quantite") or 0)  # cartons vendus ce format
+            sp_vol = float(sp.get("volume") or 0)  # volume vendu ce format
 
             key = (pid, format_code)
             if key in pf_data:
-                pf_data[key]["daily_sales"] += daily_sales
-                pf_data[key]["daily_sales_hl"] += daily_sales_hl
+                pf_data[key]["daily_sales"] += sp_qty / max(window_days, 1)
             else:
                 pf_data[key] = {
-                    "label": produit,
-                    "daily_sales": daily_sales,
-                    "daily_sales_hl": daily_sales_hl,
+                    "label": pf_label,
+                    "daily_sales": sp_qty / max(window_days, 1),
                 }
 
-        _log.info(
-            "Stocks calc: %d produits avec ventes depuis DataFrame (%d lignes)",
-            len(pf_sales), len(df_raw),
-        )
-    else:
-        _log.warning("Stocks calc: pas de DataFrame importé — les calculs de conso seront vides")
+    _log.info(
+        "Stocks calc: %d produits, %d formats depuis autonomie (%dj)",
+        len(pf_sales), len(pf_data), window_days,
+    )
 
     # ── Step 3: Load BOM lookup and MP stock ──
     bom_lookup = get_bom_lookup()  # {id_mp: [{id_produit, format_code, qty_per_unit, ...}]}
