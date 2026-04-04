@@ -35,6 +35,7 @@ _CATEGORIES: list[tuple[str, int, str]] = [
     # Reference — sync hourly
     ("products",          3600, "_sync_products"),
     ("mp_all",            3600, "_sync_mp_all"),
+    ("bottle_stock",      3600, "_sync_bottle_stock"),
     ("fournisseurs",      3600, "_sync_fournisseurs"),
     ("warehouses",        3600, "_sync_warehouses"),
     ("materiels",         3600, "_sync_materiels"),
@@ -120,6 +121,16 @@ def _sync_products(tenant_id: str) -> tuple[int, str | None]:
     return count, None
 
 
+def _sync_bottle_stock(tenant_id: str) -> tuple[int, str | None]:
+    """Sync bottle (contenant) stock."""
+    from common.easybeer.stocks import _BOTTLE_STOCK_CACHE, get_bottle_stock
+    from common.eb_cache import cache_put
+    _BOTTLE_STOCK_CACHE["data"] = None  # force refresh
+    data = get_bottle_stock()
+    cache_put(tenant_id, "bottle_stock", data)
+    return len(data), None
+
+
 def _sync_mp_all(tenant_id: str) -> tuple[int, str | None]:
     """Sync all matières premières."""
     # Bypass in-memory cache by calling the API directly
@@ -189,6 +200,7 @@ _SYNC_FNS: dict[str, Callable[[str], tuple[int, str | None]]] = {
     "_sync_autonomie_stocks": _sync_autonomie_stocks,
     "_sync_products": _sync_products,
     "_sync_mp_all": _sync_mp_all,
+    "_sync_bottle_stock": _sync_bottle_stock,
     "_sync_fournisseurs": _sync_fournisseurs,
     "_sync_warehouses": _sync_warehouses,
     "_sync_materiels": _sync_materiels,

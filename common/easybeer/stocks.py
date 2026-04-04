@@ -117,6 +117,63 @@ def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
     return result
 
 
+# ─── Stock bouteilles (contenants) ──────────────────────────────────────────
+
+_BOTTLE_STOCK_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
+_BOTTLE_STOCK_TTL = 3600  # 1 heure
+
+
+@retry_api
+def get_bottle_stock() -> dict[int, float]:
+    """GET /stock/bouteilles?idUniteVolume=1 → {idContenant: quantiteVirtuelle}.
+
+    Les bouteilles (CONTENANT) ne sont pas dans /stock/matieres-premieres/all.
+    Cet endpoint retourne le stock des bouteilles vides par type de contenant.
+    """
+    # L1: in-memory
+    if _BOTTLE_STOCK_CACHE["data"] is not None and (time.monotonic() - _BOTTLE_STOCK_CACHE["ts"]) < _BOTTLE_STOCK_TTL:
+        return _BOTTLE_STOCK_CACHE["data"]
+    # L2: DB cache
+    try:
+        from common._session import current_tenant_id
+        from common.eb_cache import cache_get
+        cached = cache_get(current_tenant_id(), "bottle_stock", max_age_s=7200)
+        if cached is not None:
+            _BOTTLE_STOCK_CACHE["data"] = cached
+            _BOTTLE_STOCK_CACHE["ts"] = time.monotonic()
+            return cached
+    except Exception:
+        pass
+    # L3: API
+    ep = "stock/bouteilles"
+    r = get_session().get(
+        f"{BASE}/{ep}",
+        params={"idUniteVolume": 1},
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)
+    data = _safe_json(r, ep)
+    result: dict[int, float] = {}
+    for child in data.get("consolidationsFilles", []):
+        cont = child.get("contenant") or {}
+        cont_id = cont.get("idContenant")
+        qty = float(child.get("quantiteVirtuelle", 0) or 0)
+        if cont_id is not None:
+            result[cont_id] = qty
+    if result:
+        _BOTTLE_STOCK_CACHE["data"] = result
+        _BOTTLE_STOCK_CACHE["ts"] = time.monotonic()
+        try:
+            from common._session import current_tenant_id
+            from common.eb_cache import cache_put
+            cache_put(current_tenant_id(), "bottle_stock", result)
+        except Exception:
+            pass
+    _log.info("get_bottle_stock: %d contenants chargés", len(result))
+    return result
+
+
 # ─── Poids cartons (avec cache fichier) ──────────────────────────────────────
 
 _WEIGHTS_CACHE_PATH = os.path.join(

@@ -653,12 +653,21 @@ def _check_emballages(df_final: pd.DataFrame, *, all_mps_prefetched: list[dict] 
     if not emb_needs:
         return {"emb_status": "ok", "emballages": []}
 
-    # 5. Comparer au stock
+    # 5. Comparer au stock (MP + bouteilles/contenants)
     stock_by_id: dict[int, float] = {
         m["idMatierePremiere"]: float(m.get("quantiteVirtuelle", 0) or 0)
         for m in all_mps
         if m.get("idMatierePremiere") is not None
     }
+    # Enrichir avec le stock des bouteilles (contenants séparés dans EasyBeer)
+    try:
+        from common.easybeer.stocks import get_bottle_stock
+        bottle_stock = get_bottle_stock()
+        for cont_id, qty in bottle_stock.items():
+            if cont_id not in stock_by_id:
+                stock_by_id[cont_id] = qty
+    except Exception:
+        _log.debug("Erreur chargement stock bouteilles", exc_info=True)
 
     emb_items: list[dict] = []
     has_shortage = False
