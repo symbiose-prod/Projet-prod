@@ -424,13 +424,9 @@ def _render_results(
             ]
             rows = []
             for item in group.items:
-                _stock_display = _format_number(item.current_stock, item.unit)
-                if item.virtual_pf_stock > 0:
-                    _total = item.current_stock + item.virtual_pf_stock
-                    _stock_display += f" (+{_format_number(item.virtual_pf_stock, item.unit)} PF = {_format_number(_total, item.unit)})"
                 rows.append({
                     "label": _short_label(item.label),
-                    "stock": _stock_display,
+                    "stock": _format_number(item.current_stock, item.unit),
                     "conso": _format_number(item.consumption, item.unit),
                     "daily": f"{item.daily_consumption:,.1f} {item.unit}/j",
                     "days": _format_days(item.stock_days),

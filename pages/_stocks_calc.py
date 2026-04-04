@@ -565,9 +565,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             contributing_pfs.append(entry.get("product_label", ""))
 
         raw_stock = mp_info["stock"]
-        total_stock = raw_stock + virtual_pf_stock
-        # L'autonomie utilise le stock total (brut + PF virtuel)
-        stock_days = total_stock / daily_consumption if daily_consumption > 0 else None
+        stock_days = raw_stock / daily_consumption if daily_consumption > 0 else None
 
         # Supplier: prefer id-based match (survives renames), then label fallback
         supplier = supplier_map_by_id.get(id_mp) or supplier_map.get(mp_info["label"])
@@ -589,12 +587,9 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         items.append(item)
 
         _log.info(
-            "BOM calc MP '%s': raw=%.0f + pf_virtual=%.0f = %.0f, "
-            "conso=%.1f/j, jours=%s, PFs=%s",
+            "BOM calc MP '%s': stock=%.0f, conso=%.1f/j, jours=%s, PFs=%s",
             mp_info["label"],
             raw_stock,
-            virtual_pf_stock,
-            total_stock,
             daily_consumption,
             f"{stock_days:.1f}" if stock_days else "N/A",
             ", ".join(set(contributing_pfs)) or "aucun",
