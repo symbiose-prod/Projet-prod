@@ -74,9 +74,20 @@ _AUTONOMIE_WINDOWS = [30, 60, 90, 180, 365]
 
 
 def _sync_autonomie_stocks(tenant_id: str) -> tuple[int, str | None]:
-    """Sync stock autonomy for all standard periods (30, 60, 90, 180, 365 days)."""
-    from common.easybeer._client import is_rate_limited
-    from common.easybeer.stocks import get_autonomie_stocks
+    """Sync stock autonomy for all standard periods (30, 60, 90, 180, 365 days).
+
+    Appelle l'API directement (bypass L2 cache) pour chaque période.
+    """
+    from common.easybeer._client import (
+        BASE,
+        TIMEOUT,
+        _auth,
+        _check_response,
+        _indicator_payload,
+        _safe_json,
+        get_session,
+        is_rate_limited,
+    )
     from common.eb_cache import cache_put
 
     count = 0
@@ -84,9 +95,20 @@ def _sync_autonomie_stocks(tenant_id: str) -> tuple[int, str | None]:
         if is_rate_limited() > 0:
             _log.warning("Rate-limit during autonomie sync, stopping at %dj", days)
             break
-        data = get_autonomie_stocks(days)
-        cache_put(tenant_id, "autonomie_stocks", data, item_id=str(days))
-        count += 1
+        try:
+            r = get_session().post(
+                f"{BASE}/indicateur/autonomie-stocks",
+                params={"forceRefresh": False},
+                json=_indicator_payload(days),
+                auth=_auth(),
+                timeout=TIMEOUT,
+            )
+            _check_response(r, f"autonomie-stocks/{days}j")
+            data = _safe_json(r, f"autonomie-stocks/{days}j")
+            cache_put(tenant_id, "autonomie_stocks", data, item_id=str(days))
+            count += 1
+        except Exception:
+            _log.warning("Autonomie sync %dj failed", days, exc_info=True)
     return count, None
 
 
