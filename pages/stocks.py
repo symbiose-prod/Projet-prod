@@ -538,7 +538,7 @@ def _render_ai_order_section(
     if not ai_instructions.strip():
         with ui.element("div").classes("w-full q-mt-xl q-mb-sm"):
             with ui.row().classes("items-center gap-2"):
-                ui.icon("smart_toy", size="sm").style(f"color: {COLORS['amber']}")
+                ui.icon("smart_toy", size="sm").style(f"color: {COLORS['warning']}")
                 ui.label(
                     "Analyse IA indisponible"
                 ).classes("text-subtitle1").style(
