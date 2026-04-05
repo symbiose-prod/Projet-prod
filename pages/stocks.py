@@ -269,7 +269,8 @@ def page_stocks():
                             )
                             period_radio = ui.radio(
                                 {30: "1 mois", 60: "2 mois",
-                                 90: "3 mois", 180: "6 mois"},
+                                 90: "3 mois", 180: "6 mois",
+                                 365: "1 an"},
                                 value=60,
                             ).props("dense color=green-8").style(
                                 "font-size: 14px"

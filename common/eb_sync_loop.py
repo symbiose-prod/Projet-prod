@@ -70,14 +70,24 @@ def _sync_brassins_planifies(tenant_id: str) -> tuple[int, str | None]:
     return len(data), None
 
 
+_AUTONOMIE_WINDOWS = [30, 60, 90, 180, 365]
+
+
 def _sync_autonomie_stocks(tenant_id: str) -> tuple[int, str | None]:
-    """Sync stock autonomy (90-day window)."""
+    """Sync stock autonomy for all standard periods (30, 60, 90, 180, 365 days)."""
+    from common.easybeer._client import is_rate_limited
     from common.easybeer.stocks import get_autonomie_stocks
     from common.eb_cache import cache_put
 
-    data = get_autonomie_stocks(90)
-    cache_put(tenant_id, "autonomie_stocks", data, item_id="90")
-    return 1, None
+    count = 0
+    for days in _AUTONOMIE_WINDOWS:
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit during autonomie sync, stopping at %dj", days)
+            break
+        data = get_autonomie_stocks(days)
+        cache_put(tenant_id, "autonomie_stocks", data, item_id=str(days))
+        count += 1
+    return count, None
 
 
 def _sync_products(tenant_id: str) -> tuple[int, str | None]:

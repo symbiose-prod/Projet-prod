@@ -125,7 +125,7 @@ def page_accueil():
                             f"color: {COLORS['ink2']}; font-weight: 500"
                         )
                         period_radio = ui.radio(
-                            {30: "1 mois", 60: "2 mois", 90: "3 mois", 180: "6 mois"},
+                            {30: "1 mois", 60: "2 mois", 90: "3 mois", 180: "6 mois", 365: "1 an"},
                             value=30,
                         ).props("inline dense color=green-8")
 
