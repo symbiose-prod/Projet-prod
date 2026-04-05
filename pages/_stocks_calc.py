@@ -45,6 +45,7 @@ class StockItem:
     type_code: str = ""  # EasyBeer type.code (e.g. "INGREDIENT_FRUIT")
     eb_id: int | None = None  # EasyBeer idMatierePremiere (stable across renames)
     max_recipe_qty_7200: float | None = None  # qté MP nécessaire pour la recette la plus gourmande à 7200L
+    max_recipe_qty_5200: float | None = None  # idem pour 5200L
     max_recipe_product: str = ""  # nom du produit de la recette la plus gourmande
 
 
@@ -540,7 +541,8 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
 
     _recipe_cache: dict[int, dict] = {}
     recipe_conso: dict[int, list[tuple[str, float, float]]] = {}
-    max_recipe_7200: dict[int, tuple[float, str]] = {}
+    max_recipe_7200: dict[int, tuple[float, str]] = {}  # id_mp → (qty, product_label)
+    max_recipe_5200: dict[int, tuple[float, str]] = {}
 
     # Construire un mapping dérivé → parent via le flavor_map
     # Les NIKO, Inter, Water n'ont pas de recette propre — on utilise celle du Symbiose parent
@@ -611,11 +613,15 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
                 recipe_conso.setdefault(id_mp, []).append(
                     (pf_label, conso_periode, ventes_hl)
                 )
-                # Cuve 7200L : quantité nécessaire pour la recette la plus gourmande
+                # Cuves : quantité nécessaire pour la recette la plus gourmande
                 qty_7200 = qty_per_litre * 7200
-                prev = max_recipe_7200.get(id_mp)
-                if prev is None or qty_7200 > prev[0]:
+                qty_5200 = qty_per_litre * 5200
+                prev_7200 = max_recipe_7200.get(id_mp)
+                if prev_7200 is None or qty_7200 > prev_7200[0]:
                     max_recipe_7200[id_mp] = (qty_7200, pf_label)
+                prev_5200 = max_recipe_5200.get(id_mp)
+                if prev_5200 is None or qty_5200 > prev_5200[0]:
+                    max_recipe_5200[id_mp] = (qty_5200, pf_label)
         except Exception:
             _log.debug("Recipe lookup failed for product %d", pid, exc_info=True)
 
@@ -674,10 +680,12 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
         raw_stock = mp_info["stock"]
         stock_days = raw_stock / daily_consumption if daily_consumption > 0 else None
 
-        # Cuve 7200L
+        # Cuves
         _r7200 = max_recipe_7200.get(id_mp)
         max_recipe_qty = _r7200[0] if _r7200 else None
         max_recipe_product = _r7200[1] if _r7200 else ""
+        _r5200 = max_recipe_5200.get(id_mp)
+        max_recipe_qty_5200 = _r5200[0] if _r5200 else None
 
         # Supplier: prefer id-based match (survives renames), then label fallback
         supplier = supplier_map_by_id.get(id_mp) or supplier_map.get(mp_info["label"])
@@ -695,6 +703,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             type_code=mp_info["type_code"],
             eb_id=id_mp,
             max_recipe_qty_7200=max_recipe_qty,
+            max_recipe_qty_5200=max_recipe_qty_5200,
             max_recipe_product=max_recipe_product,
         )
         items.append(item)

@@ -420,30 +420,36 @@ def _render_results(
                  "field": "conso", "align": "right"},
                 {"name": "daily", "label": "Conso / jour", "field": "daily",
                  "align": "right"},
-                {"name": "cuve", "label": "Cuve 7200L", "field": "cuve",
+                {"name": "cuve7200", "label": "Cuve 7200L", "field": "cuve7200",
+                 "align": "center"},
+                {"name": "cuve5200", "label": "Cuve 5200L", "field": "cuve5200",
                  "align": "center"},
                 {"name": "days", "label": "Autonomie", "field": "days",
                  "align": "right", "sortable": True},
             ]
             rows = []
             for item in group.items:
-                # Colonne cuve 7200L : stock suffisant pour la recette la plus gourmande ?
+                # Cuves : stock suffisant pour la recette la plus gourmande ?
                 if item.max_recipe_qty_7200 is not None and item.max_recipe_qty_7200 > 0:
-                    _can_produce = item.current_stock >= item.max_recipe_qty_7200
-                    _cuve_label = "OK" if _can_produce else "Non"
+                    _can_7200 = item.current_stock >= item.max_recipe_qty_7200
                 else:
-                    _can_produce = None
-                    _cuve_label = "—"
+                    _can_7200 = None
+                if item.max_recipe_qty_5200 is not None and item.max_recipe_qty_5200 > 0:
+                    _can_5200 = item.current_stock >= item.max_recipe_qty_5200
+                else:
+                    _can_5200 = None
 
                 rows.append({
                     "label": _short_label(item.label),
                     "stock": _format_number(item.current_stock, item.unit),
                     "conso": _format_number(item.consumption, item.unit),
                     "daily": f"{item.daily_consumption:,.1f} {item.unit}/j",
-                    "cuve": _cuve_label,
+                    "cuve7200": "OK" if _can_7200 else ("Non" if _can_7200 is not None else "—"),
+                    "cuve5200": "OK" if _can_5200 else ("Non" if _can_5200 is not None else "—"),
                     "days": _format_days(item.stock_days),
                     "_days_raw": item.stock_days,
-                    "_can_produce": _can_produce,
+                    "_can_7200": _can_7200,
+                    "_can_5200": _can_5200,
                 })
             table = ui.table(
                 columns=columns,
@@ -469,22 +475,21 @@ def _render_results(
                 """,
             )
 
-            # Slot custom pour colorer la colonne Cuve 7200L
-            table.add_slot(
-                "body-cell-cuve",
-                """
+            # Slots custom pour colorer les colonnes Cuve
+            _CUVE_SLOT = """
                 <q-td :props="props" class="text-center">
                     <q-badge
-                        v-if="props.row._can_produce != null"
-                        :color="props.row._can_produce ? 'green-7' : 'red-6'"
-                        :label="props.row.cuve"
+                        v-if="props.row.{field} != null"
+                        :color="props.row.{field} ? 'green-7' : 'red-6'"
+                        :label="props.row.{col}"
                         class="text-weight-bold"
                         style="font-size: 13px; padding: 4px 10px"
                     />
                     <span v-else class="text-grey-5">—</span>
                 </q-td>
-                """,
-            )
+            """
+            table.add_slot("body-cell-cuve7200", _CUVE_SLOT.format(field="_can_7200", col="cuve7200"))
+            table.add_slot("body-cell-cuve5200", _CUVE_SLOT.format(field="_can_5200", col="cuve5200"))
 
             # ── ANALYSE & COMMANDE (IA) ────────────────────────────
             _render_ai_order_section(group, ordering, window_days)
