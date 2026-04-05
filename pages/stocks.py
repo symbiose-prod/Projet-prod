@@ -476,20 +476,30 @@ def _render_results(
             )
 
             # Slots custom pour colorer les colonnes Cuve
-            _CUVE_SLOT = """
+            table.add_slot("body-cell-cuve7200", r"""
                 <q-td :props="props" class="text-center">
                     <q-badge
-                        v-if="props.row.{field} != null"
-                        :color="props.row.{field} ? 'green-7' : 'red-6'"
-                        :label="props.row.{col}"
+                        v-if="props.row._can_7200 != null"
+                        :color="props.row._can_7200 ? 'green-7' : 'red-6'"
+                        :label="props.row.cuve7200"
                         class="text-weight-bold"
                         style="font-size: 13px; padding: 4px 10px"
                     />
                     <span v-else class="text-grey-5">—</span>
                 </q-td>
-            """
-            table.add_slot("body-cell-cuve7200", _CUVE_SLOT.format(field="_can_7200", col="cuve7200"))
-            table.add_slot("body-cell-cuve5200", _CUVE_SLOT.format(field="_can_5200", col="cuve5200"))
+            """)
+            table.add_slot("body-cell-cuve5200", r"""
+                <q-td :props="props" class="text-center">
+                    <q-badge
+                        v-if="props.row._can_5200 != null"
+                        :color="props.row._can_5200 ? 'green-7' : 'red-6'"
+                        :label="props.row.cuve5200"
+                        class="text-weight-bold"
+                        style="font-size: 13px; padding: 4px 10px"
+                    />
+                    <span v-else class="text-grey-5">—</span>
+                </q-td>
+            """)
 
             # ── ANALYSE & COMMANDE (IA) ────────────────────────────
             _render_ai_order_section(group, ordering, window_days)
