@@ -542,6 +542,38 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     recipe_conso: dict[int, list[tuple[str, float, float]]] = {}
     max_recipe_7200: dict[int, tuple[float, str]] = {}
 
+    # Construire un mapping dérivé → parent via le flavor_map
+    # Les NIKO, Inter, Water n'ont pas de recette propre — on utilise celle du Symbiose parent
+    from common.bom_detection import _clean_eb_label
+    from common.data import read_flavor_map
+
+    fm = read_flavor_map()
+    _label_to_canon: dict[str, str] = {}
+    if not fm.empty:
+        for _, row in fm.iterrows():
+            name = str(row.get("name", "")).strip().lower()
+            canon = str(row.get("canonical", "")).strip()
+            if name and canon:
+                _label_to_canon[name] = canon
+
+    def _find_parent_recipe(child_pid: int, child_label: str) -> dict | None:
+        """Trouve la recette du produit Symbiose parent pour un produit dérivé."""
+        child_canon = _label_to_canon.get(child_label.lower()) or _label_to_canon.get(_clean_eb_label(child_label).lower())
+        if not child_canon:
+            return None
+        # Chercher un produit avec recette qui a le même goût canonique
+        for other_pid, other_info in pf_sales.items():
+            if other_pid == child_pid:
+                continue
+            other_canon = _label_to_canon.get(other_info["label"].lower()) or _label_to_canon.get(_clean_eb_label(other_info["label"]).lower())
+            if other_canon == child_canon:
+                if other_pid not in _recipe_cache:
+                    _recipe_cache[other_pid] = get_product_detail(other_pid)
+                parent = _recipe_cache[other_pid]
+                if parent.get("recettes"):
+                    return parent
+        return None
+
     for pid, pf_info in pf_sales.items():
         pf_label = pf_info["label"]
         ventes_hl = pf_info["ventes_hl"]
@@ -553,6 +585,13 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             detail = _recipe_cache[pid]
             recettes = detail.get("recettes") or []
             if not recettes:
+                # Produit dérivé sans recette → utiliser la recette du parent
+                parent = _find_parent_recipe(pid, pf_label)
+                if parent:
+                    recettes = parent.get("recettes") or []
+                    _log.info("Stocks: '%s' → recette parent '%s'", pf_label, parent.get("libelle", "?"))
+            if not recettes:
+                _log.debug("Stocks: '%s' sans recette, ignoré", pf_label)
                 continue
             recette = recettes[0]
             vol_recette = float(recette.get("volumeRecette") or 0)
