@@ -310,7 +310,7 @@ def page_ressources():
     if not user:
         return
 
-    with page_layout("Ressources", "menu_book", "/ressources"):
+    with page_layout("Instructions IA", "menu_book", "/ressources"):
         ui.label(
             "Instructions de commande par fournisseur. "
             "Les références sont synchronisées depuis EasyBeer. "
