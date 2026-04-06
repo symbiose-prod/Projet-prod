@@ -506,22 +506,17 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     # Enrichir mp_stock avec les bouteilles (CONTENANT séparés dans EasyBeer)
     try:
         from common.easybeer.stocks import get_bottle_stock
+        from common.product_bom import get_all_bom
         bottle_stock = get_bottle_stock()
-        # Charger les libellés depuis le référentiel contenants (déjà en cache)
+        # Charger les libellés MP depuis le BOM complet
+        _bom_mp_labels: dict[int, str] = {}
+        for entry in get_all_bom():
+            _bom_mp_labels.setdefault(entry["id_mp"], entry.get("mp_label", ""))
         for cont_id, qty in bottle_stock.items():
             int_id = int(cont_id)
             if int_id not in mp_stock:
-                # Chercher le libellé dans le BOM
-                _label = f"Contenant #{int_id}"
-                for entries in bom_lookup.values():
-                    for e in entries:
-                        if e.get("id_mp") == int_id:
-                            _label = e.get("mp_label", _label)
-                            break
-                    if _label != f"Contenant #{int_id}":
-                        break
                 mp_stock[int_id] = {
-                    "label": _label,
+                    "label": _bom_mp_labels.get(int_id, f"Contenant #{int_id}"),
                     "stock": float(qty),
                     "seuil_bas": 0,
                     "unit": "u",
