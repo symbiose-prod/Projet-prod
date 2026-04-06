@@ -284,7 +284,6 @@ import pages.accueil  # noqa: F401 — /accueil
 import pages.auth  # noqa: F401 — /login, /reset/{token}
 import pages.commercial  # noqa: F401 — /commercial
 import pages.nomenclatures  # noqa: F401 — /nomenclatures
-import pages.planification  # noqa: F401 — /planification
 import pages.production  # noqa: F401 — /production
 import pages.ramasse  # noqa: F401 — /ramasse
 import pages.ressources  # noqa: F401 — /ressources

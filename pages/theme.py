@@ -66,7 +66,6 @@ NAV_ITEMS: list[tuple] = [
     ("home",           "Accueil",              "/accueil"),
     ("factory",        "Production",           "/production"),
     ("local_shipping", "Fiche de ramasse",     "/ramasse"),
-    ("event_note",     "Planification",        "/planification"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("bar_chart",      "Commercial",            "/commercial"),
     # Groupe dépliable — 4 éléments : (icon, label, None, children)
