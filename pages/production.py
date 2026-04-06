@@ -856,7 +856,8 @@ async def page_production():
                         key = row.get("_key", "")
                         val = row.get("forcer")
                         # val peut être : int, float, None, "" ou NaN (sérialisé en null)
-                        if isinstance(val, (int, float)) and val == val and val > 0:
+                        # val == 0 est valide (= ne pas produire ce format)
+                        if isinstance(val, (int, float)) and val == val and val >= 0:
                             overrides[key] = int(val)
                         else:
                             overrides.pop(key, None)
