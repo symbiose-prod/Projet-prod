@@ -678,12 +678,14 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
             # ── PACKAGING : conso depuis BOM × cartons/jour ──
             daily_consumption = 0.0
             contributing_pfs = []
-            _seen_pf_ids: set[int] = set()
+            _seen_pf_fmt: set[tuple[int, str]] = set()
             for entry in bom_lookup[id_mp]:
                 pid = entry["id_produit"]
-                if pid in _seen_pf_ids:
+                fmt = entry.get("format_code", "")
+                pf_key = (pid, fmt)
+                if pf_key in _seen_pf_fmt:
                     continue
-                _seen_pf_ids.add(pid)
+                _seen_pf_fmt.add(pf_key)
                 pf = pf_data.get((pid, entry["format_code"]))
                 if not pf:
                     for k, v in pf_data.items():
