@@ -16,6 +16,7 @@ import requests
 from nicegui import app, ui
 
 from common.easybeer import EasyBeerError
+from common.easybeer._client import is_rate_limited
 from common.session_store import load_df
 from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import parse_stock as _parse_stock
@@ -299,8 +300,15 @@ def _render_easybeer_section(
             for _g_idx, g in enumerate(_gouts_eb, 1):
                 # Pause entre parfums pour éviter le rate-limit EasyBeer (HTTP 400)
                 if not _is_first_flavor:
-                    _set_status(f"Pause anti rate-limit… ({_g_idx}/{_nb_total})")
-                    await asyncio.sleep(3)
+                    # Attendre la fin du rate-limit actif avant de continuer
+                    _rl_remaining = is_rate_limited()
+                    if _rl_remaining > 0:
+                        _wait_s = int(_rl_remaining) + 2
+                        _set_status(f"Rate-limit actif — reprise dans {_wait_s}s… ({_g_idx}/{_nb_total})")
+                        await asyncio.sleep(_wait_s)
+                    else:
+                        _set_status(f"Pause anti rate-limit… ({_g_idx}/{_nb_total})")
+                        await asyncio.sleep(3)
                 _is_first_flavor = False
                 vol_l = _vol_par_gout.get(g, 0)
                 # V_dilution : inclut la part de perte de transfert pour

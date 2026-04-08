@@ -37,6 +37,7 @@ _DDM_DAYS: int = _get_biz().get("ddm_days", 365)
 # Fallback statique si EasyBeer est indisponible
 CARTON_WEIGHTS_FALLBACK: dict[str, float] = {
     "12x33": 6.741,
+    "6x33":  3.42,
     "6x75":  7.23,
     "4x75":  4.68,
 }
@@ -54,6 +55,7 @@ PALETTE_EMPTY_WEIGHT: float = 25.0  # kg
 
 PALETTE_CAPACITY: dict[str, int] = {
     "12x33": 126,
+    "6x33":  252,
     "6x75":  96,   # Eaugazeuse (Verralia) par défaut
     "4x75":  112,  # SAFT
 }
@@ -205,6 +207,8 @@ def format_from_stock(stock_txt: str) -> str | None:
 
     if vol == 33 and nb == 12:
         return "12x33"
+    if vol == 33 and nb == 6:
+        return "6x33"
     if vol == 75 and nb == 6:
         return "6x75"
     if vol == 75 and nb == 4:
