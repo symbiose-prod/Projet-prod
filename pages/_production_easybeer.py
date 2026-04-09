@@ -300,15 +300,21 @@ def _render_easybeer_section(
             for _g_idx, g in enumerate(_gouts_eb, 1):
                 # Pause entre parfums pour éviter le rate-limit EasyBeer (HTTP 400)
                 if not _is_first_flavor:
-                    # Attendre la fin du rate-limit actif avant de continuer
+                    # Attendre la fin du rate-limit actif + marge de sécurité
                     _rl_remaining = is_rate_limited()
-                    if _rl_remaining > 0:
-                        _wait_s = int(_rl_remaining) + 2
-                        _set_status(f"Rate-limit actif — reprise dans {_wait_s}s… ({_g_idx}/{_nb_total})")
-                        await asyncio.sleep(_wait_s)
-                    else:
-                        _set_status(f"Pause anti rate-limit… ({_g_idx}/{_nb_total})")
-                        await asyncio.sleep(3)
+                    _wait_s = max(5, int(_rl_remaining) + 3)
+                    _set_status(
+                        f"Pause {_wait_s}s avant goût suivant… ({_g_idx}/{_nb_total})"
+                        if _rl_remaining <= 0
+                        else f"Rate-limit actif — reprise dans {_wait_s}s… ({_g_idx}/{_nb_total})"
+                    )
+                    await asyncio.sleep(_wait_s)
+                    # Re-vérifier après le sleep : si le ban s'est prolongé, attendre encore
+                    _rl_after = is_rate_limited()
+                    if _rl_after > 0:
+                        _extra = int(_rl_after) + 2
+                        _set_status(f"Rate-limit prolongé — +{_extra}s… ({_g_idx}/{_nb_total})")
+                        await asyncio.sleep(_extra)
                 _is_first_flavor = False
                 vol_l = _vol_par_gout.get(g, 0)
                 # V_dilution : inclut la part de perte de transfert pour
@@ -384,7 +390,8 @@ def _render_easybeer_section(
 
                 # Pause après création brassin pour éviter le rate-limit
                 _set_status(f"Conditionnement « {g} » ({_g_idx}/{_nb_total})…")
-                await asyncio.sleep(2)
+                _rl_post = is_rate_limited()
+                await asyncio.sleep(max(3, int(_rl_post) + 2))
 
                 try:
                     _matrice = get_planification_matrice(brassin_id, _id_entrepot)
@@ -470,7 +477,8 @@ def _render_easybeer_section(
 
                 # Pause avant upload pour éviter le rate-limit EasyBeer (HTTP 429/400)
                 _set_status(f"Upload fiche « {g} » ({_g_idx}/{_nb_total})…")
-                await asyncio.sleep(3)
+                _rl_pre_upload = is_rate_limited()
+                await asyncio.sleep(max(3, int(_rl_pre_upload) + 2))
 
                 # Upload fiche Excel
                 try:

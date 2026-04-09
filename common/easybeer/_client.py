@@ -66,8 +66,10 @@ _api_backoff_until: float = 0.0  # monotonic timestamp until which we enforce a 
 def _throttle() -> None:
     """Espace les appels API de min 1s pour eviter le ban rate-limit (thread-safe).
 
-    Si l'IP est bannie (backoff > 10s restant), lève une erreur immédiatement
-    au lieu de bloquer le serveur pendant 5 minutes.
+    Si l'IP est bannie (backoff > 35s restant), lève une erreur immédiatement
+    au lieu de bloquer le serveur trop longtemps. Le seuil de 35s permet de
+    tolérer les bans courts (5-30s) rencontrés lors de la création de
+    plusieurs brassins en boucle (mode Split).
 
     Les sleep se font EN DEHORS du lock pour ne pas bloquer les autres threads.
     """
@@ -76,7 +78,7 @@ def _throttle() -> None:
     with _api_lock:
         now = _time.monotonic()
         remaining = _api_backoff_until - now
-        if remaining > 10:
+        if remaining > 35:
             raise EasyBeerError(
                 f"EasyBeer rate-limit actif — réessayez dans {int(remaining)}s"
             )
