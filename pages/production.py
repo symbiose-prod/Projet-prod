@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import datetime as _dt
 import logging
+import math
 
 import pandas as pd
 from nicegui import app, ui
@@ -86,13 +87,25 @@ async def page_production():
         # ── Préparation des données ───────────────────────────────────
         _, flavor_map_path, images_dir = get_paths()
         fm = load_flavor_map_from_path(flavor_map_path)
+
+        def _load_df_in():
+            """Charge et prépare le DataFrame d'entrée depuis les données importées."""
+            _df_raw, _window = get_df_raw()
+            if _df_raw is None:
+                return None, 0
+            _df = apply_canonical_flavor(_df_raw, fm)
+            _df["Produit"] = _df["Produit"].astype(str)
+            _df = sanitize_gouts(_df)
+            return _df, _window
+
         try:
-            df_in = apply_canonical_flavor(df_raw, fm)
+            df_in = _load_df_in()[0]
+            if df_in is None:
+                ui.notify("Aucune donnée importée", type="negative")
+                return
         except KeyError as e:
             ui.notify(str(e), type="negative")
             return
-        df_in["Produit"] = df_in["Produit"].astype(str)
-        df_in = sanitize_gouts(df_in)
 
         all_gouts = sorted(
             pd.Series(df_in.get("GoutCanon", pd.Series(dtype=str)))
@@ -174,9 +187,9 @@ async def page_production():
         nb_gouts_input_ref = {"ref": None}
         split_ratio_ref = {"ref": None}
         _split_label_ref = {"ref": None}
-        _split_gout_order = {"order": None}  # [goût_split1, goût_split2]
         _split_gout_a_ref = {"ref": None}  # sélecteur goût split 1
         _split_gout_b_ref = {"ref": None}  # sélecteur goût split 2
+        _split_slider_container_ref = {"ref": None}  # conteneur dédié pour le slider
 
         _SPLIT_TOTAL = (
             TANK_CONFIGS["Split 7200L"]["capacity"]
@@ -196,6 +209,7 @@ async def page_production():
             split_container.clear()
             split_ratio_ref["ref"] = None
             _split_label_ref["ref"] = None
+            _split_slider_container_ref["ref"] = None
             if mode.value == "Split 7200L":
                 with split_container:
                     nb_gouts_input_ref["ref"] = ui.select(
@@ -204,26 +218,28 @@ async def page_production():
                         label="Nb goûts",
                         on_change=lambda _: _build_split_slider(),
                     ).props("outlined dense").classes("w-full")
+                    # Conteneur dédié pour le slider — nettoyé par .clear()
+                    _split_slider_container_ref["ref"] = ui.column().classes("w-full")
                     _build_split_slider()
             else:
                 nb_gouts_input_ref["ref"] = None
 
         def _build_split_slider():
             """Affiche / masque les contrôles split (goûts + slider) selon nb_gouts."""
-            # Nettoyage des anciens éléments
-            for _ref in (split_ratio_ref, _split_label_ref, _split_gout_a_ref, _split_gout_b_ref):
-                _old = _ref["ref"]
-                if _old and hasattr(_old, "parent_slot") and _old.parent_slot and _old.parent_slot.parent:
-                    try:
-                        _old.parent_slot.parent.remove(_old)
-                    except Exception:
-                        pass
-                _ref["ref"] = None
+            # Nettoyage propre via le conteneur dédié
+            sc = _split_slider_container_ref["ref"]
+            if sc is None:
+                return
+            sc.clear()
+            split_ratio_ref["ref"] = None
+            _split_label_ref["ref"] = None
+            _split_gout_a_ref["ref"] = None
+            _split_gout_b_ref["ref"] = None
 
             nb_ref = nb_gouts_input_ref["ref"]
             nb_val = int(nb_ref.value) if nb_ref else 1
             if mode.value == "Split 7200L" and nb_val >= 2:
-                with split_container:
+                with sc:
                     # Sélecteurs de goûts
                     ui.label("Choix des goûts").classes("text-caption text-grey-7 q-mt-sm")
                     with ui.row().classes("w-full gap-2"):
@@ -250,14 +266,655 @@ async def page_production():
                         ).props("label-always color=green-8").classes("w-full")
                     )
 
-                    # Le bouton "Lancer le calcul" en bas de la sidebar
-                    # couvre aussi le split — pas besoin d'un bouton dédié.
+        # ── Sous-fonctions de rendu (appelées par do_compute) ─────────
+
+        def _render_note(note_msg):
+            """Affiche la note d'ajustement si présente."""
+            if isinstance(note_msg, str) and note_msg.strip():
+                with ui.card().classes("w-full").props("flat bordered"):
+                    with ui.card_section().classes("row items-center gap-2"):
+                        ui.icon("info", size="sm").style(f"color: {COLORS['orange']}")
+                        ui.label(note_msg).classes("text-body2")
+
+        def _render_proposed(gouts_cibles, volume_details):
+            """Cartes Production proposée par goût."""
+            if not gouts_cibles or not volume_details:
+                return
+            with ui.card().classes("w-full").props("flat bordered"):
+                with ui.card_section().classes("q-pa-md"):
+                    with ui.row().classes("items-center gap-2 q-mb-sm"):
+                        ui.icon("factory", size="md").style(f"color: {COLORS['green']}")
+                        ui.label("Production proposée").classes("text-h6").style(
+                            f"color: {COLORS['ink']}"
+                        )
+                    with ui.row().classes("w-full gap-4"):
+                        for _g_prop in gouts_cibles:
+                            _vd_prop = volume_details.get(_g_prop, {})
+                            _vol_prop = _vd_prop.get("V_bottled", 0)
+                            with ui.card().classes("q-pa-md").props("flat bordered").style(
+                                f"border: 2px solid {COLORS['green']}40; border-radius: 8px; flex: 1"
+                            ):
+                                ui.label(_g_prop).classes("text-subtitle1").style(
+                                    f"color: {COLORS['ink']}; font-weight: 700"
+                                )
+                                ui.label(f"{_vol_prop:,.0f} L".replace(",", " ")).classes(
+                                    "text-h5"
+                                ).style(f"color: {COLORS['green']}; font-weight: 700")
+
+        def _render_ongoing(ongoing):
+            """Table expansion des productions en cours."""
+            _ong_detail = ongoing.get("detail", [])
+            _ong_par_gout = ongoing.get("par_gout", {})
+            _ong_total = ongoing.get("total_hl", 0.0)
+            if not _ong_detail:
+                return
+            _ong_nb = len(_ong_detail)
+            _ong_title = (
+                f"{_ong_nb} production{'s' if _ong_nb > 1 else ''}"
+                f" en cours — {_ong_total:.1f} hL"
+            )
+            with ui.expansion(
+                _ong_title, icon="hourglass_top", value=True,
+            ).classes("w-full").style(
+                f"border: 1px solid {COLORS['blue']}40; border-radius: 8px"
+            ):
+                _ong_rows = [
+                    {
+                        "brassin": d["nom"], "produit": d["produit"],
+                        "volume": f"{d['volume_l']:,} L".replace(",", " "),
+                        "etat": d["etat"],
+                        "date_cond": d["date_conditionnement"] or "—",
+                        "_gout": d["gout"], "_key": d["nom"],
+                    }
+                    for d in _ong_detail
+                ]
+                _ong_columns = [
+                    {"name": "brassin", "label": "Brassin", "field": "brassin", "align": "left"},
+                    {"name": "produit", "label": "Produit", "field": "produit", "align": "left"},
+                    {"name": "volume", "label": "Volume", "field": "volume", "align": "right"},
+                    {"name": "etat", "label": "État", "field": "etat", "align": "center"},
+                    {"name": "date_cond", "label": "Conditionnement prévu", "field": "date_cond", "align": "center"},
+                ]
+                ui.table(
+                    columns=_ong_columns, rows=_ong_rows, row_key="_key",
+                ).classes("w-full").props("flat bordered dense")
+                _gouts_ajustes = [
+                    f"{g} (+{v:.1f} hL)" for g, v in _ong_par_gout.items()
+                ]
+                if _gouts_ajustes:
+                    ui.label(
+                        "ℹ️ Ces volumes ont été ajoutés au stock disponible "
+                        "pour le calcul : " + ", ".join(_gouts_ajustes)
+                    ).classes("text-caption text-grey-6 q-mt-sm")
+
+        def _render_planned(planned):
+            """Table expansion des productions planifiées."""
+            _plan_detail = planned.get("detail", [])
+            _plan_total = planned.get("total_hl", 0.0)
+            if not _plan_detail:
+                return
+            _plan_nb = len(_plan_detail)
+            _plan_title = (
+                f"{_plan_nb} production{'s' if _plan_nb > 1 else ''}"
+                f" planifiée{'s' if _plan_nb > 1 else ''} — {_plan_total:.1f} hL"
+            )
+            with ui.expansion(
+                _plan_title, icon="event_note", value=False,
+            ).classes("w-full").style(
+                f"border: 1px solid {COLORS['green']}40; border-radius: 8px"
+            ):
+                _plan_rows = [
+                    {
+                        "brassin": d["nom"], "produit": d["produit"],
+                        "volume": f"{d['volume_l']:,} L".replace(",", " "),
+                        "etat": d["etat"],
+                        "date_debut": d.get("date_debut") or "—",
+                        "date_cond": d["date_conditionnement"] or "—",
+                        "_key": d["nom"],
+                    }
+                    for d in _plan_detail
+                ]
+                _plan_columns = [
+                    {"name": "brassin", "label": "Brassin", "field": "brassin", "align": "left"},
+                    {"name": "produit", "label": "Produit", "field": "produit", "align": "left"},
+                    {"name": "volume", "label": "Volume", "field": "volume", "align": "right"},
+                    {"name": "etat", "label": "État", "field": "etat", "align": "center"},
+                    {"name": "date_debut", "label": "Début prévu", "field": "date_debut", "align": "center"},
+                    {"name": "date_cond", "label": "Conditionnement prévu", "field": "date_cond", "align": "center"},
+                ]
+                ui.table(
+                    columns=_plan_columns, rows=_plan_rows, row_key="_key",
+                ).classes("w-full").props("flat bordered dense")
+
+        def _render_mp_emb_check(mp_check, emb_check):
+            """Vérification matières premières + emballages (2 colonnes)."""
+            _mp_status = mp_check.get("status", "error")
+            _mp_items = mp_check.get("items", [])
+            _mp_err = mp_check.get("error_msg", "")
+            _mp_shortages = [it for it in _mp_items if not it["ok"]]
+
+            _emb_status = emb_check.get("emb_status", "ok")
+            _emb_items = emb_check.get("emballages", [])
+            _emb_shortages = [it for it in _emb_items if not it["ok"]]
+
+            # Slots Quasar réutilisés pour les tables statut/écart
+            _SLOT_STATUT = r'''
+                <q-td :props="props">
+                    <q-badge
+                        :color="props.row._ok ? 'green-7' : 'orange-8'"
+                        :label="props.row.statut"
+                        text-color="white"
+                    />
+                </q-td>
+            '''
+            _SLOT_ECART = r'''
+                <q-td :props="props">
+                    <span :style="{
+                        color: props.row._ok ? '#16A34A' : '#F97316',
+                        fontWeight: props.row._ok ? 400 : 700,
+                    }">
+                        {{ props.row.ecart }}
+                    </span>
+                </q-td>
+            '''
+
+            if _mp_status == "error":
+                if _mp_err:
+                    with ui.row().classes("w-full items-center gap-2 q-py-xs"):
+                        ui.icon("cloud_off", size="xs").classes("text-grey-5")
+                        ui.label(f"Vérification MP indisponible — {_mp_err}").classes(
+                            "text-caption text-grey-5"
+                        )
+                return
+
+            if not (_mp_items or _emb_items):
+                return
+
+            with ui.row().classes("w-full gap-4 items-start"):
+
+                # ── Colonne gauche : Matières premières ──────────
+                with ui.column().classes("flex-1"):
+                  if _mp_items:
+                    _mp_color = COLORS["success"] if _mp_status == "ok" else COLORS["orange"]
+                    _mp_icon = "check_circle" if _mp_status == "ok" else "warning"
+                    _mp_title = (
+                        "Matières premières disponibles"
+                        if _mp_status == "ok"
+                        else f"{len(_mp_shortages)} matière(s) première(s) insuffisante(s)"
+                    )
+                    with ui.expansion(
+                        _mp_title, icon=_mp_icon, value=(_mp_status == "warning"),
+                    ).classes("w-full").style(
+                        f"border: 1px solid {_mp_color}40; border-radius: 8px"
+                    ):
+                        _mp_rows = [
+                            {
+                                "mp": it["libelle"],
+                                "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                "stock": f"{it['stock']:.1f} {it['unite']}",
+                                "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                "statut": "OK" if it["ok"] else "Insuffisant",
+                                "_ok": it["ok"], "_key": str(it["id_mp"]),
+                            }
+                            for it in _mp_items
+                        ]
+                        _mp_columns = [
+                            {"name": "mp", "label": "Matière première", "field": "mp", "align": "left"},
+                            {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
+                            {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
+                            {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
+                            {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
+                        ]
+                        mp_table = ui.table(
+                            columns=_mp_columns, rows=_mp_rows, row_key="_key",
+                        ).classes("w-full").props("flat bordered dense")
+                        mp_table.add_slot("body-cell-statut", _SLOT_STATUT)
+                        mp_table.add_slot("body-cell-ecart", _SLOT_ECART)
+
+                        # Détail MP par goût
+                        _mp_by_gout = mp_check.get("items_by_gout", {})
+                        if len(_mp_by_gout) >= 2:
+                            ui.separator().classes("q-my-sm")
+                            ui.label("Détail par goût").classes("text-subtitle2 text-grey-7 q-mt-xs")
+                            for _g_mp, _g_items_mp in _mp_by_gout.items():
+                                _g_shortages = [it for it in _g_items_mp if not it["ok"]]
+                                _g_mp_icon = "check_circle" if not _g_shortages else "warning"
+                                _g_mp_color = COLORS["success"] if not _g_shortages else COLORS["orange"]
+                                _g_mp_title = (
+                                    f"{_g_mp} — MP disponibles"
+                                    if not _g_shortages
+                                    else f"{_g_mp} — {len(_g_shortages)} insuffisante(s)"
+                                )
+                                with ui.expansion(
+                                    _g_mp_title, icon=_g_mp_icon, value=bool(_g_shortages),
+                                ).classes("w-full").style(
+                                    f"border: 1px solid {_g_mp_color}40; border-radius: 8px"
+                                ):
+                                    _g_mp_rows = [
+                                        {
+                                            "mp": it["libelle"],
+                                            "besoin": f"{it['besoin']:.1f} {it['unite']}",
+                                            "stock": f"{it['stock']:.1f} {it['unite']}",
+                                            "ecart": f"{it['ecart']:+.1f} {it['unite']}",
+                                            "statut": "OK" if it["ok"] else "Insuffisant",
+                                            "_ok": it["ok"],
+                                            "_key": f"{_g_mp}_{it['id_mp']}",
+                                        }
+                                        for it in _g_items_mp
+                                    ]
+                                    _g_tbl = ui.table(
+                                        columns=_mp_columns, rows=_g_mp_rows, row_key="_key",
+                                    ).classes("w-full").props("flat bordered dense")
+                                    _g_tbl.add_slot("body-cell-statut", _SLOT_STATUT)
+                                    _g_tbl.add_slot("body-cell-ecart", _SLOT_ECART)
+
+                # ── Colonne droite : Emballages ──────────────────
+                with ui.column().classes("flex-1"):
+                  if _emb_items:
+                    _emb_color = COLORS["success"] if _emb_status == "ok" else COLORS["orange"]
+                    _emb_icon = "check_circle" if _emb_status == "ok" else "warning"
+                    _emb_title = (
+                        "Emballages disponibles"
+                        if _emb_status == "ok"
+                        else f"{len(_emb_shortages)} emballage(s) insuffisant(s)"
+                    )
+                    with ui.expansion(
+                        _emb_title, icon=_emb_icon, value=(_emb_status == "warning"),
+                    ).classes("w-full").style(
+                        f"border: 1px solid {_emb_color}40; border-radius: 8px"
+                    ):
+                        _emb_rows = [
+                            {
+                                "mp": it["libelle"],
+                                "besoin": f"{it['besoin']:,.0f} {it['unite']}".replace(",", " "),
+                                "stock": f"{it['stock']:,.0f} {it['unite']}".replace(",", " "),
+                                "ecart": f"{it['ecart']:+,.0f} {it['unite']}".replace(",", " "),
+                                "statut": "OK" if it["ok"] else "Insuffisant",
+                                "_ok": it["ok"], "_key": f"emb_{it['id_mp']}",
+                            }
+                            for it in _emb_items
+                        ]
+                        _emb_columns = [
+                            {"name": "mp", "label": "Emballage", "field": "mp", "align": "left"},
+                            {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
+                            {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
+                            {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
+                            {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
+                        ]
+                        emb_table = ui.table(
+                            columns=_emb_columns, rows=_emb_rows, row_key="_key",
+                        ).classes("w-full").props("flat bordered dense")
+                        emb_table.add_slot("body-cell-statut", _SLOT_STATUT)
+                        emb_table.add_slot("body-cell-ecart", _SLOT_ECART)
+
+        async def _render_production_table(df_final, overrides, product_images, do_compute_fn):
+            """Tableau de production éditable avec forçage inline."""
+            nb_forcés = int(df_final["_forcé"].sum()) if not df_final.empty else 0
+
+            section_title("Plan de production", "assignment")
+
+            if nb_forcés:
+                ui.label(
+                    f"{nb_forcés} ligne(s) forcée(s) — le volume restant est redistribué."
+                ).classes("text-caption text-grey-6")
+
+            if df_final.empty:
+                ui.label(
+                    "Aucun format disponible pour les goûts sélectionnés."
+                ).classes("text-grey-6 text-body1 q-pa-md")
+                return
+
+            # Construire les lignes triées : Symbiose d'abord, puis Niko
+            all_table_rows = []
+            for _, r in df_final.iterrows():
+                key = f"{r['GoutCanon']}|{r['Produit']}|{r['Stock']}"
+                produit_name = str(r["Produit"])
+                produit_upper = produit_name.upper()
+                if "NIKO" in produit_upper:
+                    brand = "Niko"
+                elif "IGEBA" in produit_upper:
+                    brand = "IGEBA"
+                elif any(kw in produit_upper for kw in ("WATER", "PROBIOTIC")):
+                    brand = "Inter"
+                else:
+                    brand = "Symbiose Kéfir"
+                produit_hint = ""
+                if brand != "Symbiose Kéfir":
+                    produit_hint = produit_name.split(" - ")[0].strip() if " - " in produit_name else produit_name
+
+                all_table_rows.append({
+                    "gout": str(r["GoutCanon"]),
+                    "produit": produit_name,
+                    "produit_hint": produit_hint,
+                    "stock": str(r["Stock"]),
+                    "forcer": overrides.get(key, None),
+                    "cartons": int(r["Cartons à produire (arrondi)"]),
+                    "bouteilles": int(r["Bouteilles à produire (arrondi)"]),
+                    "volume": f"{float(r['Volume produit arrondi (hL)']):.3f}",
+                    "_key": key, "_brand": brand,
+                })
+
+            _BRAND_ORDER = {"Symbiose Kéfir": 0, "Niko": 1, "IGEBA": 2, "Inter": 3}
+            all_table_rows.sort(key=lambda r: (_BRAND_ORDER.get(r["_brand"], 9), r["gout"]))
+
+            # Images par marque
+            brand_images: dict[str, list[dict]] = {}
+            seen: set[str] = set()
+            for row in all_table_rows:
+                prod = row["produit"]
+                brand = row["_brand"]
+                if prod not in seen:
+                    seen.add(prod)
+                    img_url = product_images.get(prod, "")
+                    if img_url:
+                        brand_images.setdefault(brand, []).append({
+                            "gout": row["gout"], "url": img_url,
+                        })
+
+            # Insérer des lignes séparatrices
+            ordered_rows: list[dict] = []
+            current_brand = None
+            for row in all_table_rows:
+                if row["_brand"] != current_brand:
+                    current_brand = row["_brand"]
+                    ordered_rows.append({
+                        "_sep": True, "_brand": current_brand,
+                        "_brand_images": brand_images.get(current_brand, []),
+                        "_key": f"_sep_{current_brand}",
+                        "gout": "", "stock": "", "forcer": None,
+                        "cartons": 0, "bouteilles": 0, "volume": "", "produit": "",
+                    })
+                ordered_rows.append(row)
+
+            columns = [
+                {"name": "gout", "label": "Goût", "field": "gout", "align": "left", "sortable": True},
+                {"name": "stock", "label": "Format", "field": "stock", "align": "left", "sortable": True},
+                {"name": "forcer", "label": "Forcer", "field": "forcer", "align": "right"},
+                {"name": "cartons", "label": "Cartons", "field": "cartons", "align": "right", "sortable": True},
+                {"name": "bouteilles", "label": "Bouteilles", "field": "bouteilles", "align": "right", "sortable": True},
+                {"name": "volume", "label": "Volume (hL)", "field": "volume", "align": "right", "sortable": True},
+            ]
+            nb_cols = len(columns)
+
+            table = ui.table(
+                columns=columns, rows=ordered_rows, row_key="_key",
+            ).classes("w-full").props("flat bordered dense")
+
+            table.add_slot("body", r'''
+                <q-tr v-if="props.row._sep" :props="props">
+                    <q-td colspan="''' + str(nb_cols) + r'''"
+                           style="background: #F3F4F6; padding: 10px 12px; font-weight: 600; font-size: 13px; border-bottom: 2px solid #E5E7EB;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <span>{{ props.row._brand }}</span>
+                            <div v-if="props.row._brand_images && props.row._brand_images.length"
+                                 style="display: flex; align-items: flex-end; gap: 10px; margin-left: 8px;">
+                                <div v-for="img in props.row._brand_images" :key="img.gout"
+                                     style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                                    <img :src="img.url"
+                                         style="height: 48px; object-fit: contain; border-radius: 4px;" />
+                                    <span style="font-size: 11px; color: #6B7280; font-weight: 400;">
+                                        {{ img.gout }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </q-td>
+                </q-tr>
+                <q-tr v-else :props="props">
+                    <q-td v-for="col in props.cols" :key="col.name" :props="props"
+                          :style="'text-align: ' + col.align">
+                        <template v-if="col.name === 'forcer'">
+                            <span :style="{
+                                color: props.row.forcer != null && props.row.forcer !== '' ? '#F97316' : '#9CA3AF',
+                                fontWeight: props.row.forcer != null && props.row.forcer !== '' ? 700 : 400,
+                                cursor: 'pointer',
+                            }">
+                                {{ props.row.forcer != null && props.row.forcer !== '' ? props.row.forcer : 'auto' }}
+                                <q-icon name="edit" size="12px" color="grey-5" class="q-ml-xs" />
+                            </span>
+                            <q-popup-edit v-model="props.row.forcer" v-slot="scope"
+                                @update:model-value="() => $parent.$emit('forcer_update', props.row)">
+                                <q-input v-model.number="scope.value" type="number" dense autofocus
+                                    placeholder="auto" min="0"
+                                    input-class="text-right text-bold"
+                                    style="min-width: 100px"
+                                    hint="Entrée pour valider"
+                                    @keyup.enter="scope.set" />
+                            </q-popup-edit>
+                        </template>
+                        <template v-else-if="col.name === 'cartons'">
+                            <span style="font-weight: 600;">{{ props.row[col.field] }}</span>
+                        </template>
+                        <template v-else-if="col.name === 'gout'">
+                            {{ props.row[col.field] }}
+                            <span v-if="props.row.produit_hint"
+                                  style="color: #9CA3AF; font-size: 11px; margin-left: 4px;">
+                                ({{ props.row.produit_hint }})
+                            </span>
+                        </template>
+                        <template v-else>
+                            {{ props.row[col.field] }}
+                        </template>
+                    </q-td>
+                </q-tr>
+            ''')
+
+            # Clic sur cellule "Forcer" → popup → applique override et recalcule
+            async def _on_forcer_update(e):
+                row = e.args
+                if not isinstance(row, dict) or row.get("_sep"):
+                    return
+                key = row.get("_key", "")
+                val = row.get("forcer")
+                if isinstance(val, (int, float)) and not math.isnan(val) and val >= 0:
+                    overrides[key] = int(val)
+                else:
+                    overrides.pop(key, None)
+                app.storage.user["production_overrides"] = dict(overrides)
+                try:
+                    from common.audit import log_event
+                    log_event(
+                        tenant_id=app.storage.user.get("tenant_id"),
+                        user_email=app.storage.user.get("email"),
+                        action="production_override",
+                        details={"key": key, "value": int(val) if isinstance(val, (int, float)) and not math.isnan(val) else None},
+                    )
+                except Exception:
+                    _log.debug("Audit log_event production_override failed", exc_info=True)
+                ui.run_javascript("window._fsProductionDirty = true;")
+                await do_compute_fn()
+
+            table.on("forcer_update", _on_forcer_update)
+
+            with ui.row().classes("w-full gap-3 q-mt-sm"):
+                async def do_reset_overrides():
+                    overrides.clear()
+                    app.storage.user["production_overrides"] = {}
+                    await do_compute_fn()
+
+                ui.button(
+                    "Réinitialiser", icon="restart_alt",
+                    on_click=do_reset_overrides,
+                ).props("flat color=grey-7")
+
+        def _render_save_and_easybeer(
+            df_final, df_min, df_calc, volume_details,
+            mode_prod, volume_cible, gouts_cibles, do_compute_fn,
+        ):
+            """Fiche de production (sauvegarde + Excel) et section EasyBeer."""
+            df_min_override = (
+                df_final[df_final["Cartons à produire (arrondi)"] > 0][[
+                    "GoutCanon", "Produit", "Stock",
+                    "Cartons à produire (arrondi)",
+                    "Bouteilles à produire (arrondi)",
+                    "Volume produit arrondi (hL)",
+                ]].copy().reset_index(drop=True)
+                if not df_final.empty else df_min.copy()
+            )
+
+            with ui.row().classes("w-full gap-4 items-start"):
+
+                # ── Colonne gauche : Fiche de production ────────────
+                with ui.card().classes("flex-1").props("flat bordered").style("min-width: 320px"):
+                    with ui.card_section():
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("description", size="sm").style(f"color: {COLORS['ink2']}")
+                            ui.label("Fiche de production").classes("text-subtitle1").style(
+                                f"color: {COLORS['ink']}; font-weight: 600"
+                            )
+
+                    with ui.card_section().classes("q-pt-none"):
+                        sp_prev = app.storage.user.get("saved_production")
+                        default_debut = (
+                            _dt.date.fromisoformat(sp_prev["semaine_du"])
+                            if sp_prev and "semaine_du" in sp_prev
+                            else _dt.date.today()
+                        )
+
+                        date_debut = date_picker_field(
+                            default_debut.isoformat(),
+                            label="Date début fermentation",
+                        )
+
+                        def do_save():
+                            sd = date_debut.value
+                            if isinstance(sd, str):
+                                sd_date = _dt.date.fromisoformat(sd)
+                            else:
+                                sd_date = sd
+                            ddm_date = sd_date + _dt.timedelta(days=DDM_DAYS)
+
+                            g_order = []
+                            if isinstance(df_min_override, pd.DataFrame) and "GoutCanon" in df_min_override.columns:
+                                for g in df_min_override["GoutCanon"].astype(str).tolist():
+                                    if g and g not in g_order:
+                                        g_order.append(g)
+
+                            app.storage.user["saved_production"] = {
+                                "df_min_json": store_df(df_min_override),
+                                "df_calc_json": store_df(df_calc),
+                                "gouts": g_order,
+                                "semaine_du": sd_date.isoformat(),
+                                "ddm": ddm_date.isoformat(),
+                                "volume_details": {
+                                    k: {
+                                        kk: vv for kk, vv in v.items()
+                                        if kk != "dilution_ingredients"
+                                        or isinstance(vv, (dict, type(None)))
+                                    }
+                                    for k, v in volume_details.items()
+                                },
+                                "mode_prod": mode_prod,
+                            }
+                            try:
+                                from common.audit import ACTION_PRODUCTION_SAVED, log_event
+                                log_event(
+                                    tenant_id=app.storage.user.get("tenant_id"),
+                                    user_email=app.storage.user.get("email"),
+                                    action=ACTION_PRODUCTION_SAVED,
+                                    details={"gouts": g_order, "semaine_du": sd_date.isoformat(), "mode": mode_prod},
+                                )
+                            except Exception:
+                                _log.debug("Audit log_event production_saved failed", exc_info=True)
+                            ui.notify("Production sauvegardée !", type="positive", icon="check")
+
+                        cb_download = ui.checkbox(
+                            "Télécharger la fiche Excel", value=True,
+                        ).classes("q-mt-sm").props("dense color=green-8")
+
+                        def _two_gouts(sp_obj):
+                            g_saved = sp_obj.get("gouts", [])
+                            uniq = []
+                            for g in g_saved:
+                                if g and g not in uniq:
+                                    uniq.append(g)
+                            return (uniq + [None, None])[:2]
+
+                        def _download_xlsx():
+                            """Génère et télécharge la fiche Excel."""
+                            try:
+                                _sp = app.storage.user.get("saved_production", {})
+                                _df_min_dl = load_df(_sp["df_min_json"])
+                                _df_calc_dl = load_df(_sp["df_calc_json"])
+                                _semaine = _dt.date.fromisoformat(_sp["semaine_du"])
+                                _ddm = _dt.date.fromisoformat(_sp["ddm"])
+                                _g1, _g2 = _two_gouts(_sp)
+                                _vd = (_sp.get("volume_details") or {}).get(_g1, {})
+
+                                xlsx_bytes = fill_fiche_xlsx(
+                                    template_path=TEMPLATE_PATH,
+                                    semaine_du=_semaine,
+                                    ddm=_ddm,
+                                    gout1=_g1 or "",
+                                    gout2=_g2,
+                                    df_calc=_df_calc_dl,
+                                    df_min=_df_min_dl,
+                                    V_start=_vd.get("V_start", 0),
+                                    tank_capacity=_vd.get("capacity", 7200),
+                                    transfer_loss=_vd.get("transfer_loss", 400),
+                                    aromatisation_volume=_vd.get("V_aroma", 0),
+                                    is_infusion=_vd.get("is_infusion", False),
+                                    dilution_ingredients=_vd.get("dilution_ingredients"),
+                                )
+                                fname = f"Fiche de production - {_g1 or 'Multi'} - {_semaine.strftime('%d-%m-%Y')}.xlsx"
+                                ui.download(xlsx_bytes, fname)
+                                ui.notify("Fiche Excel générée !", type="positive")
+                            except Exception as exc:
+                                ui.notify(f"Erreur Excel : {exc}", type="negative")
+
+                        def do_save_and_download():
+                            do_save()
+                            ui.run_javascript("window._fsProductionDirty = false;")
+                            if cb_download.value:
+                                _download_xlsx()
+                            eb_container.clear()
+                            with eb_container:
+                                _render_easybeer_section(
+                                    mode_prod, volume_details, volume_cible,
+                                    TANK_CONFIGS, TEMPLATE_PATH, COLORS,
+                                    on_recreate=do_compute_fn,
+                                    gouts_cibles=gouts_cibles,
+                                )
+
+                        ui.button(
+                            "Sauvegarder", icon="save",
+                            on_click=do_save_and_download,
+                        ).classes("w-full q-mt-sm").props("color=green-8 unelevated")
+
+                # ── Colonne droite : Créer dans EasyBeer ────────────
+                with ui.card().classes("flex-1").props("flat bordered").style("min-width: 320px"):
+                    with ui.card_section():
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("cloud_upload", size="sm").style(f"color: {COLORS['ink2']}")
+                            ui.label("Créer dans EasyBeer").classes("text-subtitle1").style(
+                                f"color: {COLORS['ink']}; font-weight: 600"
+                            )
+
+                    eb_container = ui.card_section().classes("q-pt-none")
+                    with eb_container:
+                        _render_easybeer_section(
+                            mode_prod, volume_details, volume_cible,
+                            TANK_CONFIGS, TEMPLATE_PATH, COLORS,
+                            on_recreate=do_compute_fn,
+                            gouts_cibles=gouts_cibles,
+                        )
 
         async def do_compute():
             """Calcul complet : optimiseur + passe 2 + affichage (async)."""
+            nonlocal df_in, window_days
+
             main_container.clear()
             with main_container:
                 ui.spinner("dots", size="xl", color="green-8").classes("self-center q-pa-lg")
+
+            # Recharger les données (au cas où l'import a changé sur Accueil)
+            try:
+                _fresh_df, _fresh_window = _load_df_in()
+                if _fresh_df is not None:
+                    df_in = _fresh_df
+                    window_days = _fresh_window
+            except Exception:
+                _log.debug("Rechargement données échoué, utilisation du cache", exc_info=True)
 
             # Paramètres (lecture UI — rapide)
             mode_prod = mode.value
@@ -374,685 +1031,34 @@ async def page_production():
 
             # ── Affichage ─────────────────────────────────────────────
             main_container.clear()
+
+            # Images produits EasyBeer (via thread pour ne pas bloquer l'event loop)
+            product_images: dict[str, str] = {}
+            try:
+                _eb_prods_img = await asyncio.to_thread(_fetch_eb_products)
+                for p in _eb_prods_img:
+                    lbl = p.get("libelle", "")
+                    urls = p.get("imagesUrl") or []
+                    uri = p.get("imageUri") or ""
+                    img = urls[0] if urls else uri
+                    if img and lbl:
+                        product_images[lbl] = img
+            except Exception:
+                _log.debug("Erreur chargement image produit", exc_info=True)
+
             with main_container:
-
-                # Note d'ajustement
-                if isinstance(note_msg, str) and note_msg.strip():
-                    with ui.card().classes("w-full").props("flat bordered"):
-                        with ui.card_section().classes("row items-center gap-2"):
-                            ui.icon("info", size="sm").style(f"color: {COLORS['orange']}")
-                            ui.label(note_msg).classes("text-body2")
-
-                # ── Production proposée ──────────────────────────────
-                if gouts_cibles and volume_details:
-                    with ui.card().classes("w-full").props("flat bordered"):
-                        with ui.card_section().classes("q-pa-md"):
-                            with ui.row().classes("items-center gap-2 q-mb-sm"):
-                                ui.icon("factory", size="md").style(f"color: {COLORS['green']}")
-                                ui.label("Production proposée").classes("text-h6").style(
-                                    f"color: {COLORS['ink']}"
-                                )
-                            with ui.row().classes("w-full gap-4"):
-                                for _g_prop in gouts_cibles:
-                                    _vd_prop = volume_details.get(_g_prop, {})
-                                    _vol_prop = _vd_prop.get("V_bottled", 0)
-                                    with ui.card().classes("q-pa-md").props("flat bordered").style(
-                                        f"border: 2px solid {COLORS['green']}40; border-radius: 8px; flex: 1"
-                                    ):
-                                        ui.label(_g_prop).classes("text-subtitle1").style(
-                                            f"color: {COLORS['ink']}; font-weight: 700"
-                                        )
-                                        ui.label(f"{_vol_prop:,.0f} L".replace(",", " ")).classes(
-                                            "text-h5"
-                                        ).style(f"color: {COLORS['green']}; font-weight: 700")
-
-                # ── Productions en cours ────────────────────────────
-                _ong_detail = ongoing.get("detail", [])
-                _ong_par_gout = ongoing.get("par_gout", {})
-                _ong_total = ongoing.get("total_hl", 0.0)
-
-                if _ong_detail:
-                    _ong_nb = len(_ong_detail)
-                    _ong_title = (
-                        f"{_ong_nb} production{'s' if _ong_nb > 1 else ''}"
-                        f" en cours — {_ong_total:.1f} hL"
-                    )
-                    with ui.expansion(
-                        _ong_title,
-                        icon="hourglass_top",
-                        value=True,
-                    ).classes("w-full").style(
-                        f"border: 1px solid {COLORS['blue']}40; border-radius: 8px"
-                    ):
-                        _ong_rows = [
-                            {
-                                "brassin": d["nom"],
-                                "produit": d["produit"],
-                                "volume": f"{d['volume_l']:,} L".replace(",", " "),
-                                "etat": d["etat"],
-                                "date_cond": d["date_conditionnement"] or "—",
-                                "_gout": d["gout"],
-                                "_key": d["nom"],
-                            }
-                            for d in _ong_detail
-                        ]
-                        _ong_columns = [
-                            {"name": "brassin", "label": "Brassin", "field": "brassin", "align": "left"},
-                            {"name": "produit", "label": "Produit", "field": "produit", "align": "left"},
-                            {"name": "volume", "label": "Volume", "field": "volume", "align": "right"},
-                            {"name": "etat", "label": "État", "field": "etat", "align": "center"},
-                            {"name": "date_cond", "label": "Conditionnement prévu", "field": "date_cond", "align": "center"},
-                        ]
-                        ui.table(
-                            columns=_ong_columns,
-                            rows=_ong_rows,
-                            row_key="_key",
-                        ).classes("w-full").props("flat bordered dense")
-
-                        # Note explicative
-                        _gouts_ajustes = [
-                            f"{g} (+{v:.1f} hL)"
-                            for g, v in _ong_par_gout.items()
-                        ]
-                        if _gouts_ajustes:
-                            ui.label(
-                                "ℹ️ Ces volumes ont été ajoutés au stock disponible "
-                                "pour le calcul : " + ", ".join(_gouts_ajustes)
-                            ).classes("text-caption text-grey-6 q-mt-sm")
-
-                # ── Productions planifiées ────────────────────────────
-                _plan_detail = planned.get("detail", [])
-                _plan_total = planned.get("total_hl", 0.0)
-
-                if _plan_detail:
-                    _plan_nb = len(_plan_detail)
-                    _plan_title = (
-                        f"{_plan_nb} production{'s' if _plan_nb > 1 else ''}"
-                        f" planifiée{'s' if _plan_nb > 1 else ''} — {_plan_total:.1f} hL"
-                    )
-                    with ui.expansion(
-                        _plan_title,
-                        icon="event_note",
-                        value=False,
-                    ).classes("w-full").style(
-                        f"border: 1px solid {COLORS['green']}40; border-radius: 8px"
-                    ):
-                        _plan_rows = [
-                            {
-                                "brassin": d["nom"],
-                                "produit": d["produit"],
-                                "volume": f"{d['volume_l']:,} L".replace(",", " "),
-                                "etat": d["etat"],
-                                "date_debut": d.get("date_debut") or "—",
-                                "date_cond": d["date_conditionnement"] or "—",
-                                "_key": d["nom"],
-                            }
-                            for d in _plan_detail
-                        ]
-                        _plan_columns = [
-                            {"name": "brassin", "label": "Brassin", "field": "brassin", "align": "left"},
-                            {"name": "produit", "label": "Produit", "field": "produit", "align": "left"},
-                            {"name": "volume", "label": "Volume", "field": "volume", "align": "right"},
-                            {"name": "etat", "label": "État", "field": "etat", "align": "center"},
-                            {"name": "date_debut", "label": "Début prévu", "field": "date_debut", "align": "center"},
-                            {"name": "date_cond", "label": "Conditionnement prévu", "field": "date_cond", "align": "center"},
-                        ]
-                        ui.table(
-                            columns=_plan_columns,
-                            rows=_plan_rows,
-                            row_key="_key",
-                        ).classes("w-full").props("flat bordered dense")
-
-                # KPI forcés (pour le message sous le tableau)
-                nb_forcés = int(df_final["_forcé"].sum()) if not df_final.empty else 0
-
-                # ── Vérification matières premières + emballages ──────
-                _mp_status = mp_check.get("status", "error")
-                _mp_items = mp_check.get("items", [])
-                _mp_err = mp_check.get("error_msg", "")
-                _mp_shortages = [it for it in _mp_items if not it["ok"]]
-
-                _emb_status = emb_check.get("emb_status", "ok")
-                _emb_items = emb_check.get("emballages", [])
-                _emb_shortages = [it for it in _emb_items if not it["ok"]]
-
-                # Slots Quasar réutilisés pour les tables statut/écart
-                _SLOT_STATUT = r'''
-                    <q-td :props="props">
-                        <q-badge
-                            :color="props.row._ok ? 'green-7' : 'orange-8'"
-                            :label="props.row.statut"
-                            text-color="white"
-                        />
-                    </q-td>
-                '''
-                _SLOT_ECART = r'''
-                    <q-td :props="props">
-                        <span :style="{
-                            color: props.row._ok ? '#16A34A' : '#F97316',
-                            fontWeight: props.row._ok ? 400 : 700,
-                        }">
-                            {{ props.row.ecart }}
-                        </span>
-                    </q-td>
-                '''
-
-                if _mp_status == "error":
-                    if _mp_err:
-                        with ui.row().classes("w-full items-center gap-2 q-py-xs"):
-                            ui.icon("cloud_off", size="xs").classes("text-grey-5")
-                            ui.label(f"Vérification MP indisponible — {_mp_err}").classes(
-                                "text-caption text-grey-5"
-                            )
-                elif _mp_items or _emb_items:
-                    with ui.row().classes("w-full gap-4 items-start"):
-
-                        # ── Colonne gauche : Matières premières ──────────
-                        with ui.column().classes("flex-1"):
-                          if _mp_items:
-                            _mp_color = COLORS["success"] if _mp_status == "ok" else COLORS["orange"]
-                            _mp_icon = "check_circle" if _mp_status == "ok" else "warning"
-                            _mp_title = (
-                                "Matières premières disponibles"
-                                if _mp_status == "ok"
-                                else f"{len(_mp_shortages)} matière(s) première(s) insuffisante(s)"
-                            )
-
-                            with ui.expansion(
-                                _mp_title,
-                                icon=_mp_icon,
-                                value=(_mp_status == "warning"),
-                            ).classes("w-full").style(
-                                f"border: 1px solid {_mp_color}40; border-radius: 8px"
-                            ):
-                                _mp_rows = [
-                                    {
-                                        "mp": it["libelle"],
-                                        "besoin": f"{it['besoin']:.1f} {it['unite']}",
-                                        "stock": f"{it['stock']:.1f} {it['unite']}",
-                                        "ecart": f"{it['ecart']:+.1f} {it['unite']}",
-                                        "statut": "OK" if it["ok"] else "Insuffisant",
-                                        "_ok": it["ok"],
-                                        "_key": str(it["id_mp"]),
-                                    }
-                                    for it in _mp_items
-                                ]
-                                _mp_columns = [
-                                    {"name": "mp", "label": "Matière première", "field": "mp", "align": "left"},
-                                    {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
-                                    {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
-                                    {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
-                                    {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
-                                ]
-                                mp_table = ui.table(
-                                    columns=_mp_columns,
-                                    rows=_mp_rows,
-                                    row_key="_key",
-                                ).classes("w-full").props("flat bordered dense")
-
-                                mp_table.add_slot("body-cell-statut", _SLOT_STATUT)
-                                mp_table.add_slot("body-cell-ecart", _SLOT_ECART)
-
-                                # Détail MP par goût
-                                _mp_by_gout = mp_check.get("items_by_gout", {})
-                                if len(_mp_by_gout) >= 2:
-                                    ui.separator().classes("q-my-sm")
-                                    ui.label("Détail par goût").classes("text-subtitle2 text-grey-7 q-mt-xs")
-                                    for _g_mp, _g_items_mp in _mp_by_gout.items():
-                                        _g_shortages = [it for it in _g_items_mp if not it["ok"]]
-                                        _g_mp_icon = "check_circle" if not _g_shortages else "warning"
-                                        _g_mp_color = COLORS["success"] if not _g_shortages else COLORS["orange"]
-                                        _g_mp_title = (
-                                            f"{_g_mp} — MP disponibles"
-                                            if not _g_shortages
-                                            else f"{_g_mp} — {len(_g_shortages)} insuffisante(s)"
-                                        )
-                                        with ui.expansion(
-                                            _g_mp_title, icon=_g_mp_icon, value=bool(_g_shortages),
-                                        ).classes("w-full").style(
-                                            f"border: 1px solid {_g_mp_color}40; border-radius: 8px"
-                                        ):
-                                            _g_mp_rows = [
-                                                {
-                                                    "mp": it["libelle"],
-                                                    "besoin": f"{it['besoin']:.1f} {it['unite']}",
-                                                    "stock": f"{it['stock']:.1f} {it['unite']}",
-                                                    "ecart": f"{it['ecart']:+.1f} {it['unite']}",
-                                                    "statut": "OK" if it["ok"] else "Insuffisant",
-                                                    "_ok": it["ok"],
-                                                    "_key": f"{_g_mp}_{it['id_mp']}",
-                                                }
-                                                for it in _g_items_mp
-                                            ]
-                                            _g_tbl = ui.table(
-                                                columns=_mp_columns,
-                                                rows=_g_mp_rows,
-                                                row_key="_key",
-                                            ).classes("w-full").props("flat bordered dense")
-                                            _g_tbl.add_slot("body-cell-statut", _SLOT_STATUT)
-                                            _g_tbl.add_slot("body-cell-ecart", _SLOT_ECART)
-
-                        # ── Colonne droite : Emballages ──────────────────
-                        with ui.column().classes("flex-1"):
-                          if _emb_items:
-                            _emb_color = COLORS["success"] if _emb_status == "ok" else COLORS["orange"]
-                            _emb_icon = "check_circle" if _emb_status == "ok" else "warning"
-                            _emb_title = (
-                                "Emballages disponibles"
-                                if _emb_status == "ok"
-                                else f"{len(_emb_shortages)} emballage(s) insuffisant(s)"
-                            )
-
-                            with ui.expansion(
-                                _emb_title,
-                                icon=_emb_icon,
-                                value=(_emb_status == "warning"),
-                            ).classes("w-full").style(
-                                f"border: 1px solid {_emb_color}40; border-radius: 8px"
-                            ):
-                                _emb_rows = [
-                                    {
-                                        "mp": it["libelle"],
-                                        "besoin": f"{it['besoin']:,.0f} {it['unite']}".replace(",", " "),
-                                        "stock": f"{it['stock']:,.0f} {it['unite']}".replace(",", " "),
-                                        "ecart": f"{it['ecart']:+,.0f} {it['unite']}".replace(",", " "),
-                                        "statut": "OK" if it["ok"] else "Insuffisant",
-                                        "_ok": it["ok"],
-                                        "_key": f"emb_{it['id_mp']}",
-                                    }
-                                    for it in _emb_items
-                                ]
-                                _emb_columns = [
-                                    {"name": "mp", "label": "Emballage", "field": "mp", "align": "left"},
-                                    {"name": "besoin", "label": "Besoin", "field": "besoin", "align": "right"},
-                                    {"name": "stock", "label": "Stock", "field": "stock", "align": "right"},
-                                    {"name": "ecart", "label": "Écart", "field": "ecart", "align": "right"},
-                                    {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
-                                ]
-                                emb_table = ui.table(
-                                    columns=_emb_columns,
-                                    rows=_emb_rows,
-                                    row_key="_key",
-                                ).classes("w-full").props("flat bordered dense")
-
-                                emb_table.add_slot("body-cell-statut", _SLOT_STATUT)
-                                emb_table.add_slot("body-cell-ecart", _SLOT_ECART)
-
-                # ── Images produits EasyBeer (déjà en cache via _fetch_eb_products TTL) ──
-                product_images: dict[str, str] = {}
-                try:
-                    # _fetch_eb_products() est déjà caché (TTL 1h) donc rapide
-                    # si déjà appelé par _compute_production_sync dans le thread
-                    _eb_prods_img = _fetch_eb_products()
-                    for p in _eb_prods_img:
-                        lbl = p.get("libelle", "")
-                        urls = p.get("imagesUrl") or []
-                        uri = p.get("imageUri") or ""
-                        img = urls[0] if urls else uri
-                        if img and lbl:
-                            product_images[lbl] = img
-                except Exception:
-                    _log.debug("Erreur chargement image produit", exc_info=True)
-
-                # ── Tableau de production ──────────────────────────────
-                section_title("Plan de production", "assignment")
-
-                if nb_forcés:
-                    ui.label(
-                        f"{nb_forcés} ligne(s) forcée(s) — le volume restant est redistribué."
-                    ).classes("text-caption text-grey-6")
-
-                if not df_final.empty:
-                    # Construire les lignes triées : Symbiose d'abord, puis Niko
-                    all_table_rows = []
-                    for _, r in df_final.iterrows():
-                        key = f"{r['GoutCanon']}|{r['Produit']}|{r['Stock']}"
-                        produit_name = str(r["Produit"])
-                        produit_upper = produit_name.upper()
-                        if "NIKO" in produit_upper:
-                            brand = "Niko"
-                        elif "IGEBA" in produit_upper:
-                            brand = "IGEBA"
-                        elif any(kw in produit_upper for kw in ("WATER", "PROBIOTIC")):
-                            brand = "Inter"
-                        else:
-                            brand = "Symbiose Kéfir"
-                        # Hint pour distinguer visuellement les produits secondaires
-                        produit_hint = ""
-                        if brand != "Symbiose Kéfir":
-                            # Extraire le nom court sans le suffixe "- 0.0°"
-                            produit_hint = produit_name.split(" - ")[0].strip() if " - " in produit_name else produit_name
-
-                        all_table_rows.append({
-                            "gout": str(r["GoutCanon"]),
-                            "produit": produit_name,
-                            "produit_hint": produit_hint,
-                            "stock": str(r["Stock"]),
-                            "forcer": overrides.get(key, None),
-                            "cartons": int(r["Cartons à produire (arrondi)"]),
-                            "bouteilles": int(r["Bouteilles à produire (arrondi)"]),
-                            "volume": f"{float(r['Volume produit arrondi (hL)']):.3f}",
-                            "_key": key,
-                            "_brand": brand,
-                        })
-
-                    # Trier : Symbiose d'abord, puis marques secondaires
-                    _BRAND_ORDER = {"Symbiose Kéfir": 0, "Niko": 1, "IGEBA": 2, "Inter": 3}
-                    all_table_rows.sort(key=lambda r: (_BRAND_ORDER.get(r["_brand"], 9), r["gout"]))
-
-                    # Images par marque
-                    brand_images: dict[str, list[dict]] = {}
-                    seen: set[str] = set()
-                    for row in all_table_rows:
-                        prod = row["produit"]
-                        brand = row["_brand"]
-                        if prod not in seen:
-                            seen.add(prod)
-                            img_url = product_images.get(prod, "")
-                            if img_url:
-                                brand_images.setdefault(brand, []).append({
-                                    "gout": row["gout"], "url": img_url,
-                                })
-
-                    # Insérer des lignes séparatrices dans les données
-                    ordered_rows: list[dict] = []
-                    current_brand = None
-                    for row in all_table_rows:
-                        if row["_brand"] != current_brand:
-                            current_brand = row["_brand"]
-                            ordered_rows.append({
-                                "_sep": True,
-                                "_brand": current_brand,
-                                "_brand_images": brand_images.get(current_brand, []),
-                                "_key": f"_sep_{current_brand}",
-                                "gout": "", "stock": "", "forcer": None,
-                                "cartons": 0, "bouteilles": 0, "volume": "",
-                                "produit": "",
-                            })
-                        ordered_rows.append(row)
-
-                    columns = [
-                        {"name": "gout", "label": "Goût", "field": "gout", "align": "left", "sortable": True},
-                        {"name": "stock", "label": "Format", "field": "stock", "align": "left", "sortable": True},
-                        {"name": "forcer", "label": "Forcer", "field": "forcer", "align": "right"},
-                        {"name": "cartons", "label": "Cartons", "field": "cartons", "align": "right", "sortable": True},
-                        {"name": "bouteilles", "label": "Bouteilles", "field": "bouteilles", "align": "right", "sortable": True},
-                        {"name": "volume", "label": "Volume (hL)", "field": "volume", "align": "right", "sortable": True},
-                    ]
-
-                    nb_cols = len(columns)
-
-                    table = ui.table(
-                        columns=columns,
-                        rows=ordered_rows,
-                        row_key="_key",
-                    ).classes("w-full").props("flat bordered dense")
-
-                    # Slot body : séparateur marque OU ligne de données
-                    table.add_slot("body", r'''
-                        <q-tr v-if="props.row._sep" :props="props">
-                            <q-td colspan="''' + str(nb_cols) + r'''"
-                                   style="background: #F3F4F6; padding: 10px 12px; font-weight: 600; font-size: 13px; border-bottom: 2px solid #E5E7EB;">
-                                <div style="display: flex; align-items: center; gap: 16px;">
-                                    <span>{{ props.row._brand }}</span>
-                                    <div v-if="props.row._brand_images && props.row._brand_images.length"
-                                         style="display: flex; align-items: flex-end; gap: 10px; margin-left: 8px;">
-                                        <div v-for="img in props.row._brand_images" :key="img.gout"
-                                             style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
-                                            <img :src="img.url"
-                                                 style="height: 48px; object-fit: contain; border-radius: 4px;" />
-                                            <span style="font-size: 11px; color: #6B7280; font-weight: 400;">
-                                                {{ img.gout }}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </q-td>
-                        </q-tr>
-                        <q-tr v-else :props="props">
-                            <q-td v-for="col in props.cols" :key="col.name" :props="props"
-                                  :style="'text-align: ' + col.align">
-                                <template v-if="col.name === 'forcer'">
-                                    <span :style="{
-                                        color: props.row.forcer != null && props.row.forcer !== '' ? '#F97316' : '#9CA3AF',
-                                        fontWeight: props.row.forcer != null && props.row.forcer !== '' ? 700 : 400,
-                                        cursor: 'pointer',
-                                    }">
-                                        {{ props.row.forcer != null && props.row.forcer !== '' ? props.row.forcer : 'auto' }}
-                                        <q-icon name="edit" size="12px" color="grey-5" class="q-ml-xs" />
-                                    </span>
-                                    <q-popup-edit v-model="props.row.forcer" v-slot="scope"
-                                        @update:model-value="() => $parent.$emit('forcer_update', props.row)">
-                                        <q-input v-model.number="scope.value" type="number" dense autofocus
-                                            placeholder="auto" min="0"
-                                            input-class="text-right text-bold"
-                                            style="min-width: 100px"
-                                            hint="Entrée pour valider"
-                                            @keyup.enter="scope.set" />
-                                    </q-popup-edit>
-                                </template>
-                                <template v-else-if="col.name === 'cartons'">
-                                    <span style="font-weight: 600;">{{ props.row[col.field] }}</span>
-                                </template>
-                                <template v-else-if="col.name === 'gout'">
-                                    {{ props.row[col.field] }}
-                                    <span v-if="props.row.produit_hint"
-                                          style="color: #9CA3AF; font-size: 11px; margin-left: 4px;">
-                                        ({{ props.row.produit_hint }})
-                                    </span>
-                                </template>
-                                <template v-else>
-                                    {{ props.row[col.field] }}
-                                </template>
-                            </q-td>
-                        </q-tr>
-                    ''')
-
-                    # Clic sur cellule "Forcer" → popup → Entrée → applique override et recalcule
-                    async def _on_forcer_update(e):
-                        row = e.args
-                        if not isinstance(row, dict) or row.get("_sep"):
-                            return
-                        key = row.get("_key", "")
-                        val = row.get("forcer")
-                        # val peut être : int, float, None, "" ou NaN (sérialisé en null)
-                        # val == 0 est valide (= ne pas produire ce format)
-                        if isinstance(val, (int, float)) and val == val and val >= 0:
-                            overrides[key] = int(val)
-                        else:
-                            overrides.pop(key, None)
-                        app.storage.user["production_overrides"] = dict(overrides)
-                        ui.run_javascript("window._fsProductionDirty = true;")
-                        await do_compute()
-
-                    table.on("forcer_update", _on_forcer_update)
-
-                    with ui.row().classes("w-full gap-3 q-mt-sm"):
-
-                        async def do_reset_overrides():
-                            overrides.clear()
-                            app.storage.user["production_overrides"] = {}
-                            await do_compute()
-
-                        ui.button(
-                            "Réinitialiser",
-                            icon="restart_alt",
-                            on_click=do_reset_overrides,
-                        ).props("flat color=grey-7")
-
-                else:
-                    ui.label(
-                        "Aucun format disponible pour les goûts sélectionnés."
-                    ).classes("text-grey-6 text-body1 q-pa-md")
-
-                # ── df_min pour sauvegarde (>0 cartons uniquement) ────
-                df_min_override = (
-                    df_final[df_final["Cartons à produire (arrondi)"] > 0][[
-                        "GoutCanon", "Produit", "Stock",
-                        "Cartons à produire (arrondi)",
-                        "Bouteilles à produire (arrondi)",
-                        "Volume produit arrondi (hL)",
-                    ]].copy().reset_index(drop=True)
-                    if not df_final.empty else df_min.copy()
+                _render_note(note_msg)
+                _render_proposed(gouts_cibles, volume_details)
+                _render_ongoing(ongoing)
+                _render_planned(planned)
+                _render_mp_emb_check(mp_check, emb_check)
+                await _render_production_table(
+                    df_final, overrides, product_images, do_compute,
                 )
-
-                # ══════════════════════════════════════════════════════
-                # ══════ Fiche de production + EasyBeer (côte à côte) ══
-                # ══════════════════════════════════════════════════════
-                with ui.row().classes("w-full gap-4 items-start"):
-
-                    # ── Colonne gauche : Fiche de production ────────────
-                    with ui.card().classes("flex-1").props("flat bordered").style("min-width: 320px"):
-                        with ui.card_section():
-                            with ui.row().classes("items-center gap-2"):
-                                ui.icon("description", size="sm").style(f"color: {COLORS['ink2']}")
-                                ui.label("Fiche de production").classes("text-subtitle1").style(
-                                    f"color: {COLORS['ink']}; font-weight: 600"
-                                )
-
-                        with ui.card_section().classes("q-pt-none"):
-                            sp_prev = app.storage.user.get("saved_production")
-                            default_debut = (
-                                _dt.date.fromisoformat(sp_prev["semaine_du"])
-                                if sp_prev and "semaine_du" in sp_prev
-                                else _dt.date.today()
-                            )
-
-                            # ── Date début fermentation ──
-                            date_debut = date_picker_field(
-                                default_debut.isoformat(),
-                                label="Date début fermentation",
-                            )
-
-                            def do_save():
-                                sd = date_debut.value
-                                if isinstance(sd, str):
-                                    sd_date = _dt.date.fromisoformat(sd)
-                                else:
-                                    sd_date = sd
-                                ddm_date = sd_date + _dt.timedelta(days=DDM_DAYS)
-
-                                g_order = []
-                                if isinstance(df_min_override, pd.DataFrame) and "GoutCanon" in df_min_override.columns:
-                                    for g in df_min_override["GoutCanon"].astype(str).tolist():
-                                        if g and g not in g_order:
-                                            g_order.append(g)
-
-                                app.storage.user["saved_production"] = {
-                                    "df_min_json": store_df(df_min_override),
-                                    "df_calc_json": store_df(df_calc),
-                                    "gouts": g_order,
-                                    "semaine_du": sd_date.isoformat(),
-                                    "ddm": ddm_date.isoformat(),
-                                    # Exclure dilution_ingredients si c'est une liste (non sérialisable
-                                    # proprement en JSON session) ; garder uniquement dict/None
-                                    "volume_details": {
-                                        k: {
-                                            kk: vv for kk, vv in v.items()
-                                            if kk != "dilution_ingredients"
-                                            or isinstance(vv, (dict, type(None)))
-                                        }
-                                        for k, v in volume_details.items()
-                                    },
-                                    "mode_prod": mode_prod,
-                                }
-                                # Audit trail
-                                try:
-                                    from common.audit import ACTION_PRODUCTION_SAVED, log_event
-                                    log_event(
-                                        tenant_id=app.storage.user.get("tenant_id"),
-                                        user_email=app.storage.user.get("email"),
-                                        action=ACTION_PRODUCTION_SAVED,
-                                        details={"gouts": g_order, "semaine_du": sd_date.isoformat(), "mode": mode_prod},
-                                    )
-                                except Exception:
-                                    _log.debug("Audit log_event production_saved failed", exc_info=True)
-                                ui.notify("Production sauvegardée !", type="positive", icon="check")
-
-                            # ── Checkbox téléchargement (précochée) ──
-                            cb_download = ui.checkbox(
-                                "Télécharger la fiche Excel",
-                                value=True,
-                            ).classes("q-mt-sm").props("dense color=green-8")
-
-                            def _two_gouts(sp_obj):
-                                g_saved = sp_obj.get("gouts", [])
-                                uniq = []
-                                for g in g_saved:
-                                    if g and g not in uniq:
-                                        uniq.append(g)
-                                return (uniq + [None, None])[:2]
-
-                            def _download_xlsx():
-                                """Génère et télécharge la fiche Excel."""
-                                try:
-                                    _sp = app.storage.user.get("saved_production", {})
-                                    _df_min_dl = load_df(_sp["df_min_json"])
-                                    _df_calc_dl = load_df(_sp["df_calc_json"])
-                                    _semaine = _dt.date.fromisoformat(_sp["semaine_du"])
-                                    _ddm = _dt.date.fromisoformat(_sp["ddm"])
-                                    _g1, _g2 = _two_gouts(_sp)
-                                    _vd = (_sp.get("volume_details") or {}).get(_g1, {})
-
-                                    xlsx_bytes = fill_fiche_xlsx(
-                                        template_path=TEMPLATE_PATH,
-                                        semaine_du=_semaine,
-                                        ddm=_ddm,
-                                        gout1=_g1 or "",
-                                        gout2=_g2,
-                                        df_calc=_df_calc_dl,
-                                        df_min=_df_min_dl,
-                                        V_start=_vd.get("V_start", 0),
-                                        tank_capacity=_vd.get("capacity", 7200),
-                                        transfer_loss=_vd.get("transfer_loss", 400),
-                                        aromatisation_volume=_vd.get("V_aroma", 0),
-                                        is_infusion=_vd.get("is_infusion", False),
-                                        dilution_ingredients=_vd.get("dilution_ingredients"),
-                                    )
-                                    fname = f"Fiche de production - {_g1 or 'Multi'} - {_semaine.strftime('%d-%m-%Y')}.xlsx"
-                                    ui.download(xlsx_bytes, fname)
-                                    ui.notify("Fiche Excel générée !", type="positive")
-                                except Exception as exc:
-                                    ui.notify(f"Erreur Excel : {exc}", type="negative")
-
-                            def do_save_and_download():
-                                do_save()
-                                ui.run_javascript("window._fsProductionDirty = false;")
-                                if cb_download.value:
-                                    _download_xlsx()
-                                # Rafraîchir la section EasyBeer (maintenant que saved_production existe)
-                                eb_container.clear()
-                                with eb_container:
-                                    _render_easybeer_section(
-                                        mode_prod, volume_details, volume_cible,
-                                        TANK_CONFIGS, TEMPLATE_PATH, COLORS,
-                                        on_recreate=do_compute,
-                                        gouts_cibles=gouts_cibles,
-                                    )
-
-                            ui.button(
-                                "Sauvegarder",
-                                icon="save",
-                                on_click=do_save_and_download,
-                            ).classes("w-full q-mt-sm").props("color=green-8 unelevated")
-
-                    # ── Colonne droite : Créer dans EasyBeer ────────────
-                    with ui.card().classes("flex-1").props("flat bordered").style("min-width: 320px"):
-                        with ui.card_section():
-                            with ui.row().classes("items-center gap-2"):
-                                ui.icon("cloud_upload", size="sm").style(f"color: {COLORS['ink2']}")
-                                ui.label("Créer dans EasyBeer").classes("text-subtitle1").style(
-                                    f"color: {COLORS['ink']}; font-weight: 600"
-                                )
-
-                        eb_container = ui.card_section().classes("q-pt-none")
-                        with eb_container:
-                            _render_easybeer_section(
-                                mode_prod, volume_details, volume_cible,
-                                TANK_CONFIGS, TEMPLATE_PATH, COLORS,
-                                on_recreate=do_compute,
-                                gouts_cibles=gouts_cibles,
-                            )
+                _render_save_and_easybeer(
+                    df_final, df_min, df_calc, volume_details,
+                    mode_prod, volume_cible, gouts_cibles, do_compute,
+                )
 
         # ── Watchers sidebar ──────────────────────────────────────────
         def _on_mode_change(e=None):
