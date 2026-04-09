@@ -260,10 +260,14 @@ def _render_easybeer_section(
                 upload_fichier_brassin,
             )
 
+            # Helper : exécuter un appel API sync sans bloquer l'event loop
+            async def _api(fn, *args, **kwargs):
+                return await asyncio.to_thread(fn, *args, **kwargs)
+
             # Entrepôt principal
             _id_entrepot = None
             try:
-                _warehouses = get_warehouses()
+                _warehouses = await _api(get_warehouses)
                 for _w in _warehouses:
                     if _w.get("principal"):
                         _id_entrepot = _w.get("idEntrepot")
@@ -335,20 +339,21 @@ def _render_easybeer_section(
                 _ingredients = []
                 _planif_etapes = []
                 try:
-                    prod_detail = get_product_detail(id_produit)
-                    recettes = prod_detail.get("recettes") or []
-                    etapes = prod_detail.get("etapes") or []
+                    def _build_recipe():
+                        _pd = get_product_detail(id_produit)
+                        _rec = _pd.get("recettes") or []
+                        _eta = _pd.get("etapes") or []
+                        _ings = []
+                        if _rec:
+                            _base = scale_recipe_ingredients(_rec[0], _vol_recipe)
+                            for _bi in _base:
+                                _ings.extend(_lot_tracker.distribute_ingredient(_bi))
+                        _pe = build_etape_planification(
+                            _eta, _selected_cuve_a_id, _selected_cuve_b_id, _cuve_dilution_id,
+                        )
+                        return _ings, _pe
 
-                    if recettes:
-                        base_ings = scale_recipe_ingredients(recettes[0], _vol_recipe)
-                        for base_ing in base_ings:
-                            _ingredients.extend(
-                                _lot_tracker.distribute_ingredient(base_ing)
-                            )
-
-                    _planif_etapes = build_etape_planification(
-                        etapes, _selected_cuve_a_id, _selected_cuve_b_id, _cuve_dilution_id,
-                    )
+                    _ingredients, _planif_etapes = await _api(_build_recipe)
                 except (EasyBeerError, requests.RequestException, KeyError, ValueError) as exc:
                     ui.notify(f"Recette « {g} » : {exc}", type="warning")
 
@@ -369,7 +374,7 @@ def _render_easybeer_section(
                 )
 
                 try:
-                    result = create_brassin(payload)
+                    result = await _api(create_brassin, payload)
                     brassin_id = result.get("id")
                     if brassin_id is not None and not isinstance(brassin_id, int):
                         try:
@@ -394,7 +399,7 @@ def _render_easybeer_section(
                 await asyncio.sleep(max(3, int(_rl_post) + 2))
 
                 try:
-                    _matrice = get_planification_matrice(brassin_id, _id_entrepot)
+                    _matrice = await _api(get_planification_matrice, brassin_id, _id_entrepot)
                     _cont_by_vol: dict[float, list[dict]] = {}
                     for _mc in _matrice.get("contenants", []):
                         _mod = _mc.get("modeleContenant", {})
@@ -455,7 +460,7 @@ def _render_easybeer_section(
                         if not _first_planif:
                             await asyncio.sleep(1.5)
                         _first_planif = False
-                        add_planification_conditionnement({
+                        await _api(add_planification_conditionnement, {
                             "idBrassin": brassin_id,
                             "idProduit": _pid,
                             "idEntrepot": _id_entrepot,
@@ -504,7 +509,8 @@ def _render_easybeer_section(
                         dilution_ingredients=_vd_eb.get("dilution_ingredients"),
                     )
                     _fiche_name = f"Fiche de production — {g} — {_semaine_dt.strftime('%d-%m-%Y')}.xlsx"
-                    upload_fichier_brassin(
+                    await _api(
+                        upload_fichier_brassin,
                         id_brassin=brassin_id,
                         file_bytes=_fiche_bytes,
                         filename=_fiche_name,
@@ -557,8 +563,11 @@ def _render_easybeer_section(
                 ui.label("Cette action est irréversible.").classes("text-caption text-grey-6 q-mt-xs")
 
         def _set_status(msg: str):
-            _create_status.text = msg
-            _create_status.update()
+            try:
+                _create_status.text = msg
+                _create_status.update()
+            except Exception:
+                pass  # WebSocket peut être déconnecté temporairement
 
         async def _confirmed_create():
             # Désactiver immédiatement le bouton du dialogue pour éviter les double-clics
