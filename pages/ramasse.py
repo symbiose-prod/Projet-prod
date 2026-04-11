@@ -43,6 +43,7 @@ from common.ramasse import (
 )
 from common.ramasse_history import (
     count_ramasses,
+    get_last_packaging_for_dest,
     get_ramasse,
     list_ramasses,
     mark_driver_passed,
@@ -51,7 +52,7 @@ from common.ramasse_history import (
 )
 from common.xlsx_fill import build_bl_enlevements_pdf
 from pages.auth import require_auth
-from pages.theme import COLORS, confirm_dialog, page_layout, section_title
+from pages.theme import COLORS, page_layout, section_title
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -234,6 +235,23 @@ async def page_ramasse():
                         on_click=lambda: _cancel_edit(),
                     ).props("flat color=orange-9 dense")
 
+        def _reset_form(notify: bool = False):
+            """Vide le formulaire pour démarrer une nouvelle ramasse.
+
+            Appelée après un envoi v1 réussi, ou depuis _cancel_edit (v2+).
+            Vide les brassins sélectionnés (ce qui nettoie le tableau et les emballages
+            via on_brassins_changed), et remet la date à aujourd'hui.
+            """
+            brassin_select.value = []
+            date_ramasse.value = today_paris().strftime("%d/%m/%Y")
+            try:
+                date_picker.value = today_paris().isoformat()
+            except (AttributeError, NameError):
+                pass
+            if notify:
+                ui.notify("Formulaire réinitialisé — prêt pour une nouvelle ramasse.",
+                          type="info", icon="refresh")
+
         def _cancel_edit():
             """Sort du mode édition et vide le formulaire."""
             edit_state["editing_id"] = None
@@ -241,9 +259,8 @@ async def page_ramasse():
             edit_state["previous_lines"] = None
             edit_state["pending_cartons"] = {}
             edit_state["pending_packaging"] = {}
-            brassin_select.value = []
             _render_edit_banner()
-            on_brassins_changed()
+            _reset_form()
             ui.notify("Mode édition annulé.", type="info")
 
         # ── Sélection brassins + recharger ────────────────────────────
@@ -646,6 +663,26 @@ async def page_ramasse():
                 # ── Emballages à récupérer ─────────────────────────
                 packaging_state: dict = {"items": []}
 
+                # Référence partagée pour mettre à jour le label de l'expansion
+                # (total dynamique quand une qty est modifiée)
+                pkg_expansion_ref: dict = {"exp": None}
+
+                def _pkg_summary_text() -> str:
+                    """Construit le libellé dynamique de l'expansion emballages."""
+                    total = sum(
+                        int(it.get("qty") or 0)
+                        for it in packaging_state["items"]
+                    )
+                    if total <= 0:
+                        return "Demander des palettes d'emballage"
+                    unit_word = "palette" if total == 1 else "palettes"
+                    return f"Emballages à ramener — {total} {unit_word} demandée{'s' if total > 1 else ''}"
+
+                def _refresh_pkg_label():
+                    exp = pkg_expansion_ref.get("exp")
+                    if exp is not None:
+                        exp.text = _pkg_summary_text()
+
                 def _build_packaging_section():
                     """Construit la section emballages pour le destinataire courant."""
                     # Sauvegarder les qty saisies avant reset (mêmes principes que saved_cartons)
@@ -660,21 +697,79 @@ async def page_ramasse():
                         edit_state["pending_packaging"] = {}
 
                     packaging_state["items"] = []
+                    pkg_expansion_ref["exp"] = None
                     pkg_items = load_packaging_items(dest_select.value)
                     if not pkg_items:
                         return
 
-                    # En mode édition, ouvrir l'expansion par défaut si des emballages sont restaurés
+                    # ── Mémorisation : récupérer les qty "habituelles" ──
+                    # Seulement si l'utilisateur n'a rien saisi et n'est pas en mode édition
+                    usual_pkg_qty: dict[str, int] = {}
+                    if not saved_pkg_qty:
+                        try:
+                            last_pkg = get_last_packaging_for_dest(dest_select.value)
+                            usual_pkg_qty = {
+                                str(p.get("label") or ""): int(p.get("qty") or 0)
+                                for p in last_pkg
+                                if p.get("label") and int(p.get("qty") or 0) > 0
+                            }
+                        except Exception:
+                            _log.warning("Erreur chargement emballages habituels", exc_info=True)
+
+                    # Ouvrir l'expansion par défaut si des emballages sont préchargés
                     expansion_opened = bool(saved_pkg_qty)
 
                     section_title("Emballages à ramener", "inventory_2")
-                    with ui.expansion(
-                        "Demander des palettes d'emballage",
+                    exp = ui.expansion(
+                        _pkg_summary_text() if saved_pkg_qty else "Demander des palettes d'emballage",
                         icon="move_to_inbox",
                         value=expansion_opened,
                     ).classes("w-full").props(
                         "dense header-class='text-subtitle2'"
-                    ):
+                    )
+                    pkg_expansion_ref["exp"] = exp
+
+                    # Stocker les ui.number pour pouvoir les pré-remplir via le bouton "habituel"
+                    qty_inputs_by_label: dict = {}
+
+                    with exp:
+                        # Bannière "Quantités habituelles" si trouvées et pas déjà saisies
+                        if usual_pkg_qty:
+                            usual_summary = ", ".join(
+                                f"{q} {label}" for label, q in usual_pkg_qty.items()
+                            )
+                            with ui.row().classes(
+                                "w-full items-center gap-2 q-pa-sm q-mb-sm"
+                            ).style(
+                                "background: #EFF6FF; border: 1px dashed #93C5FD; border-radius: 6px"
+                            ):
+                                ui.icon("history", color="blue-7", size="sm")
+                                with ui.column().classes("flex-1 gap-0"):
+                                    ui.label("Quantités habituelles (dernière ramasse)").classes(
+                                        "text-caption"
+                                    ).style("color: #1E3A8A; font-weight: 600")
+                                    ui.label(usual_summary).classes("text-caption").style(
+                                        "color: #1E40AF"
+                                    )
+
+                                def _apply_usual():
+                                    for label, qty in usual_pkg_qty.items():
+                                        inp = qty_inputs_by_label.get(label)
+                                        if inp is not None:
+                                            inp.value = qty
+                                            # Synchroniser l'état
+                                            for it in packaging_state["items"]:
+                                                if it["label"] == label:
+                                                    it["qty"] = qty
+                                                    break
+                                    _refresh_pkg_label()
+                                    ui.notify("Quantités habituelles appliquées.",
+                                              type="info", icon="check")
+
+                                ui.button(
+                                    "Appliquer", icon="check", on_click=_apply_usual,
+                                ).props("flat dense color=blue-7")
+
                         for item in pkg_items:
                             initial_qty = saved_pkg_qty.get(item["label"], 0)
                             item_state = {
@@ -690,14 +785,19 @@ async def page_ramasse():
                                 qty_input = ui.number(
                                     value=initial_qty, min=0, step=1,
                                 ).props("outlined dense").style("max-width: 100px")
+                                qty_inputs_by_label[item["label"]] = qty_input
                                 ui.label(item.get("unit", "palette")).classes(
                                     "text-caption text-grey-6"
                                 )
 
                                 def _on_qty(e, state=item_state, inp=qty_input):
                                     state["qty"] = int(inp.value or 0)
+                                    _refresh_pkg_label()
 
                                 qty_input.on("update:model-value", _on_qty)
+
+                    # Met à jour le label au cas où des valeurs ont été pré-remplies
+                    _refresh_pkg_label()
 
                 packaging_container = ui.column().classes("w-full")
                 with packaging_container:
@@ -724,17 +824,44 @@ async def page_ramasse():
                     return next((d for d in destinataires if d["name"] == dest_select.value), None)
 
                 _init_dest = _get_dest_obj()
-                default_emails = ", ".join(_init_dest.get("email_recipients", [])) if _init_dest else ""
+                _default_email_list = _init_dest.get("email_recipients", []) if _init_dest else []
 
-                email_input = ui.input(
-                    "Destinataires email",
-                    value=default_emails,
-                ).classes("w-full").props("outlined dense")
+                # Chips multi-sélection avec saisie libre :
+                # - use-chips : affiche les emails sélectionnés comme des puces
+                # - new-value-mode="add-unique" : permet de taper un email et Entrée pour l'ajouter
+                # - use-input : champ de saisie libre au-dessus des chips
+                # - hide-dropdown-icon : pas de dropdown (free-form)
+                email_select = ui.select(
+                    options=_default_email_list,
+                    value=list(_default_email_list),
+                    multiple=True,
+                    label="Destinataires email",
+                ).classes("w-full").props(
+                    'outlined dense use-chips use-input input-debounce=0 '
+                    'new-value-mode="add-unique" hide-dropdown-icon'
+                )
+
+                def _get_emails() -> list[str]:
+                    """Retourne la liste nettoyée des emails saisis dans le ui.select chips."""
+                    raw = email_select.value or []
+                    # Normaliser : accepter str ou list, splitter sur , ou ;
+                    emails: list[str] = []
+                    if isinstance(raw, str):
+                        raw = [raw]
+                    for item in raw:
+                        for chunk in str(item).replace(";", ",").split(","):
+                            s = chunk.strip()
+                            if s and s not in emails:
+                                emails.append(s)
+                    return emails
 
                 def _on_dest_changed(e=None):
                     """Met à jour les emails quand le destinataire change."""
                     d = _get_dest_obj()
-                    email_input.value = ", ".join(d.get("email_recipients", [])) if d else ""
+                    new_list = list(d.get("email_recipients", [])) if d else []
+                    email_select.options = new_list
+                    email_select.value = new_list
+                    email_select.update()
 
                 dest_select.on_value_change(_on_dest_changed)
 
@@ -820,8 +947,7 @@ async def page_ramasse():
                     ).classes("flex-1").props("outline color=green-8")
 
                     async def do_send_email():
-                        emails_raw = email_input.value or ""
-                        to_list = [e.strip() for e in emails_raw.split(",") if e.strip()]
+                        to_list = _get_emails()
                         if not to_list:
                             ui.notify("Indique au moins un destinataire.", type="warning")
                             return
@@ -975,6 +1101,8 @@ async def page_ramasse():
                                         brassin_ids=_brassin_id_list,
                                     )
                                     _log.info("Ramasse sauvegardée dans l'historique")
+                                    # Reset du formulaire après envoi v1 réussi
+                                    _reset_form(notify=True)
 
                                 # Refresh la liste de l'historique pour voir la nouvelle entrée
                                 _refresh_history()
@@ -987,13 +1115,56 @@ async def page_ramasse():
                         finally:
                             send_btn_ref.enable()
 
-                    # Dialogue de confirmation avant envoi
-                    _email_confirm_dlg, _email_confirm_msg, _email_send_action = confirm_dialog(
-                        title="Confirmer l'envoi ?",
-                        message="",
-                        action_label="Envoyer",
-                        action_icon="send",
-                    )
+                    # ── Dialogue de confirmation avant envoi (résumé complet) ──
+                    # Construit inline pour afficher un résumé structuré :
+                    # date, destinataire, totaux cartons/palettes/poids, emails.
+                    with ui.dialog() as _email_confirm_dlg, ui.card().classes("q-pa-lg").style("min-width: 420px"):
+                        ui.label("Confirmer l'envoi ?").classes("text-h6").style(
+                            f"color: {COLORS['ink']}; font-weight: 600"
+                        )
+
+                        # Bandeau mode v2+ si applicable (calculé à l'ouverture)
+                        _confirm_mode_label = ui.label("").classes("text-caption").style(
+                            "color: #7C2D12; font-weight: 600; margin-top: 4px"
+                        )
+
+                        ui.separator().classes("q-my-sm")
+
+                        # Résumé structuré (rempli dynamiquement à l'ouverture)
+                        with ui.column().classes("gap-2 w-full"):
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("event", size="sm").style(f"color: {COLORS['blue']}")
+                                _confirm_date = ui.label("").classes("text-body2").style(
+                                    f"color: {COLORS['ink']}"
+                                )
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("local_shipping", size="sm").style(f"color: {COLORS['blue']}")
+                                _confirm_dest = ui.label("").classes("text-body2").style(
+                                    f"color: {COLORS['ink']}"
+                                )
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("inventory_2", size="sm").style(f"color: {COLORS['green']}")
+                                _confirm_totals = ui.label("").classes("text-body2").style(
+                                    f"color: {COLORS['ink']}; font-weight: 500"
+                                )
+                            # Emballages (affiché seulement si présent)
+                            _confirm_pkg_row = ui.row().classes("items-center gap-2")
+                            with _confirm_pkg_row:
+                                ui.icon("move_to_inbox", size="sm").style(f"color: {COLORS['orange']}")
+                                _confirm_pkg = ui.label("").classes("text-body2").style(
+                                    f"color: {COLORS['ink']}"
+                                )
+
+                        ui.separator().classes("q-my-sm")
+
+                        ui.label("Destinataires email :").classes("text-caption text-grey-7 q-mt-sm")
+                        _confirm_emails_row = ui.row().classes("w-full gap-1 q-mt-xs")
+
+                        with ui.row().classes("w-full justify-end gap-2 q-mt-lg"):
+                            ui.button("Annuler", on_click=_email_confirm_dlg.close).props("flat color=grey-7")
+                            _email_send_action = ui.button(
+                                "Envoyer", icon="send"
+                            ).props("color=green-8 unelevated")
 
                     async def _confirmed_send():
                         _email_confirm_dlg.close()
@@ -1003,15 +1174,59 @@ async def page_ramasse():
                     send_btn_ref = _email_send_action
 
                     def _open_email_confirm():
-                        emails_raw = email_input.value or ""
-                        to_list = [e.strip() for e in emails_raw.split(",") if e.strip()]
+                        to_list = _get_emails()
                         if not to_list:
                             ui.notify("Indique au moins un destinataire.", type="warning")
                             return
-                        _email_confirm_msg.text = (
-                            f"L'email sera envoyé à {len(to_list)} destinataire(s) : "
-                            f"{', '.join(to_list)}"
+
+                        # Totaux actuels pour le résumé
+                        row_data = table_ref["rows"]
+                        _active = [r for r in row_data if int(r.get("cartons") or 0) > 0]
+                        if not _active:
+                            ui.notify("Aucun carton renseigné.", type="warning")
+                            return
+                        _tc = sum(int(r["cartons"]) for r in _active)
+                        _tp = sum(int(r["palettes"]) for r in _active)
+                        _tw = sum(int(r["poids"]) for r in _active)
+                        _d = _get_date_ramasse()
+
+                        # Mode v2+ ?
+                        _is_update = edit_state["editing_id"] is not None
+                        if _is_update:
+                            _next_v = int(edit_state["current_version"]) + 1
+                            _confirm_mode_label.text = f"⚠ Mise à jour — envoi en version {_next_v}"
+                            _confirm_mode_label.visible = True
+                        else:
+                            _confirm_mode_label.text = ""
+                            _confirm_mode_label.visible = False
+
+                        _confirm_date.text = f"Date de ramasse : {_d:%d/%m/%Y}"
+                        _confirm_dest.text = f"Destinataire : {dest_select.value}"
+                        _confirm_totals.text = (
+                            f"{_tc} cartons  /  {_tp} palette(s)  /  "
+                            f"{_tw:,} kg".replace(",", " ")
                         )
+
+                        # Emballages à ramener (ligne visible seulement si présent)
+                        _pkg_lines_confirm = _get_packaging_lines() or []
+                        if _pkg_lines_confirm:
+                            _pkg_summary = ", ".join(
+                                f"{p['qty']} {p['unit']}(s) {p['label']}"
+                                for p in _pkg_lines_confirm
+                            )
+                            _confirm_pkg.text = f"Emballages à ramener : {_pkg_summary}"
+                            _confirm_pkg_row.visible = True
+                        else:
+                            _confirm_pkg_row.visible = False
+
+                        # Rebuild la liste des chips emails
+                        _confirm_emails_row.clear()
+                        with _confirm_emails_row:
+                            for addr in to_list:
+                                ui.badge(addr, color="blue-grey-3").props("outline").classes(
+                                    "q-px-sm q-py-xs"
+                                ).style("color: #1F2937; font-size: 12px")
+
                         _email_confirm_dlg.open()
 
                     # Label dynamique selon mode (nouveau vs édition)

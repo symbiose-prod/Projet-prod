@@ -298,6 +298,53 @@ def mark_driver_passed(
     return False
 
 
+def get_last_packaging_for_dest(
+    destinataire: str,
+    tenant_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Retourne les emballages de la dernière ramasse envoyée pour ce destinataire.
+
+    Utilisé pour proposer des quantités "habituelles" à l'utilisateur au moment
+    où il sélectionne un destinataire. Retourne une liste ``[{label, qty, unit}]``
+    ou ``[]`` si aucune ramasse passée trouvée (ou si ses emballages sont vides).
+
+    Seules les ramasses avec des emballages renseignés sont considérées.
+    """
+    tid = tenant_id or current_tenant_id()
+    rows = run_sql(
+        """
+        SELECT packaging
+        FROM ramasse_history
+        WHERE tenant_id = :tid
+          AND destinataire = :dest
+          AND packaging IS NOT NULL
+          AND jsonb_array_length(packaging) > 0
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        {"tid": tid, "dest": destinataire},
+    )
+    if not rows:
+        return []
+    pkg = rows[0].get("packaging") or []
+    if not isinstance(pkg, list):
+        return []
+    # Filtrer les entrées invalides et ne garder que label/qty/unit
+    result: list[dict[str, Any]] = []
+    for item in pkg:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        qty = int(item.get("qty") or 0)
+        if label and qty > 0:
+            result.append({
+                "label": label,
+                "qty": qty,
+                "unit": str(item.get("unit") or "palette"),
+            })
+    return result
+
+
 def count_ramasses(tenant_id: str | None = None) -> int:
     """Nombre total de ramasses pour le tenant."""
     tid = tenant_id or current_tenant_id()
