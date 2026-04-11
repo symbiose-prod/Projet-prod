@@ -397,62 +397,58 @@ async def page_ramasse():
 
             table_ref["rows"] = grid_rows  # rows sans séparateurs (pour calculs)
 
-            try:
-              with content_container:
-                # ── KPIs ─────────────────────────────────────────────
+            def _kpi_card(icon_name: str, color_key: str, caption: str, value_str: str):
+                """Factorise la structure d'une carte KPI. Retourne le ui.label valeur."""
+                color_hex = COLORS[color_key]
+                with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
+                    with ui.card_section().classes("row items-center gap-3 q-pa-md"):
+                        with ui.element("div").classes("q-pa-xs").style(
+                            f"background: {color_hex}10; border-radius: 6px"
+                        ):
+                            ui.icon(icon_name, size="sm").style(f"color: {color_hex}")
+                        with ui.column().classes("gap-0"):
+                            ui.label(caption).classes("text-caption").style(
+                                f"color: {COLORS['ink2']}; font-weight: 500"
+                            )
+                            return ui.label(value_str).classes("text-h6").style(
+                                f"color: {COLORS['ink']}; font-weight: 600"
+                            ).props('aria-live="polite"')
+
+            def _render_kpis_cards():
+                """Rendu des 3 cartes KPI (cartons / palettes / poids).
+
+                Calcule les totaux depuis les lignes actives (cartons > 0) et
+                stocke les labels dans kpi_labels (outer scope) pour permettre
+                le rafraîchissement lors des saisies inline via _update_kpis.
+                """
                 active = [r for r in grid_rows if (r["cartons"] or 0) > 0]
                 tot_c = sum(int(r["cartons"] or 0) for r in active)
                 tot_p = sum(int(r["palettes"] or 0) for r in active)
                 tot_w = sum(int(r["poids"] or 0) for r in active)
 
                 with ui.row().classes("w-full gap-4"):
-                    with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
-                        with ui.card_section().classes("row items-center gap-3 q-pa-md"):
-                            with ui.element("div").classes("q-pa-xs").style(
-                                f"background: {COLORS['green']}10; border-radius: 6px"
-                            ):
-                                ui.icon("inventory_2", size="sm").style(f"color: {COLORS['green']}")
-                            with ui.column().classes("gap-0"):
-                                ui.label("Total cartons").classes("text-caption").style(
-                                    f"color: {COLORS['ink2']}; font-weight: 500"
-                                )
-                                kpi_labels["cartons"] = ui.label(
-                                    f"{tot_c:,}".replace(",", " ")
-                                ).classes("text-h6").style(
-                                    f"color: {COLORS['ink']}; font-weight: 600"
-                                ).props('aria-live="polite"')
+                    kpi_labels["cartons"] = _kpi_card(
+                        "inventory_2", "green", "Total cartons",
+                        f"{tot_c:,}".replace(",", " "),
+                    )
+                    kpi_labels["palettes"] = _kpi_card(
+                        "view_in_ar", "orange", "Total palettes", str(tot_p),
+                    )
+                    kpi_labels["poids"] = _kpi_card(
+                        "scale", "blue", "Poids total (kg)",
+                        f"{tot_w:,}".replace(",", " "),
+                    )
 
-                    with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
-                        with ui.card_section().classes("row items-center gap-3 q-pa-md"):
-                            with ui.element("div").classes("q-pa-xs").style(
-                                f"background: {COLORS['orange']}10; border-radius: 6px"
-                            ):
-                                ui.icon("view_in_ar", size="sm").style(f"color: {COLORS['orange']}")
-                            with ui.column().classes("gap-0"):
-                                ui.label("Total palettes").classes("text-caption").style(
-                                    f"color: {COLORS['ink2']}; font-weight: 500"
-                                )
-                                kpi_labels["palettes"] = ui.label(str(tot_p)).classes("text-h6").style(
-                                    f"color: {COLORS['ink']}; font-weight: 600"
-                                ).props('aria-live="polite"')
+            def _render_quasar_table():
+                """Rendu du tableau Quasar avec slot body custom + handlers inline.
 
-                    with ui.card().classes("kpi-card q-pa-none flex-1").props("flat"):
-                        with ui.card_section().classes("row items-center gap-3 q-pa-md"):
-                            with ui.element("div").classes("q-pa-xs").style(
-                                f"background: {COLORS['blue']}10; border-radius: 6px"
-                            ):
-                                ui.icon("scale", size="sm").style(f"color: {COLORS['blue']}")
-                            with ui.column().classes("gap-0"):
-                                ui.label("Poids total (kg)").classes("text-caption").style(
-                                    f"color: {COLORS['ink2']}; font-weight: 500"
-                                )
-                                kpi_labels["poids"] = ui.label(
-                                    f"{tot_w:,}".replace(",", " ")
-                                ).classes("text-h6").style(
-                                    f"color: {COLORS['ink']}; font-weight: 600"
-                                ).props('aria-live="polite"')
+                Le tableau affiche : ref, produit (avec séparateurs de goût), DDM,
+                cartons (ui.input inline), palettes (q-popup-edit), poids.
 
-                # ── Tableau Quasar ─────────────────────────────────
+                Les handlers on_cartons_changed / on_palettes_changed recalculent
+                palettes et poids via les helpers purs (compute_palettes_and_weight),
+                reconstruisent la liste visible et rafraîchissent les KPIs.
+                """
                 section_title("Détail produits", "table_chart")
 
                 ui.label(
@@ -473,7 +469,7 @@ async def page_ramasse():
                 table.props("flat bordered dense")
                 table_ref["table"] = table
 
-                # Slot body — en-tête goût OU ligne de données
+                # Slot body Vue — en-tête de goût OU ligne de données
                 ORANGE = COLORS["orange"]
                 GREEN = COLORS["green"]
                 table.add_slot("body", r'''
@@ -534,57 +530,59 @@ async def page_ramasse():
                     </q-tr>
                 ''')
 
-                # Helper : reconstruit les rows avec séparateurs pour le tableau
                 def _rebuild_table_rows():
-                    """Reconstruit ordered_rows à partir de table_ref['rows'] (données seules)."""
+                    """Reconstruit ordered_rows depuis table_ref['rows'] avec séparateurs."""
                     table.rows[:] = insert_gout_separators(table_ref["rows"])
                     table.update()
 
-                # Handler @change : sync + recalcul automatique
-                def on_cartons_changed(e):
-                    data = e.args
-                    ref = data.get("ref")
-                    c = max(0, safe_int(data.get("cartons"), default=0))
-
+                def _find_row_by_ref(ref: str) -> dict | None:
+                    """Lookup O(n) d'une ligne par sa référence produit."""
                     for row in table_ref["rows"]:
                         if row["ref"] == ref:
-                            row["cartons"] = c
-                            pal, poids = compute_palettes_and_weight(
-                                c,
-                                float(row.get("poids_u") or 0),
-                                int(row.get("pal_cap") or 0),
-                            )
-                            row["palettes"] = pal
-                            row["poids"] = poids
-                            row["poids_display"] = format_poids_display(poids)
-                            break
+                            return row
+                    return None
 
+                def on_cartons_changed(e):
+                    """Handler Vue : user a saisi un nombre de cartons → recalcul."""
+                    ref = e.args.get("ref")
+                    c = max(0, safe_int(e.args.get("cartons"), default=0))
+                    row = _find_row_by_ref(ref)
+                    if row is not None:
+                        row["cartons"] = c
+                        pal, poids = compute_palettes_and_weight(
+                            c,
+                            float(row.get("poids_u") or 0),
+                            int(row.get("pal_cap") or 0),
+                        )
+                        row["palettes"] = pal
+                        row["poids"] = poids
+                        row["poids_display"] = format_poids_display(poids)
+                    _rebuild_table_rows()
+                    _update_kpis()
+
+                def on_palettes_changed(e):
+                    """Handler Vue : user a forcé un nombre de palettes → recalcul poids."""
+                    ref = e.args.get("ref")
+                    p = max(0, safe_int(e.args.get("palettes"), default=0))
+                    row = _find_row_by_ref(ref)
+                    if row is not None:
+                        row["palettes"] = p
+                        # Formule manuelle : palettes est forcé (override du ceil)
+                        c = int(row.get("cartons") or 0)
+                        pu = float(row.get("poids_u") or 0)
+                        w = int(round(c * pu + p * PALETTE_EMPTY_WEIGHT))
+                        row["poids"] = w
+                        row["poids_display"] = format_poids_display(w)
                     _rebuild_table_rows()
                     _update_kpis()
 
                 table.on("cartons_changed", on_cartons_changed)
-
-                def on_palettes_changed(e):
-                    data = e.args
-                    ref = data.get("ref")
-                    p = max(0, safe_int(data.get("palettes"), default=0))
-
-                    for row in table_ref["rows"]:
-                        if row["ref"] == ref:
-                            row["palettes"] = p
-                            # Recalculer le poids avec le nouveau nombre de palettes
-                            # (formule manuelle car palettes est forcé par l'utilisateur)
-                            c = int(row.get("cartons") or 0)
-                            pu = float(row.get("poids_u") or 0)
-                            w = int(round(c * pu + p * PALETTE_EMPTY_WEIGHT))
-                            row["poids"] = w
-                            row["poids_display"] = format_poids_display(w)
-                            break
-
-                    _rebuild_table_rows()
-                    _update_kpis()
-
                 table.on("palettes_changed", on_palettes_changed)
+
+            try:
+              with content_container:
+                _render_kpis_cards()
+                _render_quasar_table()
 
                 # ── Emballages à récupérer ─────────────────────────
                 packaging_state: dict = {"items": []}
