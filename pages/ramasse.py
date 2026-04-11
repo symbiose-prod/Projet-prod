@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
-import math
 import os
 
 import requests
@@ -40,6 +39,14 @@ from common.ramasse import (
     load_packaging_items,
     parse_barcode_matrix,
     today_paris,
+)
+from common.ramasse_grid import (
+    apply_saved_cartons,
+    compute_palettes_and_weight,
+    format_poids_display,
+    insert_gout_separators,
+    prepare_grid_rows,
+    safe_int,
 )
 from common.ramasse_history import (
     count_ramasses,
@@ -115,14 +122,7 @@ def _brassin_label(b: dict) -> str:
     return f"{nom} — {prod} — {vol:.0f}L{tag}"
 
 
-def _compute_row(row: dict, meta: dict) -> dict:
-    """Calcule palettes et poids pour une ligne."""
-    cartons = int(row.get("cartons") or 0)
-    pc = float(meta.get("_poids_carton", 0))
-    pal_cap = int(meta.get("_palette_capacity", 0))
-    nb_pal = math.ceil(cartons / pal_cap) if pal_cap > 0 and cartons > 0 else 0
-    poids = int(round(cartons * pc + nb_pal * PALETTE_EMPTY_WEIGHT, 0))
-    return {**row, "palettes": nb_pal, "poids": poids}
+# Helpers purs — extraits dans common/ramasse_grid.py (testables sans NiceGUI).
 
 
 # ─── Colonnes Quasar Table ──────────────────────────────────────────────────
@@ -389,60 +389,11 @@ async def page_ramasse():
                         ).classes("text-negative text-caption q-pa-sm")
                 return
 
-            # ── Préparer les données ──────────────────────────────
-            grid_rows = []
-            for r in rows:
-                label = r["Produit (goût + format)"]
-                meta = meta_by_label.get(label, {})
-                # Extraire le goût depuis le label "Kéfir Original — 12x33cl"
-                gout = label.split(" — ")[0].strip() if " — " in label else label
-                grid_row = {
-                    "ref": r["Référence"],
-                    "produit": label,
-                    "_gout": gout,
-                    "ddm": r["DDM"].strftime("%d/%m/%Y") if hasattr(r["DDM"], "strftime") else str(r["DDM"]),
-                    "cartons": None,
-                    "poids_u": float(meta.get("_poids_carton", 0)),
-                    "pal_cap": int(meta.get("_palette_capacity", 0)),
-                    "palettes": 0,
-                    "poids": 0,
-                    "poids_display": "—",
-                }
-                grid_rows.append(grid_row)
-
-            # Trier par goût pour regrouper visuellement
-            grid_rows.sort(key=lambda r: r["_gout"])
-
-            # ── Restaurer les cartons saisis précédemment ──────────
-            for grid_row in grid_rows:
-                ref = grid_row["ref"]
-                if ref in saved_cartons:
-                    c = saved_cartons[ref]
-                    grid_row["cartons"] = c
-                    cap = int(grid_row.get("pal_cap") or 0)
-                    pu = float(grid_row.get("poids_u") or 0)
-                    pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
-                    grid_row["palettes"] = pal
-                    p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
-                    grid_row["poids"] = p
-                    grid_row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
-
-            # ── Insérer des en-têtes par goût ──────────────────────
-            ordered_rows: list[dict] = []
-            current_gout = None
-            for grid_row in grid_rows:
-                if grid_row["_gout"] != current_gout:
-                    current_gout = grid_row["_gout"]
-                    ordered_rows.append({
-                        "_sep": True,
-                        "_gout": current_gout,
-                        "ref": f"_sep_{current_gout}",
-                        "produit": "", "ddm": "",
-                        "cartons": None, "palettes": 0,
-                        "poids": 0, "poids_display": "",
-                        "poids_u": 0, "pal_cap": 0,
-                    })
-                ordered_rows.append(grid_row)
+            # ── Préparer les données via helpers purs ──────────────
+            grid_rows = prepare_grid_rows(rows, meta_by_label)
+            grid_rows.sort(key=lambda r: r["_gout"])  # regrouper visuellement par goût
+            apply_saved_cartons(grid_rows, saved_cartons)
+            ordered_rows = insert_gout_separators(grid_rows)
 
             table_ref["rows"] = grid_rows  # rows sans séparateurs (pour calculs)
 
@@ -586,46 +537,26 @@ async def page_ramasse():
                 # Helper : reconstruit les rows avec séparateurs pour le tableau
                 def _rebuild_table_rows():
                     """Reconstruit ordered_rows à partir de table_ref['rows'] (données seules)."""
-                    out: list[dict] = []
-                    cur_gout = None
-                    for row in table_ref["rows"]:
-                        g = row.get("_gout", "")
-                        if g != cur_gout:
-                            cur_gout = g
-                            out.append({
-                                "_sep": True, "_gout": cur_gout,
-                                "ref": f"_sep_{cur_gout}",
-                                "produit": "", "ddm": "",
-                                "cartons": None, "palettes": 0,
-                                "poids": 0, "poids_display": "",
-                                "poids_u": 0, "pal_cap": 0,
-                            })
-                        out.append(row)
-                    table.rows[:] = out
+                    table.rows[:] = insert_gout_separators(table_ref["rows"])
                     table.update()
 
                 # Handler @change : sync + recalcul automatique
                 def on_cartons_changed(e):
                     data = e.args
                     ref = data.get("ref")
-                    c = data.get("cartons")
-                    try:
-                        c = int(float(c)) if c is not None and c != "" else 0
-                    except (TypeError, ValueError):
-                        c = 0
-                    if c < 0:
-                        c = 0
+                    c = max(0, safe_int(data.get("cartons"), default=0))
 
                     for row in table_ref["rows"]:
                         if row["ref"] == ref:
                             row["cartons"] = c
-                            cap = int(row.get("pal_cap") or 0)
-                            pu = float(row.get("poids_u") or 0)
-                            pal = math.ceil(c / cap) if cap > 0 and c > 0 else 0
+                            pal, poids = compute_palettes_and_weight(
+                                c,
+                                float(row.get("poids_u") or 0),
+                                int(row.get("pal_cap") or 0),
+                            )
                             row["palettes"] = pal
-                            p = int(round(c * pu + pal * PALETTE_EMPTY_WEIGHT))
-                            row["poids"] = p
-                            row["poids_display"] = f"{p:,} kg".replace(",", " ") if p else "—"
+                            row["poids"] = poids
+                            row["poids_display"] = format_poids_display(poids)
                             break
 
                     _rebuild_table_rows()
@@ -636,23 +567,18 @@ async def page_ramasse():
                 def on_palettes_changed(e):
                     data = e.args
                     ref = data.get("ref")
-                    p = data.get("palettes")
-                    try:
-                        p = int(float(p)) if p is not None and p != "" else 0
-                    except (TypeError, ValueError):
-                        p = 0
-                    if p < 0:
-                        p = 0
+                    p = max(0, safe_int(data.get("palettes"), default=0))
 
                     for row in table_ref["rows"]:
                         if row["ref"] == ref:
                             row["palettes"] = p
                             # Recalculer le poids avec le nouveau nombre de palettes
+                            # (formule manuelle car palettes est forcé par l'utilisateur)
                             c = int(row.get("cartons") or 0)
                             pu = float(row.get("poids_u") or 0)
                             w = int(round(c * pu + p * PALETTE_EMPTY_WEIGHT))
                             row["poids"] = w
-                            row["poids_display"] = f"{w:,} kg".replace(",", " ") if w else "—"
+                            row["poids_display"] = format_poids_display(w)
                             break
 
                     _rebuild_table_rows()
