@@ -205,6 +205,7 @@ async def page_ramasse():
             "current_version": 1,
             "previous_lines": None,
             "pending_cartons": {},
+            "pending_packaging": {},
         }
 
         # ── Bandeau "Mode édition" (conditionnel, affiché en haut) ─────
@@ -239,6 +240,7 @@ async def page_ramasse():
             edit_state["current_version"] = 1
             edit_state["previous_lines"] = None
             edit_state["pending_cartons"] = {}
+            edit_state["pending_packaging"] = {}
             brassin_select.value = []
             _render_edit_banner()
             on_brassins_changed()
@@ -646,31 +648,47 @@ async def page_ramasse():
 
                 def _build_packaging_section():
                     """Construit la section emballages pour le destinataire courant."""
+                    # Sauvegarder les qty saisies avant reset (mêmes principes que saved_cartons)
+                    saved_pkg_qty: dict[str, int] = {
+                        str(it.get("label") or ""): int(it.get("qty") or 0)
+                        for it in packaging_state["items"]
+                        if int(it.get("qty") or 0) > 0
+                    }
+                    # Fusionner avec les valeurs pending du mode édition (consommées une fois)
+                    if edit_state.get("pending_packaging"):
+                        saved_pkg_qty.update(edit_state["pending_packaging"])
+                        edit_state["pending_packaging"] = {}
+
                     packaging_state["items"] = []
                     pkg_items = load_packaging_items(dest_select.value)
                     if not pkg_items:
                         return
 
+                    # En mode édition, ouvrir l'expansion par défaut si des emballages sont restaurés
+                    expansion_opened = bool(saved_pkg_qty)
+
                     section_title("Emballages à ramener", "inventory_2")
                     with ui.expansion(
                         "Demander des palettes d'emballage",
                         icon="move_to_inbox",
+                        value=expansion_opened,
                     ).classes("w-full").props(
                         "dense header-class='text-subtitle2'"
                     ):
                         for item in pkg_items:
+                            initial_qty = saved_pkg_qty.get(item["label"], 0)
                             item_state = {
                                 "id": item["id"],
                                 "label": item["label"],
                                 "unit": item.get("unit", "palette"),
-                                "qty": 0,
+                                "qty": initial_qty,
                             }
                             packaging_state["items"].append(item_state)
 
                             with ui.row().classes("w-full items-center gap-3 q-py-xs"):
                                 ui.label(item["label"]).classes("flex-1 text-body2")
                                 qty_input = ui.number(
-                                    value=0, min=0, step=1,
+                                    value=initial_qty, min=0, step=1,
                                 ).props("outlined dense").style("max-width: 100px")
                                 ui.label(item.get("unit", "palette")).classes(
                                     "text-caption text-grey-6"
@@ -1041,6 +1059,12 @@ async def page_ramasse():
                 str(line.get("ref")): int(line.get("cartons") or 0)
                 for line in (rec.get("lines") or [])
                 if line.get("ref")
+            }
+            # Restaurer les emballages (bouteilles vides, etc.) — matching par label
+            edit_state["pending_packaging"] = {
+                str(pkg.get("label") or ""): int(pkg.get("qty") or 0)
+                for pkg in (rec.get("packaging") or [])
+                if pkg.get("label") and int(pkg.get("qty") or 0) > 0
             }
 
             # Restaurer le destinataire et la date
