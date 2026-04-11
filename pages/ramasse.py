@@ -41,7 +41,14 @@ from common.ramasse import (
     parse_barcode_matrix,
     today_paris,
 )
-from common.ramasse_history import count_ramasses, get_ramasse, list_ramasses, save_ramasse
+from common.ramasse_history import (
+    count_ramasses,
+    get_ramasse,
+    list_ramasses,
+    mark_driver_passed,
+    save_ramasse,
+    update_ramasse,
+)
 from common.xlsx_fill import build_bl_enlevements_pdf
 from pages.auth import require_auth
 from pages.theme import COLORS, confirm_dialog, page_layout, section_title
@@ -188,6 +195,55 @@ async def page_ramasse():
         with sidebar:
             pass
 
+        # ── État d'édition (mode mise à jour d'une ramasse existante) ──
+        # editing_id: None = nouvelle ramasse, sinon UUID de la ramasse éditée
+        # current_version: version courante (1 = nouveau BL, 2+ = mise à jour)
+        # previous_lines: snapshot des lignes de la version précédente (pour diff PDF)
+        # pending_cartons: cartons à restaurer au prochain rebuild du tableau (par ref)
+        edit_state: dict = {
+            "editing_id": None,
+            "current_version": 1,
+            "previous_lines": None,
+            "pending_cartons": {},
+        }
+
+        # ── Bandeau "Mode édition" (conditionnel, affiché en haut) ─────
+        edit_banner_container = ui.row().classes("w-full")
+
+        def _render_edit_banner():
+            edit_banner_container.clear()
+            if edit_state["editing_id"] is None:
+                return
+            next_version = int(edit_state["current_version"]) + 1
+            with edit_banner_container:
+                with ui.row().classes("w-full items-center gap-3 q-pa-sm").style(
+                    "background: #FFF3CD; border: 1px solid #FFB74D; border-radius: 8px"
+                ):
+                    ui.icon("edit_note", color="orange-9", size="md")
+                    with ui.column().classes("flex-1 gap-0"):
+                        ui.label(
+                            f"Mode édition — vous modifiez une ramasse existante (v{edit_state['current_version']} → v{next_version})"
+                        ).classes("text-subtitle2").style("color: #7C2D12; font-weight: 600")
+                        ui.label(
+                            "Les modifications apparaîtront dans le PDF renvoyé (nouvelles lignes en jaune, modifiées en bleu)."
+                        ).classes("text-caption").style("color: #92400E")
+                    ui.button(
+                        "Annuler l'édition",
+                        icon="close",
+                        on_click=lambda: _cancel_edit(),
+                    ).props("flat color=orange-9 dense")
+
+        def _cancel_edit():
+            """Sort du mode édition et vide le formulaire."""
+            edit_state["editing_id"] = None
+            edit_state["current_version"] = 1
+            edit_state["previous_lines"] = None
+            edit_state["pending_cartons"] = {}
+            brassin_select.value = []
+            _render_edit_banner()
+            on_brassins_changed()
+            ui.notify("Mode édition annulé.", type="info")
+
         # ── Sélection brassins + recharger ────────────────────────────
         with ui.row().classes("w-full items-center gap-4"):
             with ui.column().classes("flex-1 gap-0"):
@@ -268,6 +324,13 @@ async def page_ramasse():
                 c = row.get("cartons")
                 if c is not None and c > 0:
                     saved_cartons[row["ref"]] = int(c)
+
+            # Les cartons "pending" (mode édition) sont fusionnés dans saved_cartons.
+            # Ils écrasent uniquement les refs qu'ils définissent — les autres saisies
+            # en cours sont préservées. Consommés une seule fois puis vidés.
+            if edit_state.get("pending_cartons"):
+                saved_cartons.update(edit_state["pending_cartons"])
+                edit_state["pending_cartons"] = {}
 
             content_container.clear()
             table_ref["table"] = None
@@ -677,6 +740,47 @@ async def page_ramasse():
                             pass
                         return today_paris()
 
+                    def _build_df_export(active_rows, d):
+                        """Construit le DataFrame prêt pour build_bl_enlevements_pdf."""
+                        import pandas as pd
+                        df_export = pd.DataFrame([{
+                            "Référence": r["ref"],
+                            "Produit (goût + format)": r["produit"],
+                            "DDM": r["ddm"],
+                            "Date ramasse souhaitée": d.strftime("%d/%m/%Y"),
+                            "Quantité cartons": int(r["cartons"]),
+                            "Quantité palettes": int(r["palettes"]),
+                            "Poids palettes (kg)": int(r["poids"]),
+                        } for r in active_rows])
+                        cols = ["Référence", "Produit (goût + format)", "DDM",
+                                "Date ramasse souhaitée", "Quantité cartons",
+                                "Quantité palettes", "Poids palettes (kg)"]
+                        return df_export[cols]
+
+                    def _build_pdf_for_active_rows(active_rows, d):
+                        """Génère le PDF (v1 normal ou v2+ différentiel selon edit_state)."""
+                        dest_title = dest_select.value
+                        _dest = _get_dest_obj()
+                        dest_lines = _dest.get("address_lines", []) if _dest else []
+
+                        # Mode édition : passer previous_lines + version incrémentée
+                        previous_lines_for_pdf = None
+                        next_version = 1
+                        if edit_state["editing_id"] is not None:
+                            previous_lines_for_pdf = edit_state.get("previous_lines")
+                            next_version = int(edit_state["current_version"]) + 1
+
+                        return build_bl_enlevements_pdf(
+                            date_creation=today_paris(),
+                            date_ramasse=d,
+                            destinataire_title=dest_title,
+                            destinataire_lines=dest_lines,
+                            df_lines=_build_df_export(active_rows, d),
+                            packaging_lines=_get_packaging_lines(),
+                            previous_lines=previous_lines_for_pdf,
+                            version=next_version,
+                        )
+
                     def do_download_pdf():
                         row_data = table_ref["rows"]
                         active_rows = [r for r in row_data if int(r.get("cartons") or 0) > 0]
@@ -684,32 +788,8 @@ async def page_ramasse():
                             ui.notify("Aucun carton renseigné.", type="warning")
                             return
                         try:
-                            import pandas as pd
                             d = _get_date_ramasse()
-                            df_export = pd.DataFrame([{
-                                "Référence": r["ref"],
-                                "Produit (goût + format)": r["produit"],
-                                "DDM": r["ddm"],
-                                "Date ramasse souhaitée": d.strftime("%d/%m/%Y"),
-                                "Quantité cartons": int(r["cartons"]),
-                                "Quantité palettes": int(r["palettes"]),
-                                "Poids palettes (kg)": int(r["poids"]),
-                            } for r in active_rows])
-
-                            cols = ["Référence", "Produit (goût + format)", "DDM",
-                                    "Date ramasse souhaitée", "Quantité cartons",
-                                    "Quantité palettes", "Poids palettes (kg)"]
-                            dest_title = dest_select.value
-                            _dest = _get_dest_obj()
-                            dest_lines = _dest.get("address_lines", []) if _dest else []
-
-                            pdf_bytes = build_bl_enlevements_pdf(
-                                date_creation=today_paris(),
-                                date_ramasse=d,
-                                destinataire_title=dest_title,
-                                destinataire_lines=dest_lines,
-                                df_lines=df_export[cols],
-                            )
+                            pdf_bytes = _build_pdf_for_active_rows(active_rows, d)
                             ui.download(pdf_bytes, f"Fiche_de_ramasse_{d:%Y-%m-%d}.pdf")
                             ui.notify("PDF généré !", type="positive", icon="check")
                         except (OSError, ValueError, KeyError) as exc:
@@ -743,36 +823,26 @@ async def page_ramasse():
 
                         send_btn_ref.disable()
                         try:
-                            import pandas as pd
                             d = _get_date_ramasse()
-                            df_export = pd.DataFrame([{
-                                "Référence": r["ref"],
-                                "Produit (goût + format)": r["produit"],
-                                "DDM": r["ddm"],
-                                "Date ramasse souhaitée": d.strftime("%d/%m/%Y"),
-                                "Quantité cartons": int(r["cartons"]),
-                                "Quantité palettes": int(r["palettes"]),
-                                "Poids palettes (kg)": int(r["poids"]),
-                            } for r in active_rows])
+                            is_update = edit_state["editing_id"] is not None
+                            next_version = int(edit_state["current_version"]) + 1 if is_update else 1
 
-                            cols = ["Référence", "Produit (goût + format)", "DDM",
-                                    "Date ramasse souhaitée", "Quantité cartons",
-                                    "Quantité palettes", "Poids palettes (kg)"]
+                            pdf_bytes = _build_pdf_for_active_rows(active_rows, d)
+
                             dest_title = dest_select.value
-                            _dest_email = _get_dest_obj()
-                            dest_lines = _dest_email.get("address_lines", []) if _dest_email else []
-
-                            pdf_bytes = build_bl_enlevements_pdf(
-                                date_creation=today_paris(),
-                                date_ramasse=d,
-                                destinataire_title=dest_title,
-                                destinataire_lines=dest_lines,
-                                df_lines=df_export[cols],
-                            )
-
                             tot_palettes = sum(int(r["palettes"]) for r in active_rows)
+                            tot_cartons = sum(int(r["cartons"]) for r in active_rows)
+                            tot_poids = sum(int(r["poids"]) for r in active_rows)
                             filename = f"Fiche_de_ramasse_{d:%Y%m%d}.pdf"
-                            subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
+
+                            # ── Sujet + corps email : v1 ou v2+ ──
+                            if is_update:
+                                subject = (
+                                    f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station "
+                                    f"(MISE À JOUR v{next_version})"
+                                )
+                            else:
+                                subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
 
                             pkg_html = ""
                             _pkg_lines_email = _get_packaging_lines()
@@ -786,17 +856,39 @@ async def page_ramasse():
                                     f"{pkg_items_html}</p>"
                                 )
 
-                            body = f"""
-                            <p>Bonjour,</p>
-                            <p>Nous aurions besoin d'une ramasse pour le {d:%d/%m/%Y}.<br>
-                            Pour <strong>{tot_palettes}</strong> palette{'s' if tot_palettes != 1 else ''}.</p>
-                            {pkg_html}
-                            <p>Merci,<br>Bon après-midi.</p>
-                            <hr>
-                            <p><strong>Ferment Station</strong><br>
-                            Producteur de boissons fermentées<br>
-                            26 Rue Robert Witchitz – 94200 Ivry-sur-Seine</p>
-                            """
+                            if is_update:
+                                # Corps v2+ : mention explicite de la mise à jour
+                                body = f"""
+                                <p>Bonjour,</p>
+                                <p>Nous vous adressons une <strong>version mise à jour</strong>
+                                de notre demande de ramasse pour le <strong>{d:%d/%m/%Y}</strong>
+                                (version {next_version}).</p>
+                                <p>Total actuel : <strong>{tot_palettes}</strong>
+                                palette{'s' if tot_palettes != 1 else ''}
+                                ({tot_cartons} cartons).</p>
+                                <p>Le PDF ci-joint fait apparaître les modifications :
+                                <strong>nouvelles lignes en jaune</strong>,
+                                <strong>lignes modifiées en bleu</strong>
+                                (avec l'ancien nombre de cartons indiqué).</p>
+                                {pkg_html}
+                                <p>Merci,<br>Bon après-midi.</p>
+                                <hr>
+                                <p><strong>Ferment Station</strong><br>
+                                Producteur de boissons fermentées<br>
+                                26 Rue Robert Witchitz – 94200 Ivry-sur-Seine</p>
+                                """
+                            else:
+                                body = f"""
+                                <p>Bonjour,</p>
+                                <p>Nous aurions besoin d'une ramasse pour le {d:%d/%m/%Y}.<br>
+                                Pour <strong>{tot_palettes}</strong> palette{'s' if tot_palettes != 1 else ''}.</p>
+                                {pkg_html}
+                                <p>Merci,<br>Bon après-midi.</p>
+                                <hr>
+                                <p><strong>Ferment Station</strong><br>
+                                Producteur de boissons fermentées<br>
+                                26 Rue Robert Witchitz – 94200 Ivry-sur-Seine</p>
+                                """
 
                             sender_email = os.environ.get("EMAIL_SENDER") or ""
                             recipients = list(to_list)
@@ -817,29 +909,57 @@ async def page_ramasse():
                                 type="positive", icon="email", position="top",
                             )
 
-                            # ── Sauvegarder dans l'historique (fire-and-forget) ──
+                            # ── Sauvegarder dans l'historique ──
                             try:
                                 _brassin_id_list = [str(x) for x in (brassin_select.value or [])]
-                                save_ramasse(
-                                    date_ramasse=d,
-                                    destinataire=dest_title,
-                                    recipients=recipients,
-                                    lines=[{
-                                        "ref": r["ref"],
-                                        "produit": r["produit"],
-                                        "ddm": r["ddm"],
-                                        "cartons": int(r["cartons"]),
-                                        "palettes": int(r["palettes"]),
-                                        "poids": int(r["poids"]),
-                                    } for r in active_rows],
-                                    total_cartons=sum(int(r["cartons"]) for r in active_rows),
-                                    total_palettes=tot_palettes,
-                                    total_poids_kg=sum(int(r["poids"]) for r in active_rows),
-                                    packaging=_pkg_lines_email or [],
-                                    pdf_bytes=pdf_bytes,
-                                    brassin_ids=_brassin_id_list,
-                                )
-                                _log.info("Ramasse sauvegardée dans l'historique")
+                                lines_payload = [{
+                                    "ref": r["ref"],
+                                    "produit": r["produit"],
+                                    "ddm": r["ddm"],
+                                    "cartons": int(r["cartons"]),
+                                    "palettes": int(r["palettes"]),
+                                    "poids": int(r["poids"]),
+                                } for r in active_rows]
+
+                                if is_update:
+                                    await asyncio.to_thread(
+                                        update_ramasse,
+                                        edit_state["editing_id"],
+                                        date_ramasse=d,
+                                        destinataire=dest_title,
+                                        recipients=recipients,
+                                        lines=lines_payload,
+                                        total_cartons=tot_cartons,
+                                        total_palettes=tot_palettes,
+                                        total_poids_kg=tot_poids,
+                                        packaging=_pkg_lines_email or [],
+                                        pdf_bytes=pdf_bytes,
+                                        brassin_ids=_brassin_id_list,
+                                    )
+                                    _log.info(
+                                        "Ramasse mise à jour dans l'historique id=%s v%d",
+                                        edit_state["editing_id"], next_version,
+                                    )
+                                    # Sortir du mode édition après un envoi v2+ réussi
+                                    _cancel_edit()
+                                else:
+                                    await asyncio.to_thread(
+                                        save_ramasse,
+                                        date_ramasse=d,
+                                        destinataire=dest_title,
+                                        recipients=recipients,
+                                        lines=lines_payload,
+                                        total_cartons=tot_cartons,
+                                        total_palettes=tot_palettes,
+                                        total_poids_kg=tot_poids,
+                                        packaging=_pkg_lines_email or [],
+                                        pdf_bytes=pdf_bytes,
+                                        brassin_ids=_brassin_id_list,
+                                    )
+                                    _log.info("Ramasse sauvegardée dans l'historique")
+
+                                # Refresh la liste de l'historique pour voir la nouvelle entrée
+                                _refresh_history()
                             except Exception:
                                 _log.warning("Échec sauvegarde historique ramasse", exc_info=True)
 
@@ -876,8 +996,15 @@ async def page_ramasse():
                         )
                         _email_confirm_dlg.open()
 
+                    # Label dynamique selon mode (nouveau vs édition)
+                    _is_edit_mode = edit_state["editing_id"] is not None
+                    _send_label = (
+                        f"Envoyer le BL mis à jour (v{int(edit_state['current_version']) + 1})"
+                        if _is_edit_mode
+                        else "Envoyer la demande"
+                    )
                     ui.button(
-                        "Envoyer la demande",
+                        _send_label,
                         icon="send",
                         on_click=_open_email_confirm,
                     ).classes("flex-1").props("color=green-8 unelevated")
@@ -891,6 +1018,63 @@ async def page_ramasse():
 
         # Watcher sur la sélection
         brassin_select.on_value_change(on_brassins_changed)
+
+        # ── Démarrage du mode édition depuis l'historique ────────────
+        async def _start_edit(ramasse_id: str):
+            """Charge une ramasse existante et passe en mode édition."""
+            rec = await asyncio.to_thread(get_ramasse, ramasse_id)
+            if rec is None:
+                ui.notify("Ramasse introuvable.", type="negative")
+                return
+            if rec.get("driver_passed"):
+                ui.notify(
+                    "Cette ramasse est déjà marquée comme livrée — édition impossible.",
+                    type="warning",
+                )
+                return
+
+            # Restaurer l'état d'édition
+            edit_state["editing_id"] = str(rec["id"])
+            edit_state["current_version"] = int(rec.get("version") or 1)
+            edit_state["previous_lines"] = rec.get("lines") or []
+            edit_state["pending_cartons"] = {
+                str(line.get("ref")): int(line.get("cartons") or 0)
+                for line in (rec.get("lines") or [])
+                if line.get("ref")
+            }
+
+            # Restaurer le destinataire et la date
+            dest_name = rec.get("destinataire") or ""
+            if dest_name in dest_names:
+                dest_select.value = dest_name
+            dr = rec.get("date_ramasse")
+            if hasattr(dr, "strftime"):
+                date_ramasse.value = dr.strftime("%d/%m/%Y")
+                try:
+                    date_picker.value = dr.isoformat()
+                except Exception:
+                    pass
+
+            _render_edit_banner()
+
+            # Restaurer la sélection des brassins → déclenche on_brassins_changed
+            # qui consommera pending_cartons pour préremplir le tableau.
+            brassin_ids = [int(x) for x in (rec.get("brassin_ids") or []) if str(x).isdigit()]
+            # Filtrer les brassins qui n'existent plus dans la liste actuelle
+            valid_ids = [bid for bid in brassin_ids if bid in brassin_options]
+            missing_count = len(brassin_ids) - len(valid_ids)
+            brassin_select.value = valid_ids
+
+            if missing_count > 0:
+                ui.notify(
+                    f"{missing_count} brassin(s) de la ramasse originale ne sont plus disponibles.",
+                    type="warning",
+                )
+
+            ui.notify(
+                f"Mode édition activé — ramasse du {rec.get('date_ramasse')} chargée.",
+                type="info", icon="edit_note",
+            )
 
         # ── Section Historique des ramasses ──────────────────────────
         history_container = ui.column().classes("w-full q-mt-lg")
@@ -939,6 +1123,7 @@ async def page_ramasse():
                             {"name": "cartons", "label": "Cartons", "field": "cartons", "align": "right"},
                             {"name": "palettes", "label": "Palettes", "field": "palettes", "align": "right"},
                             {"name": "poids", "label": "Poids (kg)", "field": "poids", "align": "right"},
+                            {"name": "statut", "label": "Statut", "field": "statut", "align": "center"},
                             {"name": "actions", "label": "", "field": "actions", "align": "center"},
                         ]
 
@@ -946,6 +1131,7 @@ async def page_ramasse():
                         for item in items:
                             dr = item.get("date_ramasse")
                             date_str = dr.strftime("%d/%m/%Y") if hasattr(dr, "strftime") else str(dr)
+                            ver = int(item.get("version") or 1)
                             hist_rows.append({
                                 "id": str(item["id"]),
                                 "date": date_str,
@@ -953,6 +1139,9 @@ async def page_ramasse():
                                 "cartons": item.get("total_cartons", 0),
                                 "palettes": item.get("total_palettes", 0),
                                 "poids": item.get("total_poids_kg", 0),
+                                "version": ver,
+                                "driver_passed": bool(item.get("driver_passed", False)),
+                                "statut": "",
                                 "actions": "",
                             })
 
@@ -963,8 +1152,34 @@ async def page_ramasse():
                             pagination={"rowsPerPage": 10},
                         ).classes("w-full").props("flat bordered dense")
 
+                        # Slot statut : badge version + badge "Livrée"
+                        ht.add_slot("body-cell-statut", r'''
+                            <q-td :props="props" style="text-align: center">
+                                <q-badge v-if="props.row.version > 1" color="orange-8" class="q-mr-xs">
+                                    v{{ props.row.version }}
+                                </q-badge>
+                                <q-badge v-if="props.row.driver_passed" color="green-8">
+                                    <q-icon name="local_shipping" size="xs" class="q-mr-xs" />
+                                    Livrée
+                                </q-badge>
+                                <span v-if="props.row.version === 1 && !props.row.driver_passed"
+                                      class="text-grey-5 text-caption">—</span>
+                            </q-td>
+                        ''')
+
+                        # Slot actions : Modifier + Chauffeur passé (si non livrée) + PDF + Renvoyer
                         ht.add_slot("body-cell-actions", r'''
                             <q-td :props="props" style="text-align: center">
+                                <q-btn v-if="!props.row.driver_passed"
+                                    flat round dense icon="edit" size="sm" color="orange-8"
+                                    @click="() => $parent.$emit('edit_hist', {id: props.row.id})" >
+                                    <q-tooltip>Modifier (créer une version+1)</q-tooltip>
+                                </q-btn>
+                                <q-btn v-if="!props.row.driver_passed"
+                                    flat round dense icon="local_shipping" size="sm" color="green-7"
+                                    @click="() => $parent.$emit('mark_driver_passed', {id: props.row.id})" >
+                                    <q-tooltip>Marquer comme livrée (chauffeur passé)</q-tooltip>
+                                </q-btn>
                                 <q-btn flat round dense icon="picture_as_pdf" size="sm" color="green-8"
                                     @click="() => $parent.$emit('download_hist_pdf', {id: props.row.id})" >
                                     <q-tooltip>Télécharger le PDF</q-tooltip>
@@ -1026,8 +1241,50 @@ async def page_ramasse():
                                 _log.warning("Erreur renvoi email historique", exc_info=True)
                                 ui.notify("Erreur lors du renvoi.", type="negative")
 
+                        async def _on_edit_hist(e):
+                            rid = e.args.get("id")
+                            try:
+                                await _start_edit(rid)
+                            except Exception:
+                                _log.warning("Erreur démarrage édition ramasse", exc_info=True)
+                                ui.notify("Erreur lors du chargement de la ramasse.", type="negative")
+
+                        async def _on_mark_driver_passed(e):
+                            rid = e.args.get("id")
+                            # Confirmation avant verrouillage
+                            with ui.dialog() as dlg, ui.card():
+                                ui.label("Confirmer : le chauffeur est passé ?").classes("text-h6")
+                                ui.label(
+                                    "Cette ramasse sera marquée comme livrée et ne pourra plus être modifiée."
+                                ).classes("text-body2 text-grey-7")
+                                with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                                    ui.button("Annuler", on_click=dlg.close).props("flat")
+                                    async def _confirm():
+                                        dlg.close()
+                                        try:
+                                            ok = await asyncio.to_thread(mark_driver_passed, rid)
+                                            if ok:
+                                                ui.notify(
+                                                    "Ramasse marquée comme livrée.",
+                                                    type="positive", icon="local_shipping",
+                                                )
+                                                _refresh_history()
+                                            else:
+                                                ui.notify(
+                                                    "Impossible de marquer cette ramasse (déjà livrée ?).",
+                                                    type="warning",
+                                                )
+                                        except Exception:
+                                            _log.warning("Erreur marquage driver passed", exc_info=True)
+                                            ui.notify("Erreur lors du marquage.", type="negative")
+                                    ui.button("Confirmer", icon="local_shipping",
+                                              on_click=_confirm).props("color=green-7 unelevated")
+                            dlg.open()
+
                         ht.on("download_hist_pdf", _on_download_hist_pdf)
                         ht.on("resend_hist", _on_resend_hist)
+                        ht.on("edit_hist", _on_edit_hist)
+                        ht.on("mark_driver_passed", _on_mark_driver_passed)
 
                     hist_exp.on_value_change(lambda e: _load_history_data() if e.value else None)
 

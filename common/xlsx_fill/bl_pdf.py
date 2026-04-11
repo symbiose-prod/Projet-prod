@@ -25,8 +25,17 @@ def build_bl_enlevements_pdf(
     issuer_name: str = "FERMENT STATION",
     issuer_lines: list[str] | None = None,
     issuer_footer: str | None = "Produits issus de l'Agriculture Biologique certifi\u00e9 par FR-BIO-01",
+    previous_lines: list[dict] | None = None,
+    version: int = 1,
 ) -> bytes:
-    """PDF BL au look Excel : encadre, tableau gris, totaux. (Helvetica/latin-1)."""
+    """PDF BL au look Excel : encadre, tableau gris, totaux. (Helvetica/latin-1).
+
+    Mode mise à jour (version > 1 + previous_lines) :
+    - Bandeau "MISE À JOUR v{N}" en haut du PDF
+    - Lignes ajoutées surlignées en JAUNE (avec marqueur ★ NEW)
+    - Lignes modifiées surlignées en BLEU (avec ancien nombre de cartons)
+    - Légende en bas du tableau
+    """
     from fpdf import FPDF
 
     # ---------- helpers texte latin-1 ----------
@@ -55,6 +64,38 @@ def build_bl_enlevements_pdf(
             return int(round(float(x)))
         except (ValueError, TypeError):
             return 0
+
+    # ---------- Lookup des anciennes lignes (mode mise à jour) ----------
+    is_update = bool(previous_lines) and version > 1
+    old_cartons_by_ref: dict[str, int] = {}
+    if is_update:
+        for prev in previous_lines or []:
+            ref = str(prev.get("ref") or prev.get("R\u00e9f\u00e9rence") or "").strip()
+            if ref:
+                old_cartons_by_ref[ref] = _ival(
+                    prev.get("cartons")
+                    or prev.get("Nb cartons")
+                    or prev.get("Quantit\u00e9 cartons")
+                    or 0
+                )
+
+    def _row_status(ref: str, new_cartons: int) -> str:
+        """Retourne 'added', 'modified' ou 'unchanged'. Toujours 'unchanged' en mode v1."""
+        if not is_update:
+            return "unchanged"
+        if ref not in old_cartons_by_ref:
+            return "added"
+        if old_cartons_by_ref[ref] != new_cartons:
+            return "modified"
+        return "unchanged"
+
+    # ---- Couleurs de surlignage (jaune = nouveau, bleu = modifié) ----
+    FILL_ADDED = (255, 243, 205)    # jaune clair
+    FILL_MODIFIED = (204, 229, 255)  # bleu clair
+    FILL_UNCHANGED = (255, 255, 255)  # blanc
+    FILL_HEADER = (230, 230, 230)    # gris (en-tête, totaux)
+    FILL_UPDATE_BANNER = (240, 240, 240)  # gris clair neutre (pour ne pas confondre avec jaune=ajout)
+    BORDER_UPDATE_BANNER = (200, 40, 40)  # bordure rouge (attention)
 
     # ---------- PDF ----------
     pdf = FPDF("P", "mm", "A4")
@@ -95,6 +136,40 @@ def build_bl_enlevements_pdf(
         pdf.set_font("Helvetica", "", 9)
         pdf.cell(0, 4, _txt(issuer_footer), ln=1)
     pdf.ln(2)
+
+    # ---- Bandeau MISE À JOUR (uniquement si version > 1) ----
+    if is_update:
+        pdf.set_fill_color(*FILL_UPDATE_BANNER)
+        pdf.set_draw_color(*BORDER_UPDATE_BANNER)
+        pdf.set_line_width(0.5)
+        pdf.set_x(left)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(
+            width,
+            9,
+            _txt(f"  /!\\  MISE A JOUR - Version {version}"),
+            border=1,
+            ln=1,
+            align="L",
+            fill=True,
+        )
+        pdf.set_x(left)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(
+            width,
+            6,
+            _txt(
+                "Nouvelles lignes surlignees en JAUNE "
+                "- Lignes modifiees surlignees en BLEU (ancien nb cartons indique)"
+            ),
+            border=1,
+            ln=1,
+            align="L",
+            fill=True,
+        )
+        pdf.set_line_width(0.2)  # reset
+        pdf.set_draw_color(0, 0, 0)
+        pdf.ln(2)
 
     # ---- Encadre "BON DE LIVRAISON"
     x_box, w_box = left, width * 0.70
@@ -188,8 +263,12 @@ def build_bl_enlevements_pdf(
             pdf.set_xy(left, yh + header_h)
             pdf.set_font("Helvetica", "", 10)
 
+    added_count = 0
+    modified_count = 0
+
     for _, r in df.iterrows():
-        ref = _txt(r.get("R\u00e9f\u00e9rence", ""))
+        ref_raw = str(r.get("R\u00e9f\u00e9rence", "")).strip()
+        ref = _txt(ref_raw)
         prod = _txt(r.get("Produit", ""))
         ddm = _txt(r.get("DDM", ""))
         qc = _ival(r.get("Nb cartons", r.get("Quantit\u00e9 cartons", 0)))
@@ -199,37 +278,81 @@ def build_bl_enlevements_pdf(
         po = _ival(r.get("Poids (kg)", r.get("Poids palettes (kg)", 0)))
         tot_poids += po
 
+        # Statut de la ligne pour le surlignage
+        status = _row_status(ref_raw, qc)
+        if status == "added":
+            fill_rgb = FILL_ADDED
+            added_count += 1
+            ref_display = _txt(f"* {ref_raw}")  # marqueur "nouveau"
+            cart_display = f"{qc} (NEW)"
+        elif status == "modified":
+            fill_rgb = FILL_MODIFIED
+            modified_count += 1
+            old_c = old_cartons_by_ref.get(ref_raw, 0)
+            ref_display = ref
+            cart_display = f"{qc} (etait {old_c})"
+        else:
+            fill_rgb = FILL_UNCHANGED
+            ref_display = ref
+            cart_display = str(qc)
+
         prod_lines = pdf.multi_cell(widths[1], line_h, prod, split_only=True)
         row_h = max(line_h, line_h * len(prod_lines))
         _maybe_break(row_h)
 
+        # Applique la couleur de fond pour toutes les cellules de cette ligne
+        use_fill = status != "unchanged"
+        if use_fill:
+            pdf.set_fill_color(*fill_rgb)
+
         xrow = left
         yrow = pdf.get_y()
         pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[0], row_h, ref, border=1, align="C")
+        pdf.multi_cell(widths[0], row_h, ref_display, border=1, align="C", fill=use_fill)
         xrow += widths[0]
         pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[1], line_h, prod, border=1, align="L", max_line_height=line_h)
+        pdf.multi_cell(widths[1], line_h, prod, border=1, align="L",
+                       max_line_height=line_h, fill=use_fill)
         xrow += widths[1]
         pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[2], row_h, ddm, border=1, align="C")
+        pdf.multi_cell(widths[2], row_h, ddm, border=1, align="C", fill=use_fill)
         xrow += widths[2]
         pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[3], row_h, str(qc), border=1, align="C")
+        pdf.multi_cell(widths[3], row_h, cart_display, border=1, align="C", fill=use_fill)
         xrow += widths[3]
         pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[4], row_h, str(qp), border=1, align="C")
+        pdf.multi_cell(widths[4], row_h, str(qp), border=1, align="C", fill=use_fill)
         xrow += widths[4]
         pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[5], row_h, str(po), border=1, align="C")
+        pdf.multi_cell(widths[5], row_h, str(po), border=1, align="C", fill=use_fill)
         pdf.set_xy(left, yrow + row_h)
 
-    # Totaux
+    # Totaux — reset couleur grise pour cohérence avec en-tête
+    pdf.set_fill_color(*FILL_HEADER)
     pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(widths[0] + widths[1] + widths[2], 8, _txt("Totaux"), border=1, align="R")
-    pdf.cell(widths[3], 8, _txt(f"{tot_cart:,}".replace(",", " ")), border=1, align="C")
-    pdf.cell(widths[4], 8, _txt(f"{tot_pal:,}".replace(",", " ")), border=1, align="C")
-    pdf.cell(widths[5], 8, _txt(f"{tot_poids:,}".replace(",", " ")), border=1, align="C")
+    pdf.cell(widths[0] + widths[1] + widths[2], 8, _txt("Totaux"), border=1, align="R", fill=True)
+    pdf.cell(widths[3], 8, _txt(f"{tot_cart:,}".replace(",", " ")), border=1, align="C", fill=True)
+    pdf.cell(widths[4], 8, _txt(f"{tot_pal:,}".replace(",", " ")), border=1, align="C", fill=True)
+    pdf.cell(widths[5], 8, _txt(f"{tot_poids:,}".replace(",", " ")), border=1, align="C", fill=True)
+    pdf.ln()
+
+    # ---- Légende différentielle (uniquement en mode mise à jour) ----
+    if is_update and (added_count + modified_count) > 0:
+        pdf.ln(3)
+        pdf.set_x(left)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 5, _txt(
+            f"Recapitulatif de la mise a jour : {added_count} ligne(s) ajoutee(s), "
+            f"{modified_count} ligne(s) modifiee(s)."
+        ), ln=1)
+        # Petite légende visuelle
+        pdf.set_x(left)
+        pdf.set_fill_color(*FILL_ADDED)
+        pdf.cell(6, 5, "", border=1, fill=True)
+        pdf.cell(35, 5, _txt(" Nouvelle ligne"), ln=0)
+        pdf.set_fill_color(*FILL_MODIFIED)
+        pdf.cell(6, 5, "", border=1, fill=True)
+        pdf.cell(40, 5, _txt(" Ligne modifiee"), ln=1)
 
     # ---- Section Emballages à récupérer (optionnel)
     if packaging_lines:

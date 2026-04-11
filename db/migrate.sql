@@ -318,6 +318,19 @@ CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_date
 CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_created
   ON ramasse_history(tenant_id, created_at DESC);
 
+-- Édition / versioning / verrouillage chauffeur (ajout 2026-04)
+ALTER TABLE ramasse_history
+  ADD COLUMN IF NOT EXISTS version          INTEGER     NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS version_log      JSONB       NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS previous_lines   JSONB,
+  ADD COLUMN IF NOT EXISTS driver_passed    BOOLEAN     NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS driver_passed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS driver_passed_by UUID        REFERENCES users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS updated_at       TIMESTAMPTZ NOT NULL DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_driver_passed
+  ON ramasse_history(tenant_id, driver_passed, date_ramasse DESC);
+
 -- =========================
 -- Cache EasyBeer générique (JSONB)
 -- =========================
