@@ -443,130 +443,101 @@ def _render_objectives_section(
                                 f"color: {color}; font-weight: 700"
                             )
 
-    # ── Graphiques par enseigne ──────────────────────────────────
+    # ── Graphique récapitulatif par enseigne ────────────────────
     for brand in brands:
         enseignes = brand.get("enseignes") or []
         if not enseignes:
             continue
 
         section_title(
-            f"{brand.get('label', '?')} — détail par enseigne",
+            f"{brand.get('label', '?')} — CA {year} vs Objectif {year} (à date)",
             "storefront",
         )
 
         GREEN = COLORS["green"]
-        ERROR = COLORS["error"]
+        INK = COLORS["ink"]
+
+        # Préparer les données pour le graphique unique
+        ens_labels: list[str] = []
+        ca_realized_vals: list[int] = []
+        obj_ytd_vals: list[int] = []
 
         for ens in enseignes:
             ens_label = ens.get("label", ens.get("tag", "?"))
             ens_months = ens.get("months") or []
-            ca_ref = ens.get("ca_ref_total", 0)
             ca_real = ens.get("ca_realized", 0)
-            ens_target = ens.get("target", 0)
-            ens_pct = ens.get("progress_pct", 0)
-            ens_delta = ens.get("target_delta", 0)
-            ens_color = _progress_color(ens_pct)
             has_error = ens.get("_error", False)
 
-            # Calcul avance/retard YTD vs objectif
+            # Objectif YTD = somme des objectifs mensuels jusqu'au mois en cours
             obj_ytd = 0.0
-            for m_data in ens_months:
-                if m_data["month"] <= current_month:
-                    obj_ytd += m_data.get("objective", 0)
-            delta_vs_obj = ca_real - obj_ytd
-            if delta_vs_obj >= 0:
-                delta_label = f"+{delta_vs_obj:,.0f} € d'avance".replace(",", " ")
-                delta_color = GREEN
-            else:
-                delta_label = f"{delta_vs_obj:,.0f} € de retard".replace(",", " ")
-                delta_color = ERROR
+            if not has_error:
+                for m_data in ens_months:
+                    if m_data["month"] <= current_month:
+                        obj_ytd += m_data.get("objective", 0)
 
-            with ui.card().classes("w-full q-pa-none q-mb-md").props("flat"):
-                with ui.card_section().classes("q-pa-md"):
-                    # En-tête : nom enseigne + KPIs inline
-                    with ui.row().classes("w-full items-center gap-4 q-mb-sm"):
-                        ui.label(ens_label).classes("text-subtitle1").style(
-                            f"color: {COLORS['ink']}; font-weight: 600"
-                        )
-                        ui.space()
-                        if not has_error:
-                            ui.label(
-                                f"CA {year} : {_fmt_eur(ca_real)}"
-                            ).classes("text-body2").style(
-                                f"color: {COLORS['ink']}; font-weight: 500"
-                            )
-                            ui.label(
-                                f"/ {_fmt_eur(ens_target)}"
-                            ).classes("text-body2 text-grey-6")
-                            ui.label(delta_label).classes("text-body2").style(
-                                f"color: {delta_color}; font-weight: 700"
-                            )
+            ens_labels.append(ens_label)
+            ca_realized_vals.append(round(ca_real))
+            obj_ytd_vals.append(round(obj_ytd))
 
-                    if has_error or not ens_months:
-                        ui.label("Données indisponibles").classes(
-                            "text-caption text-grey-5 q-pa-sm"
-                        )
-                    else:
-                        # Graphique ECharts : 2 barres côte à côte + trait rouge objectif
-                        mois_labels = [m["label"][:3] + "." for m in ens_months]
-                        ca_ref_vals = [round(m.get("ca_ref", 0)) for m in ens_months]
-                        ca_year_vals = [round(m.get("ca_year", 0)) for m in ens_months]
-                        objective_vals = [round(m.get("objective", 0)) for m in ens_months]
-
-                        ui.echart({
-                            "tooltip": {
-                                "trigger": "axis",
-                                "axisPointer": {"type": "shadow"},
-                            },
-                            "legend": {
-                                "data": [
-                                    f"CA {year_ref}",
-                                    f"CA {year}",
-                                    f"Objectif {year}",
-                                ],
-                                "top": 5,
-                                "textStyle": {"fontSize": 11},
-                            },
-                            "grid": {
-                                "left": 70, "right": 20,
-                                "top": 40, "bottom": 30,
-                            },
-                            "xAxis": {
-                                "type": "category",
-                                "data": mois_labels,
-                            },
-                            "yAxis": {
-                                "type": "value",
-                                "axisLabel": {"formatter": "{value} €"},
-                            },
-                            "series": [
-                                {
-                                    "name": f"CA {year_ref}",
-                                    "type": "bar",
-                                    "data": ca_ref_vals,
-                                    "itemStyle": {"color": "#D1D5DB"},
-                                    "barGap": "10%",
-                                },
-                                {
-                                    "name": f"CA {year}",
-                                    "type": "bar",
-                                    "data": ca_year_vals,
-                                    "itemStyle": {"color": GREEN},
-                                },
-                                {
-                                    "name": f"Objectif {year}",
-                                    "type": "pictorialBar",
-                                    "symbol": "rect",
-                                    "symbolSize": ["80%", 3],
-                                    "symbolPosition": "end",
-                                    "symbolOffset": [0, -1],
-                                    "data": objective_vals,
-                                    "itemStyle": {"color": ERROR},
-                                    "barGap": "-100%",
-                                    "z": 20,
-                                },
-                            ],
-                        }).classes("w-full").style("height: 280px")
+        ui.echart({
+            "tooltip": {
+                "trigger": "axis",
+                "axisPointer": {"type": "shadow"},
+                "formatter": None,
+            },
+            "legend": {
+                "data": [
+                    f"CA {year} (réalisé)",
+                    f"Objectif {year} (à date)",
+                ],
+                "top": 5,
+                "textStyle": {"fontSize": 12},
+            },
+            "grid": {
+                "left": 80, "right": 30,
+                "top": 45, "bottom": 60,
+            },
+            "xAxis": {
+                "type": "category",
+                "data": ens_labels,
+                "axisLabel": {
+                    "rotate": 20,
+                    "fontSize": 11,
+                    "fontWeight": "bold",
+                },
+            },
+            "yAxis": {
+                "type": "value",
+                "axisLabel": {"formatter": "{value} €"},
+            },
+            "series": [
+                {
+                    "name": f"CA {year} (réalisé)",
+                    "type": "bar",
+                    "data": ca_realized_vals,
+                    "itemStyle": {"color": GREEN},
+                    "barGap": "10%",
+                    "label": {
+                        "show": True,
+                        "position": "top",
+                        "fontSize": 10,
+                        "formatter": "{c} €",
+                    },
+                },
+                {
+                    "name": f"Objectif {year} (à date)",
+                    "type": "bar",
+                    "data": obj_ytd_vals,
+                    "itemStyle": {"color": INK},
+                    "label": {
+                        "show": True,
+                        "position": "top",
+                        "fontSize": 10,
+                        "formatter": "{c} €",
+                    },
+                },
+            ],
+        }).classes("w-full").style("height: 420px")
 
 
 # ─── Tableau détaillé (réutilisable) ────────────────────────────────────────
