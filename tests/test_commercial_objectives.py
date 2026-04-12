@@ -93,13 +93,14 @@ class TestConfigLoading:
         symbiose = obj["brands"][0]
         assert symbiose["tag"] == "SYMBIOSE"
         assert symbiose["target_delta"] == 400_000
-        assert len(symbiose["enseignes"]) == 7
+        assert len(symbiose["enseignes"]) == 8
 
         # Vérifier les enseignes
         tags = [e["tag"] for e in symbiose["enseignes"]]
         assert "BIOCOOP" in tags
         assert "LVC" in tags
         assert "RELAISVERT" in tags
+        assert "SOBIO" in tags
 
         # Total deltas Symbiose = 400k
         total_delta = sum(e["target_delta"] for e in symbiose["enseignes"])

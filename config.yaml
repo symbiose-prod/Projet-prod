@@ -328,7 +328,8 @@ commercial:
           - { tag: "LVC",        label: "La Vie Claire",              target_delta: 25000 }
           - { tag: "OTERA",      label: "Otera",                      target_delta: 30000 }
           - { tag: "BIODIS",     label: "Biodis",                     target_delta: 20000 }
-          - { tag: "RELAISVERT", label: "Relais Vert (incl. Sobio)",  target_delta: 60000 }
+          - { tag: "RELAISVERT", label: "Relais Vert",                target_delta: 20000 }
+          - { tag: "SOBIO",      label: "Sobio",                      target_delta: 40000 }
           - { tag: "DELIBIO",    label: "Delibio",                    target_delta: 25000 }
       - tag: "NIKO"
         label: "Niko"
