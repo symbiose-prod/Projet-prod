@@ -468,6 +468,19 @@ def _render_objectives_section(
             ens_color = _progress_color(ens_pct)
             has_error = ens.get("_error", False)
 
+            # Calcul avance/retard YTD vs objectif
+            obj_ytd = 0.0
+            for m_data in ens_months:
+                if m_data["month"] <= current_month:
+                    obj_ytd += m_data.get("objective", 0)
+            delta_vs_obj = ca_real - obj_ytd
+            if delta_vs_obj >= 0:
+                delta_label = f"+{delta_vs_obj:,.0f} € d'avance".replace(",", " ")
+                delta_color = GREEN
+            else:
+                delta_label = f"{delta_vs_obj:,.0f} € de retard".replace(",", " ")
+                delta_color = ERROR
+
             with ui.card().classes("w-full q-pa-none q-mb-md").props("flat"):
                 with ui.card_section().classes("q-pa-md"):
                     # En-tête : nom enseigne + KPIs inline
@@ -485,8 +498,8 @@ def _render_objectives_section(
                             ui.label(
                                 f"/ {_fmt_eur(ens_target)}"
                             ).classes("text-body2 text-grey-6")
-                            ui.label(f"{ens_pct:.0f} %").classes("text-body2").style(
-                                f"color: {ens_color}; font-weight: 700"
+                            ui.label(delta_label).classes("text-body2").style(
+                                f"color: {delta_color}; font-weight: 700"
                             )
 
                     if has_error or not ens_months:
@@ -494,7 +507,7 @@ def _render_objectives_section(
                             "text-caption text-grey-5 q-pa-sm"
                         )
                     else:
-                        # Graphique ECharts
+                        # Graphique ECharts : 2 barres côte à côte + trait rouge objectif
                         mois_labels = [m["label"][:3] + "." for m in ens_months]
                         ca_ref_vals = [round(m.get("ca_ref", 0)) for m in ens_months]
                         ca_year_vals = [round(m.get("ca_year", 0)) for m in ens_months]
@@ -504,7 +517,6 @@ def _render_objectives_section(
                             "tooltip": {
                                 "trigger": "axis",
                                 "axisPointer": {"type": "shadow"},
-                                "formatter": None,  # default
                             },
                             "legend": {
                                 "data": [
@@ -533,7 +545,7 @@ def _render_objectives_section(
                                     "type": "bar",
                                     "data": ca_ref_vals,
                                     "itemStyle": {"color": "#D1D5DB"},
-                                    "barGap": "5%",
+                                    "barGap": "10%",
                                 },
                                 {
                                     "name": f"CA {year}",
@@ -543,16 +555,15 @@ def _render_objectives_section(
                                 },
                                 {
                                     "name": f"Objectif {year}",
-                                    "type": "bar",
+                                    "type": "pictorialBar",
+                                    "symbol": "rect",
+                                    "symbolSize": ["80%", 3],
+                                    "symbolPosition": "end",
+                                    "symbolOffset": [0, -1],
                                     "data": objective_vals,
-                                    "itemStyle": {
-                                        "color": "transparent",
-                                        "borderColor": ERROR,
-                                        "borderWidth": 2,
-                                        "borderType": "solid",
-                                    },
+                                    "itemStyle": {"color": ERROR},
                                     "barGap": "-100%",
-                                    "z": 10,
+                                    "z": 20,
                                 },
                             ],
                         }).classes("w-full").style("height: 280px")
