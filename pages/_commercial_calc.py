@@ -336,3 +336,185 @@ def fetch_ca_comparison_with_tag(
         "ca_cible": round(ca_cible, 2),
         "growth_rate": round(growth_rate * 100, 1),
     }
+
+
+# ─── Suivi objectifs par enseigne / marque ─────────────────────────────────
+
+def _fetch_ytd_for_tag(
+    tag: str,
+    year: int,
+    year_ref: int,
+    current_month: int,
+    current_day: int,
+    days_in_month: int,
+) -> dict[str, float]:
+    """Appel EasyBeer pour un tag et retourne {ca_ref, ca_realized}.
+
+    Un seul appel à get_ca_mensuel(year, tags=tag) retourne à la fois
+    les données mensuelles year ET year_ref (série de référence).
+    On calcule le cumul YTD à date pour les deux années.
+    """
+    from common.easybeer.indicators import get_ca_mensuel
+
+    data = get_ca_mensuel(year, include_avoir=True, include_carnet=True, tags=tag)
+    ca_year_monthly, ca_ref_monthly = _parse_monthly_series(data)
+
+    ca_ref_total = sum(ca_ref_monthly.get(m, 0.0) for m in range(1, 13))
+    ca_ref_ytd = 0.0
+    ca_realized = 0.0
+
+    for m in range(1, 13):
+        ref_m = ca_ref_monthly.get(m, 0.0)
+        year_m = ca_year_monthly.get(m, 0.0)
+
+        if m < current_month:
+            ca_ref_ytd += ref_m
+            ca_realized += year_m
+        elif m == current_month:
+            # Prorata du mois en cours pour la référence
+            ratio = current_day / days_in_month if days_in_month > 0 else 1.0
+            ca_ref_ytd += ref_m * ratio
+            ca_realized += year_m
+
+    return {
+        "ca_ref_total": round(ca_ref_total, 2),
+        "ca_ref_ytd": round(ca_ref_ytd, 2),
+        "ca_realized": round(ca_realized, 2),
+    }
+
+
+def compute_objective_progress(
+    ca_ref_total: float,
+    ca_realized: float,
+    target_delta: float,
+) -> dict[str, Any]:
+    """Calcule l'avancement d'un objectif (pur, sans API).
+
+    Retourne :
+    - target : CA objectif annuel = ca_ref_total + target_delta
+    - delta_realized : écart réalisé vs année ref = ca_realized - ca_ref_ytd (approximatif)
+    - progress_pct : avancement en % = ca_realized / target × 100
+    """
+    target = ca_ref_total + target_delta
+    progress_pct = round(ca_realized / target * 100, 1) if target > 0 else 0.0
+    return {
+        "target": round(target, 2),
+        "progress_pct": progress_pct,
+    }
+
+
+def fetch_objectives_tracking(
+    objectives_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Fetch le CA réalisé vs objectifs pour toutes les marques et enseignes.
+
+    Parallélise les appels EasyBeer (1 appel par tag : 2 marques + N enseignes).
+    Retourne une structure prête pour le rendu UI.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    obj = objectives_config
+    year = int(obj.get("year", 2026))
+    year_ref = int(obj.get("year_ref", 2025))
+    brands_cfg = obj.get("brands") or []
+
+    now = datetime.datetime.now(datetime.UTC)
+    today = now.date()
+    current_month = today.month
+    current_day = today.day
+    days_in_month = calendar.monthrange(year_ref, current_month)[1]
+
+    # Collecter toutes les tâches à exécuter en parallèle :
+    # (clé unique, tag, target_delta)
+    tasks: list[tuple[str, str, float]] = []
+    for brand in brands_cfg:
+        brand_key = f"brand:{brand['tag']}"
+        tasks.append((brand_key, brand["tag"], float(brand.get("target_delta", 0))))
+        for ens in brand.get("enseignes") or []:
+            ens_key = f"enseigne:{ens['tag']}"
+            tasks.append((ens_key, ens["tag"], float(ens.get("target_delta", 0))))
+
+    _log.info(
+        "Fetching objectives tracking: %d tags (year %d vs %d)",
+        len(tasks), year, year_ref,
+    )
+
+    # Exécuter en parallèle
+    results_by_key: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {}
+        for key, tag, delta in tasks:
+            fut = pool.submit(
+                _fetch_ytd_for_tag,
+                tag, year, year_ref, current_month, current_day, days_in_month,
+            )
+            futures[fut] = (key, tag, delta)
+
+        for fut in as_completed(futures):
+            key, tag, delta = futures[fut]
+            try:
+                ytd_data = fut.result()
+                progress = compute_objective_progress(
+                    ytd_data["ca_ref_total"],
+                    ytd_data["ca_realized"],
+                    delta,
+                )
+                results_by_key[key] = {
+                    **ytd_data,
+                    **progress,
+                    "tag": tag,
+                    "target_delta": delta,
+                }
+            except Exception:
+                _log.warning("Erreur fetch objectif tag=%s", tag, exc_info=True)
+                results_by_key[key] = {
+                    "tag": tag,
+                    "target_delta": delta,
+                    "ca_ref_total": 0.0,
+                    "ca_ref_ytd": 0.0,
+                    "ca_realized": 0.0,
+                    "target": delta,
+                    "progress_pct": 0.0,
+                    "_error": True,
+                }
+
+    # Structurer le résultat final
+    brands_result: list[dict[str, Any]] = []
+    for brand in brands_cfg:
+        brand_key = f"brand:{brand['tag']}"
+        brand_data = results_by_key.get(brand_key, {})
+
+        enseignes_result = []
+        for ens in brand.get("enseignes") or []:
+            ens_key = f"enseigne:{ens['tag']}"
+            ens_data = results_by_key.get(ens_key, {})
+            enseignes_result.append({
+                "tag": ens["tag"],
+                "label": ens.get("label", ens["tag"]),
+                "target_delta": ens.get("target_delta", 0),
+                **ens_data,
+            })
+
+        brands_result.append({
+            "tag": brand["tag"],
+            "label": brand.get("label", brand["tag"]),
+            "target_delta": brand.get("target_delta", 0),
+            **brand_data,
+            "enseignes": enseignes_result,
+        })
+
+    # Calcul global (somme des marques)
+    total_realized = sum(b.get("ca_realized", 0) for b in brands_result)
+    total_target = sum(b.get("target", 0) for b in brands_result)
+    total_pct = round(total_realized / total_target * 100, 1) if total_target > 0 else 0.0
+
+    return {
+        "year": year,
+        "year_ref": year_ref,
+        "current_month": current_month,
+        "current_day": current_day,
+        "brands": brands_result,
+        "total_realized": round(total_realized, 2),
+        "total_target": round(total_target, 2),
+        "total_progress_pct": total_pct,
+    }

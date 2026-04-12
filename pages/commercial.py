@@ -311,6 +311,252 @@ async def page_commercial():
 
             tag_btn.on_click(_load_tag_ca)
 
+        # ══════════════════════════════════════════════════════════════
+        # Section 4 : Objectifs annuels par marque / enseigne
+        # ══════════════════════════════════════════════════════════════
+        from common.data import get_commercial_config
+
+        comm_cfg = get_commercial_config()
+        obj_cfg = comm_cfg.get("objectives") or {}
+        obj_brands = obj_cfg.get("brands") or []
+
+        if obj_brands:
+            obj_year = obj_cfg.get("year", 2026)
+            obj_year_ref = obj_cfg.get("year_ref", 2025)
+
+            section_title(
+                f"Objectifs {obj_year} — suivi par enseigne", "flag",
+            )
+
+            # Conteneur pour le chargement asynchrone
+            obj_container = ui.column().classes("w-full gap-4")
+
+            with obj_container:
+                with ui.row().classes("w-full items-center gap-2 q-pa-md"):
+                    obj_spinner = ui.spinner("dots", size="md", color="green")
+                    ui.label("Chargement du suivi des objectifs...").classes(
+                        "text-caption text-grey-6"
+                    )
+
+            async def _load_objectives():
+                try:
+                    from pages._commercial_calc import fetch_objectives_tracking
+
+                    obj_result = await asyncio.to_thread(
+                        fetch_objectives_tracking, obj_cfg,
+                    )
+                except Exception as exc:
+                    _log.exception("Erreur chargement objectifs")
+                    obj_container.clear()
+                    with obj_container:
+                        ui.label(f"Erreur : {exc}").classes("text-negative q-pa-md")
+                    return
+
+                obj_container.clear()
+                with obj_container:
+                    _render_objectives_section(obj_result, obj_year, obj_year_ref)
+
+            # Lancer le chargement des objectifs
+            asyncio.ensure_future(_load_objectives())
+
+
+# ─── Objectifs — rendu UI ──────────────────────────────────────────────────
+
+def _progress_color(pct: float) -> str:
+    """Couleur de la jauge selon l'avancement."""
+    if pct >= 80:
+        return COLORS["green"]
+    if pct >= 50:
+        return COLORS["orange"]
+    return COLORS["error"]
+
+
+def _render_objectives_section(
+    data: dict[str, Any],
+    year: int,
+    year_ref: int,
+) -> None:
+    """Rendu complet de la section objectifs : KPIs par marque + tableau enseignes."""
+
+    brands = data.get("brands") or []
+
+    # ── KPI par marque (Symbiose / Niko) ────────────────────────
+    with ui.row().classes("w-full gap-4 q-mb-md"):
+        for brand in brands:
+            ca_realized = brand.get("ca_realized", 0)
+            target = brand.get("target", 0)
+            pct = brand.get("progress_pct", 0)
+            label = brand.get("label", brand.get("tag", "?"))
+            color = _progress_color(pct)
+            has_error = brand.get("_error", False)
+
+            with ui.card().classes("flex-1 q-pa-none").props("flat"):
+                with ui.card_section().classes("q-pa-md"):
+                    with ui.row().classes("items-center gap-3 q-mb-sm"):
+                        with ui.element("div").classes("q-pa-xs").style(
+                            f"background: {color}15; border-radius: 6px"
+                        ):
+                            ui.icon("flag", size="sm").style(f"color: {color}")
+                        ui.label(label).classes("text-subtitle1").style(
+                            f"color: {COLORS['ink']}; font-weight: 600"
+                        )
+
+                    if has_error:
+                        ui.label("Données indisponibles").classes(
+                            "text-caption text-negative"
+                        )
+                    else:
+                        # CA réalisé / objectif
+                        with ui.row().classes("items-baseline gap-2"):
+                            ui.label(_fmt_eur(ca_realized)).classes("text-h5").style(
+                                f"color: {COLORS['ink']}; font-weight: 700"
+                            )
+                            ui.label(f"/ {_fmt_eur(target)}").classes(
+                                "text-body2 text-grey-6"
+                            )
+
+                        # Barre de progression
+                        bar_pct = min(pct, 100)
+                        with ui.element("div").classes("w-full q-mt-sm").style(
+                            "background: #E5E7EB; border-radius: 4px; height: 8px; overflow: hidden"
+                        ):
+                            ui.element("div").style(
+                                f"width: {bar_pct}%; height: 100%; "
+                                f"background: {color}; border-radius: 4px; "
+                                f"transition: width 0.5s ease"
+                            )
+
+                        with ui.row().classes("w-full justify-between q-mt-xs"):
+                            delta_str = f"+{brand.get('target_delta', 0):,.0f} €".replace(",", " ")
+                            ui.label(f"Objectif : {delta_str} de croissance").classes(
+                                "text-caption text-grey-6"
+                            )
+                            ui.label(f"{pct:.0f} %").classes("text-caption").style(
+                                f"color: {color}; font-weight: 600"
+                            )
+
+    # ── Tableau par enseigne (pour chaque marque avec des enseignes) ──
+    for brand in brands:
+        enseignes = brand.get("enseignes") or []
+        if not enseignes:
+            continue
+
+        section_title(
+            f"{brand.get('label', '?')} — détail par enseigne",
+            "storefront",
+        )
+
+        columns = [
+            {"name": "label", "label": "Enseigne", "field": "label", "align": "left"},
+            {"name": "ca_ref", "label": f"CA {year_ref}", "field": "ca_ref", "align": "right"},
+            {"name": "target", "label": f"Objectif {year}", "field": "target", "align": "right"},
+            {"name": "ca_realized", "label": f"CA {year} (réalisé)", "field": "ca_realized", "align": "right"},
+            {"name": "delta", "label": "Delta", "field": "delta", "align": "right"},
+            {"name": "progress", "label": "Avancement", "field": "progress", "align": "center"},
+        ]
+
+        rows = []
+        for ens in enseignes:
+            ca_ref = ens.get("ca_ref_total", 0)
+            ca_real = ens.get("ca_realized", 0)
+            target = ens.get("target", 0)
+            pct = ens.get("progress_pct", 0)
+            delta = ca_real - ca_ref if ca_ref > 0 else ca_real
+            rows.append({
+                "label": ens.get("label", ens.get("tag", "?")),
+                "ca_ref": _fmt_eur(ca_ref),
+                "target": _fmt_eur(target),
+                "ca_realized": _fmt_eur(ca_real),
+                "delta": _fmt_eur(delta),
+                "_delta_raw": delta,
+                "_pct": pct,
+                "progress": f"{pct:.0f} %",
+            })
+
+        # Ligne TOTAL
+        tot_ref = sum(e.get("ca_ref_total", 0) for e in enseignes)
+        tot_real = sum(e.get("ca_realized", 0) for e in enseignes)
+        tot_target = sum(e.get("target", 0) for e in enseignes)
+        tot_delta = tot_real - tot_ref
+        tot_pct = round(tot_real / tot_target * 100, 1) if tot_target > 0 else 0.0
+        rows.append({
+            "label": "TOTAL",
+            "ca_ref": _fmt_eur(tot_ref),
+            "target": _fmt_eur(tot_target),
+            "ca_realized": _fmt_eur(tot_real),
+            "delta": _fmt_eur(tot_delta),
+            "_delta_raw": tot_delta,
+            "_pct": tot_pct,
+            "progress": f"{tot_pct:.0f} %",
+            "_is_total": True,
+        })
+
+        _GREEN = COLORS["green"]
+        _ERROR = COLORS["error"]
+        _ORANGE = COLORS["orange"]
+
+        table = ui.table(
+            columns=columns,
+            rows=rows,
+            row_key="label",
+            pagination={"rowsPerPage": 0},
+        ).classes("w-full").props("flat bordered dense")
+
+        table.add_slot("body", r'''
+            <q-tr :props="props"
+                   :style="props.row._is_total
+                     ? 'background: #F0FDF4; font-weight: 700; border-top: 2px solid ''' + _GREEN + r''';'
+                     : ''">
+                <q-td v-for="col in props.cols" :key="col.name" :props="props"
+                      :style="'text-align: ' + col.align">
+                    <template v-if="col.name === 'delta'">
+                        <span :style="{
+                            color: props.row._delta_raw > 0
+                                ? '''' + _GREEN + r''''
+                                : props.row._delta_raw < 0
+                                    ? '''' + _ERROR + r''''
+                                    : '#6B7280',
+                            fontWeight: 600,
+                        }">
+                            {{ props.row[col.field] }}
+                        </span>
+                    </template>
+                    <template v-else-if="col.name === 'progress'">
+                        <div style="display: flex; align-items: center; gap: 8px; min-width: 120px">
+                            <div style="flex: 1; background: #E5E7EB; border-radius: 4px; height: 6px; overflow: hidden">
+                                <div :style="{
+                                    width: Math.min(props.row._pct, 100) + '%',
+                                    height: '100%',
+                                    borderRadius: '4px',
+                                    background: props.row._pct >= 80
+                                        ? '''' + _GREEN + r''''
+                                        : props.row._pct >= 50
+                                            ? '''' + _ORANGE + r''''
+                                            : '''' + _ERROR + r'''',
+                                }" />
+                            </div>
+                            <span :style="{
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                color: props.row._pct >= 80
+                                    ? '''' + _GREEN + r''''
+                                    : props.row._pct >= 50
+                                        ? '''' + _ORANGE + r''''
+                                        : '''' + _ERROR + r'''',
+                                minWidth: '40px',
+                                textAlign: 'right',
+                            }">
+                                {{ props.row.progress }}
+                            </span>
+                        </div>
+                    </template>
+                    <template v-else>
+                        {{ props.row[col.field] }}
+                    </template>
+                </q-td>
+            </q-tr>
+        ''')
+
 
 # ─── Tableau détaillé (réutilisable) ────────────────────────────────────────
 

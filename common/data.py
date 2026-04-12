@@ -61,6 +61,7 @@ def invalidate_config_cache() -> None:
     get_business_config.cache_clear()
     get_stocks_config.cache_clear()
     get_security_config.cache_clear()
+    get_commercial_config.cache_clear()
     get_paths.cache_clear()
     _read_table_cached.cache_clear()
     _read_flavor_map_cached.cache_clear()
@@ -96,6 +97,22 @@ def get_security_config() -> dict[str, Any]:
     cfg = load_config()
     sec = cfg.get("security", {})
     return {**_SECURITY_DEFAULTS, **sec}
+
+
+_COMMERCIAL_DEFAULTS: dict[str, Any] = {
+    "objectives": {
+        "year": 2026,
+        "year_ref": 2025,
+        "brands": [],
+    },
+}
+
+
+@lru_cache(maxsize=1)
+def get_commercial_config() -> dict[str, Any]:
+    """Retourne la section 'commercial' de config.yaml avec valeurs par défaut."""
+    cfg = load_config()
+    return {**_COMMERCIAL_DEFAULTS, **cfg.get("commercial", {})}
 
 
 @lru_cache(maxsize=1)

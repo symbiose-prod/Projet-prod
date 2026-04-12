@@ -311,6 +311,30 @@ stocks:
 
   ungrouped_label: "Autres contenants"
 
+# ─── Commercial — Objectifs annuels ───────────────────────────────────────────
+# Les deltas (target_delta) sont les objectifs de croissance vs l'année de référence.
+# Le CA de référence est récupéré automatiquement depuis EasyBeer.
+commercial:
+  objectives:
+    year: 2026
+    year_ref: 2025
+    brands:
+      - tag: "SYMBIOSE"
+        label: "Symbiose"
+        target_delta: 400000
+        enseignes:
+          - { tag: "BIOCOOP",    label: "Biocoop",                    target_delta: 190000 }
+          - { tag: "NATURALIA",  label: "Naturalia",                  target_delta: 50000 }
+          - { tag: "LVC",        label: "La Vie Claire",              target_delta: 25000 }
+          - { tag: "OTERA",      label: "Otera",                      target_delta: 30000 }
+          - { tag: "BIODIS",     label: "Biodis",                     target_delta: 20000 }
+          - { tag: "RELAISVERT", label: "Relais Vert (incl. Sobio)",  target_delta: 60000 }
+          - { tag: "DELIBIO",    label: "Delibio",                    target_delta: 25000 }
+      - tag: "NIKO"
+        label: "Niko"
+        target_delta: 600000
+        enseignes: []
+
 # ─── Sécurité ─────────────────────────────────────────────────────────────────
 security:
   min_password_length: 10
