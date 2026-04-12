@@ -340,19 +340,24 @@ def fetch_ca_comparison_with_tag(
 
 # ─── Suivi objectifs par enseigne / marque ─────────────────────────────────
 
-def _fetch_ytd_for_tag(
+def _fetch_monthly_for_tag(
     tag: str,
     year: int,
     year_ref: int,
     current_month: int,
     current_day: int,
     days_in_month: int,
-) -> dict[str, float]:
-    """Appel EasyBeer pour un tag et retourne {ca_ref, ca_realized}.
+    target_delta: float = 0.0,
+) -> dict[str, Any]:
+    """Appel EasyBeer pour un tag → données mensuelles complètes + YTD.
 
-    Un seul appel à get_ca_mensuel(year, tags=tag) retourne à la fois
-    les données mensuelles year ET year_ref (série de référence).
-    On calcule le cumul YTD à date pour les deux années.
+    Un seul appel à get_ca_mensuel(year, tags=tag) retourne les données
+    mensuelles year ET year_ref (série de référence).
+
+    Calcule aussi l'objectif mensuel proportionnel :
+        objectif_mois_m = target_annual × (ca_ref_m / ca_ref_total)
+
+    Retourne {ca_ref_total, ca_ref_ytd, ca_realized, months: [{month, ca_ref, ca_year, objective}, ...]}.
     """
     from common.easybeer.indicators import get_ca_mensuel
 
@@ -360,18 +365,36 @@ def _fetch_ytd_for_tag(
     ca_year_monthly, ca_ref_monthly = _parse_monthly_series(data)
 
     ca_ref_total = sum(ca_ref_monthly.get(m, 0.0) for m in range(1, 13))
+    target_annual = ca_ref_total + target_delta
+
     ca_ref_ytd = 0.0
     ca_realized = 0.0
+    months: list[dict[str, Any]] = []
 
     for m in range(1, 13):
         ref_m = ca_ref_monthly.get(m, 0.0)
         year_m = ca_year_monthly.get(m, 0.0)
 
+        # Objectif mensuel proportionnel : target_annual × (ref_m / ref_total)
+        if ca_ref_total > 0:
+            objective_m = target_annual * (ref_m / ca_ref_total)
+        else:
+            # Pas de CA ref → répartition linéaire
+            objective_m = target_annual / 12
+
+        months.append({
+            "month": m,
+            "label": _MOIS_LABELS[m],
+            "ca_ref": round(ref_m, 2),
+            "ca_year": round(year_m, 2),
+            "objective": round(objective_m, 2),
+        })
+
+        # Cumul YTD à date
         if m < current_month:
             ca_ref_ytd += ref_m
             ca_realized += year_m
         elif m == current_month:
-            # Prorata du mois en cours pour la référence
             ratio = current_day / days_in_month if days_in_month > 0 else 1.0
             ca_ref_ytd += ref_m * ratio
             ca_realized += year_m
@@ -380,6 +403,7 @@ def _fetch_ytd_for_tag(
         "ca_ref_total": round(ca_ref_total, 2),
         "ca_ref_ytd": round(ca_ref_ytd, 2),
         "ca_realized": round(ca_realized, 2),
+        "months": months,
     }
 
 
@@ -424,7 +448,7 @@ def fetch_objectives_tracking(
     current_day = today.day
     days_in_month = calendar.monthrange(year_ref, current_month)[1]
 
-    # Collecter toutes les tâches à exécuter en parallèle :
+    # Collecter toutes les tâches à exécuter :
     # (clé unique, tag, target_delta)
     tasks: list[tuple[str, str, float]] = []
     for brand in brands_cfg:
@@ -439,28 +463,29 @@ def fetch_objectives_tracking(
         len(tasks), year, year_ref,
     )
 
-    # Exécuter en parallèle
+    # Exécuter en parallèle — max_workers=2 pour respecter le rate-limit EasyBeer
     results_by_key: dict[str, dict] = {}
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         futures = {}
         for key, tag, delta in tasks:
             fut = pool.submit(
-                _fetch_ytd_for_tag,
+                _fetch_monthly_for_tag,
                 tag, year, year_ref, current_month, current_day, days_in_month,
+                delta,
             )
             futures[fut] = (key, tag, delta)
 
         for fut in as_completed(futures):
             key, tag, delta = futures[fut]
             try:
-                ytd_data = fut.result()
+                monthly_data = fut.result()
                 progress = compute_objective_progress(
-                    ytd_data["ca_ref_total"],
-                    ytd_data["ca_realized"],
+                    monthly_data["ca_ref_total"],
+                    monthly_data["ca_realized"],
                     delta,
                 )
                 results_by_key[key] = {
-                    **ytd_data,
+                    **monthly_data,
                     **progress,
                     "tag": tag,
                     "target_delta": delta,
@@ -473,6 +498,7 @@ def fetch_objectives_tracking(
                     "ca_ref_total": 0.0,
                     "ca_ref_ytd": 0.0,
                     "ca_realized": 0.0,
+                    "months": [],
                     "target": delta,
                     "progress_pct": 0.0,
                     "_error": True,

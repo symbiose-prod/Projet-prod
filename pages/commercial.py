@@ -376,19 +376,22 @@ def _render_objectives_section(
     year: int,
     year_ref: int,
 ) -> None:
-    """Rendu complet de la section objectifs : KPIs par marque + tableau enseignes."""
+    """Rendu complet de la section objectifs : KPIs par marque + graphiques par enseigne."""
 
     brands = data.get("brands") or []
+    current_month = data.get("current_month", 1)
 
     # ── KPI par marque (Symbiose / Niko) ────────────────────────
-    with ui.row().classes("w-full gap-4 q-mb-md"):
+    with ui.row().classes("w-full gap-4 q-mb-lg"):
         for brand in brands:
             ca_realized = brand.get("ca_realized", 0)
+            ca_ref_total = brand.get("ca_ref_total", 0)
             target = brand.get("target", 0)
             pct = brand.get("progress_pct", 0)
             label = brand.get("label", brand.get("tag", "?"))
             color = _progress_color(pct)
             has_error = brand.get("_error", False)
+            target_delta = brand.get("target_delta", 0)
 
             with ui.card().classes("flex-1 q-pa-none").props("flat"):
                 with ui.card_section().classes("q-pa-md"):
@@ -402,7 +405,7 @@ def _render_objectives_section(
                         )
 
                     if has_error:
-                        ui.label("Données indisponibles").classes(
+                        ui.label("Données indisponibles (erreur API EasyBeer)").classes(
                             "text-caption text-negative"
                         )
                     else:
@@ -426,16 +429,21 @@ def _render_objectives_section(
                                 f"transition: width 0.5s ease"
                             )
 
-                        with ui.row().classes("w-full justify-between q-mt-xs"):
-                            delta_str = f"+{brand.get('target_delta', 0):,.0f} €".replace(",", " ")
-                            ui.label(f"Objectif : {delta_str} de croissance").classes(
-                                "text-caption text-grey-6"
-                            )
-                            ui.label(f"{pct:.0f} %").classes("text-caption").style(
-                                f"color: {color}; font-weight: 600"
+                        # Détails sous la barre
+                        with ui.row().classes("w-full justify-between q-mt-sm"):
+                            with ui.column().classes("gap-0"):
+                                delta_str = f"+{target_delta:,.0f} €".replace(",", " ")
+                                ui.label(f"Objectif croissance : {delta_str}").classes(
+                                    "text-caption text-grey-6"
+                                )
+                                ui.label(
+                                    f"CA {year_ref} : {_fmt_eur(ca_ref_total)}"
+                                ).classes("text-caption text-grey-5")
+                            ui.label(f"{pct:.0f} %").classes("text-h6").style(
+                                f"color: {color}; font-weight: 700"
                             )
 
-    # ── Tableau par enseigne (pour chaque marque avec des enseignes) ──
+    # ── Graphiques par enseigne ──────────────────────────────────
     for brand in brands:
         enseignes = brand.get("enseignes") or []
         if not enseignes:
@@ -446,116 +454,108 @@ def _render_objectives_section(
             "storefront",
         )
 
-        columns = [
-            {"name": "label", "label": "Enseigne", "field": "label", "align": "left"},
-            {"name": "ca_ref", "label": f"CA {year_ref}", "field": "ca_ref", "align": "right"},
-            {"name": "target", "label": f"Objectif {year}", "field": "target", "align": "right"},
-            {"name": "ca_realized", "label": f"CA {year} (réalisé)", "field": "ca_realized", "align": "right"},
-            {"name": "delta", "label": "Delta", "field": "delta", "align": "right"},
-            {"name": "progress", "label": "Avancement", "field": "progress", "align": "center"},
-        ]
+        GREEN = COLORS["green"]
+        ERROR = COLORS["error"]
 
-        rows = []
         for ens in enseignes:
+            ens_label = ens.get("label", ens.get("tag", "?"))
+            ens_months = ens.get("months") or []
             ca_ref = ens.get("ca_ref_total", 0)
             ca_real = ens.get("ca_realized", 0)
-            target = ens.get("target", 0)
-            pct = ens.get("progress_pct", 0)
-            delta = ca_real - ca_ref if ca_ref > 0 else ca_real
-            rows.append({
-                "label": ens.get("label", ens.get("tag", "?")),
-                "ca_ref": _fmt_eur(ca_ref),
-                "target": _fmt_eur(target),
-                "ca_realized": _fmt_eur(ca_real),
-                "delta": _fmt_eur(delta),
-                "_delta_raw": delta,
-                "_pct": pct,
-                "progress": f"{pct:.0f} %",
-            })
+            ens_target = ens.get("target", 0)
+            ens_pct = ens.get("progress_pct", 0)
+            ens_delta = ens.get("target_delta", 0)
+            ens_color = _progress_color(ens_pct)
+            has_error = ens.get("_error", False)
 
-        # Ligne TOTAL
-        tot_ref = sum(e.get("ca_ref_total", 0) for e in enseignes)
-        tot_real = sum(e.get("ca_realized", 0) for e in enseignes)
-        tot_target = sum(e.get("target", 0) for e in enseignes)
-        tot_delta = tot_real - tot_ref
-        tot_pct = round(tot_real / tot_target * 100, 1) if tot_target > 0 else 0.0
-        rows.append({
-            "label": "TOTAL",
-            "ca_ref": _fmt_eur(tot_ref),
-            "target": _fmt_eur(tot_target),
-            "ca_realized": _fmt_eur(tot_real),
-            "delta": _fmt_eur(tot_delta),
-            "_delta_raw": tot_delta,
-            "_pct": tot_pct,
-            "progress": f"{tot_pct:.0f} %",
-            "_is_total": True,
-        })
+            with ui.card().classes("w-full q-pa-none q-mb-md").props("flat"):
+                with ui.card_section().classes("q-pa-md"):
+                    # En-tête : nom enseigne + KPIs inline
+                    with ui.row().classes("w-full items-center gap-4 q-mb-sm"):
+                        ui.label(ens_label).classes("text-subtitle1").style(
+                            f"color: {COLORS['ink']}; font-weight: 600"
+                        )
+                        ui.space()
+                        if not has_error:
+                            ui.label(
+                                f"CA {year} : {_fmt_eur(ca_real)}"
+                            ).classes("text-body2").style(
+                                f"color: {COLORS['ink']}; font-weight: 500"
+                            )
+                            ui.label(
+                                f"/ {_fmt_eur(ens_target)}"
+                            ).classes("text-body2 text-grey-6")
+                            ui.label(f"{ens_pct:.0f} %").classes("text-body2").style(
+                                f"color: {ens_color}; font-weight: 700"
+                            )
 
-        _GREEN = COLORS["green"]
-        _ERROR = COLORS["error"]
-        _ORANGE = COLORS["orange"]
+                    if has_error or not ens_months:
+                        ui.label("Données indisponibles").classes(
+                            "text-caption text-grey-5 q-pa-sm"
+                        )
+                    else:
+                        # Graphique ECharts
+                        mois_labels = [m["label"][:3] + "." for m in ens_months]
+                        ca_ref_vals = [round(m.get("ca_ref", 0)) for m in ens_months]
+                        ca_year_vals = [round(m.get("ca_year", 0)) for m in ens_months]
+                        objective_vals = [round(m.get("objective", 0)) for m in ens_months]
 
-        table = ui.table(
-            columns=columns,
-            rows=rows,
-            row_key="label",
-            pagination={"rowsPerPage": 0},
-        ).classes("w-full").props("flat bordered dense")
-
-        table.add_slot("body", r'''
-            <q-tr :props="props"
-                   :style="props.row._is_total
-                     ? 'background: #F0FDF4; font-weight: 700; border-top: 2px solid ''' + _GREEN + r''';'
-                     : ''">
-                <q-td v-for="col in props.cols" :key="col.name" :props="props"
-                      :style="'text-align: ' + col.align">
-                    <template v-if="col.name === 'delta'">
-                        <span :style="{
-                            color: props.row._delta_raw > 0
-                                ? '''' + _GREEN + r''''
-                                : props.row._delta_raw < 0
-                                    ? '''' + _ERROR + r''''
-                                    : '#6B7280',
-                            fontWeight: 600,
-                        }">
-                            {{ props.row[col.field] }}
-                        </span>
-                    </template>
-                    <template v-else-if="col.name === 'progress'">
-                        <div style="display: flex; align-items: center; gap: 8px; min-width: 120px">
-                            <div style="flex: 1; background: #E5E7EB; border-radius: 4px; height: 6px; overflow: hidden">
-                                <div :style="{
-                                    width: Math.min(props.row._pct, 100) + '%',
-                                    height: '100%',
-                                    borderRadius: '4px',
-                                    background: props.row._pct >= 80
-                                        ? '''' + _GREEN + r''''
-                                        : props.row._pct >= 50
-                                            ? '''' + _ORANGE + r''''
-                                            : '''' + _ERROR + r'''',
-                                }" />
-                            </div>
-                            <span :style="{
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                color: props.row._pct >= 80
-                                    ? '''' + _GREEN + r''''
-                                    : props.row._pct >= 50
-                                        ? '''' + _ORANGE + r''''
-                                        : '''' + _ERROR + r'''',
-                                minWidth: '40px',
-                                textAlign: 'right',
-                            }">
-                                {{ props.row.progress }}
-                            </span>
-                        </div>
-                    </template>
-                    <template v-else>
-                        {{ props.row[col.field] }}
-                    </template>
-                </q-td>
-            </q-tr>
-        ''')
+                        ui.echart({
+                            "tooltip": {
+                                "trigger": "axis",
+                                "axisPointer": {"type": "shadow"},
+                                "formatter": None,  # default
+                            },
+                            "legend": {
+                                "data": [
+                                    f"CA {year_ref}",
+                                    f"CA {year}",
+                                    f"Objectif {year}",
+                                ],
+                                "top": 5,
+                                "textStyle": {"fontSize": 11},
+                            },
+                            "grid": {
+                                "left": 70, "right": 20,
+                                "top": 40, "bottom": 30,
+                            },
+                            "xAxis": {
+                                "type": "category",
+                                "data": mois_labels,
+                            },
+                            "yAxis": {
+                                "type": "value",
+                                "axisLabel": {"formatter": "{value} €"},
+                            },
+                            "series": [
+                                {
+                                    "name": f"CA {year_ref}",
+                                    "type": "bar",
+                                    "data": ca_ref_vals,
+                                    "itemStyle": {"color": "#D1D5DB"},
+                                    "barGap": "5%",
+                                },
+                                {
+                                    "name": f"CA {year}",
+                                    "type": "bar",
+                                    "data": ca_year_vals,
+                                    "itemStyle": {"color": GREEN},
+                                },
+                                {
+                                    "name": f"Objectif {year}",
+                                    "type": "bar",
+                                    "data": objective_vals,
+                                    "itemStyle": {
+                                        "color": "transparent",
+                                        "borderColor": ERROR,
+                                        "borderWidth": 2,
+                                        "borderType": "solid",
+                                    },
+                                    "barGap": "-100%",
+                                    "z": 10,
+                                },
+                            ],
+                        }).classes("w-full").style("height: 280px")
 
 
 # ─── Tableau détaillé (réutilisable) ────────────────────────────────────────
