@@ -50,6 +50,7 @@ from common.ramasse_grid import (
 )
 from common.ramasse_history import (
     count_ramasses,
+    delete_ramasse,
     get_last_packaging_for_dest,
     get_ramasse,
     list_ramasses,
@@ -906,8 +907,8 @@ async def page_ramasse():
                             # ── Sujet + corps email : v1 ou v2+ ──
                             if is_update:
                                 subject = (
-                                    f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station "
-                                    f"(MISE À JOUR v{next_version})"
+                                    f"Mise à jour de la ramasse du {d:%d/%m/%Y} "
+                                    f"— Ferment Station (v{next_version})"
                                 )
                             else:
                                 subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
@@ -925,21 +926,22 @@ async def page_ramasse():
                                 )
 
                             if is_update:
-                                # Corps v2+ : mention explicite de la mise à jour
+                                # Corps v2+ : mise à jour d'une ramasse existante
                                 body = f"""
                                 <p>Bonjour,</p>
-                                <p>Nous vous adressons une <strong>version mise à jour</strong>
-                                de notre demande de ramasse pour le <strong>{d:%d/%m/%Y}</strong>
-                                (version {next_version}).</p>
-                                <p>Total actuel : <strong>{tot_palettes}</strong>
+                                <p>Nous vous envoyons une <strong>mise à jour</strong> de la ramasse
+                                prévue pour le <strong>{d:%d/%m/%Y}</strong> (version {next_version}).</p>
+                                <p>Nouveau total : <strong>{tot_palettes}</strong>
                                 palette{'s' if tot_palettes != 1 else ''}
                                 ({tot_cartons} cartons).</p>
-                                <p>Le PDF ci-joint fait apparaître les modifications :
+                                <p>Merci de bien vouloir tenir compte de cette version qui
+                                <strong>remplace</strong> la précédente. Le PDF ci-joint fait
+                                apparaître les changements :
                                 <strong>nouvelles lignes en jaune</strong>,
                                 <strong>lignes modifiées en bleu</strong>
                                 (avec l'ancien nombre de cartons indiqué).</p>
                                 {pkg_html}
-                                <p>Merci,<br>Bon après-midi.</p>
+                                <p>Merci pour votre compréhension,<br>Bonne journée.</p>
                                 <hr>
                                 <p><strong>Ferment Station</strong><br>
                                 Producteur de boissons fermentées<br>
@@ -1330,7 +1332,7 @@ async def page_ramasse():
                             </q-td>
                         ''')
 
-                        # Slot actions : Modifier + Chauffeur passé (si non livrée) + PDF + Renvoyer
+                        # Slot actions : Modifier + Chauffeur passé (si non livrée) + PDF + Renvoyer + Supprimer
                         ht.add_slot("body-cell-actions", r'''
                             <q-td :props="props" style="text-align: center">
                                 <q-btn v-if="!props.row.driver_passed"
@@ -1350,6 +1352,10 @@ async def page_ramasse():
                                 <q-btn flat round dense icon="forward_to_inbox" size="sm" color="blue-8"
                                     @click="() => $parent.$emit('resend_hist', {id: props.row.id})" >
                                     <q-tooltip>Renvoyer par email</q-tooltip>
+                                </q-btn>
+                                <q-btn flat round dense icon="delete" size="sm" color="red-7"
+                                    @click="() => $parent.$emit('delete_hist', {id: props.row.id, date: props.row.date, dest: props.row.dest})" >
+                                    <q-tooltip>Supprimer cette ramasse</q-tooltip>
                                 </q-btn>
                             </q-td>
                         ''')
@@ -1444,10 +1450,51 @@ async def page_ramasse():
                                               on_click=_confirm).props("color=green-7 unelevated")
                             dlg.open()
 
+                        async def _on_delete_hist(e):
+                            rid = e.args.get("id")
+                            date_str = e.args.get("date", "?")
+                            dest_str = e.args.get("dest", "?")
+                            # Dialogue de confirmation (action irréversible)
+                            with ui.dialog() as dlg, ui.card():
+                                ui.label("Supprimer cette ramasse ?").classes("text-h6")
+                                ui.label(
+                                    f"Ramasse du {date_str} — {dest_str}"
+                                ).classes("text-body2").style(
+                                    f"color: {COLORS['ink']}; font-weight: 500"
+                                )
+                                ui.label(
+                                    "Cette action est irréversible : la ramasse, son PDF et "
+                                    "tout son historique seront définitivement supprimés."
+                                ).classes("text-caption text-negative q-mt-sm")
+                                with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                                    ui.button("Annuler", on_click=dlg.close).props("flat")
+                                    async def _confirm_delete():
+                                        dlg.close()
+                                        try:
+                                            ok = await asyncio.to_thread(delete_ramasse, rid)
+                                            if ok:
+                                                ui.notify(
+                                                    "Ramasse supprimée.",
+                                                    type="positive", icon="delete",
+                                                )
+                                                _refresh_history()
+                                            else:
+                                                ui.notify(
+                                                    "Ramasse introuvable.",
+                                                    type="warning",
+                                                )
+                                        except Exception:
+                                            _log.warning("Erreur suppression ramasse", exc_info=True)
+                                            ui.notify("Erreur lors de la suppression.", type="negative")
+                                    ui.button("Supprimer", icon="delete",
+                                              on_click=_confirm_delete).props("color=red-7 unelevated")
+                            dlg.open()
+
                         ht.on("download_hist_pdf", _on_download_hist_pdf)
                         ht.on("resend_hist", _on_resend_hist)
                         ht.on("edit_hist", _on_edit_hist)
                         ht.on("mark_driver_passed", _on_mark_driver_passed)
+                        ht.on("delete_hist", _on_delete_hist)
 
                     hist_exp.on_value_change(lambda e: _load_history_data() if e.value else None)
 

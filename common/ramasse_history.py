@@ -298,6 +298,32 @@ def mark_driver_passed(
     return False
 
 
+def delete_ramasse(
+    ramasse_id: str,
+    tenant_id: str | None = None,
+) -> bool:
+    """Supprime définitivement une ramasse de l'historique.
+
+    Retourne ``True`` si l'enregistrement a bien été supprimé, ``False`` sinon
+    (ramasse introuvable ou appartenant à un autre tenant). La suppression est
+    **hard delete** — l'enregistrement est retiré de la table, PDF compris.
+    """
+    tid = tenant_id or current_tenant_id()
+    rows = run_sql(
+        """
+        DELETE FROM ramasse_history
+        WHERE id = :rid AND tenant_id = :tid
+        RETURNING id
+        """,
+        {"rid": ramasse_id, "tid": tid},
+    )
+    if rows:
+        _log.info("Ramasse supprimée: id=%s", ramasse_id)
+        return True
+    _log.warning("delete_ramasse: ramasse introuvable id=%s", ramasse_id)
+    return False
+
+
 def get_last_packaging_for_dest(
     destinataire: str,
     tenant_id: str | None = None,
