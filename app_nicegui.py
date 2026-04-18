@@ -140,6 +140,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     user_store.clear()
                     return RedirectResponse(url="/login")
 
+        # ── Hardening multi-tenant : refuser toute session authentifiée
+        # sans tenant_id. Protège contre fuite inter-tenant si le storage
+        # est corrompu ou manipulé. Attache tenant_id à request.state pour
+        # les routes FastAPI (ex: /api/sync) qui ne peuvent pas lire app.storage.
+        _tid = user_store.get("tenant_id")
+        if not _tid or not str(_tid).strip():
+            _log.error(
+                "Session authentifiée sans tenant_id — logout forcé pour %s",
+                user_store.get("email") or "?",
+            )
+            user_store.clear()
+            return RedirectResponse(url="/login")
+        request.state.tenant_id = str(_tid)
+
         # ── Process request ──
         response = await call_next(request)
 
