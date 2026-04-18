@@ -971,6 +971,51 @@ async def page_production():
             else:
                 df_in_filtered = df_in.copy()
 
+            # ── Récap paramètres (visible pendant le calcul) ──────────
+            main_container.clear()
+            with main_container:
+                with ui.card().classes("w-full").props("flat bordered").style(
+                    f"border-left: 4px solid {COLORS['green']}"
+                ):
+                    with ui.card_section().classes("q-pa-md"):
+                        with ui.row().classes("items-center gap-2 q-mb-sm"):
+                            ui.icon("tune", size="sm").style(f"color: {COLORS['green']}")
+                            ui.label("Calcul en cours — paramètres").classes(
+                                "text-subtitle2"
+                            ).style(f"color: {COLORS['ink']}")
+                        with ui.row().classes("gap-x-6 gap-y-1 text-body2 q-mt-xs"):
+                            ui.html(f"<b>Mode :</b> {mode_prod}")
+                            ui.html(f"<b>Goûts :</b> {effective_nb_gouts}")
+                            ui.html(
+                                f"<b>Répartition :</b> "
+                                f"{'pro-rata ventes' if repartir_pro_rv else 'égale'}"
+                            )
+                            if include_planned_cb.value:
+                                ui.html("<b>Planifié :</b> inclus dans stock")
+                        if split_volumes and split_flavor_order:
+                            _sv1, _sv2 = int(split_volumes[0]), int(split_volumes[1])
+                            _sfa, _sfb = split_flavor_order[0], split_flavor_order[1]
+                            ui.html(
+                                f"<b>Split :</b> {_sfa} ({_sv1} L) / {_sfb} ({_sv2} L)"
+                            ).classes("text-body2 q-mt-xs")
+                        if forced_gouts:
+                            ui.html(
+                                f"<b>Goûts forcés :</b> {', '.join(forced_gouts)}"
+                            ).classes("text-body2 q-mt-xs text-grey-8")
+                        if excluded_gouts:
+                            ui.html(
+                                f"<b>Goûts exclus :</b> {', '.join(excluded_gouts)}"
+                            ).classes("text-body2 q-mt-xs text-grey-8")
+                        if excluded_products:
+                            ui.html(
+                                f"<b>Produits exclus :</b> {len(excluded_products)} "
+                                f"({', '.join(excluded_products[:3])}"
+                                f"{'…' if len(excluded_products) > 3 else ''})"
+                            ).classes("text-body2 q-mt-xs text-grey-8")
+                ui.spinner("dots", size="xl", color="green-8").classes(
+                    "self-center q-pa-lg"
+                )
+
             # ── Calcul lourd dans le thread pool ──────────────────────
             try:
                 _result = await asyncio.wait_for(

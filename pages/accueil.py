@@ -159,8 +159,11 @@ def page_accueil():
                             cancel_btn.set_visibility(True)
                             status_label.set_visibility(False)
                             try:
+                                import time as _t
+
                                 from common.easybeer import get_autonomie_stocks_excel
                                 days = int(period_radio.value or 30)
+                                _t0 = _t.monotonic()
                                 xls_bytes = await asyncio.wait_for(
                                     asyncio.to_thread(get_autonomie_stocks_excel, days),
                                     timeout=45,
@@ -168,6 +171,7 @@ def page_accueil():
                                 if _cancelled["v"]:
                                     return
                                 df, period = read_input_excel_and_period_from_bytes(xls_bytes)
+                                elapsed = _t.monotonic() - _t0
                                 state["imported"] = True
                                 state["source"] = "EasyBeer"
                                 state["rows"] = len(df)
@@ -176,7 +180,10 @@ def page_accueil():
                                 status_label.text = f"Importé : {len(df)} lignes depuis EasyBeer ({days}j)"
                                 status_label.classes("text-positive")
                                 status_label.set_visibility(True)
-                                ui.notify("Import EasyBeer réussi !", type="positive")
+                                ui.notify(
+                                    f"Import EasyBeer ✓ — {len(df)} lignes ({days}j) en {elapsed:.1f}s",
+                                    type="positive",
+                                )
                             except TimeoutError:
                                 if _cancelled["v"]:
                                     return
@@ -184,13 +191,15 @@ def page_accueil():
                                 status_label.classes("text-negative")
                                 status_label.set_visibility(True)
                                 ui.notify("Délai dépassé (45 s). Réessayez.", type="warning")
-                            except Exception:
+                            except Exception as exc:
                                 if _cancelled["v"]:
                                     return
                                 _log.exception("Erreur import EasyBeer")
-                                status_label.text = "Erreur lors de l'import. Vérifiez la connexion EasyBeer."
+                                err_msg = str(exc)[:120] or "connexion EasyBeer"
+                                status_label.text = f"Erreur import : {err_msg}"
                                 status_label.classes("text-negative")
                                 status_label.set_visibility(True)
+                                ui.notify(f"Import EasyBeer échoué — {err_msg}", type="negative")
                             finally:
                                 import_spinner.set_visibility(False)
                                 cancel_btn.set_visibility(False)
@@ -281,12 +290,17 @@ def page_accueil():
                     upload_status.text = f"Importé : {len(df)} lignes depuis {e.name}"
                     upload_status.classes("text-positive")
                     upload_status.set_visibility(True)
-                    ui.notify(f"Fichier {e.name} importé !", type="positive")
-                except Exception:
+                    ui.notify(
+                        f"Fichier importé ✓ — {len(df)} lignes ({period}j) depuis {e.name}",
+                        type="positive",
+                    )
+                except Exception as exc:
                     _log.exception("Erreur import fichier Excel")
-                    upload_status.text = "Erreur lors de l'import. Vérifiez le format du fichier."
+                    err_msg = str(exc)[:120] or "format invalide"
+                    upload_status.text = f"Erreur import : {err_msg}"
                     upload_status.classes("text-negative")
                     upload_status.set_visibility(True)
+                    ui.notify(f"Import fichier échoué — {err_msg}", type="negative")
                 finally:
                     upload_loading.set_visibility(False)
 
