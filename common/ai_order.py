@@ -282,11 +282,27 @@ def analyze_and_respond(
         _MODEL,
     )
 
+    # Prompt caching: system prompt + tools sont statiques → cache ephemeral
+    # pour économiser 30-50% du coût sur les appels suivants (TTL 5 min).
+    # https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+    system_blocks = [
+        {
+            "type": "text",
+            "text": _SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+    # cache_control sur le dernier tool → marque tous les tools comme cachés
+    tools_cached = [
+        *_ALL_TOOLS[:-1],
+        {**_ALL_TOOLS[-1], "cache_control": {"type": "ephemeral"}},
+    ]
+
     response = client.messages.create(
         model=_MODEL,
         max_tokens=4000,
-        system=_SYSTEM_PROMPT,
-        tools=_ALL_TOOLS,
+        system=system_blocks,
+        tools=tools_cached,
         messages=messages,
     )
 
@@ -329,12 +345,19 @@ def analyze_and_respond(
         if block.type == "tool_use":
             tool_use_id = block.id
 
+    # Log enrichi avec stats de cache (cache_read_input_tokens = tokens économisés)
+    usage = response.usage
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_created = getattr(usage, "cache_creation_input_tokens", 0) or 0
     _log.info(
-        "AI response: %d chars text, order=%s, email=%s, usage=%s",
+        "AI response: %d chars, order=%s, email=%s, in=%d out=%d cache_read=%d cache_created=%d",
         len(text),
         "yes" if order_data else "no",
         "yes" if email_data else "no",
-        response.usage,
+        getattr(usage, "input_tokens", 0),
+        getattr(usage, "output_tokens", 0),
+        cache_read,
+        cache_created,
     )
 
     # Build conversation for follow-up
