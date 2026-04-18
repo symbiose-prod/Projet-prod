@@ -21,7 +21,9 @@ from ._client import (
     _excel_payload,
     _indicator_payload,
     _log,
+    _safe_dict,
     _safe_json,
+    _safe_list,
     get_session,
     is_rate_limited,
     retry_api,
@@ -155,8 +157,8 @@ def get_bottle_stock() -> dict[int, float]:
     _check_response(r, ep)
     data = _safe_json(r, ep)
     result: dict[int, float] = {}
-    for child in data.get("consolidationsFilles", []):
-        cont = child.get("contenant") or {}
+    for child in _safe_list(data, "consolidationsFilles", "stock/bouteilles"):
+        cont = _safe_dict(child, "contenant", "stock/bouteilles")
         cont_id = cont.get("idContenant")
         qty = float(child.get("quantiteVirtuelle", 0) or 0)
         if cont_id is not None:
@@ -313,10 +315,10 @@ def fetch_carton_weights() -> dict[tuple[int, str], float]:
 
     weights: dict[tuple[int, str], float] = {}
     ban_detected = False
-    for prod in data.get("consolidationsFilles", []):
+    for prod in _safe_list(data, "consolidationsFilles", "stock/produits"):
         if ban_detected:
             break
-        for conso in prod.get("consolidationsFilles", []):
+        for conso in _safe_list(prod, "consolidationsFilles", "stock/produits"):
             # Check rate-limit before each API call
             if is_rate_limited() > 0:
                 _log.warning("Rate-limit actif, arrêt fetch poids cartons (%d collectés)", len(weights))

@@ -120,7 +120,67 @@ def is_rate_limited() -> float:
     return max(0.0, remaining)
 
 
+class EasyBeerError(RuntimeError):
+    """Erreur lors d'un appel a l'API EasyBeer."""
+
+
+# ─── Circuit breaker (thread-safe) ───────────────────────────────────────────
+# Protège contre les cascades d'erreurs quand l'API est en panne : après N
+# échecs serveur (5xx) consécutifs, on ouvre le circuit pendant T secondes
+# pour laisser le service se rétablir et éviter de matraquer l'API en vain.
+_CB_FAILURE_THRESHOLD = 5
+_CB_OPEN_DURATION = 60.0
+_cb_lock = _threading.Lock()
+_cb_failures: int = 0
+_cb_open_until: float = 0.0
+
+
+def _cb_check() -> None:
+    """Lève EasyBeerError si le circuit est ouvert."""
+    now = _time.monotonic()
+    with _cb_lock:
+        remaining = _cb_open_until - now
+    if remaining > 0:
+        raise EasyBeerError(
+            f"EasyBeer circuit-breaker ouvert — réessayez dans {int(remaining)}s "
+            f"(trop d'échecs serveur consécutifs)"
+        )
+
+
+def _cb_on_success() -> None:
+    """Réinitialise le compteur d'échecs après une réponse OK."""
+    global _cb_failures
+    with _cb_lock:
+        if _cb_failures:
+            _cb_failures = 0
+
+
+def _cb_on_failure() -> None:
+    """Incrémente le compteur ; ouvre le circuit si le seuil est atteint."""
+    global _cb_failures, _cb_open_until
+    with _cb_lock:
+        _cb_failures += 1
+        if _cb_failures >= _CB_FAILURE_THRESHOLD:
+            _cb_open_until = _time.monotonic() + _CB_OPEN_DURATION
+            _cb_failures = 0
+            _log.error(
+                "Circuit-breaker EasyBeer ouvert pour %.0fs (seuil %d échecs)",
+                _CB_OPEN_DURATION, _CB_FAILURE_THRESHOLD,
+            )
+
+
+def circuit_breaker_state() -> dict[str, Any]:
+    """Introspection (tests, diagnostics)."""
+    with _cb_lock:
+        return {
+            "failures": _cb_failures,
+            "open_until": _cb_open_until,
+            "remaining": max(0.0, _cb_open_until - _time.monotonic()),
+        }
+
+
 def _auth() -> tuple[str, str]:
+    _cb_check()
     _throttle()
     return (
         os.environ.get("EASYBEER_API_USER", ""),
@@ -128,14 +188,25 @@ def _auth() -> tuple[str, str]:
     )
 
 
-class EasyBeerError(RuntimeError):
-    """Erreur lors d'un appel a l'API EasyBeer."""
-
-
 def _check_response(r: requests.Response, endpoint: str) -> None:
-    """Verifie la reponse HTTP et leve une erreur lisible."""
+    """Verifie la reponse HTTP et leve une erreur lisible.
+
+    Logs method + endpoint + status + round-trip duration for every call
+    (observabilité : permet d'identifier les endpoints lents).
+    """
+    elapsed = getattr(r, "elapsed", None)
+    duration_ms = int(elapsed.total_seconds() * 1000) if elapsed else 0
+    req = getattr(r, "request", None)
+    method = getattr(req, "method", "?") if req else "?"
     if r.ok:
+        _log.info("EB %s %s → HTTP %d (%dms)", method, endpoint, r.status_code, duration_ms)
+        _cb_on_success()
         return
+    _log.warning("EB %s %s → HTTP %d (%dms)", method, endpoint, r.status_code, duration_ms)
+    # Compte les 5xx comme échecs serveur pour le circuit-breaker
+    # (les 4xx hors rate-limit sont des erreurs client, pas de cascade à craindre)
+    if 500 <= r.status_code < 600:
+        _cb_on_failure()
     body = r.text[:500]
     # Rate-limit: HTTP 400 with "limit" / "banned" or HTTP 429
     if r.status_code in (429, 400) and any(
@@ -165,6 +236,43 @@ def _safe_json(r: requests.Response, endpoint: str) -> Any:
         raise EasyBeerError(
             f"EasyBeer {endpoint} : réponse non-JSON (HTTP {r.status_code}) — {r.text[:200]}"
         ) from exc
+
+
+def _safe_list(data: Any, key: str, endpoint: str = "") -> list:
+    """Extrait un champ liste défensivement d'une réponse API.
+
+    Gère les 3 cas fragiles :
+    - clé absente → []
+    - clé présente mais null → [] (✗ ce que ``data.get(key, [])`` ne protège pas)
+    - clé présente mais mauvais type → [] + warning log
+
+    Évite les ``TypeError: 'NoneType' object is not iterable`` lors des
+    itérations sur réponses EasyBeer avec schéma instable.
+    """
+    v = data.get(key) if isinstance(data, dict) else None
+    if v is None:
+        return []
+    if not isinstance(v, list):
+        _log.warning(
+            "EB %s: clé '%s' attendue liste, reçu %s",
+            endpoint or "?", key, type(v).__name__,
+        )
+        return []
+    return v
+
+
+def _safe_dict(data: Any, key: str, endpoint: str = "") -> dict:
+    """Extrait un champ dict défensivement d'une réponse API."""
+    v = data.get(key) if isinstance(data, dict) else None
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        _log.warning(
+            "EB %s: clé '%s' attendue dict, reçu %s",
+            endpoint or "?", key, type(v).__name__,
+        )
+        return {}
+    return v
 
 
 def _dates(window_days: int) -> tuple[str, str]:
