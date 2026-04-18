@@ -11,6 +11,8 @@ from ._client import (
     BASE,
     TIMEOUT,
     EasyBeerError,
+    _safe_dict,
+    _safe_list,
     get_session,
     is_configured,
     is_rate_limited,
@@ -44,6 +46,9 @@ from .history import get_contenant_historique, get_mp_historique_entree
 
 # --- indicators ---
 from .indicators import get_ca_mensuel
+
+# --- models (typed dataclasses, opt-in) ---
+from .models import AutonomieProduit, AutonomieResponse, MatierePremiere
 
 # --- products ---
 from .products import (
@@ -88,6 +93,9 @@ from .suppliers import (
 __all__ = [
     # client
     "BASE", "TIMEOUT", "is_configured", "is_rate_limited", "EasyBeerError", "get_session",
+    "_safe_list", "_safe_dict",
+    # models (typed dataclasses)
+    "AutonomieProduit", "AutonomieResponse", "MatierePremiere",
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_all_matieres_premieres",
     "get_mp_lots", "get_stock_produit_detail", "fetch_carton_weights",
