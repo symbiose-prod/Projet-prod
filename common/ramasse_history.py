@@ -20,6 +20,26 @@ from db.conn import run_sql
 _log = logging.getLogger("ferment.ramasse_history")
 
 
+def _audit(action: str, tenant_id: str, details: dict[str, Any]) -> None:
+    """Fire-and-forget audit log wrapper. Never raises."""
+    try:
+        from common.audit import log_event
+        user_email = None
+        try:
+            from nicegui import app
+            user_email = app.storage.user.get("email")
+        except Exception:
+            pass
+        log_event(
+            tenant_id=tenant_id,
+            user_email=user_email,
+            action=action,
+            details=details,
+        )
+    except Exception:
+        _log.debug("Audit log (ramasse/%s) a échoué", action, exc_info=True)
+
+
 # ─── Comparaison de lignes (pour PDF/email différentiel) ───────────────────
 
 def diff_ramasse_lines(
@@ -114,6 +134,15 @@ def save_ramasse(
     )
     rid = str(rows[0]["id"])
     _log.info("Ramasse sauvegardée: id=%s dest=%s cartons=%d", rid, destinataire, total_cartons)
+    from common.audit import ACTION_RAMASSE_SAVED
+    _audit(ACTION_RAMASSE_SAVED, tid, {
+        "ramasse_id": rid,
+        "destinataire": destinataire,
+        "date_ramasse": str(date_ramasse),
+        "line_count": len(lines),
+        "total_cartons": total_cartons,
+        "total_palettes": total_palettes,
+    })
     return rid
 
 
@@ -265,6 +294,15 @@ def update_ramasse(
         "Ramasse mise à jour: id=%s v%d→v%d cartons=%d",
         ramasse_id, old_version, new_version, total_cartons,
     )
+    from common.audit import ACTION_RAMASSE_UPDATED
+    _audit(ACTION_RAMASSE_UPDATED, tid, {
+        "ramasse_id": ramasse_id,
+        "destinataire": destinataire,
+        "date_ramasse": str(date_ramasse),
+        "version_from": old_version,
+        "version_to": new_version,
+        "total_cartons": total_cartons,
+    })
     return rows[0]
 
 
@@ -294,6 +332,11 @@ def mark_driver_passed(
     )
     if rows:
         _log.info("Ramasse marquée 'chauffeur passé': id=%s user=%s", ramasse_id, uid)
+        from common.audit import ACTION_RAMASSE_DRIVER_PASSED
+        _audit(ACTION_RAMASSE_DRIVER_PASSED, tid, {
+            "ramasse_id": ramasse_id,
+            "user_id": uid,
+        })
         return True
     return False
 
@@ -319,6 +362,8 @@ def delete_ramasse(
     )
     if rows:
         _log.info("Ramasse supprimée: id=%s", ramasse_id)
+        from common.audit import ACTION_RAMASSE_DELETED
+        _audit(ACTION_RAMASSE_DELETED, tid, {"ramasse_id": ramasse_id})
         return True
     _log.warning("delete_ramasse: ramasse introuvable id=%s", ramasse_id)
     return False

@@ -27,6 +27,11 @@ ACTION_PASSWORD_RESET = "password_reset"
 ACTION_PRODUCTION_SAVED = "production_saved"
 ACTION_BRASSIN_CREATED = "brassin_created"
 ACTION_FILE_UPLOADED = "file_uploaded"
+ACTION_SUPPLIER_CONFIG_UPDATED = "supplier_config_updated"
+ACTION_RAMASSE_SAVED = "ramasse_saved"
+ACTION_RAMASSE_UPDATED = "ramasse_updated"
+ACTION_RAMASSE_DELETED = "ramasse_deleted"
+ACTION_RAMASSE_DRIVER_PASSED = "ramasse_driver_passed"
 
 
 def log_event(

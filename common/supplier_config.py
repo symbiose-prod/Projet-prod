@@ -118,6 +118,29 @@ def upsert_supplier_config(
     )
     _log.info("Upserted supplier config for '%s' (tenant=%s)", supplier, tid)
 
+    # Audit trail — couvre tous les callers (ressources.py + futurs)
+    try:
+        from common.audit import ACTION_SUPPLIER_CONFIG_UPDATED, log_event
+        user_email = None
+        try:
+            from nicegui import app
+            user_email = app.storage.user.get("email")
+        except Exception:
+            pass
+        log_event(
+            tenant_id=tid,
+            user_email=user_email,
+            action=ACTION_SUPPLIER_CONFIG_UPDATED,
+            details={
+                "supplier": supplier,
+                "fields": sorted(config.keys()),
+                "active": config.get("active"),
+                "lead_time_days": config.get("lead_time_days"),
+            },
+        )
+    except Exception:
+        _log.debug("Audit log (supplier_config) a échoué", exc_info=True)
+
 
 # ─── Merge (key function) ──────────────────────────────────────────────────
 
