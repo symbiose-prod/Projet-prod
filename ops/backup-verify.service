@@ -12,8 +12,9 @@ Environment="BACKUP_DIR=/backups"
 ExecStart=/home/ubuntu/app/ops/restore-db.sh latest
 StandardOutput=journal
 StandardError=journal
-# Sécurité : pas de nouveau privilège, écriture limitée
-NoNewPrivileges=true
+# Sécurité : écriture limitée. NoNewPrivileges NON activé car le script
+# utilise ``sudo -u postgres`` pour créer/drop la DB de test (peer auth
+# locale Postgres).
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
