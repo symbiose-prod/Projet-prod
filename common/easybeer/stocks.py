@@ -94,14 +94,11 @@ def get_autonomie_stocks_typed(window_days: int):
 @retry_api
 def get_mp_lots(id_matiere_premiere: int) -> list[dict[str, Any]]:
     """GET /stock/matieres-premieres/numero-lot/liste/{id} → Liste des lots."""
-    ep = f"matieres-premieres/numero-lot/liste/{id_matiere_premiere}"
-    r = get_session().get(
-        f"{BASE}/stock/{ep}",
-        auth=_auth(),
-        timeout=TIMEOUT,
+    from .endpoint import execute_endpoint
+    data = execute_endpoint(
+        method="GET",
+        path=f"stock/matieres-premieres/numero-lot/liste/{id_matiere_premiere}",
     )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
     return data if isinstance(data, list) else []
 
 
@@ -115,19 +112,18 @@ _STOCK_DETAIL_CACHE_TTL = 1800  # 30 minutes
 @retry_api
 def get_stock_produit_detail(id_stock_produit: int) -> dict[str, Any]:
     """GET /stock/produit/edition/{id} → Detail complet d'un stock produit."""
+    from .endpoint import execute_endpoint
+    # L1 in-memory keyed par id (TTL 30 min) — garde la politique métier locale
     now = time.monotonic()
     cached_ts = _STOCK_DETAIL_CACHE_TS.get(id_stock_produit, 0.0)
     if id_stock_produit in _STOCK_DETAIL_CACHE and (now - cached_ts) < _STOCK_DETAIL_CACHE_TTL:
         return _STOCK_DETAIL_CACHE[id_stock_produit]
 
-    ep = f"stock/produit/edition/{id_stock_produit}"
-    r = get_session().get(
-        f"{BASE}/stock/produit/edition/{id_stock_produit}",
-        auth=_auth(),
-        timeout=10,
+    result = execute_endpoint(
+        method="GET",
+        path=f"stock/produit/edition/{id_stock_produit}",
+        timeout=10,   # TTL court : l'endpoint peut être lent sur stocks étoffés
     )
-    _check_response(r, ep)
-    result = _safe_json(r, ep)
     _STOCK_DETAIL_CACHE[id_stock_produit] = result
     _STOCK_DETAIL_CACHE_TS[id_stock_produit] = now
     return result
