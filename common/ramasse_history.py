@@ -497,11 +497,47 @@ def get_last_packaging_for_dest(
     return result
 
 
-def count_ramasses(tenant_id: str | None = None) -> int:
-    """Nombre total de ramasses pour le tenant."""
+def count_ramasses(tenant_id: str | None = None, *, include_deleted: bool = False) -> int:
+    """Nombre total de ramasses pour le tenant.
+
+    Par défaut exclut les soft-deleted. ``include_deleted=True`` inclut tout.
+    """
     tid = tenant_id or current_tenant_id()
+    where_deleted = "" if include_deleted else " AND deleted_at IS NULL"
     rows = run_sql(
-        "SELECT COUNT(*)::int AS n FROM ramasse_history WHERE tenant_id = :tid",
+        f"SELECT COUNT(*)::int AS n FROM ramasse_history WHERE tenant_id = :tid{where_deleted}",
         {"tid": tid},
     )
     return int(rows[0]["n"]) if rows else 0
+
+
+def count_deleted_ramasses(tenant_id: str | None = None) -> int:
+    """Nombre de ramasses soft-deleted (dans la corbeille, récupérables)."""
+    tid = tenant_id or current_tenant_id()
+    rows = run_sql(
+        "SELECT COUNT(*)::int AS n FROM ramasse_history "
+        "WHERE tenant_id = :tid AND deleted_at IS NOT NULL",
+        {"tid": tid},
+    )
+    return int(rows[0]["n"]) if rows else 0
+
+
+def list_deleted_ramasses(
+    tenant_id: str | None = None,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Liste les ramasses soft-deleted (corbeille), triées par suppression récente."""
+    tid = tenant_id or current_tenant_id()
+    return run_sql(
+        """
+        SELECT id, date_ramasse, destinataire,
+               line_count, total_cartons, total_palettes, total_poids_kg,
+               version, deleted_at, created_at
+        FROM ramasse_history
+        WHERE tenant_id = :tid AND deleted_at IS NOT NULL
+        ORDER BY deleted_at DESC
+        LIMIT :lim
+        """,
+        {"tid": tid, "lim": limit},
+    ) or []

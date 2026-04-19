@@ -55,12 +55,15 @@ from common.ramasse_grid import (
     safe_int,
 )
 from common.ramasse_history import (
+    count_deleted_ramasses,
     count_ramasses,
     delete_ramasse,
     get_last_packaging_for_dest,
     get_ramasse,
+    list_deleted_ramasses,
     list_ramasses,
     mark_driver_passed,
+    restore_ramasse,
     save_ramasse,
     update_ramasse,
 )
@@ -1577,7 +1580,7 @@ async def page_ramasse():
                             rid = e.args.get("id")
                             date_str = e.args.get("date", "?")
                             dest_str = e.args.get("dest", "?")
-                            # Dialogue de confirmation (action irréversible)
+                            # Dialogue de confirmation — soft-delete 7 jours
                             with ui.dialog() as dlg, ui.card():
                                 ui.label("Supprimer cette ramasse ?").classes("text-h6")
                                 ui.label(
@@ -1586,9 +1589,12 @@ async def page_ramasse():
                                     f"color: {COLORS['ink']}; font-weight: 500"
                                 )
                                 ui.label(
-                                    "Cette action est irréversible : la ramasse, son PDF et "
-                                    "tout son historique seront définitivement supprimés."
-                                ).classes("text-caption text-negative q-mt-sm")
+                                    "La ramasse est déplacée dans la corbeille et pourra "
+                                    "être restaurée pendant 7 jours. Au-delà, suppression "
+                                    "définitive automatique."
+                                ).classes("text-caption q-mt-sm").style(
+                                    f"color: {COLORS.get('ink2', '#6B7280')}"
+                                )
                                 with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
                                     ui.button("Annuler", on_click=dlg.close).props("flat")
                                     async def _confirm_delete():
@@ -1597,7 +1603,8 @@ async def page_ramasse():
                                             ok = await asyncio.to_thread(delete_ramasse, rid)
                                             if ok:
                                                 ui.notify(
-                                                    "Ramasse supprimée.",
+                                                    "Ramasse déplacée dans la corbeille "
+                                                    "(récupérable 7 jours).",
                                                     type="positive", icon="delete",
                                                 )
                                                 _refresh_history()
@@ -1620,6 +1627,107 @@ async def page_ramasse():
                         ht.on("delete_hist", _on_delete_hist)
 
                     hist_exp.on_value_change(lambda e: _load_history_data() if e.value else None)
+
+                # ── Corbeille : ramasses soft-deleted récupérables ───────
+                try:
+                    trash_count = count_deleted_ramasses()
+                except Exception:
+                    trash_count = 0
+                if trash_count > 0:
+                    with ui.expansion(
+                        f"Corbeille ({trash_count})",
+                        icon="delete_outline",
+                    ).classes("w-full q-mt-sm").props(
+                        "dense header-class='text-body2 text-grey-7'"
+                    ).style(
+                        f"border: 1px dashed {COLORS.get('border', '#E5E7EB')}; border-radius: 8px"
+                    ) as trash_exp:
+
+                        trash_loaded = {"done": False}
+
+                        def _load_trash_data():
+                            if trash_loaded["done"]:
+                                return
+                            trash_loaded["done"] = True
+                            try:
+                                deleted = list_deleted_ramasses(limit=50)
+                            except Exception:
+                                _log.warning("Erreur chargement corbeille", exc_info=True)
+                                ui.label("Erreur de chargement.").classes(
+                                    "text-negative text-caption"
+                                )
+                                return
+
+                            if not deleted:
+                                ui.label("Corbeille vide.").classes(
+                                    "text-grey-6 q-pa-sm"
+                                )
+                                return
+
+                            ui.label(
+                                "Ramasses supprimées récupérables pendant 7 jours. "
+                                "Au-delà, suppression définitive automatique."
+                            ).classes("text-caption text-grey-6 q-px-sm q-pb-xs")
+
+                            for item in deleted:
+                                rid = str(item["id"])
+                                dr = item.get("date_ramasse")
+                                date_str = dr.strftime("%d/%m/%Y") if hasattr(dr, "strftime") else str(dr)
+                                del_at = item.get("deleted_at")
+                                del_str = del_at.strftime("%d/%m %H:%M") if hasattr(del_at, "strftime") else "?"
+                                with ui.row().classes(
+                                    "w-full items-center gap-3 q-px-sm q-py-xs"
+                                ).style(
+                                    "border-top: 1px solid #F3F4F6"
+                                ):
+                                    ui.icon("delete_outline", size="sm", color="grey-6")
+                                    with ui.column().classes("flex-1 gap-0"):
+                                        ui.label(
+                                            f"{date_str} — {item.get('destinataire', '?')}"
+                                        ).classes("text-body2").style(
+                                            f"color: {COLORS['ink']}; font-weight: 500"
+                                        )
+                                        ui.label(
+                                            f"{item.get('total_cartons', 0)} cartons · "
+                                            f"{item.get('total_palettes', 0)} palettes · "
+                                            f"supprimée le {del_str}"
+                                        ).classes("text-caption text-grey-6")
+
+                                    async def _on_restore(_=None, _rid=rid):
+                                        try:
+                                            ok = await asyncio.to_thread(restore_ramasse, _rid)
+                                            if ok:
+                                                ui.notify(
+                                                    "Ramasse restaurée ✓",
+                                                    type="positive", icon="restore",
+                                                )
+                                                _refresh_history()
+                                            else:
+                                                ui.notify(
+                                                    "Restauration impossible "
+                                                    "(ramasse introuvable ou déjà purgée).",
+                                                    type="warning",
+                                                )
+                                        except Exception:
+                                            _log.warning(
+                                                "Erreur restauration ramasse", exc_info=True,
+                                            )
+                                            ui.notify(
+                                                "Erreur lors de la restauration.",
+                                                type="negative",
+                                            )
+
+                                    ui.button(
+                                        "Restaurer",
+                                        icon="restore",
+                                        on_click=_on_restore,
+                                    ).props(
+                                        "dense flat color=blue-8"
+                                    ).classes("q-px-sm")
+
+                        trash_exp.on_value_change(
+                            lambda e: _load_trash_data() if e.value else None
+                        )
 
         _refresh_history()
 
