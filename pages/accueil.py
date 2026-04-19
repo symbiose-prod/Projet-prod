@@ -9,13 +9,12 @@ import logging
 from datetime import date
 from io import BytesIO
 
-import pandas as pd
 from nicegui import app, ui
 
 _log = logging.getLogger("ferment.accueil")
 
 from common.easybeer import is_configured as eb_configured
-from common.session_store import load_df, store_df
+from common.session_store import store_df
 from core.optimizer import read_input_excel_and_period_from_bytes
 from pages.auth import require_auth
 from pages.theme import COLORS, page_layout
@@ -69,15 +68,10 @@ def _get_state() -> dict:
     return app.storage.user.setdefault("accueil", {})
 
 
-def get_df_raw() -> tuple[pd.DataFrame | None, int]:
-    """Désérialise le DataFrame stocké dans app.storage.user par la page Accueil."""
-    state = app.storage.user.get("accueil", {})
-    raw_json = state.get("df_json")
-    if not raw_json:
-        return None, 0
-    df = load_df(raw_json)
-    return df, state.get("window_days", 30)
-
+# get_df_raw a été déplacé vers common/session_store.get_imported_df
+# (évite l'import cross-page pages.production → pages.accueil, vérifié par
+# tests/test_architecture_layers.py). Réexport ici pour compat éventuelle.
+from common.session_store import get_imported_df as get_df_raw  # noqa: F401, E402
 
 # ─── Page ───────────────────────────────────────────────────────────────────
 

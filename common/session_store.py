@@ -7,6 +7,12 @@ Stores DataFrames as zlib-compressed JSON strings (base64-encoded).
 Typical compression ratio: 80-90% (3 MB → 300 KB).
 
 Backward-compatible: load_df() auto-detects raw JSON vs compressed.
+
+Expose aussi ``get_imported_df`` : accesseur du DataFrame importé par la page
+Accueil (``app.storage.user["accueil"]["df_json"]``), consommé par Production,
+Stocks et Commercial. L'import de ``nicegui.app`` est fait lazy (seulement si
+get_imported_df est appelée) pour que le reste du module reste utilisable
+dans des contextes hors NiceGUI (scripts, tests).
 """
 from __future__ import annotations
 
@@ -58,3 +64,29 @@ def load_df(stored: str) -> pd.DataFrame:
         # Backward compatibility: raw JSON (not compressed)
         raw_json = stored
     return pd.read_json(io.StringIO(raw_json), orient="split")
+
+
+def get_imported_df() -> tuple[pd.DataFrame | None, int]:
+    """Retourne le DataFrame importé (via Accueil) + la fenêtre d'analyse (jours).
+
+    Import lazy de ``nicegui.app`` — les autres fonctions du module restent
+    utilisables hors contexte NiceGUI. Retourne ``(None, 0)`` si aucun import
+    n'a encore eu lieu (source de vérité : ``app.storage.user["accueil"]``).
+    """
+    try:
+        from nicegui import app
+    except ImportError:
+        return None, 0
+    try:
+        state = app.storage.user.get("accueil", {}) or {}
+    except Exception:
+        return None, 0
+    raw_json = state.get("df_json")
+    if not raw_json:
+        return None, 0
+    try:
+        df = load_df(raw_json)
+    except Exception:
+        _log.warning("Échec désérialisation df importé", exc_info=True)
+        return None, 0
+    return df, int(state.get("window_days", 30) or 30)

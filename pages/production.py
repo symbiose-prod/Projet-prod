@@ -21,6 +21,7 @@ from common.services.production_service import (
     _compute_production_sync,
     _fetch_eb_products,
 )
+from common.session_store import get_imported_df as get_df_raw
 from common.session_store import load_df, store_df
 from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import (
@@ -29,7 +30,6 @@ from core.optimizer import (
     sanitize_gouts,
 )
 from pages._production_easybeer import _render_easybeer_section
-from pages.accueil import get_df_raw
 from pages.auth import require_auth
 from pages.theme import COLORS, date_picker_field, error_banner, page_layout, section_title
 
