@@ -51,6 +51,9 @@ from .indicators import get_ca_mensuel
 from .models import (
     AutonomieProduit,
     AutonomieResponse,
+    BrassinLight,
+    Fournisseur,
+    FournisseurContact,
     MatierePremiere,
     StockProduitFormat,
 )
@@ -102,6 +105,7 @@ __all__ = [
     "_safe_list", "_safe_dict",
     # models (typed dataclasses)
     "AutonomieProduit", "AutonomieResponse", "MatierePremiere", "StockProduitFormat",
+    "BrassinLight", "Fournisseur", "FournisseurContact",
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_autonomie_stocks_typed",
     "get_all_matieres_premieres",

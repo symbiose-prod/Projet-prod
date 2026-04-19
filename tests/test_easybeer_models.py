@@ -4,6 +4,9 @@ from __future__ import annotations
 from common.easybeer.models import (
     AutonomieProduit,
     AutonomieResponse,
+    BrassinLight,
+    Fournisseur,
+    FournisseurContact,
     MatierePremiere,
     StockProduitFormat,
 )
@@ -178,3 +181,142 @@ class TestMatierePremiere:
         })
         assert mp.type_code == ""
         assert mp.unite_symbole == ""
+
+
+class TestBrassinLight:
+    def test_full_dict(self):
+        b = BrassinLight.from_dict({
+            "idBrassin": 12345,
+            "nom": "B-2026-042",
+            "volume": 7200.0,
+            "annule": False,
+            "produit": {
+                "idProduit": 77,
+                "libelle": "Kéfir Original",
+            },
+        })
+        assert b.id_brassin == 12345
+        assert b.nom == "B-2026-042"
+        assert b.volume == 7200.0
+        assert b.annule is False
+        assert b.produit_libelle == "Kéfir Original"
+        assert b.id_produit == 77
+        assert b.is_archive is False
+
+    def test_archive_flag_from_local_hint(self):
+        """_is_archive est un flag posé localement par load_active_brassins."""
+        b = BrassinLight.from_dict({
+            "idBrassin": 9,
+            "nom": "B-old",
+            "_is_archive": True,
+        })
+        assert b.is_archive is True
+
+    def test_missing_produit_object(self):
+        """produit absent ou null — pas de crash."""
+        b = BrassinLight.from_dict({"idBrassin": 1, "nom": "X", "produit": None})
+        assert b.produit_libelle == ""
+        assert b.id_produit == 0
+
+    def test_cancelled(self):
+        b = BrassinLight.from_dict({"idBrassin": 1, "annule": True})
+        assert b.annule is True
+
+    def test_non_dict_input(self):
+        b = BrassinLight.from_dict(None)  # type: ignore
+        assert b.id_brassin == 0
+        assert b.nom == ""
+
+
+class TestFournisseurContact:
+    def test_full_dict(self):
+        c = FournisseurContact.from_dict({
+            "nom": "Dupont",
+            "prenom": "Jean",
+            "email": "jean.dupont@example.com",
+        })
+        assert c.nom == "Dupont"
+        assert c.prenom == "Jean"
+        assert c.email == "jean.dupont@example.com"
+        assert c.display_name == "Jean Dupont"
+
+    def test_display_name_with_missing_parts(self):
+        c1 = FournisseurContact.from_dict({"prenom": "Jean"})
+        assert c1.display_name == "Jean"
+        c2 = FournisseurContact.from_dict({"nom": "Dupont"})
+        assert c2.display_name == "Dupont"
+        c3 = FournisseurContact.from_dict({})
+        assert c3.display_name == ""
+
+    def test_non_dict_input(self):
+        c = FournisseurContact.from_dict(None)  # type: ignore
+        assert c.email == ""
+
+
+class TestFournisseur:
+    def test_full_dict(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 42,
+            "nom": "Verallia",
+            "email": "commercial@verallia.com",
+            "contacts": [
+                {"nom": "Dupont", "prenom": "Jean", "email": "jean@verallia.com"},
+                {"nom": "Martin", "prenom": "Marie", "email": "marie@verallia.com"},
+            ],
+            "adresse": {
+                "adresse": "31 place des Corolles",
+                "codePostal": "92400",
+                "ville": "Courbevoie",
+                "pays": "France",
+            },
+        })
+        assert f.id_fournisseur == 42
+        assert f.nom == "Verallia"
+        assert f.email == "commercial@verallia.com"
+        assert len(f.contacts) == 2
+        assert f.contacts[0].display_name == "Jean Dupont"
+        # Adresse : France filtrée (défaut FR)
+        assert f.adresse_lignes == [
+            "31 place des Corolles",
+            "92400 Courbevoie",
+        ]
+
+    def test_email_fallback_to_first_contact(self):
+        """Si pas d'email principal, on utilise celui du 1er contact qui en a un."""
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1,
+            "nom": "X",
+            "contacts": [
+                {"nom": "A", "email": ""},  # vide
+                {"nom": "B", "email": "fallback@x.fr"},
+            ],
+        })
+        assert f.email == "fallback@x.fr"
+
+    def test_no_email_anywhere(self):
+        f = Fournisseur.from_dict({"idFournisseur": 1, "nom": "X"})
+        assert f.email == ""
+        assert f.contacts == []
+
+    def test_foreign_country_preserved(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1,
+            "nom": "X",
+            "adresse": {
+                "adresse": "Via Roma 1",
+                "codePostal": "00100",
+                "ville": "Roma",
+                "pays": "Italie",
+            },
+        })
+        assert "Italie" in f.adresse_lignes
+
+    def test_empty_address(self):
+        f = Fournisseur.from_dict({"idFournisseur": 1, "nom": "X"})
+        assert f.adresse_lignes == []
+
+    def test_non_dict_input(self):
+        f = Fournisseur.from_dict(None)  # type: ignore
+        assert f.id_fournisseur == 0
+        assert f.nom == ""
+        assert f.contacts == []

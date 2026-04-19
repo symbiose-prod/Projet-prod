@@ -155,3 +155,133 @@ class MatierePremiere:
             type_code=_as_str(t.get("code")),
             unite_symbole=_as_str(u.get("symbole")),
         )
+
+
+# ─── Brassins ──────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class BrassinLight:
+    """Résumé d'un brassin tel que renvoyé par les listes
+    (``/brassin/en-cours``, ``/brassin/archives``).
+
+    Ne contient pas les détails (recettes, ingrédients, fiches) — pour ça,
+    utiliser un appel sur ``/brassin/{id}`` et mapper vers ``BrassinDetail``
+    quand ce modèle sera ajouté.
+
+    Le flag ``is_archive`` n'est pas dans la réponse EasyBeer : il est posé
+    localement par :func:`common.services.ramasse_service.load_active_brassins`
+    pour différencier les archives affichées à côté des brassins en cours.
+    """
+    id_brassin: int
+    nom: str
+    volume: float                  # L
+    annule: bool
+    produit_libelle: str           # produit.libelle (ex: "Kéfir Original")
+    id_produit: int                # produit.idProduit
+    is_archive: bool = False       # flag local, pas dans l'API
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> BrassinLight:
+        if not isinstance(d, dict):
+            return cls(0, "", 0.0, False, "", 0, False)
+        produit = d.get("produit") if isinstance(d.get("produit"), dict) else {}
+        return cls(
+            id_brassin=_as_int(d.get("idBrassin")),
+            nom=_as_str(d.get("nom")),
+            volume=_as_float(d.get("volume")),
+            annule=bool(d.get("annule") or False),
+            produit_libelle=_as_str(produit.get("libelle")),
+            id_produit=_as_int(produit.get("idProduit")),
+            is_archive=bool(d.get("_is_archive") or False),
+        )
+
+
+# ─── Fournisseurs ──────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class FournisseurContact:
+    """Contact d'un fournisseur (une personne avec nom + email)."""
+    nom: str
+    prenom: str
+    email: str
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> FournisseurContact:
+        if not isinstance(d, dict):
+            return cls("", "", "")
+        return cls(
+            nom=_as_str(d.get("nom")),
+            prenom=_as_str(d.get("prenom")),
+            email=_as_str(d.get("email")),
+        )
+
+    @property
+    def display_name(self) -> str:
+        """Nom complet formaté pour affichage, ex: 'Jean Dupont'."""
+        parts = [p for p in (self.prenom, self.nom) if p]
+        return " ".join(parts)
+
+
+@dataclass(frozen=True)
+class Fournisseur:
+    """Fiche fournisseur telle que renvoyée par ``/fournisseur/{id}``.
+
+    Schema EasyBeer: ``ModeleFournisseur`` (simplifié — on n'expose que les
+    champs réellement utilisés par Ferment Station : identité, contacts,
+    adresse pour les commandes).
+    """
+    id_fournisseur: int
+    nom: str
+    email: str                      # email principal (fallback sur 1er contact)
+    contacts: list[FournisseurContact]
+    adresse_lignes: list[str]       # reformatée pour affichage (multi-lignes)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Fournisseur:
+        if not isinstance(d, dict):
+            return cls(0, "", "", [], [])
+
+        # Contacts : liste de ContactFournisseur
+        raw_contacts = d.get("contacts") or []
+        contacts: list[FournisseurContact] = []
+        if isinstance(raw_contacts, list):
+            for c in raw_contacts:
+                contacts.append(FournisseurContact.from_dict(c))
+
+        # Email principal : champ direct du fournisseur, fallback 1er contact
+        email = _as_str(d.get("email"))
+        if not email and contacts:
+            for c in contacts:
+                if c.email:
+                    email = c.email
+                    break
+
+        # Adresse : EasyBeer renvoie soit un dict {adresse, codePostal, ville, pays}
+        # soit rien. On aplatit en liste de lignes non-vides.
+        adr_obj = d.get("adresse") if isinstance(d.get("adresse"), dict) else {}
+        lignes: list[str] = []
+        rue = _as_str(adr_obj.get("adresse") or d.get("adresse") if not isinstance(d.get("adresse"), dict) else "")
+        if isinstance(adr_obj, dict) and adr_obj:
+            rue = _as_str(adr_obj.get("adresse"))
+        if rue:
+            lignes.append(rue)
+        cp_ville_parts = []
+        cp = _as_str(adr_obj.get("codePostal") if isinstance(adr_obj, dict) else "")
+        ville = _as_str(adr_obj.get("ville") if isinstance(adr_obj, dict) else "")
+        if cp:
+            cp_ville_parts.append(cp)
+        if ville:
+            cp_ville_parts.append(ville)
+        if cp_ville_parts:
+            lignes.append(" ".join(cp_ville_parts))
+        pays = _as_str(adr_obj.get("pays") if isinstance(adr_obj, dict) else "")
+        if pays and pays.lower() not in ("france", "fr"):
+            lignes.append(pays)
+
+        return cls(
+            id_fournisseur=_as_int(d.get("idFournisseur")),
+            nom=_as_str(d.get("nom")),
+            email=email,
+            contacts=contacts,
+            adresse_lignes=lignes,
+        )
