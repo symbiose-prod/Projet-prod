@@ -295,6 +295,7 @@ app.add_middleware(RequestLoggingMiddleware)
 # ─── Import des pages (les @ui.page sont enregistrés à l'import) ────────────
 
 import pages.accueil  # noqa: F401 — /accueil
+import pages.admin  # noqa: F401 — /admin (admin only)
 import pages.auth  # noqa: F401 — /login, /reset/{token}
 import pages.commercial  # noqa: F401 — /commercial
 import pages.nomenclatures  # noqa: F401 — /nomenclatures

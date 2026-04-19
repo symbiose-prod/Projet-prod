@@ -1393,6 +1393,38 @@ async def page_ramasse():
 
                     hist_data_loaded = {"done": False}
 
+                    # ── Bouton export CSV — visible dès l'expansion ouverte
+                    def _export_csv():
+                        try:
+                            from common.ramasse_export import build_csv_bytes
+                            items = list_ramasses(limit=500, include_deleted=True)
+                            if not items:
+                                ui.notify("Aucune ramasse à exporter.", type="info")
+                                return
+                            csv_bytes = build_csv_bytes(items)
+                            today_str = today_paris().strftime("%Y-%m-%d")
+                            ui.download(
+                                csv_bytes,
+                                filename=f"ramasses_export_{today_str}.csv",
+                                media_type="text/csv; charset=utf-8",
+                            )
+                            ui.notify(
+                                f"Export CSV ({len(items)} ramasses) prêt.",
+                                type="positive", icon="file_download",
+                            )
+                        except Exception:
+                            _log.warning("Erreur export CSV ramasses", exc_info=True)
+                            ui.notify("Erreur lors de l'export CSV.", type="negative")
+
+                    with ui.row().classes("w-full items-center justify-end q-pa-sm"):
+                        ui.button(
+                            "Exporter CSV",
+                            icon="file_download",
+                            on_click=_export_csv,
+                        ).props("flat dense color=grey-7").tooltip(
+                            "Télécharge l'historique (500 dernières, y compris corbeille)"
+                        )
+
                     def _load_history_data():
                         if hist_data_loaded["done"]:
                             return
