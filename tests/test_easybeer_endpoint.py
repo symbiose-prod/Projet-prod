@@ -280,3 +280,75 @@ class TestAuthForwarded:
         mock_session.return_value = sess
         execute_endpoint(method="POST", path="x", payload={"a": 1})
         assert sess.post.call_args.kwargs["auth"] == ("user", "pass")
+
+
+# ─── Intégration réelle : pipeline execute_endpoint → Fournisseur ────────────
+
+class TestIntegrationWithFournisseurModel:
+    """Valide que le pipeline complet marche avec un modèle de production.
+
+    Preuve concrète qu'un caller peut déclarer ``response_model=Fournisseur``
+    et recevoir une dataclass prête à consommer (pas de parsing manuel).
+    """
+
+    @patch("common.easybeer.endpoint.get_session")
+    @patch("common.easybeer.endpoint._auth", return_value=("u", "p"))
+    def test_response_parsed_into_fournisseur_dataclass(self, _auth, mock_session):
+        from common.easybeer import Fournisseur
+
+        # Payload typique EasyBeer (structure simplifiée)
+        eb_response = {
+            "idFournisseur": 42,
+            "nom": "Verallia",
+            "email": "orders@verallia.com",
+            "contacts": [
+                {"nom": "Dupont", "prenom": "Jean", "email": "jean@verallia.com"},
+            ],
+            "adresse": {
+                "adresse": "31 place des Corolles",
+                "codePostal": "92400",
+                "ville": "Courbevoie",
+                "pays": "France",
+            },
+        }
+        sess = MagicMock()
+        sess.get.return_value = _fake_response(json_data=eb_response)
+        mock_session.return_value = sess
+
+        result = execute_endpoint(
+            method="GET",
+            path="parametres/fournisseur/edition/42",
+            response_model=Fournisseur,
+        )
+
+        # Le caller reçoit une dataclass typée, pas un dict
+        assert isinstance(result, Fournisseur)
+        assert result.id_fournisseur == 42
+        assert result.nom == "Verallia"
+        assert result.email == "orders@verallia.com"
+        assert len(result.contacts) == 1
+        assert result.contacts[0].display_name == "Jean Dupont"
+        # Adresse aplatie par from_dict (France filtrée)
+        assert result.adresse_lignes == [
+            "31 place des Corolles",
+            "92400 Courbevoie",
+        ]
+
+    @patch("common.eb_cache.cache_get", return_value={"idFournisseur": 1, "nom": "Cached"})
+    @patch("common._session.current_tenant_id", return_value="t")
+    @patch("common.easybeer.endpoint.get_session")
+    @patch("common.easybeer.endpoint._auth", return_value=("u", "p"))
+    def test_cache_hit_also_parses_into_fournisseur(
+        self, _auth, _session, _tid, _cg,
+    ):
+        """Même chemin : cache L2 → Fournisseur.from_dict (aucun bypass)."""
+        from common.easybeer import Fournisseur
+
+        result = execute_endpoint(
+            method="GET",
+            path="x",
+            cache_key="k",
+            response_model=Fournisseur,
+        )
+        assert isinstance(result, Fournisseur)
+        assert result.nom == "Cached"

@@ -93,7 +93,9 @@ from .suppliers import (
     extract_text_from_pdf,
     find_fournisseur_by_name,
     get_all_fournisseurs,
+    get_all_fournisseurs_typed,
     get_fournisseur_edition,
+    get_fournisseur_edition_typed,
     get_supplier_files,
     get_supplier_reference_texts,
     invalidate_fournisseurs_cache,
@@ -128,8 +130,10 @@ __all__ = [
     # indicators
     "get_ca_mensuel",
     # suppliers
-    "get_all_fournisseurs", "find_fournisseur_by_name", "invalidate_fournisseurs_cache",
+    "get_all_fournisseurs", "get_all_fournisseurs_typed",
+    "find_fournisseur_by_name", "invalidate_fournisseurs_cache",
     "extract_supplier_email", "extract_supplier_contact_name", "extract_supplier_address",
-    "get_fournisseur_edition", "get_supplier_files", "download_supplier_file",
+    "get_fournisseur_edition", "get_fournisseur_edition_typed",
+    "get_supplier_files", "download_supplier_file",
     "extract_text_from_pdf", "get_supplier_reference_texts",
 ]

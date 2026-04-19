@@ -9,7 +9,9 @@ import base64 as _b64
 import time as _time
 from typing import Any
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
+from ._client import BASE, TIMEOUT, _auth, _log, get_session, is_rate_limited, retry_api
+from .endpoint import execute_endpoint
+from .models import Fournisseur
 
 # ─── Cache fournisseurs (TTL 1h — les fournisseurs changent rarement) ────────
 _FOURNISSEURS_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
@@ -17,55 +19,42 @@ _FOURNISSEURS_CACHE_TTL = 3600  # 1 heure
 
 
 @retry_api
-def _get_all_fournisseurs_raw() -> list[dict[str, Any]]:
-    """GET /parametres/fournisseur/liste/all (appel HTTP brut)."""
-    ep = "parametres/fournisseur/liste/all"
-    r = get_session().get(
-        f"{BASE}/{ep}",
-        auth=_auth(),
-        timeout=TIMEOUT,
-    )
-    _check_response(r, ep)
-    return _safe_json(r, ep)
-
-
 def get_all_fournisseurs() -> list[dict[str, Any]]:
-    """Fournisseurs — L1 in-memory, L2 DB cache, L3 API."""
-    # L1
+    """Fournisseurs — L1 in-memory, L2 DB cache, L3 API (via helper)."""
+    # L1: in-memory
     if (
         _FOURNISSEURS_CACHE["data"] is not None
         and (_time.monotonic() - _FOURNISSEURS_CACHE["ts"]) < _FOURNISSEURS_CACHE_TTL
     ):
         return _FOURNISSEURS_CACHE["data"]
-    # L2
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_get
-        cached = cache_get(current_tenant_id(), "fournisseurs", max_age_s=7200)
-        if cached is not None:
-            _FOURNISSEURS_CACHE["data"] = cached
-            _FOURNISSEURS_CACHE["ts"] = _time.monotonic()
-            return cached
-    except Exception:
-        pass
-    # L3
-    data = _get_all_fournisseurs_raw()
-    if data:
-        _FOURNISSEURS_CACHE["data"] = data
+    # L2 + L3 via helper
+    data = execute_endpoint(
+        method="GET",
+        path="parametres/fournisseur/liste/all",
+        cache_key="fournisseurs",
+        cache_ttl=7200,
+    )
+    result = data if isinstance(data, list) else []
+    if result:
+        _FOURNISSEURS_CACHE["data"] = result
         _FOURNISSEURS_CACHE["ts"] = _time.monotonic()
-        try:
-            from common._session import current_tenant_id
-            from common.eb_cache import cache_put
-            cache_put(current_tenant_id(), "fournisseurs", data)
-        except Exception:
-            pass
-    return data
+    return result
 
 
 def invalidate_fournisseurs_cache() -> None:
-    """Invalide le cache fournisseurs."""
+    """Invalide le cache L1 fournisseurs (le cache L2 expire seul au TTL)."""
     _FOURNISSEURS_CACHE["data"] = None
     _FOURNISSEURS_CACHE["ts"] = 0.0
+
+
+def get_all_fournisseurs_typed() -> list[Fournisseur]:
+    """Version typée de :func:`get_all_fournisseurs` — retourne list[Fournisseur].
+
+    Mappe chaque dict renvoyé par l'API (+ cache) vers le modèle dataclass.
+    Parsing défensif : un dict malformé donne un Fournisseur avec valeurs
+    par défaut plutôt que de crasher (voir ``Fournisseur.from_dict``).
+    """
+    return [Fournisseur.from_dict(f) for f in get_all_fournisseurs()]
 
 
 def find_fournisseur_by_name(name: str) -> dict[str, Any] | None:
@@ -165,15 +154,34 @@ def extract_supplier_address(fournisseur: dict[str, Any]) -> list[str]:
 
 @retry_api
 def get_fournisseur_edition(id_fournisseur: int) -> dict[str, Any]:
-    """GET /parametres/fournisseur/edition/{id} -> Full supplier data (incl. fichiers)."""
-    ep = f"parametres/fournisseur/edition/{id_fournisseur}"
-    r = get_session().get(
-        f"{BASE}/{ep}",
-        auth=_auth(),
-        timeout=TIMEOUT,
+    """GET /parametres/fournisseur/edition/{id} → Full supplier data (incl. fichiers).
+
+    Pas mis en cache : contient ``fichiers`` qui peut changer souvent, et
+    le caller l'appelle à la demande (page Ressources, lecture unique).
+    """
+    return execute_endpoint(
+        method="GET",
+        path=f"parametres/fournisseur/edition/{id_fournisseur}",
     )
-    _check_response(r, ep)
-    return _safe_json(r, ep)
+
+
+def get_fournisseur_edition_typed(id_fournisseur: int) -> Fournisseur:
+    """Version typée de :func:`get_fournisseur_edition` — retourne Fournisseur.
+
+    Utilise ``response_model=Fournisseur`` qui parse directement via le
+    descriptor. Preuve que le pipeline
+    ``execute_endpoint → response_model.from_dict`` fonctionne de bout
+    en bout sur un endpoint de production.
+
+    Note : ``fichiers`` (liste de ModeleUpload) n'est pas mappée dans le
+    modèle typé aujourd'hui — utiliser :func:`get_fournisseur_edition`
+    (dict) si besoin d'accéder aux fichiers joints du fournisseur.
+    """
+    return execute_endpoint(
+        method="GET",
+        path=f"parametres/fournisseur/edition/{id_fournisseur}",
+        response_model=Fournisseur,
+    )
 
 
 def get_supplier_files(fournisseur: dict[str, Any]) -> list[dict[str, Any]]:
