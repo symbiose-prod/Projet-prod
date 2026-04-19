@@ -75,6 +75,22 @@ def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     return data
 
 
+def get_autonomie_stocks_typed(window_days: int):
+    """Version typée de ``get_autonomie_stocks`` qui retourne un
+    :class:`AutonomieResponse` (dataclass avec parsing défensif).
+
+    Préférer cette fonction pour les nouveaux callers : elle garantit qu'un
+    champ ``null`` côté EasyBeer ne crash pas côté Python (retourne valeurs
+    sûres par défaut + warning log), et expose une API typée pour l'IDE.
+
+    Les callers existants continuent d'utiliser ``get_autonomie_stocks`` (dict)
+    jusqu'à migration progressive.
+    """
+    from .models import AutonomieResponse
+    raw = get_autonomie_stocks(window_days)
+    return AutonomieResponse.from_dict(raw or {})
+
+
 # ─── Lots matieres premieres ─────────────────────────────────────────────────
 
 @retry_api

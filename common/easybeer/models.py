@@ -50,12 +50,21 @@ def _as_str(v: Any, default: str = "") -> str:
 class AutonomieProduit:
     """Une ligne de la réponse ``/indicateur/autonomie-stocks``.
 
-    Schema EasyBeer: ``ModeleAutonomie.produits[]``
+    Schema EasyBeer: ``ModeleAutonomie.produits[]``.
+
+    Mapping des champs EasyBeer (source vérité → commentaire dans stocks.py) :
+        volume            = Volume VENDU (hL) sur la fenêtre d'analyse
+        volumeVirtuel     = Volume en STOCK (hL) courant
+        quantite          = Cartons VENDUS sur la fenêtre d'analyse
+        quantiteVirtuelle = Cartons en STOCK courant
+        autonomie         = Jours de stock restants (= stock / conso journalière)
     """
     libelle: str
-    autonomie: float  # jours
-    quantite_virtuelle: float
-    volume: float  # litres par unité
+    autonomie: float                  # jours
+    quantite_virtuelle: float         # cartons en stock
+    quantite: float                   # cartons vendus (fenêtre)
+    volume: float                     # hL vendus (fenêtre)
+    volume_virtuel: float             # hL en stock
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> AutonomieProduit:
@@ -66,7 +75,9 @@ class AutonomieProduit:
             libelle=_as_str(d.get("libelle")),
             autonomie=_as_float(d.get("autonomie")),
             quantite_virtuelle=_as_float(d.get("quantiteVirtuelle")),
+            quantite=_as_float(d.get("quantite")),
             volume=_as_float(d.get("volume")),
+            volume_virtuel=_as_float(d.get("volumeVirtuel")),
         )
 
 

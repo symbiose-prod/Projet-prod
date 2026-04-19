@@ -71,6 +71,7 @@ from .stocks import (
     get_all_matieres_premieres,
     get_autonomie_stocks,
     get_autonomie_stocks_excel,
+    get_autonomie_stocks_typed,
     get_mp_lots,
     get_stock_produit_detail,
 )
@@ -97,7 +98,8 @@ __all__ = [
     # models (typed dataclasses)
     "AutonomieProduit", "AutonomieResponse", "MatierePremiere",
     # stocks
-    "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_all_matieres_premieres",
+    "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_autonomie_stocks_typed",
+    "get_all_matieres_premieres",
     "get_mp_lots", "get_stock_produit_detail", "fetch_carton_weights",
     # history
     "get_contenant_historique", "get_mp_historique_entree",

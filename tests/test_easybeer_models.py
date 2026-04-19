@@ -14,29 +14,39 @@ class TestAutonomieProduit:
             "libelle": "Kéfir Original",
             "autonomie": 28.5,
             "quantiteVirtuelle": 1150,
+            "quantite": 500,
             "volume": 4.0,
+            "volumeVirtuel": 12.0,
         })
         assert p.libelle == "Kéfir Original"
         assert p.autonomie == 28.5
         assert p.quantite_virtuelle == 1150.0
+        assert p.quantite == 500.0
         assert p.volume == 4.0
+        assert p.volume_virtuel == 12.0
 
     def test_missing_fields_default_to_zero(self):
         p = AutonomieProduit.from_dict({"libelle": "Kéfir"})
         assert p.libelle == "Kéfir"
         assert p.autonomie == 0.0
         assert p.quantite_virtuelle == 0.0
+        assert p.quantite == 0.0
         assert p.volume == 0.0
+        assert p.volume_virtuel == 0.0
 
     def test_null_fields_default_to_zero(self):
         p = AutonomieProduit.from_dict({
             "libelle": None,
             "autonomie": None,
             "quantiteVirtuelle": None,
+            "quantite": None,
             "volume": None,
+            "volumeVirtuel": None,
         })
         assert p.libelle == ""
         assert p.autonomie == 0.0
+        assert p.quantite == 0.0
+        assert p.volume_virtuel == 0.0
 
     def test_wrong_types_default_safely(self):
         p = AutonomieProduit.from_dict({
