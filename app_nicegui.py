@@ -63,7 +63,7 @@ app.add_static_files("/static", Path(__file__).resolve().parent / "static")
 # Pages publiques (pas besoin d'etre connecte)
 PUBLIC_PATHS = {
     "/login", "/_nicegui", "/favicon.ico", "/reset",
-    "/health", "/static", "/service-worker.js", "/api/sync",
+    "/health", "/metrics", "/static", "/service-worker.js", "/api/sync",
 }
 
 # Cookie remember-me : duree par defaut (30 jours)
@@ -389,6 +389,125 @@ async def _health_check():
     return JSONResponse(
         {"status": "ok" if essential_ok else "degraded", "checks": checks},
         status_code=200 if essential_ok else 503,
+    )
+
+
+# ─── Metrics Prometheus (text format, sans dépendance externe) ──────────────
+
+@app.get("/metrics")
+async def _metrics():
+    """Exporte les métriques internes au format Prometheus text-based exposition.
+
+    Format conforme : https://prometheus.io/docs/instrumenting/exposition_formats/
+
+    Métriques exposées :
+    - ferment_easybeer_circuit_breaker_open (gauge 0|1)
+    - ferment_easybeer_circuit_breaker_failure_count (gauge)
+    - ferment_easybeer_rate_limit_remaining_seconds (gauge)
+    - ferment_easybeer_configured (gauge 0|1)
+    - ferment_eb_cache_entries (gauge)
+    - ferment_sync_rate_limit_active_keys (gauge)
+    - ferment_sync_rate_limit_hits_total{key_id} (gauge, par clé)
+    - ferment_app_info{version, env} (gauge, toujours 1)
+
+    Accessible sans auth (comme /health) — à restreindre par IP côté Caddy
+    ou firewall en prod si l'endpoint fuit des infos sensibles.
+    """
+    from starlette.responses import PlainTextResponse
+
+    lines: list[str] = []
+    _emitted_helps: set[str] = set()
+
+    def _emit(name: str, help_text: str, metric_type: str,
+              value: float, labels: dict[str, str] | None = None) -> None:
+        if name not in _emitted_helps:
+            lines.append(f"# HELP {name} {help_text}")
+            lines.append(f"# TYPE {name} {metric_type}")
+            _emitted_helps.add(name)
+        if labels:
+            label_str = ",".join(
+                f'{k}="{str(v).replace(chr(92), chr(92)*2).replace(chr(34), chr(92)+chr(34))}"'
+                for k, v in labels.items()
+            )
+            lines.append(f"{name}{{{label_str}}} {value}")
+        else:
+            lines.append(f"{name} {value}")
+
+    # App info
+    _emit(
+        "ferment_app_info", "Info application (toujours 1)", "gauge", 1,
+        {"env": os.environ.get("ENV", "development")},
+    )
+
+    # EasyBeer circuit breaker
+    try:
+        from common.easybeer._client import (
+            circuit_breaker_state,
+            is_rate_limited,
+        )
+        from common.easybeer._client import (
+            is_configured as eb_configured,
+        )
+        cb = circuit_breaker_state()
+        cb_remaining = max(0.0, float(cb.get("remaining", 0) or 0))
+        _emit(
+            "ferment_easybeer_configured",
+            "1 si EasyBeer a des credentials configurés", "gauge",
+            1 if eb_configured() else 0,
+        )
+        _emit(
+            "ferment_easybeer_circuit_breaker_open",
+            "1 si le circuit-breaker EasyBeer est ouvert", "gauge",
+            1 if cb_remaining > 0 else 0,
+        )
+        _emit(
+            "ferment_easybeer_circuit_breaker_failure_count",
+            "Compteur d'échecs 5xx consécutifs (reset à 0 au succès)", "gauge",
+            int(cb.get("failures", 0) or 0),
+        )
+        _emit(
+            "ferment_easybeer_rate_limit_remaining_seconds",
+            "Secondes restantes avant la fin du rate-limit EasyBeer (0 si inactif)", "gauge",
+            float(is_rate_limited() or 0),
+        )
+    except Exception:
+        _log.debug("Échec collecte metrics EasyBeer", exc_info=True)
+
+    # Cache DB L2
+    try:
+        from db.conn import run_sql as _run_sql
+        rows = _run_sql("SELECT COUNT(*) AS n FROM eb_cache") or []
+        _emit(
+            "ferment_eb_cache_entries",
+            "Nombre d'entrées dans le cache DB L2 EasyBeer", "gauge",
+            int(rows[0]["n"]) if rows else 0,
+        )
+    except Exception:
+        _log.debug("Échec collecte metrics cache", exc_info=True)
+
+    # Sync rate limiter
+    try:
+        from common.sync.rate_limit import state_snapshot
+        snap = state_snapshot()
+        _emit(
+            "ferment_sync_rate_limit_active_keys",
+            "Nombre de clés API actives dans la fenêtre rate-limit courante",
+            "gauge", len(snap),
+        )
+        for key_id, hits in snap.items():
+            # Tronque la clé à 8 car pour éviter de leaker un secret
+            short = key_id[:8]
+            _emit(
+                "ferment_sync_rate_limit_hits",
+                "Nombre de hits dans la fenêtre rate-limit courante (par clé)",
+                "gauge", hits, {"key_id": short},
+            )
+    except Exception:
+        _log.debug("Échec collecte metrics sync", exc_info=True)
+
+    return PlainTextResponse(
+        "\n".join(lines) + "\n",
+        media_type="text/plain; version=0.0.4; charset=utf-8",
     )
 
 
