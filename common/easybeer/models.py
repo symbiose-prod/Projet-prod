@@ -171,6 +171,13 @@ class BrassinLight:
     Le flag ``is_archive`` n'est pas dans la réponse EasyBeer : il est posé
     localement par :func:`common.services.ramasse_service.load_active_brassins`
     pour différencier les archives affichées à côté des brassins en cours.
+
+    Le champ ``raw`` conserve la réponse API brute pour les callers pas encore
+    migrés vers le modèle typé (ex: :func:`common.ramasse.build_ramasse_lines`
+    qui attend un dict). Permet une migration progressive — les appels au
+    sens typé (``b.nom``, ``b.id_brassin``, ``b.is_archive``…) cohabitent avec
+    le chemin legacy (``b.raw`` → dict EasyBeer complet). À retirer quand
+    tous les consommateurs seront typés.
     """
     id_brassin: int
     nom: str
@@ -179,11 +186,12 @@ class BrassinLight:
     produit_libelle: str           # produit.libelle (ex: "Kéfir Original")
     id_produit: int                # produit.idProduit
     is_archive: bool = False       # flag local, pas dans l'API
+    raw: dict = field(default_factory=dict)  # payload API brut (compat)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> BrassinLight:
         if not isinstance(d, dict):
-            return cls(0, "", 0.0, False, "", 0, False)
+            return cls(0, "", 0.0, False, "", 0, False, {})
         produit = d.get("produit") if isinstance(d.get("produit"), dict) else {}
         return cls(
             id_brassin=_as_int(d.get("idBrassin")),
@@ -193,6 +201,7 @@ class BrassinLight:
             produit_libelle=_as_str(produit.get("libelle")),
             id_produit=_as_int(produit.get("idProduit")),
             is_archive=bool(d.get("_is_archive") or False),
+            raw=d,
         )
 
 

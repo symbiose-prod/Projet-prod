@@ -40,20 +40,26 @@ class TestLoadActiveBrassins:
     @patch("common.services.ramasse_service.get_brassins_en_cours")
     def test_happy_path_merges_active_and_archives(self, mock_ec, mock_ar):
         mock_ec.return_value = [
-            {"idBrassin": 1, "nom": "Brassin A"},
-            {"idBrassin": 2, "nom": "Brassin B"},
+            {"idBrassin": 1, "nom": "Brassin A", "volume": 7200},
+            {"idBrassin": 2, "nom": "Brassin B", "volume": 5200},
         ]
         mock_ar.return_value = [
-            {"idBrassin": 3, "nom": "Brassin C archivé"},
+            {"idBrassin": 3, "nom": "Brassin C archivé", "volume": 7200},
         ]
         brassins, errors = load_active_brassins(nb_archives=3)
         assert errors == []
         assert len(brassins) == 3
-        # C est archivé
-        c = next(b for b in brassins if b["idBrassin"] == 3)
-        assert c["_is_archive"] is True
-        a = next(b for b in brassins if b["idBrassin"] == 1)
-        assert "_is_archive" not in a
+        # Tous sont typés BrassinLight
+        from common.easybeer import BrassinLight
+        assert all(isinstance(b, BrassinLight) for b in brassins)
+        # C est archivé, A et B non
+        c = next(b for b in brassins if b.id_brassin == 3)
+        assert c.is_archive is True
+        assert c.nom == "Brassin C archivé"
+        a = next(b for b in brassins if b.id_brassin == 1)
+        assert a.is_archive is False
+        # raw est accessible pour les callers pas encore migrés
+        assert a.raw.get("idBrassin") == 1
 
     @patch("common.services.ramasse_service.get_brassins_archives")
     @patch("common.services.ramasse_service.get_brassins_en_cours")
@@ -64,7 +70,7 @@ class TestLoadActiveBrassins:
         brassins, errors = load_active_brassins()
         assert errors == []
         assert len(brassins) == 1
-        assert "_is_archive" not in brassins[0]
+        assert brassins[0].is_archive is False
 
     @patch("common.services.ramasse_service.get_brassins_archives")
     @patch("common.services.ramasse_service.get_brassins_en_cours")
@@ -75,7 +81,7 @@ class TestLoadActiveBrassins:
         ]
         mock_ar.return_value = []
         brassins, _ = load_active_brassins()
-        assert [b["idBrassin"] for b in brassins] == [1]
+        assert [b.id_brassin for b in brassins] == [1]
 
     @patch("common.services.ramasse_service.get_brassins_archives")
     @patch("common.services.ramasse_service.get_brassins_en_cours")
@@ -85,9 +91,9 @@ class TestLoadActiveBrassins:
         brassins, errors = load_active_brassins()
         assert len(errors) == 1
         assert "Brassins en cours" in errors[0]
-        # on a quand même les archives, marquées _is_archive
+        # on a quand même les archives, marquées archive
         assert len(brassins) == 1
-        assert brassins[0]["_is_archive"] is True
+        assert brassins[0].is_archive is True
 
     @patch("common.services.ramasse_service.get_brassins_archives")
     @patch("common.services.ramasse_service.get_brassins_en_cours")
@@ -97,7 +103,7 @@ class TestLoadActiveBrassins:
         brassins, errors = load_active_brassins()
         assert len(errors) == 1
         assert "Brassins archivés" in errors[0]
-        assert [b["idBrassin"] for b in brassins] == [1]
+        assert [b.id_brassin for b in brassins] == [1]
 
 
 # ─── load_barcode_matrix ───────────────────────────────────────────────────

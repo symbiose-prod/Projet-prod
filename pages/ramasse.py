@@ -17,6 +17,12 @@ from nicegui import ui
 _log = logging.getLogger("ferment.ramasse")
 
 from common.auth import validate_email
+
+# ─── Helpers ────────────────────────────────────────────────────────────────
+# Les helpers de fetch EB ont migré dans common/services/ramasse_service.py
+# (aucune dépendance à nicegui, testables unitaire). Importés ici via
+# _load_ramasse_initial_data.
+from common.easybeer import BrassinLight
 from common.easybeer import (
     is_configured as eb_configured,
 )
@@ -68,18 +74,13 @@ from common.xlsx_fill import build_bl_enlevements_pdf
 from pages.auth import require_auth
 from pages.theme import COLORS, page_layout, section_title
 
-# ─── Helpers ────────────────────────────────────────────────────────────────
 
-# Les helpers de fetch EB ont migré dans common/services/ramasse_service.py
-# (aucune dépendance à nicegui, testables unitaire). Importés ici via
-# _load_ramasse_initial_data.
-
-
-def _brassin_label(b: dict) -> str:
-    nom = b.get("nom", "?")
-    prod = clean_product_label((b.get("produit") or {}).get("libelle", "?"))
-    vol = b.get("volume", 0)
-    tag = " [archivé]" if b.get("_is_archive") else ""
+def _brassin_label(b: BrassinLight) -> str:
+    """Libellé affiché dans le select brassin (typed-safe)."""
+    nom = b.nom or "?"
+    prod = clean_product_label(b.produit_libelle or "?")
+    vol = b.volume or 0
+    tag = " [archivé]" if b.is_archive else ""
     return f"{nom} — {prod} — {vol:.0f}L{tag}"
 
 
@@ -327,7 +328,7 @@ async def page_ramasse():
                 section_title("Sélection des brassins", "playlist_add_check")
 
         brassin_options = {
-            b["idBrassin"]: _brassin_label(b)
+            b.id_brassin: _brassin_label(b)
             for b in brassins
         }
 
@@ -415,7 +416,7 @@ async def page_ramasse():
 
             selected_ids = brassin_select.value or []
             selected_ids_set = {int(x) for x in selected_ids if x is not None}
-            selected = [b for b in brassins if b["idBrassin"] in selected_ids_set]
+            selected = [b for b in brassins if b.id_brassin in selected_ids_set]
 
             if not selected:
                 with content_container:
@@ -424,9 +425,12 @@ async def page_ramasse():
                     ).classes("text-grey-6 text-body1 q-pa-md")
                 return
 
+            # build_ramasse_lines pas encore migré au typage → on lui passe les
+            # dicts bruts via BrassinLight.raw (compat pendant la migration
+            # progressive). Le point de découplage vit côté common/ramasse.py.
             try:
                 rows, meta_by_label = build_ramasse_lines(
-                    selected, id_entrepot, cb_by_product, eb_weights
+                    [b.raw for b in selected], id_entrepot, cb_by_product, eb_weights,
                 )
             except (ValueError, KeyError, TypeError) as exc:
                 with content_container:

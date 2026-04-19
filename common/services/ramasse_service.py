@@ -25,6 +25,7 @@ from typing import Any
 import requests
 
 from common.easybeer import (
+    BrassinLight,
     EasyBeerError,
     fetch_carton_weights,
     get_brassins_archives,
@@ -45,8 +46,9 @@ class RamasseInitialData:
     ou [] pour ne pas bloquer l'ouverture de la page ramasse.
 
     Attributes:
-        brassins: Liste brassins en cours + archives non annulés (archive
-            marquée par ``_is_archive=True``).
+        brassins: Liste typée des brassins (en cours + archives non annulés).
+            Flag ``is_archive=True`` posé par ce service pour différenciation
+            UI — voir :class:`common.easybeer.BrassinLight`.
         brassin_load_errors: Messages d'erreur utilisateur à afficher en
             bandeau de la page si la liste est incomplète.
         cb_by_product: Matrice codes-barres indexée par idProduit, ou
@@ -55,22 +57,27 @@ class RamasseInitialData:
             fallback sur le premier entrepôt de la liste.
         eb_weights: Mapping ``(idProduit, format_code)`` → poids unitaire (kg).
     """
-    brassins: list[dict]
+    brassins: list[BrassinLight]
     brassin_load_errors: list[str]
     cb_by_product: dict[int, list[dict]] | None
     id_entrepot: int | None
     eb_weights: dict[tuple[int, str], float] | None
 
 
-def load_active_brassins(nb_archives: int = 3) -> tuple[list[dict], list[str]]:
-    """Charge brassins en cours + N derniers archivés (dédupliqués).
+def load_active_brassins(
+    nb_archives: int = 3,
+) -> tuple[list[BrassinLight], list[str]]:
+    """Charge brassins en cours + N derniers archivés (dédupliqués, typés).
 
     Les brassins archivés qui ne sont pas déjà dans la liste "en cours" sont
-    ajoutés avec le flag ``_is_archive=True`` (pour différenciation UI). Les
-    brassins annulés (``annule=True``) sont filtrés.
+    ajoutés avec le flag ``_is_archive=True`` sur le dict brut (reporté dans
+    ``BrassinLight.is_archive``). Les brassins annulés (``annule=True``) sont
+    filtrés.
 
     Returns:
-        (liste des brassins, liste des messages d'erreur rencontrés)
+        (liste de BrassinLight, liste des messages d'erreur rencontrés).
+        Chaque BrassinLight expose le dict EasyBeer complet via ``.raw`` pour
+        les callers pas encore migrés (ex: build_ramasse_lines).
     """
     errors: list[str] = []
 
@@ -89,7 +96,9 @@ def load_active_brassins(nb_archives: int = 3) -> tuple[list[dict], list[str]]:
                 en_cours.append(b)
     except (EasyBeerError, requests.RequestException) as exc:
         errors.append(f"Brassins archivés : {exc}")
-    return [b for b in en_cours if not b.get("annule")], errors
+
+    active_raw = [b for b in en_cours if not b.get("annule")]
+    return [BrassinLight.from_dict(b) for b in active_raw], errors
 
 
 def load_barcode_matrix() -> dict[int, list[dict]] | None:
