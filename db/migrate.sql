@@ -331,6 +331,16 @@ ALTER TABLE ramasse_history
 CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_driver_passed
   ON ramasse_history(tenant_id, driver_passed, date_ramasse DESC);
 
+-- Soft-delete (ajout 2026-04-19) — permet récupération pendant 7 jours avant purge.
+ALTER TABLE ramasse_history
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- Index partiel : seules les lignes vivantes (non supprimées) sont indexées,
+-- les requêtes quotidiennes scannent donc uniquement les ramasses actives.
+CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_active
+  ON ramasse_history(tenant_id, date_ramasse DESC)
+  WHERE deleted_at IS NULL;
+
 -- =========================
 -- Cache EasyBeer générique (JSONB)
 -- =========================

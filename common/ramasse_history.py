@@ -151,17 +151,24 @@ def list_ramasses(
     *,
     limit: int = 20,
     offset: int = 0,
+    include_deleted: bool = False,
 ) -> list[dict[str, Any]]:
-    """Liste les ramasses (sans pdf_bytes pour la perf). Triées par date desc."""
+    """Liste les ramasses (sans pdf_bytes pour la perf). Triées par date desc.
+
+    Par défaut, exclut les ramasses soft-deleted (``deleted_at IS NOT NULL``).
+    Utiliser ``include_deleted=True`` pour voir les ramasses en corbeille
+    (récupération possible pendant 7 jours).
+    """
     tid = tenant_id or current_tenant_id()
+    where_deleted = "" if include_deleted else " AND deleted_at IS NULL"
     return run_sql(
-        """
+        f"""
         SELECT id, date_ramasse, destinataire, recipients,
                line_count, total_cartons, total_palettes, total_poids_kg,
                status, version, driver_passed, driver_passed_at,
-               created_at, updated_at
+               deleted_at, created_at, updated_at
         FROM ramasse_history
-        WHERE tenant_id = :tid
+        WHERE tenant_id = :tid{where_deleted}
         ORDER BY created_at DESC
         LIMIT :lim OFFSET :off
         """,
@@ -172,19 +179,26 @@ def list_ramasses(
 def get_ramasse(
     ramasse_id: str,
     tenant_id: str | None = None,
+    *,
+    include_deleted: bool = False,
 ) -> dict[str, Any] | None:
-    """Charge une ramasse complète (avec pdf_bytes, lignes, versioning, verrouillage)."""
+    """Charge une ramasse complète (avec pdf_bytes, lignes, versioning, verrouillage).
+
+    Par défaut, ignore les ramasses soft-deleted. ``include_deleted=True`` permet
+    la récupération depuis la corbeille (restore_ramasse).
+    """
     tid = tenant_id or current_tenant_id()
+    where_deleted = "" if include_deleted else " AND deleted_at IS NULL"
     rows = run_sql(
-        """
+        f"""
         SELECT id, date_ramasse, destinataire, recipients,
                line_count, total_cartons, total_palettes, total_poids_kg,
                lines, packaging, pdf_bytes, brassin_ids, status,
                version, version_log, previous_lines,
                driver_passed, driver_passed_at, driver_passed_by,
-               created_at, updated_at
+               deleted_at, created_at, updated_at
         FROM ramasse_history
-        WHERE id = :rid AND tenant_id = :tid
+        WHERE id = :rid AND tenant_id = :tid{where_deleted}
         LIMIT 1
         """,
         {"rid": ramasse_id, "tid": tid},
@@ -345,28 +359,95 @@ def delete_ramasse(
     ramasse_id: str,
     tenant_id: str | None = None,
 ) -> bool:
-    """Supprime définitivement une ramasse de l'historique.
+    """Soft-delete : marque la ramasse comme supprimée (``deleted_at = now()``).
 
-    Retourne ``True`` si l'enregistrement a bien été supprimé, ``False`` sinon
-    (ramasse introuvable ou appartenant à un autre tenant). La suppression est
-    **hard delete** — l'enregistrement est retiré de la table, PDF compris.
+    L'enregistrement reste en base pendant **7 jours** pour permettre une
+    récupération via :func:`restore_ramasse`. Au-delà, :func:`purge_expired_ramasses`
+    effectue le hard-delete définitif (à appeler périodiquement, ex: cron quotidien).
+
+    Retourne ``True`` si le marquage a bien eu lieu, ``False`` sinon (ramasse
+    introuvable, déjà supprimée, ou appartenant à un autre tenant).
     """
     tid = tenant_id or current_tenant_id()
     rows = run_sql(
         """
-        DELETE FROM ramasse_history
-        WHERE id = :rid AND tenant_id = :tid
+        UPDATE ramasse_history
+        SET deleted_at = now(),
+            updated_at = now()
+        WHERE id = :rid AND tenant_id = :tid AND deleted_at IS NULL
         RETURNING id
         """,
         {"rid": ramasse_id, "tid": tid},
     )
     if rows:
-        _log.info("Ramasse supprimée: id=%s", ramasse_id)
+        _log.info("Ramasse soft-deleted: id=%s (récupérable 7 jours)", ramasse_id)
         from common.audit import ACTION_RAMASSE_DELETED
-        _audit(ACTION_RAMASSE_DELETED, tid, {"ramasse_id": ramasse_id})
+        _audit(ACTION_RAMASSE_DELETED, tid, {"ramasse_id": ramasse_id, "soft": True})
         return True
-    _log.warning("delete_ramasse: ramasse introuvable id=%s", ramasse_id)
+    _log.warning("delete_ramasse: ramasse introuvable ou déjà supprimée id=%s", ramasse_id)
     return False
+
+
+def restore_ramasse(
+    ramasse_id: str,
+    tenant_id: str | None = None,
+) -> bool:
+    """Récupère une ramasse soft-deleted (reset ``deleted_at`` à NULL).
+
+    Retourne ``True`` si la ramasse a pu être restaurée (existait et était
+    marquée supprimée). Si la ramasse a été hard-deleted (purge), retourne
+    ``False``.
+    """
+    tid = tenant_id or current_tenant_id()
+    rows = run_sql(
+        """
+        UPDATE ramasse_history
+        SET deleted_at = NULL,
+            updated_at = now()
+        WHERE id = :rid AND tenant_id = :tid AND deleted_at IS NOT NULL
+        RETURNING id
+        """,
+        {"rid": ramasse_id, "tid": tid},
+    )
+    if rows:
+        _log.info("Ramasse restaurée: id=%s", ramasse_id)
+        from common.audit import ACTION_RAMASSE_RESTORED
+        _audit(ACTION_RAMASSE_RESTORED, tid, {"ramasse_id": ramasse_id})
+        return True
+    _log.warning("restore_ramasse: ramasse introuvable ou non-supprimée id=%s", ramasse_id)
+    return False
+
+
+def purge_expired_ramasses(
+    retention_days: int = 7,
+    tenant_id: str | None = None,
+) -> int:
+    """Hard-delete des ramasses soft-deleted depuis plus de *retention_days*.
+
+    À appeler périodiquement (cron) pour nettoyer la corbeille.
+    Si ``tenant_id`` est précisé, purge uniquement ce tenant ; sinon toutes les
+    ramasses expirées (admin uniquement).
+
+    Retourne le nombre d'enregistrements hard-deletés.
+    """
+    params: dict[str, Any] = {"days": int(retention_days)}
+    where_tenant = ""
+    if tenant_id is not None:
+        where_tenant = " AND tenant_id = :tid"
+        params["tid"] = tenant_id
+    rows = run_sql(
+        f"""
+        DELETE FROM ramasse_history
+        WHERE deleted_at IS NOT NULL
+          AND deleted_at < now() - make_interval(days => :days){where_tenant}
+        RETURNING id
+        """,
+        params,
+    )
+    purged = len(rows or [])
+    if purged:
+        _log.info("Ramasses purgées (hard-delete, >%dj): %d", retention_days, purged)
+    return purged
 
 
 def get_last_packaging_for_dest(

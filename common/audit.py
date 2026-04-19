@@ -31,6 +31,7 @@ ACTION_SUPPLIER_CONFIG_UPDATED = "supplier_config_updated"
 ACTION_RAMASSE_SAVED = "ramasse_saved"
 ACTION_RAMASSE_UPDATED = "ramasse_updated"
 ACTION_RAMASSE_DELETED = "ramasse_deleted"
+ACTION_RAMASSE_RESTORED = "ramasse_restored"
 ACTION_RAMASSE_DRIVER_PASSED = "ramasse_driver_passed"
 
 
