@@ -443,7 +443,8 @@ BEGIN
                        sync_operations, sync_api_keys,
                        product_bom, ramasse_history,
                        client_cache, client_tags_cache,
-                       eb_cache, eb_sync_meta TO shark;
+                       eb_cache, eb_sync_meta,
+                       email_queue TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;
