@@ -19,6 +19,8 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import date as _date
+from typing import Any
 
 import requests
 
@@ -159,3 +161,132 @@ def load_initial_data(*, nb_archives: int = 3) -> RamasseInitialData:
         id_entrepot=f_entrepot.result(),
         eb_weights=f_weights.result(),
     )
+
+
+# ─── Helpers de composition de l'envoi (pures, testables) ────────────────────
+
+@dataclass(frozen=True)
+class RamasseTotals:
+    """Totaux agrégés d'une liste de lignes actives (cartons > 0)."""
+    cartons: int
+    palettes: int
+    poids_kg: int
+
+
+def compute_totals(active_rows: list[dict[str, Any]]) -> RamasseTotals:
+    """Somme cartons / palettes / poids des lignes actives.
+
+    Chaque ligne peut avoir des valeurs ``None`` ou des strings numériques
+    (source : binding Quasar Table) — on coerce en int défensivement.
+    """
+    tot_cartons = sum(int(r.get("cartons") or 0) for r in active_rows)
+    tot_palettes = sum(int(r.get("palettes") or 0) for r in active_rows)
+    tot_poids = sum(int(r.get("poids") or 0) for r in active_rows)
+    return RamasseTotals(
+        cartons=tot_cartons,
+        palettes=tot_palettes,
+        poids_kg=tot_poids,
+    )
+
+
+def build_lines_payload(active_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sérialise les lignes pour :func:`common.ramasse_history.save_ramasse`.
+
+    Retient uniquement les colonnes persistées (ref, produit, ddm, cartons,
+    palettes, poids). Les valeurs sont normalisées en int pour les numériques.
+    """
+    return [
+        {
+            "ref": r.get("ref", ""),
+            "produit": r.get("produit", ""),
+            "ddm": r.get("ddm", ""),
+            "cartons": int(r.get("cartons") or 0),
+            "palettes": int(r.get("palettes") or 0),
+            "poids": int(r.get("poids") or 0),
+        }
+        for r in active_rows
+    ]
+
+
+def build_email_subject(
+    date_ramasse: _date,
+    *,
+    is_update: bool = False,
+    version: int = 1,
+) -> str:
+    """Construit le sujet de l'email ramasse (v1 ou mise à jour v2+)."""
+    if is_update:
+        return (
+            f"Mise à jour de la ramasse du {date_ramasse:%d/%m/%Y} "
+            f"— Ferment Station (v{version})"
+        )
+    return f"Demande de ramasse — {date_ramasse:%d/%m/%Y} — Ferment Station"
+
+
+def _render_packaging_block(packaging_lines: list[dict] | None) -> str:
+    """Bloc HTML liste des emballages à ramener. Vide si aucun."""
+    if not packaging_lines:
+        return ""
+    items = "<br>".join(
+        f"— {p.get('qty', 0)} {p.get('unit', '')}(s) {p.get('label', '')}"
+        for p in packaging_lines
+    )
+    return f"<p><strong>Emballages à ramener :</strong><br>{items}</p>"
+
+
+_SIGNATURE_HTML = (
+    "<hr>\n"
+    "<p><strong>Ferment Station</strong><br>\n"
+    "Producteur de boissons fermentées<br>\n"
+    "26 Rue Robert Witchitz – 94200 Ivry-sur-Seine</p>"
+)
+
+
+def build_email_body(
+    date_ramasse: _date,
+    *,
+    total_palettes: int,
+    total_cartons: int,
+    packaging_lines: list[dict] | None = None,
+    is_update: bool = False,
+    version: int = 1,
+) -> str:
+    """Corps HTML de l'email de ramasse.
+
+    Deux modes :
+    - v1 (création) : message court demandant la ramasse.
+    - v2+ (mise à jour) : mention explicite du remplacement, pointe vers le
+      PDF différentiel (jaune = ajouts, bleu = modifications).
+
+    La signature et l'adresse sont toujours ajoutées en pied de mail.
+    """
+    pkg_html = _render_packaging_block(packaging_lines)
+    plural_pal = "s" if total_palettes != 1 else ""
+
+    if is_update:
+        body = f"""
+        <p>Bonjour,</p>
+        <p>Nous vous envoyons une <strong>mise à jour</strong> de la ramasse
+        prévue pour le <strong>{date_ramasse:%d/%m/%Y}</strong> (version {version}).</p>
+        <p>Nouveau total : <strong>{total_palettes}</strong>
+        palette{plural_pal} ({total_cartons} cartons).</p>
+        <p>Merci de bien vouloir tenir compte de cette version qui
+        <strong>remplace</strong> la précédente. Le PDF ci-joint fait
+        apparaître les changements :
+        <strong>nouvelles lignes en jaune</strong>,
+        <strong>lignes modifiées en bleu</strong>
+        (avec l'ancien nombre de cartons indiqué).</p>
+        {pkg_html}
+        <p>Merci pour votre compréhension,<br>Bonne journée.</p>
+        {_SIGNATURE_HTML}
+        """
+    else:
+        body = f"""
+        <p>Bonjour,</p>
+        <p>Nous aurions besoin d'une ramasse pour le {date_ramasse:%d/%m/%Y}.<br>
+        Pour <strong>{total_palettes}</strong> palette{plural_pal}.</p>
+        {pkg_html}
+        <p>Merci,<br>Bon après-midi.</p>
+        {_SIGNATURE_HTML}
+        """
+    return body

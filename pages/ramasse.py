@@ -57,6 +57,12 @@ from common.ramasse_history import (
     save_ramasse,
     update_ramasse,
 )
+from common.services.ramasse_service import (
+    build_email_body,
+    build_email_subject,
+    build_lines_payload,
+    compute_totals,
+)
 from common.services.ramasse_service import load_initial_data as _load_ramasse_initial_data
 from common.xlsx_fill import build_bl_enlevements_pdf
 from pages.auth import require_auth
@@ -952,66 +958,26 @@ async def page_ramasse():
                             pdf_bytes = _build_pdf_for_active_rows(active_rows, d)
 
                             dest_title = dest_select.value
-                            tot_palettes = sum(int(r["palettes"]) for r in active_rows)
-                            tot_cartons = sum(int(r["cartons"]) for r in active_rows)
-                            tot_poids = sum(int(r["poids"]) for r in active_rows)
+                            totals = compute_totals(active_rows)
+                            tot_cartons = totals.cartons
+                            tot_palettes = totals.palettes
+                            tot_poids = totals.poids_kg
                             filename = f"Fiche_de_ramasse_{d:%Y%m%d}.pdf"
 
-                            # ── Sujet + corps email : v1 ou v2+ ──
-                            if is_update:
-                                subject = (
-                                    f"Mise à jour de la ramasse du {d:%d/%m/%Y} "
-                                    f"— Ferment Station (v{next_version})"
-                                )
-                            else:
-                                subject = f"Demande de ramasse — {d:%d/%m/%Y} — Ferment Station"
-
-                            pkg_html = ""
                             _pkg_lines_email = _get_packaging_lines()
-                            if _pkg_lines_email:
-                                pkg_items_html = "<br>".join(
-                                    f"— {p['qty']} {p['unit']}(s) {p['label']}"
-                                    for p in _pkg_lines_email
-                                )
-                                pkg_html = (
-                                    f"<p><strong>Emballages à ramener :</strong><br>"
-                                    f"{pkg_items_html}</p>"
-                                )
 
-                            if is_update:
-                                # Corps v2+ : mise à jour d'une ramasse existante
-                                body = f"""
-                                <p>Bonjour,</p>
-                                <p>Nous vous envoyons une <strong>mise à jour</strong> de la ramasse
-                                prévue pour le <strong>{d:%d/%m/%Y}</strong> (version {next_version}).</p>
-                                <p>Nouveau total : <strong>{tot_palettes}</strong>
-                                palette{'s' if tot_palettes != 1 else ''}
-                                ({tot_cartons} cartons).</p>
-                                <p>Merci de bien vouloir tenir compte de cette version qui
-                                <strong>remplace</strong> la précédente. Le PDF ci-joint fait
-                                apparaître les changements :
-                                <strong>nouvelles lignes en jaune</strong>,
-                                <strong>lignes modifiées en bleu</strong>
-                                (avec l'ancien nombre de cartons indiqué).</p>
-                                {pkg_html}
-                                <p>Merci pour votre compréhension,<br>Bonne journée.</p>
-                                <hr>
-                                <p><strong>Ferment Station</strong><br>
-                                Producteur de boissons fermentées<br>
-                                26 Rue Robert Witchitz – 94200 Ivry-sur-Seine</p>
-                                """
-                            else:
-                                body = f"""
-                                <p>Bonjour,</p>
-                                <p>Nous aurions besoin d'une ramasse pour le {d:%d/%m/%Y}.<br>
-                                Pour <strong>{tot_palettes}</strong> palette{'s' if tot_palettes != 1 else ''}.</p>
-                                {pkg_html}
-                                <p>Merci,<br>Bon après-midi.</p>
-                                <hr>
-                                <p><strong>Ferment Station</strong><br>
-                                Producteur de boissons fermentées<br>
-                                26 Rue Robert Witchitz – 94200 Ivry-sur-Seine</p>
-                                """
+                            # Sujet + corps déléguées au service (v1 ou v2+)
+                            subject = build_email_subject(
+                                d, is_update=is_update, version=next_version,
+                            )
+                            body = build_email_body(
+                                d,
+                                total_palettes=tot_palettes,
+                                total_cartons=tot_cartons,
+                                packaging_lines=_pkg_lines_email,
+                                is_update=is_update,
+                                version=next_version,
+                            )
 
                             sender_email = os.environ.get("EMAIL_SENDER") or ""
                             recipients = list(to_list)
@@ -1035,14 +1001,7 @@ async def page_ramasse():
                             # ── Sauvegarder dans l'historique ──
                             try:
                                 _brassin_id_list = [str(x) for x in (brassin_select.value or [])]
-                                lines_payload = [{
-                                    "ref": r["ref"],
-                                    "produit": r["produit"],
-                                    "ddm": r["ddm"],
-                                    "cartons": int(r["cartons"]),
-                                    "palettes": int(r["palettes"]),
-                                    "poids": int(r["poids"]),
-                                } for r in active_rows]
+                                lines_payload = build_lines_payload(active_rows)
 
                                 if is_update:
                                     await asyncio.to_thread(
