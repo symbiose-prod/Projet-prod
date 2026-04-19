@@ -21,11 +21,16 @@ import logging
 import sys
 from pathlib import Path
 
-# Charger .env (DB_* + tenant scope) avant d'importer les modules DB
-from dotenv import load_dotenv
+# Rendre le package racine importable quand le script est lancé directement
+# (ex: via systemd avec ExecStart=/…/python /…/scripts/purge_expired_ramasses.py).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-_ENV = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_ENV, override=False)
+# Charger .env (DB_* + tenant scope) avant d'importer les modules DB
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(_REPO_ROOT / ".env", override=False)
 
 # Logging simple vers stdout (lisible par journalctl si lancé par systemd)
 logging.basicConfig(
