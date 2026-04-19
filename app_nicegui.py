@@ -309,10 +309,32 @@ import pages.tags  # noqa: F401 — /tags
 
 @app.get("/health")
 async def _health_check():
-    """Endpoint de santé enrichi : DB + espace disque."""
-    import shutil
+    """Endpoint de santé enrichi : DB + disque + état EasyBeer + cache.
 
-    checks: dict[str, str] = {}
+    Retour JSON::
+
+        {
+            "status": "ok" | "degraded",
+            "checks": {
+                "db": "ok" | "<error msg>",
+                "disk": "ok" | "low (…)",
+                "easybeer": {
+                    "circuit_breaker": "closed" | "open (45s restantes)",
+                    "rate_limit": "ok" | "throttled (3s)",
+                    "configured": true | false
+                },
+                "cache": {"eb_entries": <int>}
+            }
+        }
+
+    ``status=degraded`` + HTTP 503 si un check essentiel (db, disk) n'est
+    pas ok. Les checks EasyBeer et cache sont informatifs uniquement et
+    ne dégradent pas le statut (l'app tourne en mode dégradé).
+    """
+    import shutil
+    from typing import Any as _Any
+
+    checks: dict[str, _Any] = {}
 
     # 1. Database
     from db.conn import ping
@@ -327,10 +349,46 @@ async def _health_check():
     except OSError:
         checks["disk"] = "error"
 
-    all_ok = all(v == "ok" for v in checks.values())
+    # 3. EasyBeer (circuit breaker + rate-limit + configured) — informatif
+    try:
+        from common.easybeer._client import (
+            circuit_breaker_state,
+            is_rate_limited,
+        )
+        from common.easybeer._client import (
+            is_configured as eb_configured,
+        )
+        cb = circuit_breaker_state()
+        cb_remaining = int(cb.get("remaining", 0) or 0)
+        rl_remaining = int(is_rate_limited() or 0)
+        checks["easybeer"] = {
+            "configured": eb_configured(),
+            "circuit_breaker": (
+                "closed" if cb_remaining <= 0
+                else f"open ({cb_remaining}s restantes)"
+            ),
+            "rate_limit": (
+                "ok" if rl_remaining <= 0
+                else f"throttled ({rl_remaining}s)"
+            ),
+            "failure_count": int(cb.get("failures", 0) or 0),
+        }
+    except Exception as exc:
+        checks["easybeer"] = {"error": str(exc)[:100]}
+
+    # 4. Cache EasyBeer (DB L2) — informatif
+    try:
+        from db.conn import run_sql as _run_sql
+        rows = _run_sql("SELECT COUNT(*) AS n FROM eb_cache") or []
+        checks["cache"] = {"eb_entries": int(rows[0]["n"]) if rows else 0}
+    except Exception:
+        checks["cache"] = {"eb_entries": -1}
+
+    # Dégradation uniquement sur db/disk (checks bloquants)
+    essential_ok = checks.get("db") == "ok" and checks.get("disk") == "ok"
     return JSONResponse(
-        {"status": "ok" if all_ok else "degraded", "checks": checks},
-        status_code=200 if all_ok else 503,
+        {"status": "ok" if essential_ok else "degraded", "checks": checks},
+        status_code=200 if essential_ok else 503,
     )
 
 
