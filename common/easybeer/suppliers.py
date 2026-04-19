@@ -80,6 +80,18 @@ def find_fournisseur_by_name(name: str) -> dict[str, Any] | None:
     return None
 
 
+def find_fournisseur_by_name_typed(name: str) -> Fournisseur | None:
+    """Version typée de :func:`find_fournisseur_by_name` — retourne Fournisseur.
+
+    Remplace l'accès ``dict.get("x", {}).get("y")`` par un attribut typé,
+    et expose les propriétés métier (``best_email``, ``best_contact_name``,
+    ``full_address_lines``) qui encapsulent la logique historique des
+    fonctions ``extract_supplier_*``.
+    """
+    raw = find_fournisseur_by_name(name)
+    return Fournisseur.from_dict(raw) if raw is not None else None
+
+
 def extract_supplier_email(fournisseur: dict[str, Any]) -> str | None:
     """Extract the best email address from a ModeleFournisseur dict.
 

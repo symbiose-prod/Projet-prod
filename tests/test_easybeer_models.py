@@ -320,3 +320,145 @@ class TestFournisseur:
         assert f.id_fournisseur == 0
         assert f.nom == ""
         assert f.contacts == []
+
+    def test_raw_preserves_payload(self):
+        """Le dict API brut est conservé pour les properties best_*."""
+        payload = {
+            "idFournisseur": 1, "nom": "X",
+            "contactPrincipal": {"email": "legacy@x.fr"},
+        }
+        f = Fournisseur.from_dict(payload)
+        assert f.raw == payload
+
+
+class TestFournisseurBestEmail:
+    def test_prefers_contact_principal(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contactPrincipal": {"email": "principal@x.fr"},
+            "contact": {"email": "contact@x.fr"},
+            "contacts": [{"email": "contact0@x.fr"}],
+        })
+        assert f.best_email == "principal@x.fr"
+
+    def test_fallback_to_contact(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contact": {"email": "contact@x.fr"},
+            "contacts": [{"email": "contact0@x.fr"}],
+        })
+        assert f.best_email == "contact@x.fr"
+
+    def test_fallback_to_first_contact_with_email(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contacts": [
+                {"email": ""},          # vide → skip
+                {"email": "valid@x.fr"},
+            ],
+        })
+        assert f.best_email == "valid@x.fr"
+
+    def test_strips_whitespace(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contactPrincipal": {"email": "  trim@x.fr  "},
+        })
+        assert f.best_email == "trim@x.fr"
+
+    def test_no_email_anywhere_returns_none(self):
+        f = Fournisseur.from_dict({"idFournisseur": 1, "nom": "X"})
+        assert f.best_email is None
+
+
+class TestFournisseurBestContactName:
+    def test_prefers_contact_principal(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contactPrincipal": {"prenom": "Jean", "nom": "Dupont"},
+            "contact": {"prenom": "Marie", "nom": "Martin"},
+        })
+        assert f.best_contact_name == "Jean Dupont"
+
+    def test_fallback_to_contact(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contact": {"prenom": "Marie", "nom": "Martin"},
+        })
+        assert f.best_contact_name == "Marie Martin"
+
+    def test_only_prenom(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contactPrincipal": {"prenom": "Jean"},
+        })
+        assert f.best_contact_name == "Jean"
+
+    def test_no_principal_or_contact_returns_none(self):
+        """Pas de fallback sur contacts[] — historique légacy."""
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "contacts": [{"prenom": "Charlie", "nom": "Brown"}],
+        })
+        assert f.best_contact_name is None
+
+
+class TestFournisseurFullAddressLines:
+    def test_complete_field_takes_priority(self):
+        """Si adresse.complete est fourni, on l'utilise tel quel (pas de splitting)."""
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "Verallia",
+            "adresse": {
+                "complete": "31 place des Corolles\n92400 Courbevoie",
+                "ligne1": "ignoré",  # ne doit pas apparaître
+            },
+        })
+        assert f.full_address_lines == [
+            "Verallia",
+            "31 place des Corolles\n92400 Courbevoie",
+        ]
+
+    def test_lignes_1_to_4(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "adresse": {
+                "denomination": "Service commandes",
+                "ligne1": "Bâtiment A",
+                "ligne2": "2 rue de la Paix",
+                "ligne3": "",      # vide → skip
+                "ligne4": "BP 42",
+                "codePostal": "75001",
+                "ville": "Paris",
+                "pays": "France",
+            },
+        })
+        assert f.full_address_lines == [
+            "X",
+            "Service commandes",
+            "Bâtiment A",
+            "2 rue de la Paix",
+            "BP 42",
+            "75001 Paris",
+            "France",
+        ]
+
+    def test_fallback_numero_rue_when_no_lignes(self):
+        f = Fournisseur.from_dict({
+            "idFournisseur": 1, "nom": "X",
+            "adresse": {
+                "numero": "42",
+                "rue": "rue Principale",
+                "codePostal": "13001",
+                "ville": "Marseille",
+            },
+        })
+        assert "42 rue Principale" in f.full_address_lines
+        assert "13001 Marseille" in f.full_address_lines
+
+    def test_no_address_returns_only_name(self):
+        f = Fournisseur.from_dict({"idFournisseur": 1, "nom": "X"})
+        assert f.full_address_lines == ["X"]
+
+    def test_no_name_returns_empty_when_no_address(self):
+        f = Fournisseur.from_dict({"idFournisseur": 1})
+        assert f.full_address_lines == []

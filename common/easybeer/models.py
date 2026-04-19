@@ -238,17 +238,25 @@ class Fournisseur:
     Schema EasyBeer: ``ModeleFournisseur`` (simplifié — on n'expose que les
     champs réellement utilisés par Ferment Station : identité, contacts,
     adresse pour les commandes).
+
+    Le champ ``raw`` conserve la réponse API brute — nécessaire pour les
+    propriétés ``best_*`` et ``full_address_lines`` qui répliquent la
+    logique des anciennes fonctions ``extract_supplier_*`` (priorités
+    ``contactPrincipal > contact > contacts[0]``, fallbacks adresse
+    ``complete`` / ``ligne1-4``). Ces propriétés préservent strictement
+    le comportement historique tout en encapsulant la logique sur le modèle.
     """
     id_fournisseur: int
     nom: str
-    email: str                      # email principal (fallback sur 1er contact)
+    email: str                      # email déclaré sur le fournisseur directement
     contacts: list[FournisseurContact]
-    adresse_lignes: list[str]       # reformatée pour affichage (multi-lignes)
+    adresse_lignes: list[str]       # forme courte : rue + cp/ville + pays non-FR
+    raw: dict = field(default_factory=dict)  # payload API complet (legacy fallback)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Fournisseur:
         if not isinstance(d, dict):
-            return cls(0, "", "", [], [])
+            return cls(0, "", "", [], [], {})
 
         # Contacts : liste de ContactFournisseur
         raw_contacts = d.get("contacts") or []
@@ -269,23 +277,22 @@ class Fournisseur:
         # soit rien. On aplatit en liste de lignes non-vides.
         adr_obj = d.get("adresse") if isinstance(d.get("adresse"), dict) else {}
         lignes: list[str] = []
-        rue = _as_str(adr_obj.get("adresse") or d.get("adresse") if not isinstance(d.get("adresse"), dict) else "")
         if isinstance(adr_obj, dict) and adr_obj:
             rue = _as_str(adr_obj.get("adresse"))
-        if rue:
-            lignes.append(rue)
-        cp_ville_parts = []
-        cp = _as_str(adr_obj.get("codePostal") if isinstance(adr_obj, dict) else "")
-        ville = _as_str(adr_obj.get("ville") if isinstance(adr_obj, dict) else "")
-        if cp:
-            cp_ville_parts.append(cp)
-        if ville:
-            cp_ville_parts.append(ville)
-        if cp_ville_parts:
-            lignes.append(" ".join(cp_ville_parts))
-        pays = _as_str(adr_obj.get("pays") if isinstance(adr_obj, dict) else "")
-        if pays and pays.lower() not in ("france", "fr"):
-            lignes.append(pays)
+            if rue:
+                lignes.append(rue)
+            cp_ville_parts = []
+            cp = _as_str(adr_obj.get("codePostal"))
+            ville = _as_str(adr_obj.get("ville"))
+            if cp:
+                cp_ville_parts.append(cp)
+            if ville:
+                cp_ville_parts.append(ville)
+            if cp_ville_parts:
+                lignes.append(" ".join(cp_ville_parts))
+            pays = _as_str(adr_obj.get("pays"))
+            if pays and pays.lower() not in ("france", "fr"):
+                lignes.append(pays)
 
         return cls(
             id_fournisseur=_as_int(d.get("idFournisseur")),
@@ -293,4 +300,105 @@ class Fournisseur:
             email=email,
             contacts=contacts,
             adresse_lignes=lignes,
+            raw=d,
         )
+
+    # ─── Properties métier (encapsulent les anciennes extract_supplier_*) ──
+
+    @property
+    def best_email(self) -> str | None:
+        """Meilleur email pour contacter ce fournisseur.
+
+        Priorité : ``raw.contactPrincipal.email`` > ``raw.contact.email`` >
+        premier de ``raw.contacts[]`` ayant un email non vide. Remplace
+        :func:`common.easybeer.suppliers.extract_supplier_email` en version
+        typée — préserve strictement ses priorités (lu depuis ``raw``).
+        """
+        for key in ("contactPrincipal", "contact"):
+            c = self.raw.get(key) if isinstance(self.raw, dict) else None
+            if isinstance(c, dict) and c.get("email"):
+                return str(c["email"]).strip() or None
+        raw_contacts = self.raw.get("contacts") if isinstance(self.raw, dict) else None
+        if isinstance(raw_contacts, list):
+            for c in raw_contacts:
+                if isinstance(c, dict) and c.get("email"):
+                    return str(c["email"]).strip() or None
+        return None
+
+    @property
+    def best_contact_name(self) -> str | None:
+        """Nom complet du contact principal (prenom + nom).
+
+        Priorité : ``raw.contactPrincipal`` > ``raw.contact``. Retourne
+        ``None`` si aucun de ces deux objets n'a ni prénom ni nom (on
+        ne tombe PAS en fallback sur ``contacts[]`` — historiquement,
+        ces deux champs dédiés étaient la seule source fiable pour le
+        "contact principal").
+        """
+        for key in ("contactPrincipal", "contact"):
+            c = self.raw.get(key) if isinstance(self.raw, dict) else None
+            if not isinstance(c, dict):
+                continue
+            parts = [
+                _as_str(c.get("prenom")),
+                _as_str(c.get("nom")),
+            ]
+            full = " ".join(p for p in parts if p)
+            if full:
+                return full
+        return None
+
+    @property
+    def full_address_lines(self) -> list[str]:
+        """Adresse complète formatée pour un PDF de commande (multi-lignes).
+
+        Reprend la logique riche de
+        :func:`common.easybeer.suppliers.extract_supplier_address` :
+        nom fournisseur en tête, puis soit ``adresse.complete`` quand
+        présent, soit un assemblage ``denomination`` / ``ligne1..ligne4`` /
+        fallback ``numero + rue`` / cp+ville / pays. Utilisé dans les PDFs
+        où on veut tout le détail ; préférer :attr:`adresse_lignes` pour
+        une forme compacte (sans le nom).
+        """
+        lines: list[str] = []
+        if self.nom:
+            lines.append(self.nom)
+        adresse = self.raw.get("adresse") if isinstance(self.raw, dict) else None
+        if not isinstance(adresse, dict):
+            return lines
+
+        complete = _as_str(adresse.get("complete"))
+        if complete:
+            lines.append(complete)
+            return lines
+
+        deno = _as_str(adresse.get("denomination"))
+        if deno:
+            lines.append(deno)
+
+        has_lignes = False
+        for key in ("ligne1", "ligne2", "ligne3", "ligne4"):
+            val = _as_str(adresse.get(key)).strip()
+            if val:
+                lines.append(val)
+                has_lignes = True
+        if not has_lignes:
+            street_parts = [
+                _as_str(adresse.get("numero")),
+                _as_str(adresse.get("rue")),
+            ]
+            street = " ".join(p for p in street_parts if p)
+            if street:
+                lines.append(street)
+
+        cp = _as_str(adresse.get("codePostal"))
+        ville = _as_str(adresse.get("ville"))
+        cp_ville = " ".join(p for p in (cp, ville) if p)
+        if cp_ville:
+            lines.append(cp_ville)
+
+        pays = _as_str(adresse.get("pays"))
+        if pays:
+            lines.append(pays)
+
+        return lines

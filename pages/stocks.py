@@ -1099,21 +1099,20 @@ def _render_ai_order_section(
     async def _fetch_supplier_info():
         """Fetch supplier email, address, reference PDFs from EasyBeer."""
         from common.easybeer.suppliers import (
-            extract_supplier_email,
-            find_fournisseur_by_name,
+            find_fournisseur_by_name_typed,
             get_supplier_reference_texts,
         )
 
         try:
+            # Version typée : Fournisseur avec .best_email / .full_address_lines /
+            # .best_contact_name (encapsule les anciennes extract_supplier_*).
             fournisseur = await asyncio.wait_for(
-                asyncio.to_thread(find_fournisseur_by_name, supplier_name),
+                asyncio.to_thread(find_fournisseur_by_name_typed, supplier_name),
                 timeout=15,
             )
-            if fournisseur:
+            if fournisseur is not None:
                 chat_state["supplier_info"] = fournisseur
-                chat_state["supplier_email"] = extract_supplier_email(
-                    fournisseur
-                )
+                chat_state["supplier_email"] = fournisseur.best_email
                 if chat_state["supplier_email"]:
                     supplier_email_label.text = (
                         f"📧 {chat_state['supplier_email']}"
@@ -1123,11 +1122,11 @@ def _render_ai_order_section(
                     supplier_email_label.text = "Email introuvable"
                     supplier_email_label.style(f"color: {COLORS['error']}")
 
-                # Fetch reference PDFs
+                # Fetch reference PDFs (le loader legacy attend le dict → .raw)
                 try:
                     ref_texts = await asyncio.wait_for(
                         asyncio.to_thread(
-                            get_supplier_reference_texts, fournisseur
+                            get_supplier_reference_texts, fournisseur.raw,
                         ),
                         timeout=30,
                     )
@@ -1284,10 +1283,6 @@ def _render_ai_order_section(
     async def _preview_pdf():
         import base64
 
-        from common.easybeer.suppliers import (
-            extract_supplier_address,
-            extract_supplier_contact_name,
-        )
         from common.xlsx_fill.bon_commande_pdf import build_bon_commande_pdf
 
         order = chat_state.get("current_order")
@@ -1325,13 +1320,12 @@ def _render_ai_order_section(
                 "email": chat_state["supplier_email"],
             }
             if chat_state["supplier_info"]:
+                # Fournisseur (dataclass typée) → properties métier encapsulées
                 supplier_info_dict["address_lines"] = (
-                    extract_supplier_address(chat_state["supplier_info"])
+                    chat_state["supplier_info"].full_address_lines
                 )
                 supplier_info_dict["contact_name"] = (
-                    extract_supplier_contact_name(
-                        chat_state["supplier_info"]
-                    )
+                    chat_state["supplier_info"].best_contact_name
                 )
 
             delivery = chat_state.get("delivery_date") or "Dès que possible"
@@ -1404,10 +1398,6 @@ def _render_ai_order_section(
     # ── Send order email ───────────────────────────────────────
 
     async def _send_order_email():
-        from common.easybeer.suppliers import (
-            extract_supplier_address,
-            extract_supplier_contact_name,
-        )
         from common.email import send_html_with_pdf
         from common.xlsx_fill.bon_commande_pdf import build_bon_commande_pdf
 
@@ -1457,13 +1447,12 @@ def _render_ai_order_section(
                 "email": recipient,
             }
             if chat_state["supplier_info"]:
+                # Fournisseur (dataclass typée) → properties métier encapsulées
                 supplier_info_dict["address_lines"] = (
-                    extract_supplier_address(chat_state["supplier_info"])
+                    chat_state["supplier_info"].full_address_lines
                 )
                 supplier_info_dict["contact_name"] = (
-                    extract_supplier_contact_name(
-                        chat_state["supplier_info"]
-                    )
+                    chat_state["supplier_info"].best_contact_name
                 )
 
             delivery = chat_state.get("delivery_date") or "Dès que possible"

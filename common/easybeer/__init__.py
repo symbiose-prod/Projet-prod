@@ -92,6 +92,7 @@ from .suppliers import (
     extract_supplier_email,
     extract_text_from_pdf,
     find_fournisseur_by_name,
+    find_fournisseur_by_name_typed,
     get_all_fournisseurs,
     get_all_fournisseurs_typed,
     get_fournisseur_edition,
@@ -131,7 +132,8 @@ __all__ = [
     "get_ca_mensuel",
     # suppliers
     "get_all_fournisseurs", "get_all_fournisseurs_typed",
-    "find_fournisseur_by_name", "invalidate_fournisseurs_cache",
+    "find_fournisseur_by_name", "find_fournisseur_by_name_typed",
+    "invalidate_fournisseurs_cache",
     "extract_supplier_email", "extract_supplier_contact_name", "extract_supplier_address",
     "get_fournisseur_edition", "get_fournisseur_edition_typed",
     "get_supplier_files", "download_supplier_file",
