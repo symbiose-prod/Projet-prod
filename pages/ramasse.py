@@ -40,6 +40,12 @@ from common.ramasse import (
     parse_barcode_matrix,
     today_paris,
 )
+from common.ramasse_draft import (
+    clear_draft,
+    draft_age_human,
+    load_draft,
+    save_draft,
+)
 from common.ramasse_grid import (
     apply_saved_cartons,
     compute_palettes_and_weight,
@@ -213,6 +219,12 @@ async def page_ramasse():
         # ── Bandeau "Mode édition" (conditionnel, affiché en haut) ─────
         edit_banner_container = ui.row().classes("w-full")
 
+        # ── Bandeau "Brouillon restauré" (si un draft existe en storage.user) ──
+        # Auto-save : les saisies cartons/palettes sont persistées à chaque
+        # changement ; à l'ouverture de la page, si un brouillon existe pour
+        # un envoi non-finalisé, on propose à l'utilisateur de le restaurer.
+        draft_banner_container = ui.row().classes("w-full")
+
         def _render_edit_banner():
             edit_banner_container.clear()
             if edit_state["editing_id"] is None:
@@ -263,6 +275,109 @@ async def page_ramasse():
             _render_edit_banner()
             _reset_form()
             ui.notify("Mode édition annulé.", type="info")
+
+        # ── Draft auto-save : helpers de persistance / restauration ──────────
+        def _current_date_iso() -> str:
+            """Extrait la date ISO courante (depuis date_picker ou date_ramasse)."""
+            try:
+                v = date_picker.value
+                if v:
+                    return str(v)
+            except (AttributeError, NameError):
+                pass
+            try:
+                d_str = (date_ramasse.value or "").strip()
+                if d_str:
+                    return dt.datetime.strptime(d_str, "%d/%m/%Y").date().isoformat()
+            except (ValueError, AttributeError):
+                pass
+            return today_paris().isoformat()
+
+        def _persist_draft():
+            """Snapshot courant dans app.storage.user (fire-and-forget)."""
+            try:
+                cartons: dict[str, int] = {}
+                palettes: dict[str, int] = {}
+                for row in table_ref["rows"]:
+                    ref = str(row.get("ref") or "")
+                    c = int(row.get("cartons") or 0)
+                    p = int(row.get("palettes") or 0)
+                    if c > 0:
+                        cartons[ref] = c
+                    if p > 0:
+                        palettes[ref] = p
+                save_draft(
+                    date_iso=_current_date_iso(),
+                    destinataire=dest_select.value or "",
+                    brassin_ids=[int(x) for x in (brassin_select.value or []) if x is not None],
+                    cartons=cartons,
+                    palettes=palettes,
+                )
+            except Exception:
+                _log.debug("Échec persist draft", exc_info=True)
+
+        def _restore_draft(draft: dict):
+            """Applique un brouillon : dest, date, brassins, cartons→pending."""
+            try:
+                dest_v = draft.get("destinataire")
+                if dest_v in dest_names:
+                    dest_select.value = dest_v
+                date_iso = draft.get("date_iso", "")
+                if date_iso:
+                    try:
+                        d = dt.date.fromisoformat(date_iso)
+                        date_ramasse.value = d.strftime("%d/%m/%Y")
+                        date_picker.value = date_iso
+                    except (ValueError, AttributeError):
+                        pass
+                # Les pending_cartons sont consommés par on_brassins_changed au prochain rebuild
+                edit_state["pending_cartons"] = dict(draft.get("cartons") or {})
+                edit_state["pending_packaging"] = dict(draft.get("packaging") or {})
+                bids = [int(x) for x in (draft.get("brassin_ids") or [])]
+                if bids:
+                    brassin_select.value = bids
+                    on_brassins_changed()
+                draft_banner_container.clear()
+                ui.notify("Brouillon restauré ✓", type="positive", icon="restore")
+            except Exception as exc:
+                _log.exception("Échec restauration brouillon")
+                ui.notify(f"Erreur restauration : {exc}", type="negative")
+
+        def _render_draft_banner():
+            """Affiche le bandeau brouillon si un draft existe (hors mode édition)."""
+            draft_banner_container.clear()
+            if edit_state["editing_id"] is not None:
+                return
+            draft = load_draft()
+            if not draft:
+                return
+            cartons = draft.get("cartons") or {}
+            if not cartons:
+                return
+            age = draft_age_human(draft)
+            with draft_banner_container:
+                with ui.row().classes("w-full items-center gap-3 q-pa-sm").style(
+                    "background: #E0F2FE; border: 1px solid #60A5FA; border-radius: 8px"
+                ):
+                    ui.icon("restore", color="blue-8", size="md")
+                    with ui.column().classes("flex-1 gap-0"):
+                        ui.label(f"Brouillon de ramasse ({age})").classes(
+                            "text-subtitle2"
+                        ).style("color: #1E40AF; font-weight: 600")
+                        ui.label(
+                            f"{len(cartons)} ligne(s) saisie(s) · "
+                            f"{draft.get('destinataire', '?')}"
+                        ).classes("text-caption").style("color: #1E40AF")
+                    ui.button(
+                        "Restaurer",
+                        icon="restore",
+                        on_click=lambda d=draft: _restore_draft(d),
+                    ).props("unelevated color=blue-8 dense")
+                    ui.button(
+                        "Ignorer",
+                        icon="close",
+                        on_click=lambda: (clear_draft(), draft_banner_container.clear()),
+                    ).props("flat color=grey-7 dense")
 
         # ── Sélection brassins + recharger ────────────────────────────
         with ui.row().classes("w-full items-center gap-4"):
@@ -560,6 +675,7 @@ async def page_ramasse():
                         row["poids_display"] = format_poids_display(poids)
                     _rebuild_table_rows()
                     _update_kpis()
+                    _persist_draft()
 
                 def on_palettes_changed(e):
                     """Handler Vue : user a forcé un nombre de palettes → recalcul poids."""
@@ -576,6 +692,7 @@ async def page_ramasse():
                         row["poids_display"] = format_poids_display(w)
                     _rebuild_table_rows()
                     _update_kpis()
+                    _persist_draft()
 
                 table.on("cartons_changed", on_cartons_changed)
                 table.on("palettes_changed", on_palettes_changed)
@@ -1010,6 +1127,9 @@ async def page_ramasse():
                                         "Ramasse mise à jour dans l'historique id=%s v%d",
                                         edit_state["editing_id"], next_version,
                                     )
+                                    # Nettoyage du brouillon (envoi réussi)
+                                    clear_draft()
+                                    draft_banner_container.clear()
                                     # Sortir du mode édition après un envoi v2+ réussi
                                     _cancel_edit()
                                 else:
@@ -1027,6 +1147,9 @@ async def page_ramasse():
                                         brassin_ids=_brassin_id_list,
                                     )
                                     _log.info("Ramasse sauvegardée dans l'historique")
+                                    # Nettoyage du brouillon (envoi réussi)
+                                    clear_draft()
+                                    draft_banner_container.clear()
                                     # Reset du formulaire après envoi v1 réussi
                                     _reset_form(notify=True)
 
@@ -1502,3 +1625,6 @@ async def page_ramasse():
 
         # Rendu initial
         on_brassins_changed()
+
+        # Brouillon restauré ? (bandeau avec "Restaurer / Ignorer")
+        _render_draft_banner()
