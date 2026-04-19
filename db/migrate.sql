@@ -342,6 +342,65 @@ CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_active
   WHERE deleted_at IS NULL;
 
 -- =========================
+-- File d'attente emails (fallback Brevo)
+-- =========================
+-- Si l'envoi via l'API Brevo échoue (rate-limit, réseau, panne), l'email
+-- est persisté ici avec status='pending' pour retry ultérieur par un
+-- worker / cron (common.email_queue.retry_pending_emails).
+CREATE TABLE IF NOT EXISTS email_queue (
+  id           BIGSERIAL PRIMARY KEY,
+  tenant_id    UUID REFERENCES tenants(id) ON DELETE CASCADE,
+  to_emails    TEXT[] NOT NULL,
+  cc_emails    TEXT[] DEFAULT '{}',
+  subject      TEXT NOT NULL,
+  html_body    TEXT NOT NULL,
+  attachments  JSONB DEFAULT '[]'::jsonb,
+  reply_to     TEXT,
+  status       TEXT NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending','sent','failed')),
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,
+  provider_msg_id TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at      TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_queue_status_created
+  ON email_queue(status, created_at)
+  WHERE status = 'pending';
+
+-- =========================
+-- Row-Level Security (defense-in-depth) — ramasse_history
+-- =========================
+-- Active la RLS avec une policy "opt-in" qui filtre par tenant_id uniquement
+-- si la session a positionné la variable app.current_tenant_id (via SET LOCAL
+-- ou via set_config('app.current_tenant_id', ...)). Sans cette variable, la
+-- policy laisse passer (backward-compat avec l'accès admin/owner actuel).
+--
+-- Activation full-enforcement (étape future, hors migration — nécessite un
+-- rôle applicatif dédié non-owner) :
+--   ALTER TABLE ramasse_history FORCE ROW LEVEL SECURITY;
+--   GRANT SELECT,INSERT,UPDATE,DELETE ON ramasse_history TO app_role;
+--   (l'app doit alors set_config('app.current_tenant_id', ...) systématiquement)
+ALTER TABLE ramasse_history ENABLE ROW LEVEL SECURITY;
+
+-- Drop-if-exists + create pour permettre la ré-exécution idempotente
+DROP POLICY IF EXISTS tenant_isolation ON ramasse_history;
+CREATE POLICY tenant_isolation ON ramasse_history
+  USING (
+    -- NULL ou vide → policy inactive (comportement actuel préservé)
+    current_setting('app.current_tenant_id', true) IS NULL
+    OR current_setting('app.current_tenant_id', true) = ''
+    OR tenant_id = current_setting('app.current_tenant_id', true)::uuid
+  )
+  WITH CHECK (
+    current_setting('app.current_tenant_id', true) IS NULL
+    OR current_setting('app.current_tenant_id', true) = ''
+    OR tenant_id = current_setting('app.current_tenant_id', true)::uuid
+  );
+
+-- =========================
 -- Cache EasyBeer générique (JSONB)
 -- =========================
 CREATE TABLE IF NOT EXISTS eb_cache (
