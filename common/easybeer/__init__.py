@@ -48,7 +48,12 @@ from .history import get_contenant_historique, get_mp_historique_entree
 from .indicators import get_ca_mensuel
 
 # --- models (typed dataclasses, opt-in) ---
-from .models import AutonomieProduit, AutonomieResponse, MatierePremiere
+from .models import (
+    AutonomieProduit,
+    AutonomieResponse,
+    MatierePremiere,
+    StockProduitFormat,
+)
 
 # --- products ---
 from .products import (
@@ -96,7 +101,7 @@ __all__ = [
     "BASE", "TIMEOUT", "is_configured", "is_rate_limited", "EasyBeerError", "get_session",
     "_safe_list", "_safe_dict",
     # models (typed dataclasses)
-    "AutonomieProduit", "AutonomieResponse", "MatierePremiere",
+    "AutonomieProduit", "AutonomieResponse", "MatierePremiere", "StockProduitFormat",
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_autonomie_stocks_typed",
     "get_all_matieres_premieres",

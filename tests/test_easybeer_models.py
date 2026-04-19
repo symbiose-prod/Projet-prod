@@ -5,6 +5,7 @@ from common.easybeer.models import (
     AutonomieProduit,
     AutonomieResponse,
     MatierePremiere,
+    StockProduitFormat,
 )
 
 
@@ -94,6 +95,49 @@ class TestAutonomieResponse:
     def test_non_dict_input(self):
         resp = AutonomieResponse.from_dict(None)  # type: ignore
         assert resp.produits == []
+
+
+class TestStockProduitFormat:
+    def test_full_dict(self):
+        f = StockProduitFormat.from_dict({
+            "libelle": "6x750 - Relais Vert",
+            "quantite": 500,
+            "quantiteVirtuelle": 120,
+            "volume": 22.5,
+            "volumeVirtuel": 5.4,
+            "lot": {"quantite": 6},
+            "contenant": {"contenance": 0.75},
+        })
+        assert f.libelle == "6x750 - Relais Vert"
+        assert f.quantite == 500.0
+        assert f.quantite_virtuelle == 120.0
+        assert f.volume == 22.5
+        assert f.volume_virtuel == 5.4
+        assert f.lot_quantite == 6
+        assert f.contenance == 0.75
+
+    def test_missing_lot_and_contenant(self):
+        """lot/contenant absents — ne doit pas crasher."""
+        f = StockProduitFormat.from_dict({
+            "libelle": "X",
+            "quantite": 1,
+        })
+        assert f.lot_quantite == 0
+        assert f.contenance == 0.0
+
+    def test_null_lot(self):
+        f = StockProduitFormat.from_dict({
+            "libelle": "X",
+            "lot": None,
+            "contenant": None,
+        })
+        assert f.lot_quantite == 0
+        assert f.contenance == 0.0
+
+    def test_non_dict_input(self):
+        f = StockProduitFormat.from_dict(None)  # type: ignore
+        assert f.libelle == ""
+        assert f.quantite == 0.0
 
 
 class TestMatierePremiere:

@@ -82,6 +82,34 @@ class AutonomieProduit:
 
 
 @dataclass(frozen=True)
+class StockProduitFormat:
+    """Une ligne ``stocksProduits[]`` d'un AutonomieProduit (un format d'un produit)."""
+    libelle: str                # ex: "6x750 - Relais Vert"
+    quantite: float             # cartons vendus (fenêtre)
+    quantite_virtuelle: float   # cartons en stock
+    volume: float               # hL vendus
+    volume_virtuel: float       # hL en stock
+    lot_quantite: int           # bouteilles par carton
+    contenance: float           # litres par bouteille
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> StockProduitFormat:
+        if not isinstance(d, dict):
+            return cls("", 0.0, 0.0, 0.0, 0.0, 0, 0.0)
+        lot = d.get("lot") if isinstance(d.get("lot"), dict) else {}
+        cont = d.get("contenant") if isinstance(d.get("contenant"), dict) else {}
+        return cls(
+            libelle=_as_str(d.get("libelle")),
+            quantite=_as_float(d.get("quantite")),
+            quantite_virtuelle=_as_float(d.get("quantiteVirtuelle")),
+            volume=_as_float(d.get("volume")),
+            volume_virtuel=_as_float(d.get("volumeVirtuel")),
+            lot_quantite=_as_int(lot.get("quantite")),
+            contenance=_as_float(cont.get("contenance")),
+        )
+
+
+@dataclass(frozen=True)
 class AutonomieResponse:
     """Réponse complète ``/indicateur/autonomie-stocks``."""
     produits: list[AutonomieProduit] = field(default_factory=list)
