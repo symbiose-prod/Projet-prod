@@ -15,6 +15,19 @@ Ferment Station is a multi-tenant NiceGUI web application for fermentation produ
 
 ---
 
+## Claude Code — documents et automatismes clés
+
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — couches (transport / domaine / UI), règles, patterns, checklists "nouvel endpoint" / "nouveau service" / "nouvelle page".
+- **[docs/RUNBOOK.md](docs/RUNBOOK.md)** — ops + backup/restore + troubleshooting.
+- **[tests/test_architecture_layers.py](tests/test_architecture_layers.py)** — 4 guards CI qui bloquent les régressions de couches (lancé à chaque `pytest`).
+- **Slash commands projet** (`.claude/commands/`) — workflows répétables :
+  - `/project:migrate-endpoint <fonction>` — migrer un endpoint EB vers `execute_endpoint`.
+  - `/project:extract-service <path:fonction>` — extraire de la logique métier depuis une page.
+  - `/project:add-typed-model <nom>` — ajouter une dataclass typée avec `from_dict` défensif.
+- **Hook pre-push** (`.claude/hooks/pre-push-verify.sh`, wiré via `.claude/settings.json`) — lance les guards d'architecture avant chaque `git push`, bloque en cas de violation.
+
+---
+
 ## Architecture
 
 ```
