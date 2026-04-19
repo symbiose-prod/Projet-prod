@@ -29,6 +29,11 @@ def _get_api_key() -> str:
     return os.getenv("ANTHROPIC_API_KEY", "")
 
 
+def is_ai_configured() -> bool:
+    """True si Claude AI est disponible (ANTHROPIC_API_KEY set)."""
+    return bool(_get_api_key())
+
+
 _MODEL = "claude-sonnet-4-20250514"
 
 _SYSTEM_PROMPT = """\

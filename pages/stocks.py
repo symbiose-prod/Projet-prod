@@ -514,10 +514,10 @@ def _render_ai_order_section(
     window_days: int,
 ) -> None:
     """Render AI-powered order analysis section with inline chat."""
-    from common.ai import is_ai_configured
     from common.ai_order import (
         analyze_and_respond,
         build_stock_context,
+        is_ai_configured,
     )
 
     supplier_name = group.name
