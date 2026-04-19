@@ -12,20 +12,11 @@ import datetime as dt
 import logging
 import os
 
-import requests
 from nicegui import ui
 
 _log = logging.getLogger("ferment.ramasse")
 
 from common.auth import validate_email
-from common.easybeer import (
-    EasyBeerError,
-    fetch_carton_weights,
-    get_brassins_archives,
-    get_brassins_en_cours,
-    get_code_barre_matrice,
-    get_warehouses,
-)
 from common.easybeer import (
     is_configured as eb_configured,
 )
@@ -37,7 +28,6 @@ from common.ramasse import (
     clean_product_label,
     load_destinataires,
     load_packaging_items,
-    parse_barcode_matrix,
     today_paris,
 )
 from common.ramasse_draft import (
@@ -67,61 +57,16 @@ from common.ramasse_history import (
     save_ramasse,
     update_ramasse,
 )
+from common.services.ramasse_service import load_initial_data as _load_ramasse_initial_data
 from common.xlsx_fill import build_bl_enlevements_pdf
 from pages.auth import require_auth
 from pages.theme import COLORS, page_layout, section_title
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
-def _load_brassins() -> tuple[list[dict], list[str]]:
-    """Charge brassins en cours + 3 derniers archivés. Retourne (brassins, erreurs)."""
-    errors: list[str] = []
-
-    try:
-        en_cours = get_brassins_en_cours()
-    except (EasyBeerError, requests.RequestException) as exc:
-        errors.append(f"Brassins en cours : {exc}")
-        en_cours = []
-
-    en_cours_ids = {b.get("idBrassin") for b in en_cours}
-    try:
-        archives = get_brassins_archives(nombre=3)
-        for b in archives:
-            if b.get("idBrassin") not in en_cours_ids:
-                b["_is_archive"] = True
-                en_cours.append(b)
-    except (EasyBeerError, requests.RequestException) as exc:
-        errors.append(f"Brassins archivés : {exc}")
-    return [b for b in en_cours if not b.get("annule")], errors
-
-
-def _load_cb_matrix() -> dict[int, list[dict]] | None:
-    try:
-        raw = get_code_barre_matrice()
-        return parse_barcode_matrix(raw)
-    except (EasyBeerError, requests.RequestException):
-        _log.warning("Impossible de charger la matrice codes-barres", exc_info=True)
-        return None
-
-
-def _load_eb_weights() -> dict[tuple[int, str], float] | None:
-    try:
-        return fetch_carton_weights()
-    except (EasyBeerError, requests.RequestException):
-        _log.warning("Impossible de charger les poids cartons", exc_info=True)
-        return None
-
-
-def _load_entrepot() -> int | None:
-    try:
-        warehouses = get_warehouses()
-        for w in warehouses:
-            if w.get("principal"):
-                return w.get("idEntrepot")
-        return warehouses[0].get("idEntrepot") if warehouses else None
-    except (EasyBeerError, requests.RequestException):
-        _log.warning("Impossible de charger les entrepots", exc_info=True)
-        return None
+# Les helpers de fetch EB ont migré dans common/services/ramasse_service.py
+# (aucune dépendance à nicegui, testables unitaire). Importés ici via
+# _load_ramasse_initial_data.
 
 
 def _brassin_label(b: dict) -> str:
@@ -166,25 +111,13 @@ async def page_ramasse():
             ).classes("text-caption text-grey-6")
             return
 
-        # ── Chargement données (dans un thread pour ne pas bloquer l'event loop) ──
-        def _load_all_eb_data():
-            from concurrent.futures import ThreadPoolExecutor
-
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                f_brassins = pool.submit(_load_brassins)
-                f_cb = pool.submit(_load_cb_matrix)
-                f_entrepot = pool.submit(_load_entrepot)
-                f_weights = pool.submit(_load_eb_weights)
-            return (
-                f_brassins.result(),
-                f_cb.result(),
-                f_entrepot.result(),
-                f_weights.result(),
-            )
-
-        (brassins, load_errors), cb_by_product, id_entrepot, eb_weights = (
-            await asyncio.to_thread(_load_all_eb_data)
-        )
+        # ── Chargement données (délégué au service ramasse, threadé) ──────
+        _initial = await asyncio.to_thread(_load_ramasse_initial_data)
+        brassins = _initial.brassins
+        load_errors = _initial.brassin_load_errors
+        cb_by_product = _initial.cb_by_product
+        id_entrepot = _initial.id_entrepot
+        eb_weights = _initial.eb_weights
 
         destinataires = load_destinataires()
         dest_names = [d["name"] for d in destinataires] if destinataires else ["SOFRIPA"]
