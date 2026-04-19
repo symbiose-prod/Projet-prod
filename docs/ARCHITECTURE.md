@@ -1,0 +1,234 @@
+# Architecture — Ferment Station
+
+**Statut :** Vivant. Mis à jour 2026-04-19 après la vague "couche services".
+**Public cible :** Développeur qui ajoute une feature et veut savoir où placer son code sans casser l'équilibre du projet.
+
+---
+
+## TL;DR — Les 3 couches
+
+```
+┌─────────────────────────────────────────────────┐
+│  pages/                          ← UI (NiceGUI) │  "Que voit l'utilisateur ?"
+│  pages/theme.py, pages/auth.py, pages/admin.py  │
+└────────────────┬────────────────────────────────┘
+                 │  appelle
+                 ▼
+┌─────────────────────────────────────────────────┐
+│  common/services/                ← DOMAINE      │  "Quelle est la logique métier ?"
+│  stocks_service, ramasse_service, production_*  │
+└────────────┬─────────────────┬──────────────────┘
+             │ orchestre       │ persiste
+             ▼                 ▼
+┌──────────────────────┐ ┌─────────────────────────┐
+│ common/easybeer/     │ │ db/conn.py + common/*  │ ← TRANSPORT / INFRA
+│ (HTTP + cache +      │ │  (SQL, audit, auth,    │   "Comment parler à
+│  circuit breaker)    │ │   email, storage)      │   l'extérieur ?"
+└──────────────────────┘ └─────────────────────────┘
+```
+
+Le sens des flèches **compte** : une couche basse ne peut jamais importer d'une couche haute.
+
+---
+
+## Règles dures (enforced par CI)
+
+### Interdictions
+
+| Règle | Rationale |
+|-------|-----------|
+| `common/` ne peut **pas** importer depuis `pages/` | Services et infra doivent rester utilisables sans NiceGUI (CLI, cron, tests unitaires) |
+| `common/services/` ne peut **pas** importer `nicegui` | Les services doivent tourner dans un script Python pur |
+| `common/easybeer/` ne peut **pas** importer `common/services/` | Le transport ignore la logique métier — symétrique inversé |
+| `pages/X.py` ne peut **pas** importer `pages/Y.py` sauf `pages/auth`, `pages/theme` | Évite l'emmêlement entre pages. Si partage nécessaire → extraire un service |
+
+Ces règles sont vérifiées par `scripts/check_layers.py` (lancé en CI).
+
+### Obligations
+
+- Tout nouvel endpoint EasyBeer doit être ajouté dans `common/easybeer/*.py`, **pas directement dans une page**.
+- Tout appel HTTP externe passe par `common/easybeer/_client.py` (retry, throttle, circuit breaker automatiques).
+- Toute réponse API destinée à être consommée par >1 caller doit avoir un modèle typé dans `common/easybeer/models.py`.
+- Toute opération DB écrivant dans `ramasse_history`, `production_proposals`, `audit_log` passe par un module dédié dans `common/` (pas de SQL inline dans les pages).
+
+---
+
+## Que mettre où ? — Décisions rapides
+
+| Tu ajoutes... | Ça va dans... | Exemple existant |
+|---------------|---------------|------------------|
+| Un appel HTTP EasyBeer | `common/easybeer/<tag>.py` | `common/easybeer/brassins.py` |
+| Un modèle typé d'une réponse API | `common/easybeer/models.py` | `AutonomieProduit` |
+| Une fonction métier qui orchestre plusieurs appels | `common/services/<domaine>_service.py` | `stocks_service.fetch_and_compute_bom` |
+| Une page ou un composant UI | `pages/` | `pages/ramasse.py` |
+| Un composant UI réutilisable | `pages/theme.py` | `confirm_dialog`, `error_banner` |
+| Une requête SQL | Module dédié dans `common/` | `common/ramasse_history.py` |
+| Un audit trail | Via `common/audit.log_event` | Voir `common/ramasse_history._audit()` |
+| Une variable d'env | `.env` + accès via `os.environ.get` avec default | — |
+| Une constante métier (délais, seuils) | `config.yaml` + `common/data.py` | `DEFAULT_LOSS_LARGE` |
+
+---
+
+## Pattern : ajouter un endpoint EasyBeer
+
+Avant (chaque endpoint = 40-60 LOC copié-collé) :
+
+```python
+# common/easybeer/xxx.py
+@retry_api
+def get_my_thing(arg: int) -> dict[str, Any]:
+    # L1 in-memory cache (lock manuel)
+    # L2 DB cache (try/except import)
+    # Appel HTTP avec auth + throttle
+    # _check_response
+    # _safe_json
+    # Persist cache
+    ...
+```
+
+Aujourd'hui, pour un endpoint simple :
+
+```python
+# common/easybeer/xxx.py
+@retry_api
+def get_my_thing(arg: int) -> dict[str, Any]:
+    ep = "path/to/endpoint"
+    r = get_session().get(
+        f"{BASE}/{ep}",
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, ep)     # log + circuit breaker + erreurs lisibles
+    return _safe_json(r, ep)    # parsing défensif
+```
+
+Pour un endpoint avec cache L1+L2 → copier le pattern de `common/easybeer/products.py:get_all_products` (cache DB via `common/eb_cache.py`).
+
+### Checklist "nouvel endpoint"
+
+- [ ] Méthode + path dans le module thématique approprié (`brassins.py`, `stocks.py`, …)
+- [ ] Payload utilise `_indicator_payload(window_days)` si applicable (gotcha `PERIODE_LIBRE`)
+- [ ] Param `?forceRefresh=false` si endpoint `/indicateur/*` JSON (pas `/export/excel`)
+- [ ] Appel wrappé par `@retry_api`
+- [ ] Réponse parsée avec `_safe_json` (null-safe)
+- [ ] Si la réponse est itérable → `_safe_list(data, "key", ep)` (évite crash sur `null`)
+- [ ] Export dans `common/easybeer/__init__.py`
+- [ ] Modèle typé dans `models.py` si >1 caller prévu
+
+---
+
+## Pattern : ajouter un service
+
+Quand une logique métier orchestre plusieurs endpoints ou contient des transformations qu'on voudrait tester sans NiceGUI.
+
+**Structure d'un service :**
+
+```python
+# common/services/my_service.py
+"""
+common/services/my_service.py
+=============================
+Service domaine : <description courte>.
+"""
+from __future__ import annotations
+from dataclasses import dataclass
+# imports depuis common/easybeer, common/*, db/*  — JAMAIS depuis pages/
+
+_log = logging.getLogger("ferment.services.my")
+
+
+@dataclass(frozen=True)
+class MyServiceResult:
+    """Résultat typé retourné par le service."""
+    ...
+
+
+def do_something(arg: str) -> MyServiceResult:
+    """Docstring avec flow métier."""
+    ...
+```
+
+### Checklist "nouveau service"
+
+- [ ] Ni `nicegui`, ni `pages.` dans les imports
+- [ ] Retour sous forme de `@dataclass(frozen=True)` (pas de `dict[str, Any]`)
+- [ ] Docstring explique le flow (enchaînement des appels, invariants)
+- [ ] Tests unitaires dans `tests/test_services_<domaine>.py` avec mocks légers (pas de DB réelle)
+- [ ] Appelé depuis la page via `asyncio.to_thread(service_fn)` si bloquant
+
+---
+
+## Pattern : ajouter une page
+
+```python
+# pages/my_page.py
+from nicegui import ui
+from common.services.my_service import do_something   # couche domaine
+from pages.auth import require_auth
+from pages.theme import page_layout, section_title
+
+
+@ui.page("/my-page")
+def page_my_page():
+    user = require_auth()
+    if not user:
+        return
+
+    with page_layout("Titre page", "icon_name", "/my-page"):
+        section_title("Section", "icon")
+        # UI + appel do_something(...)
+```
+
+Puis enregistrer dans `app_nicegui.py` :
+
+```python
+import pages.my_page  # noqa: F401 — /my-page
+```
+
+---
+
+## Multi-tenancy — invariants
+
+- Chaque ligne de chaque table métier porte un `tenant_id` (FK vers `tenants`).
+- Toutes les queries DB incluent `WHERE tenant_id = :tid` OU utilisent `run_sql_with_tenant(..., tenant_id=...)` qui positionne la variable session et laisse la **RLS Postgres** filtrer.
+- Le `tenant_id` est obtenu via `common._session.current_tenant_id()` — ne **jamais** lire `app.storage.user["tenant_id"]` directement dans un service (couplage NiceGUI).
+- L'`AuthMiddleware` refuse toute session authentifiée sans `tenant_id` valide et expose `request.state.tenant_id` pour les routes FastAPI (ex: `/api/sync`).
+
+## Fiabilité — les garde-fous actifs
+
+| Mécanisme | Fichier | Déclencheur |
+|-----------|---------|-------------|
+| Circuit breaker EasyBeer | `common/easybeer/_client.py` | 5× 5xx consécutifs → open 60s |
+| Rate limit EasyBeer (sortant) | `common/easybeer/_client.py` | Throttle 1 req/s (sous limite EB à 10) |
+| Rate limit `/api/sync` (entrant) | `common/sync/rate_limit.py` | 60 req/min par clé API → 429 |
+| Fallback Brevo → queue DB | `common/email_queue.py` | Échec immédiat → enqueue + retry cron (10 min) |
+| Soft-delete ramasses | `common/ramasse_history.py` | 7 j de récupération + purge cron |
+| Audit log fire-and-forget | `common/audit.py` | 2 tentatives DB + fallback logger |
+
+---
+
+## Observabilité
+
+- **Logs structurés** : format JSON en `ENV=production` (`app_nicegui.py` boot). Logger par module (`ferment.services.ramasse`, `ferment.easybeer`, etc.).
+- **`/health`** : `db` + `disk` + état EasyBeer (circuit, rate-limit) + taille cache DB.
+- **`/metrics`** : format Prometheus texte (gauges) — scrapable par Grafana/Alertmanager.
+- **Audit log** : persisté en DB + exporté via page `/admin` (role=admin).
+
+---
+
+## Conventions de code
+
+- **Type hints partout** sur les signatures publiques. `dict[str, Any]` toléré uniquement pour les réponses EasyBeer pas encore typées.
+- **`@dataclass(frozen=True)`** par défaut pour les modèles — immuabilité = pas de mutation surprise.
+- **Pas de magic numbers** — les constantes métier vont dans `config.yaml`.
+- **Commits thématiques** : `feat(ramasse): ...`, `fix(easybeer): ...`, `refactor(services): ...`, `security(db): ...`, `ops(email): ...`, `docs(...): ...`.
+
+---
+
+## Points d'évolution connus
+
+- [ ] `pages/ramasse.py` (1662 LOC), `pages/stocks.py` (1527 LOC), `pages/production.py` (1129 LOC) restent denses. Extraction progressive via services à chaque PR qui les touche.
+- [ ] `_render_easybeer_section` dans `pages/_production_easybeer.py` mélange encore UI et logique — candidat pour un futur `production_brassins_service`.
+- [ ] RLS Postgres est en mode permissif (compatible owner `shark`). Full-enforcement nécessite un rôle applicatif dédié non-owner — étape planifiée.
+- [ ] Migration vers Pydantic / modèles typés en cours (voir `common/easybeer/models.py`). Certaines fonctions retournent encore `dict[str, Any]`.
+- [ ] Pas encore d'event bus — les invalidations de cache et les appels audit sont impératifs. Sera pertinent si >3 listeners apparaissent pour un même événement.
