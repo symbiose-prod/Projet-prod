@@ -71,47 +71,79 @@ Ces règles sont vérifiées par `scripts/check_layers.py` (lancé en CI).
 
 ## Pattern : ajouter un endpoint EasyBeer
 
-Avant (chaque endpoint = 40-60 LOC copié-collé) :
+**Recommandé** : utiliser le helper déclaratif `execute_endpoint`
+([common/easybeer/endpoint.py](../common/easybeer/endpoint.py)) qui consolide
+tout le boilerplate (auth, circuit breaker, logging, cache L2 DB, parsing
+typé défensif).
+
+### Endpoint sans cache, sans modèle (le plus simple)
 
 ```python
-# common/easybeer/xxx.py
-@retry_api
-def get_my_thing(arg: int) -> dict[str, Any]:
-    # L1 in-memory cache (lock manuel)
-    # L2 DB cache (try/except import)
-    # Appel HTTP avec auth + throttle
-    # _check_response
-    # _safe_json
-    # Persist cache
-    ...
-```
+from common.easybeer.endpoint import execute_endpoint
 
-Aujourd'hui, pour un endpoint simple :
-
-```python
-# common/easybeer/xxx.py
 @retry_api
-def get_my_thing(arg: int) -> dict[str, Any]:
-    ep = "path/to/endpoint"
-    r = get_session().get(
-        f"{BASE}/{ep}",
-        auth=_auth(),
-        timeout=TIMEOUT,
+def get_warehouse_detail(id_entrepot: int) -> dict:
+    return execute_endpoint(
+        method="GET",
+        path=f"parametres/entrepot/{id_entrepot}",
     )
-    _check_response(r, ep)     # log + circuit breaker + erreurs lisibles
-    return _safe_json(r, ep)    # parsing défensif
 ```
 
-Pour un endpoint avec cache L1+L2 → copier le pattern de `common/easybeer/products.py:get_all_products` (cache DB via `common/eb_cache.py`).
+### Avec cache L2 DB (partagé entre processus)
+
+```python
+@retry_api
+def get_autonomie_stocks(window_days: int) -> dict:
+    return execute_endpoint(
+        method="POST",
+        path="indicateur/autonomie-stocks",
+        params={"forceRefresh": False},               # gotcha EB
+        payload=_indicator_payload(window_days),       # gotcha PERIODE_LIBRE
+        cache_key="autonomie_stocks",
+        cache_item_id=str(window_days),
+        cache_ttl=1800,                                # 30 min
+    )
+```
+
+### Avec modèle typé (IDE autocomplete + parsing défensif)
+
+```python
+@retry_api
+def get_autonomie_stocks_typed(window_days: int) -> AutonomieResponse:
+    return execute_endpoint(
+        method="POST",
+        path="indicateur/autonomie-stocks",
+        params={"forceRefresh": False},
+        payload=_indicator_payload(window_days),
+        cache_key="autonomie_stocks",
+        cache_item_id=str(window_days),
+        response_model=AutonomieResponse,  # ← parsé automatiquement
+    )
+```
+
+### Ce que `execute_endpoint` ne gère PAS (volontairement)
+
+- **Cache L1 in-memory** : spécifique par endpoint avec logique d'invalidation
+  métier. Voir `common/easybeer/products.py` pour les patterns dédiés.
+- **Désérialisation binaire** (Excel, PDF) : pour les endpoints qui retournent
+  `bytes` (ex: `/export/excel`), continuer à appeler `get_session()` directement.
+- **`@retry_api`** : volontairement hors du descriptor — certains endpoints
+  (ex: `POST /brassin/enregistrer`) ne doivent pas être retry automatiquement
+  (non-idempotents). Toujours décorer explicitement côté caller.
 
 ### Checklist "nouvel endpoint"
 
+### Checklist "nouvel endpoint"
+
+- [ ] Utiliser `execute_endpoint` (pas de boilerplate à réécrire)
 - [ ] Méthode + path dans le module thématique approprié (`brassins.py`, `stocks.py`, …)
 - [ ] Payload utilise `_indicator_payload(window_days)` si applicable (gotcha `PERIODE_LIBRE`)
 - [ ] Param `?forceRefresh=false` si endpoint `/indicateur/*` JSON (pas `/export/excel`)
-- [ ] Appel wrappé par `@retry_api`
-- [ ] Réponse parsée avec `_safe_json` (null-safe)
-- [ ] Si la réponse est itérable → `_safe_list(data, "key", ep)` (évite crash sur `null`)
+- [ ] `@retry_api` sur la fonction publique si l'endpoint est idempotent
+- [ ] `cache_key` + `cache_item_id` si >1 caller ou appel fréquent
+- [ ] `response_model` si une dataclass typée existe (sinon `dict[str, Any]` accepté)
+- [ ] Si la réponse est itérable et que le descriptor n'est pas utilisé →
+      `_safe_list(data, "key", ep)` (évite crash sur `null`)
 - [ ] Export dans `common/easybeer/__init__.py`
 - [ ] Modèle typé dans `models.py` si >1 caller prévu
 

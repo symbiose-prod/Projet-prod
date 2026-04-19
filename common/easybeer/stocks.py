@@ -46,33 +46,22 @@ def get_autonomie_stocks_excel(window_days: int) -> bytes:
 
 @retry_api
 def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
-    """Autonomie stocks — L2 DB cache, L3 API."""
-    # L2: DB cache
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_get
-        cached = cache_get(current_tenant_id(), "autonomie_stocks", item_id=str(window_days), max_age_s=1800)
-        if cached is not None:
-            return cached
-    except Exception:
-        pass
-    # L3: API
-    r = get_session().post(
-        f"{BASE}/indicateur/autonomie-stocks",
+    """Autonomie stocks — L2 DB cache + appel API via execute_endpoint.
+
+    Premier endpoint migré vers le helper déclaratif
+    :func:`common.easybeer.endpoint.execute_endpoint` — passe de ~25 LOC
+    de boilerplate à 8 LOC déclaratives.
+    """
+    from .endpoint import execute_endpoint
+    return execute_endpoint(
+        method="POST",
+        path="indicateur/autonomie-stocks",
         params={"forceRefresh": False},
-        json=_indicator_payload(window_days),
-        auth=_auth(),
-        timeout=TIMEOUT,
+        payload=_indicator_payload(window_days),
+        cache_key="autonomie_stocks",
+        cache_item_id=str(window_days),
+        cache_ttl=1800,
     )
-    _check_response(r, "autonomie-stocks")
-    data = _safe_json(r, "autonomie-stocks")
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_put
-        cache_put(current_tenant_id(), "autonomie_stocks", data, item_id=str(window_days))
-    except Exception:
-        pass
-    return data
 
 
 def get_autonomie_stocks_typed(window_days: int):
@@ -86,9 +75,18 @@ def get_autonomie_stocks_typed(window_days: int):
     Les callers existants continuent d'utiliser ``get_autonomie_stocks`` (dict)
     jusqu'à migration progressive.
     """
+    from .endpoint import execute_endpoint
     from .models import AutonomieResponse
-    raw = get_autonomie_stocks(window_days)
-    return AutonomieResponse.from_dict(raw or {})
+    return execute_endpoint(
+        method="POST",
+        path="indicateur/autonomie-stocks",
+        params={"forceRefresh": False},
+        payload=_indicator_payload(window_days),
+        cache_key="autonomie_stocks",
+        cache_item_id=str(window_days),
+        cache_ttl=1800,
+        response_model=AutonomieResponse,
+    )
 
 
 # ─── Lots matieres premieres ─────────────────────────────────────────────────
