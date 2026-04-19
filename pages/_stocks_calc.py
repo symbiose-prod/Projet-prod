@@ -378,7 +378,7 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     from concurrent.futures import ThreadPoolExecutor
 
     from common.data import get_stocks_config
-    from common.easybeer._client import _dates
+    from common.easybeer._client import _dates, _safe_list
     from common.easybeer.history import get_mp_historique_entree
     from common.easybeer.products import get_all_products
     from common.easybeer.stocks import get_all_matieres_premieres, get_autonomie_stocks
@@ -403,7 +403,9 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
     #   quantite      = Cartons VENDUS sur la période
     #   quantiteVirtuelle = Cartons en STOCK
     autonomie_data = f_autonomie.result() or {}
-    pf_list = autonomie_data.get("produits") or []
+    # Parsing défensif : _safe_list gère aussi le cas "produits: null" renvoyé
+    # par EasyBeer (plutôt que la clé absente), qui crasherait sur itération.
+    pf_list = _safe_list(autonomie_data, "produits", "autonomie-stocks")
     if not pf_list:
         _log.warning("BOM calc: aucun produit fini dans l'autonomie EasyBeer")
         return []
@@ -453,8 +455,8 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
                 "qty_vendue": qty_vendue,
             }
 
-        # Par format pour le packaging
-        for sp in pf.get("stocksProduits") or []:
+        # Par format pour le packaging — parsing défensif (null-safe)
+        for sp in _safe_list(pf, "stocksProduits", "autonomie-stocks"):
             sp_label = sp.get("libelle") or ""
             fmt_match = re.search(r"(\d+)\s*[x×]\s*(\d+)", sp_label)
             if fmt_match:
