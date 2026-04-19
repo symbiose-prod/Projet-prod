@@ -1,0 +1,24 @@
+[Unit]
+Description=Retry des emails en attente (fallback Brevo)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/app
+EnvironmentFile=/home/ubuntu/app/.env
+# Utilise le venv applicatif (mêmes deps : dotenv, sqlalchemy, tenacity…)
+ExecStart=/home/ubuntu/app/venv/bin/python /home/ubuntu/app/scripts/retry_pending_emails.py 20
+StandardOutput=journal
+StandardError=journal
+# Sécurité
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/app
+
+[Install]
+WantedBy=multi-user.target

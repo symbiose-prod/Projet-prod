@@ -1,0 +1,12 @@
+[Unit]
+Description=Timer retry emails pending (toutes les 10 min)
+
+[Timer]
+# Premier tick 2 min après le boot, puis toutes les 10 min.
+OnBootSec=2min
+OnUnitActiveSec=10min
+# Rattraper un tick manqué si le serveur était down
+Persistent=true
+
+[Install]
+WantedBy=timers.target
