@@ -203,40 +203,22 @@ _MP_CACHE_TTL = 3600  # 1 heure
 
 @retry_api
 def get_all_matieres_premieres() -> list[dict[str, Any]]:
-    """Matières premières — L1 in-memory, L2 DB cache, L3 API."""
+    """Matières premières — L1 in-memory, L2 DB cache, L3 API (via helper)."""
     # L1: in-memory
     if _MP_CACHE["data"] is not None and (time.monotonic() - _MP_CACHE["ts"]) < _MP_CACHE_TTL:
         return _MP_CACHE["data"]
-    # L2: DB cache
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_get
-        cached = cache_get(current_tenant_id(), "mp_all", max_age_s=7200)
-        if cached is not None:
-            _MP_CACHE["data"] = cached
-            _MP_CACHE["ts"] = time.monotonic()
-            return cached
-    except Exception:
-        pass
-    # L3: API
-    ep = "stock/matieres-premieres/all"
-    r = get_session().get(
-        f"{BASE}/{ep}",
-        auth=_auth(),
-        timeout=TIMEOUT,
+    # L2 + L3 via helper
+    from .endpoint import execute_endpoint
+    data = execute_endpoint(
+        method="GET",
+        path="stock/matieres-premieres/all",
+        cache_key="mp_all",
+        cache_ttl=7200,
     )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
     result = data if isinstance(data, list) else []
     if result:
         _MP_CACHE["data"] = result
         _MP_CACHE["ts"] = time.monotonic()
-        try:
-            from common._session import current_tenant_id
-            from common.eb_cache import cache_put
-            cache_put(current_tenant_id(), "mp_all", result)
-        except Exception:
-            pass
     _log.info("get_all_matieres_premieres : %d MP chargées", len(result))
     return result
 

@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, get_session, is_rate_limited, retry_api
+from ._client import _log, is_rate_limited, retry_api
+from .endpoint import execute_endpoint
 
 _MAX_PAGINATION_PAGES = 50
 
@@ -21,21 +22,17 @@ def get_clients(
     filtre: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """POST /parametres/client/liste → Page de clients (paginee)."""
-    ep = "parametres/client/liste"
-    r = get_session().post(
-        f"{BASE}/{ep}",
-        params={  # type: ignore[arg-type]
+    return execute_endpoint(
+        method="POST",
+        path="parametres/client/liste",
+        params={
             "colonneTri": sort_by,
             "mode": sort_mode,
             "nombreParPage": per_page,
             "numeroPage": page,
         },
-        json=filtre or {},
-        auth=_auth(),
-        timeout=TIMEOUT,
+        payload=filtre or {},
     )
-    _check_response(r, ep)
-    return _safe_json(r, ep)
 
 
 # Cache clé : "all_clients_<sort_by>_<sort_mode>" pour chaque combinaison

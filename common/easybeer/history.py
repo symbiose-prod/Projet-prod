@@ -100,7 +100,7 @@ def _get_mp_historique_entree_raw(
     date_fin: str | None = None,
 ) -> list[dict[str, Any]]:
     """POST /stock/matieres-premieres/historique/entree/{categorie} (appel HTTP brut)."""
-    ep = f"stock/matieres-premieres/historique/entree/{categorie}"
+    from .endpoint import execute_endpoint
 
     filtre: dict[str, Any] = {
         "idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013")),
@@ -109,19 +109,16 @@ def _get_mp_historique_entree_raw(
         filtre["periodeSelectionnee"] = {
             "dateDebut": date_debut or "2020-01-01T00:00:00.000Z",
             "dateFin": date_fin or datetime.datetime.now(
-                datetime.UTC
+                datetime.UTC,
             ).strftime("%Y-%m-%dT23:59:59.999Z"),
             "type": "PERIODE_LIBRE",
         }
 
-    r = get_session().post(
-        f"{BASE}/{ep}",
-        json=filtre,
-        auth=_auth(),
-        timeout=TIMEOUT,
+    data = execute_endpoint(
+        method="POST",
+        path=f"stock/matieres-premieres/historique/entree/{categorie}",
+        payload=filtre,
     )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
     result = data if isinstance(data, list) else []
     _log.info(
         "mp/historique/entree/%s : %d entrees (periode=%s→%s)",

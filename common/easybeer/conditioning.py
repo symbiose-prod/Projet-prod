@@ -8,87 +8,53 @@ from __future__ import annotations
 import time as _time
 from typing import Any
 
-from ._client import BASE, TIMEOUT, _auth, _check_response, _log, _safe_json, _throttle, get_session, retry_api
+from ._client import BASE, _auth, _check_response, _log, _throttle, retry_api
+from .endpoint import execute_endpoint
 
 
 @retry_api
 def get_planification_matrice(id_brassin: int, id_entrepot: int) -> dict[str, Any]:
-    """Matrice conditionnement — L2 DB cache, L3 API."""
-    # L2: DB cache
-    _item_key = f"{id_brassin}_{id_entrepot}"
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_get
-        cached = cache_get(current_tenant_id(), "planification_matrice", item_id=_item_key, max_age_s=3600)
-        if cached is not None:
-            return cached
-    except Exception:
-        pass
-    # L3: API
-    ep = "brassin/planification-conditionnement/matrice"
-    r = get_session().get(
-        f"{BASE}/{ep}",
+    """Matrice conditionnement — L2 DB cache (1h), L3 API."""
+    return execute_endpoint(
+        method="GET",
+        path="brassin/planification-conditionnement/matrice",
         params={"idBrassin": id_brassin, "idEntrepot": id_entrepot},
-        auth=_auth(),
-        timeout=TIMEOUT,
+        cache_key="planification_matrice",
+        cache_item_id=f"{id_brassin}_{id_entrepot}",
+        cache_ttl=3600,
     )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_put
-        cache_put(current_tenant_id(), "planification_matrice", data, item_id=_item_key)
-    except Exception:
-        pass
-    return data
 
 
 @retry_api
 def add_planification_conditionnement(payload: dict[str, Any]) -> Any:
     """POST /brassin/planification-conditionnement/ajouter → Ajoute une planification."""
-    ep = "planification-conditionnement/ajouter"
-    r = get_session().post(
-        f"{BASE}/brassin/{ep}",
-        json=payload,
-        auth=_auth(),
-        timeout=TIMEOUT,
-    )
-    _check_response(r, ep)
     try:
-        return r.json()
-    except (ValueError, TypeError):
+        return execute_endpoint(
+            method="POST",
+            path="brassin/planification-conditionnement/ajouter",
+            payload=payload,
+        )
+    except Exception:
+        # Legacy tolérant : certaines réponses EasyBeer sont des 200 avec body vide
+        # (ancien comportement « je n'arrive pas à parser mais l'opération a
+        # probablement réussi »).
         _log.debug("Erreur parsing reponse planification", exc_info=True)
         return {"status": "ok"}
 
 
 @retry_api
 def get_code_barre_matrice() -> dict[str, Any]:
-    """Matrice codes-barres — L2 DB cache (24h), L3 API."""
-    # L2: DB cache (les codes-barres changent très rarement)
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_get
-        cached = cache_get(current_tenant_id(), "code_barre_matrice", max_age_s=86400)
-        if cached is not None:
-            return cached
-    except Exception:
-        pass
-    # L3: API
-    ep = "parametres/code-barre/matrice"
-    r = get_session().get(
-        f"{BASE}/{ep}",
-        auth=_auth(),
-        timeout=TIMEOUT,
+    """Matrice codes-barres — L2 DB cache (24h), L3 API.
+
+    Les codes-barres changent très rarement (nouveau produit ≈ 1-2×/an),
+    d'où le TTL élevé pour limiter les appels à EasyBeer.
+    """
+    return execute_endpoint(
+        method="GET",
+        path="parametres/code-barre/matrice",
+        cache_key="code_barre_matrice",
+        cache_ttl=86400,
     )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
-    try:
-        from common._session import current_tenant_id
-        from common.eb_cache import cache_put
-        cache_put(current_tenant_id(), "code_barre_matrice", data)
-    except Exception:
-        pass
-    return data
 
 
 def upload_fichier_brassin(

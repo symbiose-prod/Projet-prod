@@ -8,16 +8,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from ._client import (
-    BASE,
-    TIMEOUT,
-    _auth,
-    _check_response,
-    _log,
-    _safe_json,
-    get_session,
-    retry_api,
-)
+from ._client import _log, retry_api
+from .endpoint import execute_endpoint
 
 
 @retry_api
@@ -53,17 +45,16 @@ def get_ca_daily(
         "tags": tags,
     }
 
-    ep = "indicateur/chiffre-affaire"
-    r = get_session().post(
-        f"{BASE}/{ep}",
+    data = execute_endpoint(
+        method="POST",
+        path="indicateur/chiffre-affaire",
         params={"forceRefresh": False},
-        json=payload,
-        auth=_auth(),
-        timeout=TIMEOUT,
+        payload=payload,
     )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
-    _log.info("CA daily %s → %s : %d séries", date_debut[:10], date_fin[:10], len(data.get("series") or []))
+    _log.info(
+        "CA daily %s → %s : %d séries",
+        date_debut[:10], date_fin[:10], len(data.get("series") or []),
+    )
     return data
 
 
@@ -127,17 +118,16 @@ def get_ca_mensuel(
         "tags": tags,
     }
 
-    ep = "indicateur/chiffre-affaire"
-    r = get_session().post(
-        f"{BASE}/{ep}",
+    data = execute_endpoint(
+        method="POST",
+        path="indicateur/chiffre-affaire",
         params={"forceRefresh": True},
-        json=payload,
-        auth=_auth(),
-        timeout=TIMEOUT,
+        payload=payload,
     )
-    _check_response(r, ep)
-    data = _safe_json(r, ep)
 
     nb_series = len(data.get("series") or [])
-    _log.info("CA mensuel %d (avoir=%s, carnet=%s): %d séries", year, include_avoir, include_carnet, nb_series)
+    _log.info(
+        "CA mensuel %d (avoir=%s, carnet=%s): %d séries",
+        year, include_avoir, include_carnet, nb_series,
+    )
     return data
