@@ -1,18 +1,22 @@
 """
-pages/_stocks_calc.py
-==================
-Stock autonomy computation based on finished-product SALES + BOM decomposition.
+common/services/stocks_service.py
+=================================
+Service métier : calcul de l'autonomie stocks contenants + décomposition BOM.
 
-Called via ``asyncio.to_thread(fetch_and_compute_bom, window_days)`` from
-the ``/stocks`` page.
+Orchestration :
+1. Fetch autonomie PF (ventes + stock) depuis EasyBeer (couche transport).
+2. Charge la BOM validée (produit → composants avec qté/carton).
+3. Calcule la consommation journalière de chaque composant depuis les ventes PF.
+4. Ajoute le stock virtuel depuis le stock PF (composants bloqués dans les PF).
+5. Groupe par fournisseur (dynamique depuis historique, fallback config.yaml).
+6. Génère des propositions de commande selon les contraintes fournisseur.
 
-Data flow
----------
-1. Fetch PF autonomy (sales + stock) from EasyBeer
-2. Load validated BOM (product → packaging components with qty per carton)
-3. Compute daily consumption of each component from PF daily sales
-4. Add virtual stock from PF stock (components locked in finished products)
-5. Group by supplier (dynamic from history, config.yaml fallback)
+Ce module n'importe ni NiceGUI ni ``pages/`` — consommé par plusieurs pages
+(``pages/stocks``, ``pages/ressources``) et par ``common/ai_order`` pour la
+génération d'emails de commande.
+
+Appelé typiquement via ``asyncio.to_thread(fetch_and_compute_bom, window_days)``
+pour ne pas bloquer l'event loop (les appels EasyBeer sont I/O-bound).
 """
 from __future__ import annotations
 
@@ -585,14 +589,21 @@ def fetch_and_compute_bom(window_days: int) -> list[StockGroup]:
 
     def _find_parent_recipe(child_pid: int, child_label: str) -> dict | None:
         """Trouve la recette du produit Symbiose parent pour un produit dérivé."""
-        child_canon = _label_to_canon.get(child_label.lower()) or _label_to_canon.get(_clean_eb_label(child_label).lower())
+        child_canon = (
+            _label_to_canon.get(child_label.lower())
+            or _label_to_canon.get(_clean_eb_label(child_label).lower())
+        )
         if not child_canon:
             return None
         # Chercher un produit avec recette qui a le même goût canonique
         for other_pid, other_info in pf_sales.items():
             if other_pid == child_pid:
                 continue
-            other_canon = _label_to_canon.get(other_info["label"].lower()) or _label_to_canon.get(_clean_eb_label(other_info["label"]).lower())
+            other_label = other_info["label"]
+            other_canon = (
+                _label_to_canon.get(other_label.lower())
+                or _label_to_canon.get(_clean_eb_label(other_label).lower())
+            )
             if other_canon == child_canon:
                 if other_pid not in _recipe_cache:
                     _recipe_cache[other_pid] = get_product_detail(other_pid)

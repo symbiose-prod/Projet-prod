@@ -18,7 +18,7 @@ from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pages._stocks_calc import OrderRecommendation
+    from common.services.stocks_service import OrderRecommendation
 
 _log = logging.getLogger("ferment.ai_order")
 
@@ -403,7 +403,7 @@ def ai_order_to_recommendation(
     This bridges the AI output to the existing PDF/email pipeline
     (build_bon_commande_pdf, _open_order_dialog, etc.).
     """
-    from pages._stocks_calc import OrderItem, OrderRecommendation
+    from common.services.stocks_service import OrderItem, OrderRecommendation
 
     items: list[OrderItem] = []
     for item_data in tool_result.get("items", []):

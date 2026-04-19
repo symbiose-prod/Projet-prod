@@ -16,7 +16,7 @@ _log = logging.getLogger("ferment.stocks")
 
 from common.data import get_stocks_config
 from common.easybeer import is_configured as eb_configured
-from pages._stocks_calc import (
+from common.services.stocks_service import (
     StockGroup,
     fetch_and_compute_bom,
 )

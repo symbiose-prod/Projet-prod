@@ -45,7 +45,7 @@ def _load_supplier_map() -> dict[str, str]:
     try:
         from common.easybeer._client import _dates
         from common.easybeer.history import get_mp_historique_entree
-        from pages._stocks_calc import _extract_supplier_map_from_entries
+        from common.services.stocks_service import _extract_supplier_map_from_entries
 
         supplier_map: dict[str, str] = {}
         date_debut, date_fin = _dates(365)

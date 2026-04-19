@@ -44,7 +44,7 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `pages/theme.py` | — | Design system, page layout, custom components |
 | `pages/_production_calc.py` | — | Production computation (no UI, thread-safe) |
 | `pages/_production_easybeer.py` | — | EasyBeer brassin creation section |
-| `pages/_stocks_calc.py` | — | Stock duration computation, movement history (no UI) |
+| `common/services/stocks_service.py` | — | Service domaine : autonomie stocks + BOM + propositions commande (no UI) |
 
 ### Common Modules
 
