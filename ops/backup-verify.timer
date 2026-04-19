@@ -1,0 +1,14 @@
+[Unit]
+Description=Vérification hebdomadaire que le dernier backup est restaurable
+
+[Timer]
+# Dimanche 04:15 UTC — après le backup quotidien de 03:00, avant un
+# éventuel besoin opérationnel le lundi matin.
+OnCalendar=Sun *-*-* 04:15:00
+# Rattraper un tick raté si le serveur était down
+Persistent=true
+# Randomiser ±10 min pour éviter pics si plusieurs VPS
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target
