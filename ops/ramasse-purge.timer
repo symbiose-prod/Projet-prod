@@ -1,0 +1,13 @@
+[Unit]
+Description=Timer quotidien pour purger les ramasses soft-deleted
+
+[Timer]
+# Tous les jours à 03:15 UTC (creux d'activité)
+OnCalendar=*-*-* 03:15:00
+# Si le serveur était down au moment prévu, rattraper au prochain boot
+Persistent=true
+# Randomiser ±10 min pour éviter pics de charge si plusieurs VPS
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target
