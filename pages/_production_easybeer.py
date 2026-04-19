@@ -17,10 +17,10 @@ from nicegui import app, ui
 
 from common.easybeer import EasyBeerError
 from common.easybeer._client import is_rate_limited
+from common.services.production_service import _auto_match, _fetch_eb_products
 from common.session_store import load_df
 from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import parse_stock as _parse_stock
-from pages._production_calc import _auto_match, _fetch_eb_products
 from pages.theme import confirm_dialog, date_picker_field
 
 _log = logging.getLogger("ferment.production")

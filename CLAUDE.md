@@ -42,7 +42,7 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `pages/stocks.py` | `/stocks` | Stock autonomy by supplier, order suggestions |
 | `pages/ressources.py` | `/ressources` | Supplier ordering constraints editor (lead time, min pallets) |
 | `pages/theme.py` | — | Design system, page layout, custom components |
-| `pages/_production_calc.py` | — | Production computation (no UI, thread-safe) |
+| `common/services/production_service.py` | — | Service domaine : calculs production (optimiseur, split cuves) — no UI, thread-safe |
 | `pages/_production_easybeer.py` | — | EasyBeer brassin creation section |
 | `common/services/stocks_service.py` | — | Service domaine : autonomie stocks + BOM + propositions commande (no UI) |
 

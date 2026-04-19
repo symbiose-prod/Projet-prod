@@ -1,9 +1,14 @@
 """
-pages/_production_calc.py
-======================
-Fonctions de calcul de production (pas d'UI).
+common/services/production_service.py
+=====================================
+Service domaine : calculs de production (planification, optimiseur, répartition
+goûts, split cuves 7200L/5200L).
 
-Extrait de ui/production.py pour maintenabilité.
+Ne dépend ni de NiceGUI ni de ``pages/`` — thread-safe, bloquant (l'appelant
+doit passer par ``asyncio.to_thread`` pour ne pas bloquer l'event loop).
+
+Expose aussi les helpers ``_fetch_eb_products`` / ``invalidate_eb_products_cache``
+utilisés par la section "Création brassin EasyBeer" (``pages/_production_easybeer``).
 """
 from __future__ import annotations
 

@@ -17,16 +17,16 @@ import pandas as pd
 from nicegui import app, ui
 
 from common.data import get_business_config, get_paths
+from common.services.production_service import (
+    _compute_production_sync,
+    _fetch_eb_products,
+)
 from common.session_store import load_df, store_df
 from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import (
     apply_canonical_flavor,
     load_flavor_map_from_path,
     sanitize_gouts,
-)
-from pages._production_calc import (
-    _compute_production_sync,
-    _fetch_eb_products,
 )
 from pages._production_easybeer import _render_easybeer_section
 from pages.accueil import get_df_raw
