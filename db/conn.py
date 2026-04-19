@@ -180,6 +180,45 @@ def ping() -> tuple[bool, str]:
 
 
 # ------------------------
+# Row-Level Security — scope tenant
+# ------------------------
+def run_sql_with_tenant(
+    sql: Any,
+    params: Mapping[str, Any] | None = None,
+    *,
+    tenant_id: str | None = None,
+) -> int | list[dict]:
+    """Exécute une requête avec le tenant_id positionné dans la session Postgres.
+
+    Set ``app.current_tenant_id = <uuid>`` via SET LOCAL dans la transaction —
+    la policy RLS ``tenant_isolation`` l'utilise pour filtrer automatiquement
+    les lignes accessibles.
+
+    Defense-in-depth : même si la requête applicative oublie le
+    ``WHERE tenant_id = :tid``, la RLS refuse les lignes des autres tenants.
+
+    ``tenant_id=None`` → pas de SET (la policy laisse passer en mode permissif,
+    comportement actuel). Utilisé pour les requêtes admin globales ou les jobs
+    background cross-tenant.
+    """
+    if isinstance(sql, str):
+        sql = _text(sql)
+
+    with get_engine().begin() as conn:
+        if tenant_id:
+            # SET LOCAL ne persiste que dans la transaction courante — clean.
+            # Via SELECT set_config pour éviter l'interpolation côté client.
+            conn.execute(
+                _text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+                {"tid": str(tenant_id)},
+            )
+        result = conn.execute(sql, params or {})
+        if result.returns_rows:
+            return [dict(row._mapping) for row in result.fetchall()]
+        return result.rowcount
+
+
+# ------------------------
 # Debug helpers (sans secrets)
 # ------------------------
 def _current_dsn() -> str:
