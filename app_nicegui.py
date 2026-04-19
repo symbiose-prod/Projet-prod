@@ -407,8 +407,14 @@ def _extract_bearer_key(request: Request) -> str | None:
 
 
 def _verify_sync_auth(request: Request) -> tuple[dict | None, JSONResponse | None]:
-    """Vérifie la clé API sync. Retourne (auth_info, None) ou (None, error_response)."""
+    """Vérifie la clé API sync. Retourne (auth_info, None) ou (None, error_response).
+
+    Applique également un rate-limit per-key (60 req/min) pour protéger la DB
+    contre un agent mal configuré (retry-storm). Les requêtes au-delà sont
+    rejetées avec HTTP 429 + header Retry-After.
+    """
     from common.sync.api_key import verify_api_key
+    from common.sync.rate_limit import check as rl_check
 
     raw_key = _extract_bearer_key(request)
     if not raw_key:
@@ -416,6 +422,20 @@ def _verify_sync_auth(request: Request) -> tuple[dict | None, JSONResponse | Non
     auth_info = verify_api_key(raw_key)
     if not auth_info:
         return None, JSONResponse({"error": "Invalid API key"}, status_code=401)
+
+    # Rate-limit par clé (pas par IP : plusieurs agents derrière un NAT
+    # partageraient l'IP mais ont chacun leur clé).
+    key_id = str(auth_info.get("key_id") or raw_key)
+    allowed, retry_after = rl_check(key_id)
+    if not allowed:
+        _sync_log.warning(
+            "Rate-limit dépassé pour key %s (retry in %ds)", key_id[:8], retry_after,
+        )
+        return None, JSONResponse(
+            {"error": "Rate limit exceeded", "retry_after": retry_after},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
     return auth_info, None
 
 
