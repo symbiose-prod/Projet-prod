@@ -144,6 +144,29 @@ def page_accueil():
                             import asyncio
                             _cancelled = {"v": False}
 
+                            # ── Mode dégradé : proactive check avant le spinner ──
+                            # Évite de démarrer un import condamné quand EasyBeer
+                            # est en rate-limit ou que le circuit-breaker est ouvert.
+                            from common.easybeer._client import (
+                                circuit_breaker_state,
+                                is_rate_limited,
+                            )
+                            cb_remaining = circuit_breaker_state().get("remaining", 0.0) or 0.0
+                            rl_remaining = is_rate_limited() or 0.0
+                            if cb_remaining > 0 or rl_remaining > 0:
+                                wait = int(max(cb_remaining, rl_remaining)) or 1
+                                reason = (
+                                    "EasyBeer hors service (circuit ouvert)"
+                                    if cb_remaining > 0
+                                    else "limite d'appels EasyBeer atteinte"
+                                )
+                                msg = f"{reason} — réessayez dans ~{wait}s."
+                                status_label.text = msg
+                                status_label.classes("text-negative", remove="text-positive")
+                                status_label.set_visibility(True)
+                                ui.notify(msg, type="warning", icon="schedule")
+                                return
+
                             def _do_cancel():
                                 _cancelled["v"] = True
                                 cancel_btn.set_visibility(False)
