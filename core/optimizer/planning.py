@@ -93,9 +93,11 @@ def compute_plan(df_in, window_days, volume_cible, nb_gouts, repartir_pro_rv, ma
     df = df.loc[mask_allowed].reset_index(drop=True)
 
     df["Volume/carton (hL)"] = (df["Bouteilles/carton"] * df["Volume bouteille (L)"]) / 100.0
-    df = df.dropna(
-        subset=["GoutCanon", "Volume/carton (hL)", "Volume vendu (hl)", "Volume disponible (hl)"]
-    ).reset_index(drop=True)
+    # On ne jette que si GoutCanon ou le format est introuvable : un format
+    # sans ventes ou sans stock (nouveau produit) doit quand même apparaître.
+    df = df.dropna(subset=["GoutCanon", "Volume/carton (hL)"]).reset_index(drop=True)
+    for c in ["Volume vendu (hl)", "Volume disponible (hl)", "Quantité vendue", "Quantité disponible"]:
+        df[c] = df[c].fillna(0.0)
 
     if exclude_list:
         ex = {s.strip() for s in exclude_list}
