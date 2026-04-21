@@ -599,12 +599,14 @@ def _check_emballages(df_final: pd.DataFrame, *, all_mps_prefetched: list[dict] 
         key = (e["id_produit"], e["format_code"])
         bom_by_key.setdefault(key, []).append(e)
 
-    # Index des unités MP pour enrichir les résultats
+    # Index des unités + types MP pour enrichir les résultats
     mp_unite_by_id: dict[int, str] = {}
+    mp_type_by_id: dict[int, str] = {}
     for mp in all_mps:
         mp_id = mp.get("idMatierePremiere")
         if mp_id is not None:
             mp_unite_by_id[mp_id] = (mp.get("unite") or {}).get("symbole", "")
+            mp_type_by_id[mp_id] = (mp.get("type") or {}).get("code", "")
 
     active_rows = df_final[df_final["Cartons à produire (arrondi)"] > 0]
     _bom_hits, _bom_misses = 0, 0
@@ -643,6 +645,9 @@ def _check_emballages(df_final: pd.DataFrame, *, all_mps_prefetched: list[dict] 
         _bom_hits += 1
         for comp in bom_components:
             id_mp = comp["id_mp"]
+            # Ignorer les ingrédients (gérés dans la section MP, pas emballages)
+            if mp_type_by_id.get(id_mp, "").startswith("INGREDIENT"):
+                continue
             qty_per_unit = float(comp.get("qty_per_unit", 0))
             besoin = qty_per_unit * cartons
             libelle = comp.get("mp_label", f"MP #{id_mp}")

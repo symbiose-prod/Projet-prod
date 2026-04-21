@@ -16,7 +16,7 @@ _log = logging.getLogger("ferment.optimizer.parsing")
 
 
 # ======= constantes formats =================================================
-ALLOWED_FORMATS = {(12, 0.33), (6, 0.75), (4, 0.75)}
+ALLOWED_FORMATS = {(12, 0.33), (6, 0.33), (6, 0.75), (4, 0.75)}
 VOL_TOL = 0.02
 
 
