@@ -120,12 +120,15 @@ def enrich_df_with_missing_formats(
             continue
         qte = float(r.get("Quantité disponible", 0) or 0)
         vol = float(r.get("Volume disponible (hl)", 0) or 0)
-        if qte <= 0 and vol <= 0:
-            continue  # rien à injecter pour un format sans stock résiduel
+        # Pas de filtre sur qte/vol : dès qu'EB a enregistré un couple
+        # (produit, format), on l'injecte — même à stock 0 ou négatif.
+        # Les formats fraîchement créés sans réappro apparaissent ainsi
+        # dans le plan et peuvent être forcés manuellement.
         new_rows.append({
             "Produit": auto_prod, "Stock": stock,
             "Quantité vendue": 0, "Volume vendu (hl)": 0.0,
-            "Quantité disponible": qte, "Volume disponible (hl)": vol,
+            "Quantité disponible": max(qte, 0.0),
+            "Volume disponible (hl)": max(vol, 0.0),
         })
 
     if not new_rows:
