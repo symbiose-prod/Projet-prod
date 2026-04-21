@@ -32,6 +32,7 @@ _CATEGORIES: list[tuple[str, int, str]] = [
     ("brassins_en_cours",  300, "_sync_brassins_en_cours"),
     ("brassins_planifies", 600, "_sync_brassins_planifies"),
     ("autonomie_stocks",   900, "_sync_autonomie_stocks"),
+    ("production_df",     1800, "_sync_production_df"),
     # Reference — sync hourly
     ("products",          3600, "_sync_products"),
     ("mp_all",            3600, "_sync_mp_all"),
@@ -109,6 +110,61 @@ def _sync_autonomie_stocks(tenant_id: str) -> tuple[int, str | None]:
             count += 1
         except Exception:
             _log.warning("Autonomie sync %dj failed", days, exc_info=True)
+    return count, None
+
+
+_PRODUCTION_DF_WINDOWS = [30, 60, 90, 180, 365]
+
+
+def _sync_production_df(tenant_id: str) -> tuple[int, str | None]:
+    """Sync le DataFrame d'import production pour toutes les fenêtres standard.
+
+    Combine /indicateur/autonomie-stocks/export/excel + /stock/produits/export,
+    enrichit les formats manquants, puis stocke le DataFrame sérialisé en
+    cache pour lecture instantanée par la page Accueil (sans attendre
+    les appels HTTP).
+    """
+    from common.easybeer import (
+        get_autonomie_stocks_excel,
+        get_stock_produits_export_excel,
+    )
+    from common.easybeer._client import is_rate_limited
+    from common.eb_cache import cache_put
+    from common.session_store import store_df
+    from core.optimizer import (
+        enrich_df_with_missing_formats,
+        parse_stock_produits_excel,
+        read_input_excel_and_period_from_bytes,
+    )
+
+    # 1 appel partagé pour le stock-produits (coûteux, indépendant de la fenêtre)
+    try:
+        stock_bytes = get_stock_produits_export_excel()
+        df_sp = parse_stock_produits_excel(stock_bytes)
+    except Exception as exc:
+        _log.warning("stock-produits fetch failed: %s", exc, exc_info=True)
+        df_sp = None
+
+    count = 0
+    for days in _PRODUCTION_DF_WINDOWS:
+        if is_rate_limited() > 0:
+            _log.warning("Rate-limit during production_df sync, stopping at %dj", days)
+            break
+        try:
+            xls = get_autonomie_stocks_excel(days)
+            df, period = read_input_excel_and_period_from_bytes(xls)
+            if df_sp is not None and not df_sp.empty:
+                df = enrich_df_with_missing_formats(df, df_sp)
+            payload = {
+                "df_json": store_df(df),
+                "period": period,
+                "window_days": days,
+                "rows": len(df),
+            }
+            cache_put(tenant_id, "production_df", payload, item_id=str(days))
+            count += 1
+        except Exception:
+            _log.warning("production_df sync %dj failed", days, exc_info=True)
     return count, None
 
 
@@ -261,6 +317,7 @@ _SYNC_FNS: dict[str, Callable[[str], tuple[int, str | None]]] = {
     "_sync_brassins_en_cours": _sync_brassins_en_cours,
     "_sync_brassins_planifies": _sync_brassins_planifies,
     "_sync_autonomie_stocks": _sync_autonomie_stocks,
+    "_sync_production_df": _sync_production_df,
     "_sync_products": _sync_products,
     "_sync_mp_all": _sync_mp_all,
     "_sync_bottle_stock": _sync_bottle_stock,

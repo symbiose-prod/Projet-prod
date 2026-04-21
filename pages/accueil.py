@@ -14,7 +14,7 @@ from nicegui import app, ui
 _log = logging.getLogger("ferment.accueil")
 
 from common.easybeer import is_configured as eb_configured
-from common.session_store import store_df
+from common.session_store import load_df, store_df
 from core.optimizer import (
     enrich_df_with_missing_formats,
     parse_stock_produits_excel,
@@ -138,9 +138,47 @@ def page_accueil():
                         ).classes("w-full q-mt-xs").props("flat color=grey-7")
                         cancel_btn.set_visibility(False)
 
-                        async def do_import_eb():
+                        async def do_import_eb(*, force: bool = False):
+                            """Import EB data.
+
+                            Par défaut, tente d'abord le cache background (sync auto
+                            toutes les 30 min). Si vide ou expiré, fetch HTTP direct.
+                            ``force=True`` bypass le cache (bouton Importer manuel).
+                            """
                             import asyncio
                             _cancelled = {"v": False}
+
+                            days = int(period_radio.value or 30)
+
+                            # ── Cache-first : lecture instantanée si dispo ──
+                            if not force:
+                                try:
+                                    tenant_id = app.storage.user.get("tenant_id")
+                                    if tenant_id:
+                                        from common.eb_cache import cache_get
+                                        cached = cache_get(
+                                            tenant_id, "production_df",
+                                            item_id=str(days), max_age_s=2100,
+                                        )
+                                        if cached and cached.get("df_json"):
+                                            df_cached = load_df(cached["df_json"])
+                                            state["imported"] = True
+                                            state["source"] = "EasyBeer (cache)"
+                                            state["rows"] = len(df_cached)
+                                            state["window_days"] = days
+                                            state["df_json"] = cached["df_json"]
+                                            status_label.text = (
+                                                f"{len(df_cached)} lignes — synchro "
+                                                f"auto récente ({days}j)"
+                                            )
+                                            status_label.classes(
+                                                "text-positive",
+                                                remove="text-negative text-grey-6",
+                                            )
+                                            status_label.set_visibility(True)
+                                            return
+                                except Exception:
+                                    _log.debug("Cache lookup production_df failed", exc_info=True)
 
                             # ── Mode dégradé : proactive check avant le spinner ──
                             # Évite de démarrer un import condamné quand EasyBeer
@@ -186,7 +224,6 @@ def page_accueil():
                                     get_autonomie_stocks_excel,
                                     get_stock_produits_export_excel,
                                 )
-                                days = int(period_radio.value or 30)
                                 _t0 = _t.monotonic()
                                 xls_bytes = await asyncio.wait_for(
                                     asyncio.to_thread(get_autonomie_stocks_excel, days),
@@ -212,11 +249,25 @@ def page_accueil():
                                         exc_info=True,
                                     )
                                 elapsed = _t.monotonic() - _t0
+                                df_json = store_df(df)
                                 state["imported"] = True
                                 state["source"] = "EasyBeer"
                                 state["rows"] = len(df)
                                 state["window_days"] = days
-                                state["df_json"] = store_df(df)
+                                state["df_json"] = df_json
+                                # Alimente le cache pour les prochaines lectures
+                                try:
+                                    tenant_id = app.storage.user.get("tenant_id")
+                                    if tenant_id:
+                                        from common.eb_cache import cache_put
+                                        cache_put(
+                                            tenant_id, "production_df",
+                                            {"df_json": df_json, "period": period,
+                                             "window_days": days, "rows": len(df)},
+                                            item_id=str(days),
+                                        )
+                                except Exception:
+                                    _log.debug("Cache write production_df failed", exc_info=True)
                                 status_label.text = f"Importé : {len(df)} lignes depuis EasyBeer ({days}j)"
                                 status_label.classes("text-positive")
                                 status_label.set_visibility(True)
@@ -246,10 +297,18 @@ def page_accueil():
                                 import_btn.enable()
 
                         import_btn = ui.button(
-                            "Importer depuis Easy Beer",
-                            icon="cloud_download",
-                            on_click=do_import_eb,
+                            "Rafraîchir maintenant",
+                            icon="refresh",
+                            on_click=lambda: do_import_eb(force=True),
                         ).classes("w-full q-mt-md").props("color=green-8 unelevated")
+
+                        # Auto-load depuis le cache au changement de période
+                        import asyncio as _asyncio
+                        period_radio.on_value_change(
+                            lambda _: _asyncio.ensure_future(do_import_eb(force=False)),
+                        )
+                        # Auto-load au chargement de la page (cache-first, silencieux)
+                        _asyncio.ensure_future(do_import_eb(force=False))
 
             # ── Citation du jour ───────────────────────────────────────
             quote_text, quote_author = _quote_of_the_day()
