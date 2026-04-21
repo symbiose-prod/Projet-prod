@@ -45,6 +45,25 @@ def get_autonomie_stocks_excel(window_days: int) -> bytes:
 
 
 @retry_api
+def get_stock_produits_export_excel() -> bytes:
+    """POST /stock/produits/export → Bytes du fichier Excel (stock par format).
+
+    Contrairement à autonomie-stocks qui ne liste que les formats avec ventes
+    sur la période, cet export liste TOUS les couples (Produit, Conditionnement)
+    qui ont un stock tracké dans EasyBeer — même ceux à 0 vente.
+    Utilisé pour enrichir l'import d'autonomie avec les formats manquants.
+    """
+    r = get_session().post(
+        f"{BASE}/stock/produits/export",
+        json={"idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013"))},
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, "stock/produits/export")
+    return r.content
+
+
+@retry_api
 def get_autonomie_stocks(window_days: int) -> dict[str, Any]:
     """Autonomie stocks — L2 DB cache + appel API via execute_endpoint.
 

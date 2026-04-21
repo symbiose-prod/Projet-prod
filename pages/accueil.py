@@ -15,7 +15,11 @@ _log = logging.getLogger("ferment.accueil")
 
 from common.easybeer import is_configured as eb_configured
 from common.session_store import store_df
-from core.optimizer import read_input_excel_and_period_from_bytes
+from core.optimizer import (
+    enrich_df_with_missing_formats,
+    parse_stock_produits_excel,
+    read_input_excel_and_period_from_bytes,
+)
 from pages.auth import require_auth
 from pages.theme import COLORS, page_layout
 
@@ -178,7 +182,10 @@ def page_accueil():
                             try:
                                 import time as _t
 
-                                from common.easybeer import get_autonomie_stocks_excel
+                                from common.easybeer import (
+                                    get_autonomie_stocks_excel,
+                                    get_stock_produits_export_excel,
+                                )
                                 days = int(period_radio.value or 30)
                                 _t0 = _t.monotonic()
                                 xls_bytes = await asyncio.wait_for(
@@ -188,6 +195,22 @@ def page_accueil():
                                 if _cancelled["v"]:
                                     return
                                 df, period = read_input_excel_and_period_from_bytes(xls_bytes)
+
+                                # Enrichit df avec les formats qui ont du stock mais
+                                # pas de ventes sur la période (absents de l'autonomie).
+                                try:
+                                    stock_bytes = await asyncio.wait_for(
+                                        asyncio.to_thread(get_stock_produits_export_excel),
+                                        timeout=20,
+                                    )
+                                    df_sp = parse_stock_produits_excel(stock_bytes)
+                                    df = enrich_df_with_missing_formats(df, df_sp)
+                                except Exception:
+                                    _log.warning(
+                                        "Enrichissement stock-produits échoué — "
+                                        "import continue sans injection de formats",
+                                        exc_info=True,
+                                    )
                                 elapsed = _t.monotonic() - _t0
                                 state["imported"] = True
                                 state["source"] = "EasyBeer"

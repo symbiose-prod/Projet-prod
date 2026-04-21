@@ -9,6 +9,8 @@ from __future__ import annotations
 # --- excel I/O ---
 from .excel_io import (
     DEFAULT_WINDOW_DAYS,
+    enrich_df_with_missing_formats,
+    parse_stock_produits_excel,
     read_input_excel_and_period_from_bytes,
 )
 
@@ -67,4 +69,5 @@ __all__ = [
     "compute_losses_table_v48",
     # excel I/O
     "DEFAULT_WINDOW_DAYS", "read_input_excel_and_period_from_bytes",
+    "parse_stock_produits_excel", "enrich_df_with_missing_formats",
 ]

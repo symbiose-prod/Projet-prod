@@ -82,6 +82,7 @@ from .stocks import (
     get_autonomie_stocks_typed,
     get_mp_lots,
     get_stock_produit_detail,
+    get_stock_produits_export_excel,
 )
 
 # --- suppliers ---
@@ -111,7 +112,7 @@ __all__ = [
     "BrassinLight", "Fournisseur", "FournisseurContact",
     # stocks
     "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_autonomie_stocks_typed",
-    "get_all_matieres_premieres",
+    "get_all_matieres_premieres", "get_stock_produits_export_excel",
     "get_mp_lots", "get_stock_produit_detail", "fetch_carton_weights",
     # history
     "get_contenant_historique", "get_mp_historique_entree",
