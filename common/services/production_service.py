@@ -140,12 +140,23 @@ def _pick_best(candidates: list[int], prod_labels: list[str]) -> int:
 def _match_brassin_to_gout(produit_libelle: str, gouts_connus: list[str]) -> str | None:
     """Retourne le GoutCanon qui matche le libellé produit du brassin.
 
-    Teste les goûts les plus longs d'abord pour éviter les faux positifs
-    (ex: "Citron Gingembre" doit matcher "Citron Gingembre" et pas "Citron").
+    Tolère les mots intercalés (ex: brassin "Infusion probiotique menthe poivrée"
+    matche le goût "Infusion menthe poivrée"), les variantes d'accent et les
+    tirets ("Citron-vert" ↔ "Citron vert"). Préfère les goûts les plus
+    spécifiques (plus de mots) pour éviter les faux positifs ("Citron Gingembre"
+    prime sur "Citron").
     """
-    lbl = produit_libelle.lower()
-    for g in sorted(gouts_connus, key=len, reverse=True):
-        if g.lower() in lbl:
+    import unicodedata
+
+    def _norm(s: str) -> str:
+        nfkd = unicodedata.normalize("NFKD", s.lower())
+        cleaned = "".join(c for c in nfkd if not unicodedata.combining(c))
+        return cleaned.replace("-", " ")
+
+    lbl_words = set(_norm(produit_libelle).split())
+    for g in sorted(gouts_connus, key=lambda x: (len(x.split()), len(x)), reverse=True):
+        g_words = set(_norm(g).split())
+        if g_words and g_words.issubset(lbl_words):
             return g
     return None
 
