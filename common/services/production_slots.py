@@ -23,8 +23,8 @@ from common.services.forecast_service import ForecastResult
 
 _log = logging.getLogger("ferment.production_slots")
 
-VOL_FRIDAY_HL = 48.0   # 5200L brut → ~4800L utile
-VOL_MONDAY_HL = 68.0   # 7200L brut → ~6800L utile
+VOL_FRIDAY_HL = 48.0   # 5200L brut - 400L pertes = 4800L utile
+VOL_MONDAY_HL = 64.0   # 7200L brut - 800L pertes = 6400L utile
 
 # Lead time (semaines) : la production en semaine S est embouteillée en S+1.
 # On inclut donc la demande jusqu'à fin S+LEAD_TIME dans la cible cumulée.

@@ -148,6 +148,14 @@ def fetch_month_sales_from_eb(
         _log.warning("fetch_month_sales: colonnes manquantes pour %d-%02d", year, month)
         return {}
 
+    # L'export d'autonomie EB est hiérarchique : pour chaque produit, une ligne
+    # SOMMAIRE (Emplacement vide) + N lignes détail par format (Emplacement =
+    # "FERMENT STATION"). Sommer les deux double le volume → on garde uniquement
+    # les lignes détail.
+    if "Emplacement" in df.columns:
+        df = df[df["Emplacement"].astype(str).str.strip().ne("") &
+                df["Emplacement"].notna()]
+
     df = apply_canonical_flavor(df, fm)
     df = sanitize_gouts(df)
     df["Volume vendu (hl)"] = pd.to_numeric(df["Volume vendu (hl)"], errors="coerce").fillna(0.0)
