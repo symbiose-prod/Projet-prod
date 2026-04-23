@@ -27,6 +27,7 @@ from common.xlsx_fill import fill_fiche_xlsx
 from core.optimizer import (
     apply_canonical_flavor,
     load_flavor_map_from_path,
+    merge_symbiose_33cl,
     sanitize_gouts,
 )
 from pages._production_easybeer import _render_easybeer_section
@@ -96,6 +97,7 @@ async def page_production():
             _df = apply_canonical_flavor(_df_raw, fm)
             _df["Produit"] = _df["Produit"].astype(str)
             _df = sanitize_gouts(_df)
+            _df = merge_symbiose_33cl(_df)
             return _df, _window
 
         try:

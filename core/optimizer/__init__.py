@@ -23,6 +23,9 @@ from .flavors import (
     sanitize_gouts,
 )
 
+# --- format merge (Symbiose 12×33cl → 6×33cl) ---
+from .format_merge import merge_symbiose_33cl
+
 # --- losses ---
 from .losses import compute_losses_table_v48
 
@@ -63,6 +66,8 @@ __all__ = [
     # flavors
     "load_flavor_map_from_path", "apply_canonical_flavor", "sanitize_gouts",
     "BLOCKED_LABELS_EXACT", "BLOCKED_LABELS_LOWER",
+    # format merge
+    "merge_symbiose_33cl",
     # planning
     "ROUND_TO_CARTON", "EPS", "compute_plan",
     # losses
