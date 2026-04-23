@@ -209,16 +209,37 @@ def _render_sync_section(tenant_id: str, months_missing: int, refresh_fn):
 
 
 def _render_forecast_summary(forecast):
+    from common.services.production_slots import VOL_FRIDAY_HL, VOL_MONDAY_HL
+
     total_hl = sum(forecast.forecast.values())
     by_gout: dict[str, float] = defaultdict(float)
     for (_, _, g), v in forecast.forecast.items():
         by_gout[g] += v
 
+    # Capacité max sur 26 semaines = 26 × (Lundi 7200 + Vendredi 5200) en hL utiles
+    max_capacity_hl = 26 * (VOL_MONDAY_HL + VOL_FRIDAY_HL)
+    saturation = total_hl / max_capacity_hl * 100
+
     with ui.card().classes("w-full").props("flat bordered"):
         with ui.card_section().classes("q-pa-md"):
             ui.label(
-                f"Volume prévu sur 6 mois : {total_hl:.0f} hL ({total_hl/6:.0f} hL/mois)"
+                f"Volume prévu sur 6 mois : {total_hl:.0f} hL "
+                f"({total_hl/6:.0f} hL/mois) — saturation {saturation:.0f}% de la capacité"
             ).classes("text-body1").style("font-weight: 500")
+
+            if saturation > 100:
+                with ui.element("div").style(
+                    "background: #FEF3C7; color: #92400E; "
+                    "padding: 8px 12px; border-radius: 6px; "
+                    "font-size: 13px; margin-top: 8px;"
+                ):
+                    ui.html(
+                        f"⚠️ <b>Demande > capacité</b> — "
+                        f"il manque {(total_hl - max_capacity_hl):.0f} hL "
+                        "de capacité sur l'horizon. Tous les slots seront remplis et "
+                        "les goûts à plus faible volume seront sous-produits. "
+                        "Envisage d'ajouter des journées de production ou de revoir le facteur de tendance."
+                    )
 
             with ui.row().classes("w-full gap-2 q-mt-sm flex-wrap"):
                 for g in sorted(by_gout, key=by_gout.get, reverse=True):
