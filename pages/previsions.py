@@ -16,7 +16,7 @@ import hashlib
 import logging
 from collections import defaultdict
 
-from nicegui import app, ui
+from nicegui import ui
 
 from common.data import get_paths
 from common.easybeer import is_configured as eb_configured
