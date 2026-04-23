@@ -45,6 +45,31 @@ def get_autonomie_stocks_excel(window_days: int) -> bytes:
 
 
 @retry_api
+def get_autonomie_stocks_excel_period(date_debut_iso: str, date_fin_iso: str) -> bytes:
+    """POST /indicateur/autonomie-stocks/export/excel sur période arbitraire.
+
+    Utilisé par la page Prévisions pour récupérer mois par mois l'historique
+    de ventes par produit. Format dates : ``YYYY-MM-DDT00:00:00.000Z``.
+    """
+    payload = {
+        "idBrasserie": int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013")),
+        "periode": {
+            "dateDebut": date_debut_iso,
+            "dateFin": date_fin_iso,
+            "type": "PERIODE_LIBRE",
+        },
+    }
+    r = get_session().post(
+        f"{BASE}/indicateur/autonomie-stocks/export/excel",
+        json=payload,
+        auth=_auth(),
+        timeout=TIMEOUT,
+    )
+    _check_response(r, "autonomie-stocks/export/excel (period)")
+    return r.content
+
+
+@retry_api
 def get_stock_produits_export_excel() -> bytes:
     """POST /stock/produits/export → Bytes du fichier Excel (stock par format).
 

@@ -432,6 +432,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_esm_tenant_key
   ON eb_sync_meta(tenant_id, cache_key);
 
 -- =========================
+-- Cache ventes mensuelles par goût (pour la page Prévisions)
+-- =========================
+-- Une ligne par (tenant, année, mois, goût canon). Évite les appels API
+-- répétés sur l'historique : seuls les mois en cours sont rafraîchis.
+CREATE TABLE IF NOT EXISTS monthly_sales (
+  id          BIGSERIAL PRIMARY KEY,
+  tenant_id   UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  year        SMALLINT NOT NULL,
+  month       SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+  gout_canon  TEXT NOT NULL,
+  volume_hl   REAL NOT NULL DEFAULT 0,
+  fetched_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ms_tenant_period_gout
+  ON monthly_sales(tenant_id, year, month, gout_canon);
+
+CREATE INDEX IF NOT EXISTS idx_ms_tenant_year
+  ON monthly_sales(tenant_id, year);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -444,7 +465,7 @@ BEGIN
                        product_bom, ramasse_history,
                        client_cache, client_tags_cache,
                        eb_cache, eb_sync_meta,
-                       email_queue TO shark;
+                       email_queue, monthly_sales TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

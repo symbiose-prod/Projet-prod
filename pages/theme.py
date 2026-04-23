@@ -65,6 +65,7 @@ COLORS = {
 NAV_ITEMS: list[tuple] = [
     ("home",           "Accueil",              "/accueil"),
     ("factory",        "Production",           "/production"),
+    ("insights",       "Prévisions",           "/previsions"),
     ("local_shipping", "Fiche de ramasse",     "/ramasse"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("bar_chart",      "Commercial",            "/commercial"),

@@ -79,6 +79,7 @@ from .stocks import (
     get_all_matieres_premieres,
     get_autonomie_stocks,
     get_autonomie_stocks_excel,
+    get_autonomie_stocks_excel_period,
     get_autonomie_stocks_typed,
     get_mp_lots,
     get_stock_produit_detail,
@@ -111,7 +112,8 @@ __all__ = [
     "AutonomieProduit", "AutonomieResponse", "MatierePremiere", "StockProduitFormat",
     "BrassinLight", "Fournisseur", "FournisseurContact",
     # stocks
-    "get_autonomie_stocks_excel", "get_autonomie_stocks", "get_autonomie_stocks_typed",
+    "get_autonomie_stocks_excel", "get_autonomie_stocks_excel_period",
+    "get_autonomie_stocks", "get_autonomie_stocks_typed",
     "get_all_matieres_premieres", "get_stock_produits_export_excel",
     "get_mp_lots", "get_stock_produit_detail", "fetch_carton_weights",
     # history
