@@ -223,7 +223,7 @@ async def page_commercial():
                             f"color: {COLORS['ink']}; font-weight: 600"
                         )
                         ui.label(
-                            "Basé sur {}% (glissant 2 mois)".format(
+                            "Basé sur {}% (évolution YTD)".format(
                                 f"+{growth_rate:.1f}" if growth_rate > 0 else f"{growth_rate:.1f}"
                             )
                         ).classes("text-caption").style(f"color: {COLORS['ink2']}")
