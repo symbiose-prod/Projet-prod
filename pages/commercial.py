@@ -114,6 +114,278 @@ def _render_chart(
     }).classes("w-full").style("height: 420px")
 
 
+# ─── Helpers dashboard (sticky header, KPIs, courbes, heatmap) ──────────────
+
+def _heat_color(pct: float, opacity: float = 1.0) -> str:
+    """Couleur HSLA pour le heatmap mensuel : rouge (-30%) → jaune (0) → vert (+30%)."""
+    pct = max(-30.0, min(30.0, pct))
+    if pct >= 0:
+        ratio = pct / 30.0
+        h = 45 + (140 - 45) * ratio
+        s = 80 - (80 - 60) * ratio
+        l = 55 - (55 - 45) * ratio
+    else:
+        ratio = (-pct) / 30.0
+        h = 45 - 45 * ratio
+        s = 80 - (80 - 70) * ratio
+        l = 55
+    return f"hsla({h:.0f}, {s:.0f}%, {l:.0f}%, {opacity})"
+
+
+def _render_sticky_summary(
+    year_a: int, year_b: int,
+    ytd_a: float, ytd_b: float, ytd_pct: float,
+    ca_cible: float,
+) -> None:
+    """Bandeau sticky en haut : 4 chiffres clés + barre de progression annuelle."""
+    pct_col = _pct_color(ytd_pct)
+    cible_progress = (ytd_b / ca_cible * 100) if ca_cible > 0 else 0.0
+
+    with ui.element("div").style(
+        "position: sticky; top: 0; z-index: 100; "
+        f"background: #FFFFFF; border-bottom: 1px solid {COLORS['border']}; "
+        "padding: 10px 16px; margin: -16px -16px 16px -16px; "
+        "box-shadow: 0 2px 4px rgba(0,0,0,0.04);"
+    ):
+        with ui.row().classes("w-full items-center gap-4 no-wrap"):
+            with ui.column().classes("gap-0").style("min-width: 130px"):
+                ui.label(f"CA {year_b} à date").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; font-weight: 500"
+                )
+                ui.label(_fmt_eur(ytd_b)).classes("text-h6").style(
+                    f"color: {COLORS['ink']}; font-weight: 700; line-height: 1.2"
+                )
+
+            ui.separator().props("vertical").style("height: 36px")
+
+            with ui.column().classes("gap-0").style("min-width: 100px"):
+                ui.label(f"vs {year_a}").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; font-weight: 500"
+                )
+                ui.label(_fmt_pct(ytd_pct)).classes("text-h6").style(
+                    f"color: {pct_col}; font-weight: 700; line-height: 1.2"
+                )
+
+            ui.separator().props("vertical").style("height: 36px")
+
+            with ui.column().classes("gap-0").style("min-width: 130px"):
+                ui.label(f"Cible {year_b}").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; font-weight: 500"
+                )
+                ui.label(_fmt_eur(ca_cible)).classes("text-h6").style(
+                    f"color: {COLORS['orange']}; font-weight: 700; line-height: 1.2"
+                )
+
+            ui.separator().props("vertical").style("height: 36px")
+
+            with ui.column().classes("flex-1 gap-1"):
+                with ui.row().classes("items-center justify-between"):
+                    ui.label("Progression cible annuelle").classes("text-caption").style(
+                        f"color: {COLORS['ink2']}; font-weight: 500"
+                    )
+                    ui.label(f"{cible_progress:.1f} %").classes("text-body2").style(
+                        f"color: {COLORS['ink']}; font-weight: 600"
+                    )
+                with ui.element("div").style(
+                    "background: #E5E7EB; border-radius: 4px; height: 6px; overflow: hidden"
+                ):
+                    ui.element("div").style(
+                        f"width: {min(cible_progress, 100)}%; height: 100%; "
+                        f"background: {COLORS['green']}; border-radius: 4px;"
+                        "transition: width 0.5s ease;"
+                    )
+
+
+def _kpi_mini(title: str, value: str, subtitle: str, color: str, icon: str) -> None:
+    """Carte KPI compacte (utilisée dans la rangée 'mini-KPIs contextuels')."""
+    with ui.card().classes("flex-1 q-pa-none").props("flat bordered"):
+        with ui.card_section().classes("q-pa-md"):
+            with ui.row().classes("items-center gap-2 q-mb-xs"):
+                ui.icon(icon, size="xs").style(f"color: {color}")
+                ui.label(title).classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; font-weight: 500"
+                )
+            ui.label(value).classes("text-h6").style(
+                f"color: {color}; font-weight: 700"
+            )
+            ui.label(subtitle).classes("text-caption").style(f"color: {COLORS['ink2']}")
+
+
+def _render_contextual_kpis(
+    months: list[dict[str, Any]],
+    ytd_b: float, ca_cible: float,
+    year_a: int, year_b: int,
+    current_month: int, current_day: int,
+) -> None:
+    """4 mini-KPIs contextuels : ce mois, M/M-1, rythme, à faire."""
+    import datetime as _dt
+
+    cur_m = months[current_month - 1]
+    cur_total = cur_m["ca_b_realized"] + cur_m["forecast"]
+    cur_pct = cur_m["pct"]
+
+    if current_month >= 2:
+        prev_m = months[current_month - 2]
+        prev_total = prev_m["ca_b"]
+        mm_pct = ((cur_total - prev_total) / prev_total * 100) if prev_total > 0 else 0.0
+    else:
+        prev_total = 0.0
+        mm_pct = 0.0
+
+    today = _dt.date(year_b, current_month, current_day)
+    day_of_year = today.timetuple().tm_yday
+    daily_rate = ytd_b / day_of_year if day_of_year > 0 else 0.0
+
+    days_in_year = 366 if (year_b % 4 == 0 and year_b % 100 != 0) or year_b % 400 == 0 else 365
+    days_remaining = max(1, days_in_year - day_of_year)
+    daily_required = max(0.0, (ca_cible - ytd_b) / days_remaining)
+
+    with ui.row().classes("w-full gap-3 q-mb-md"):
+        _kpi_mini(
+            f"Ce mois ({_MOIS_SHORT[current_month]} en cours)",
+            _fmt_eur(cur_total),
+            f"{_fmt_pct(cur_pct)} vs {year_a}",
+            _pct_color(cur_pct),
+            "calendar_today",
+        )
+        _kpi_mini(
+            "vs Mois précédent",
+            _fmt_pct(mm_pct),
+            f"M-1 = {_fmt_eur(prev_total)}",
+            _pct_color(mm_pct),
+            "trending_up" if mm_pct >= 0 else "trending_down",
+        )
+        _kpi_mini(
+            "Rythme journalier",
+            f"{daily_rate:,.0f} €/j".replace(",", " "),
+            f"sur {day_of_year} jours écoulés",
+            COLORS["blue"],
+            "schedule",
+        )
+        _kpi_mini(
+            "Pour atteindre la cible",
+            f"{daily_required:,.0f} €/j".replace(",", " "),
+            f"sur {days_remaining} jours restants",
+            COLORS["orange"],
+            "flag",
+        )
+
+
+def _render_cumulative_chart(
+    months: list[dict[str, Any]],
+    year_a: int, year_b: int, current_month: int,
+) -> None:
+    """Courbe cumulative YTD : 2025 (référence) vs 2026 (jusqu'à aujourd'hui)."""
+    labels = [m["label"][:3] + "." for m in months]
+
+    cum_a: list[int] = []
+    s_a = 0.0
+    for m in months:
+        s_a += m["ca_a"]
+        cum_a.append(round(s_a))
+
+    cum_b: list[Any] = []
+    s_b = 0.0
+    for m in months:
+        if m["month"] <= current_month:
+            s_b += m["ca_b_realized"]
+            cum_b.append(round(s_b))
+        else:
+            cum_b.append(None)
+
+    ui.echart({
+        "tooltip": {
+            "trigger": "axis",
+            "valueFormatter": "function (v) { return v == null ? '—' : v.toLocaleString('fr-FR') + ' €'; }",
+        },
+        "legend": {
+            "data": [f"Cumul {year_a}", f"Cumul {year_b}"],
+            "top": 5,
+        },
+        "grid": {"left": 80, "right": 30, "top": 45, "bottom": 35},
+        "xAxis": {"type": "category", "data": labels, "boundaryGap": False},
+        "yAxis": {"type": "value", "axisLabel": {"formatter": "{value} €"}},
+        "series": [
+            {
+                "name": f"Cumul {year_a}",
+                "type": "line",
+                "data": cum_a,
+                "itemStyle": {"color": "#9CA3AF"},
+                "lineStyle": {"width": 2, "type": "dashed"},
+                "symbol": "circle", "symbolSize": 6,
+            },
+            {
+                "name": f"Cumul {year_b}",
+                "type": "line",
+                "data": cum_b,
+                "itemStyle": {"color": COLORS["green"]},
+                "lineStyle": {"width": 3},
+                "symbol": "circle", "symbolSize": 7,
+                "areaStyle": {"opacity": 0.15, "color": COLORS["green"]},
+            },
+        ],
+    }).classes("w-full").style("height: 280px")
+
+
+def _render_monthly_heatmap(
+    months: list[dict[str, Any]],
+    year_a: int, year_b: int, current_month: int,
+) -> None:
+    """Bande 12 cellules colorées par évolution % vs N-1. Hover → tooltip détails."""
+    with ui.row().classes("w-full no-wrap gap-1"):
+        for m in months:
+            pct = m["pct"]
+            is_future = m["month"] > current_month
+            is_current = m["month"] == current_month
+            has_data = m["ca_a"] > 0 or m["ca_b"] > 0 or m["forecast"] > 0
+            total_b = m["ca_b_realized"] + m["forecast"]
+
+            if not has_data:
+                bg = "#F3F4F6"
+                txt_col = "#9CA3AF"
+            elif is_future:
+                bg = _heat_color(pct, opacity=0.45)
+                txt_col = "#1F2937"
+            else:
+                bg = _heat_color(pct, opacity=1.0)
+                txt_col = "#FFFFFF"
+
+            border = (
+                f"2px solid {COLORS['orange']}" if is_current
+                else "1px solid transparent"
+            )
+
+            tip_parts = [
+                f"{m['label']} {year_b}",
+                f"{year_a} : {_fmt_eur(m['ca_a'])}",
+                f"{year_b} : {_fmt_eur(m['ca_b'])}" if not is_future else f"{year_b} : —",
+            ]
+            if m["forecast"] > 0:
+                tip_parts.append(f"Prévision : {_fmt_eur(m['forecast'])}")
+                tip_parts.append(f"Total prévu : {_fmt_eur(total_b)}")
+            tip_parts.append(f"Évolution : {_fmt_pct(pct)}")
+            tip = "\n".join(tip_parts)
+
+            with ui.element("div").style(
+                f"flex: 1 1 0; min-width: 60px; background: {bg}; color: {txt_col}; "
+                f"border: {border}; border-radius: 8px; "
+                "padding: 14px 6px; text-align: center; cursor: help; "
+                "transition: transform 0.15s ease;"
+            ).tooltip(tip):
+                ui.label(m["label"][:3]).classes("text-caption").style(
+                    "font-weight: 500; opacity: 0.85"
+                )
+                ui.label(_fmt_pct(pct) if has_data else "—").classes("text-body2").style(
+                    "font-weight: 700"
+                )
+
+
+_MOIS_SHORT = [
+    "", "Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
+    "Juil", "Août", "Sept", "Oct", "Nov", "Déc",
+]
+
+
 # ─── Page ────────────────────────────────────────────────────────────────────
 
 @ui.page("/commercial")
@@ -157,85 +429,41 @@ async def page_commercial():
         current_day = result["current_day"]
 
         # ══════════════════════════════════════════════════════════════
-        # Section 1 : KPIs Cumul à date
+        # Bandeau sticky + vue d'ensemble synthétique
         # ══════════════════════════════════════════════════════════════
-        section_title(
-            f"Cumul au {current_day:02d}/{current_month:02d}/{year_b}",
-            "trending_up",
+        _render_sticky_summary(
+            year_a, year_b, ytd_a, ytd_b, ytd_pct, ca_cible,
         )
 
-        with ui.row().classes("w-full gap-4 q-mb-md"):
-            with ui.card().classes("flex-1 q-pa-none").props("flat"):
-                with ui.card_section().classes("row items-center gap-3 q-pa-md"):
-                    with ui.element("div").classes("q-pa-xs").style(
-                        f"background: {COLORS['ink2']}15; border-radius: 6px"
-                    ):
-                        ui.icon("calendar_month", size="sm").style(f"color: {COLORS['ink2']}")
-                    with ui.column().classes("gap-0"):
-                        ui.label(f"CA {year_a} (à date)").classes("text-caption").style(
-                            f"color: {COLORS['ink2']}; font-weight: 500"
-                        )
-                        ui.label(_fmt_eur(ytd_a)).classes("text-h6").style(
-                            f"color: {COLORS['ink']}; font-weight: 600"
-                        )
+        section_title(
+            f"Vue d'ensemble — au {current_day:02d}/{current_month:02d}/{year_b}",
+            "insights",
+        )
+        _render_contextual_kpis(
+            months, ytd_b, ca_cible,
+            year_a, year_b, current_month, current_day,
+        )
 
-            with ui.card().classes("flex-1 q-pa-none").props("flat"):
-                with ui.card_section().classes("row items-center gap-3 q-pa-md"):
-                    with ui.element("div").classes("q-pa-xs").style(
-                        f"background: {COLORS['green']}15; border-radius: 6px"
-                    ):
-                        ui.icon("calendar_month", size="sm").style(f"color: {COLORS['green']}")
-                    with ui.column().classes("gap-0"):
-                        ui.label(f"CA {year_b} (à date)").classes("text-caption").style(
-                            f"color: {COLORS['ink2']}; font-weight: 500"
-                        )
-                        ui.label(_fmt_eur(ytd_b)).classes("text-h6").style(
-                            f"color: {COLORS['ink']}; font-weight: 600"
-                        )
+        # ── Cumulé YTD : visuellement « où on en est »
+        section_title(f"Cumul YTD {year_a} vs {year_b}", "show_chart")
+        _render_cumulative_chart(months, year_a, year_b, current_month)
 
-            with ui.card().classes("flex-1 q-pa-none").props("flat"):
-                with ui.card_section().classes("row items-center gap-3 q-pa-md"):
-                    pct_col = _pct_color(ytd_pct)
-                    with ui.element("div").classes("q-pa-xs").style(
-                        f"background: {pct_col}15; border-radius: 6px"
-                    ):
-                        icon_name = "trending_up" if ytd_pct >= 0 else "trending_down"
-                        ui.icon(icon_name, size="sm").style(f"color: {pct_col}")
-                    with ui.column().classes("gap-0"):
-                        ui.label("Évolution").classes("text-caption").style(
-                            f"color: {COLORS['ink2']}; font-weight: 500"
-                        )
-                        ui.label(_fmt_pct(ytd_pct)).classes("text-h6").style(
-                            f"color: {pct_col}; font-weight: 600"
-                        )
+        # ── Heatmap mensuelle : lecture instantanée des mois forts/faibles
+        section_title("Performance mensuelle", "grid_view")
+        _render_monthly_heatmap(months, year_a, year_b, current_month)
+        ui.label(
+            "Survolez un mois pour voir les détails. "
+            f"Cible annuelle calculée sur +{growth_rate:.1f} % YTD."
+        ).classes("text-caption q-mt-xs").style(f"color: {COLORS['ink2']}")
 
-            with ui.card().classes("flex-1 q-pa-none").props("flat"):
-                with ui.card_section().classes("row items-center gap-3 q-pa-md"):
-                    with ui.element("div").classes("q-pa-xs").style(
-                        f"background: {COLORS['orange']}15; border-radius: 6px"
-                    ):
-                        ui.icon("flag", size="sm").style(f"color: {COLORS['orange']}")
-                    with ui.column().classes("gap-0"):
-                        ui.label(f"CA cible {year_b}").classes("text-caption").style(
-                            f"color: {COLORS['ink2']}; font-weight: 500"
-                        )
-                        ui.label(_fmt_eur(ca_cible)).classes("text-h6").style(
-                            f"color: {COLORS['ink']}; font-weight: 600"
-                        )
-                        ui.label(
-                            "Basé sur {}% (évolution YTD)".format(
-                                f"+{growth_rate:.1f}" if growth_rate > 0 else f"{growth_rate:.1f}"
-                            )
-                        ).classes("text-caption").style(f"color: {COLORS['ink2']}")
-
-        # ══════════════════════════════════════════════════════════════
-        # Section 2 : Histogramme global
-        # ══════════════════════════════════════════════════════════════
-        section_title(f"CA mensuel {year_a} vs {year_b}", "bar_chart")
-        _render_chart(months, year_a, year_b, current_month)
-
-        # ── Tableau détaillé ──
-        _render_table(months, year_a, year_b, current_month, ca_cible)
+        # ── Histogramme + tableau détaillé : repliés par défaut
+        with ui.expansion(
+            "Détail mensuel — histogramme & tableau",
+            icon="table_chart",
+            value=False,
+        ).classes("w-full q-mt-md").props("header-class=text-subtitle1"):
+            _render_chart(months, year_a, year_b, current_month)
+            _render_table(months, year_a, year_b, current_month, ca_cible)
 
         # ══════════════════════════════════════════════════════════════
         # Section 3 : CA par tag (filtrable)
