@@ -74,6 +74,10 @@ def get_ca_mensuel(
     ``periodeReference`` pour obtenir directement 2 séries mensuelles
     (année courante + année de référence).
 
+    Cache L2 DB activé (TTL 10 min) — les agrégats mensuels ne bougent pas
+    plus que ça. Réduit drastiquement le temps de chargement de la page
+    Commercial qui appelle ce endpoint 1 fois par tag (marque/enseigne).
+
     Returns ``ModeleIndicateurResultat`` avec 2 séries de 12 valeurs.
     """
     bid = int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013"))
@@ -118,16 +122,31 @@ def get_ca_mensuel(
         "tags": tags,
     }
 
+    item_id_parts = [
+        f"y={year}",
+        f"a={int(include_avoir)}",
+        f"c={int(include_carnet)}",
+        f"t={tags}",
+    ]
+    if ids_clients_types:
+        item_id_parts.append("ct=" + "-".join(map(str, sorted(ids_clients_types))))
+    if ids_clients_tournees:
+        item_id_parts.append("tn=" + "-".join(map(str, sorted(ids_clients_tournees))))
+    item_id = "|".join(item_id_parts)
+
     data = execute_endpoint(
         method="POST",
         path="indicateur/chiffre-affaire",
-        params={"forceRefresh": True},
+        params={"forceRefresh": False},
         payload=payload,
+        cache_key="ca_mensuel",
+        cache_item_id=item_id,
+        cache_ttl=600,
     )
 
     nb_series = len(data.get("series") or [])
     _log.info(
-        "CA mensuel %d (avoir=%s, carnet=%s): %d séries",
-        year, include_avoir, include_carnet, nb_series,
+        "CA mensuel %d (avoir=%s, carnet=%s, tags=%r): %d séries",
+        year, include_avoir, include_carnet, tags, nb_series,
     )
     return data

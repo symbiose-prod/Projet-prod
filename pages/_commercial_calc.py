@@ -391,9 +391,11 @@ def fetch_objectives_tracking(
         len(tasks), year, year_ref,
     )
 
-    # Exécuter en parallèle — max_workers=2 pour respecter le rate-limit EasyBeer
+    # Exécuter en parallèle — 3 workers : la plupart des appels touchent le
+    # cache L2 DB de get_ca_mensuel (TTL 10 min), donc le rate-limit EB n'est
+    # sollicité qu'au premier chargement.
     results_by_key: dict[str, dict] = {}
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=3) as pool:
         futures = {}
         for key, tag, delta in tasks:
             fut = pool.submit(

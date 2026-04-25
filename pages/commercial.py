@@ -386,6 +386,77 @@ _MOIS_SHORT = [
 ]
 
 
+def _render_tag_card(
+    tag: str,
+    result: dict[str, Any],
+    year_a: int, year_b: int,
+    current_month: int, current_day: int,
+) -> None:
+    """Carte synthétique pour 1 tag : header KPIs + heatmap + détail repliable."""
+    months = result["months"]
+    growth = result["growth_rate"]
+    ca_cible = result["ca_cible"]
+
+    import calendar as _cal
+    days_in_month = _cal.monthrange(year_a, current_month)[1]
+
+    ytd_a = 0.0
+    ytd_b = 0.0
+    for m in months:
+        if m["month"] < current_month:
+            ytd_a += m["ca_a"]
+            ytd_b += m["ca_b"]
+        elif m["month"] == current_month:
+            ratio = current_day / days_in_month if days_in_month > 0 else 1.0
+            ytd_a += m["ca_a"] * ratio
+            ytd_b += m["ca_b_realized"]
+    ytd_pct = ((ytd_b - ytd_a) / ytd_a * 100) if ytd_a > 0 else 0.0
+
+    with ui.card().classes("w-full").props("flat bordered"):
+        with ui.card_section().classes("q-pa-md"):
+            with ui.row().classes("w-full items-center gap-3 q-mb-md"):
+                with ui.element("div").style(
+                    f"background: {COLORS['green']}15; border-radius: 6px; padding: 4px 8px"
+                ):
+                    ui.icon("sell", size="sm").style(f"color: {COLORS['green']}")
+                ui.label(tag).classes("text-h6").style(
+                    f"color: {COLORS['ink']}; font-weight: 600"
+                )
+                ui.element("div").classes("flex-1")
+
+                with ui.column().classes("gap-0 items-end"):
+                    ui.label(f"CA {year_b} à date").classes("text-caption").style(
+                        f"color: {COLORS['ink2']}"
+                    )
+                    ui.label(_fmt_eur(ytd_b)).classes("text-h6").style(
+                        f"color: {COLORS['ink']}; font-weight: 700; line-height: 1.2"
+                    )
+                with ui.column().classes("gap-0 items-end"):
+                    ui.label(f"vs {year_a}").classes("text-caption").style(
+                        f"color: {COLORS['ink2']}"
+                    )
+                    ui.label(_fmt_pct(ytd_pct)).classes("text-h6").style(
+                        f"color: {_pct_color(ytd_pct)}; font-weight: 700; line-height: 1.2"
+                    )
+                with ui.column().classes("gap-0 items-end"):
+                    ui.label(f"Cible {year_b}").classes("text-caption").style(
+                        f"color: {COLORS['ink2']}"
+                    )
+                    ui.label(_fmt_eur(ca_cible)).classes("text-h6").style(
+                        f"color: {COLORS['orange']}; font-weight: 700; line-height: 1.2"
+                    )
+
+            _render_monthly_heatmap(months, year_a, year_b, current_month)
+
+            with ui.expansion(
+                "Détail mensuel (graphique + tableau)",
+                icon="table_chart",
+                value=False,
+            ).classes("w-full q-mt-sm").props("dense"):
+                _render_chart(months, year_a, year_b, current_month)
+                _render_table(months, year_a, year_b, current_month, ca_cible)
+
+
 # ─── Page ────────────────────────────────────────────────────────────────────
 
 @ui.page("/commercial")
@@ -466,11 +537,10 @@ async def page_commercial():
             _render_table(months, year_a, year_b, current_month, ca_cible)
 
         # ══════════════════════════════════════════════════════════════
-        # Section 3 : CA par tag (filtrable)
+        # Section 3 : CA par tag — multi-select avec auto-load parallèle
         # ══════════════════════════════════════════════════════════════
-        section_title("CA par tag", "sell")
+        section_title("CA par tag — comparaison multi-tags", "sell")
 
-        # Charger les tags disponibles
         from common._session import current_tenant_id
         from common.client_cache import get_all_tags
 
@@ -483,61 +553,65 @@ async def page_commercial():
                 "Aucun tag disponible. Lance la synchronisation depuis Paramètres → Tags clients."
             ).classes("text-grey-6 q-pa-md")
         else:
-            with ui.row().classes("w-full items-end gap-3"):
-                tag_select = ui.select(
-                    tag_options,
-                    label="Sélectionner un tag",
-                    value=None,
-                ).classes("flex-1").props("outlined dense clearable")
+            tag_select = ui.select(
+                tag_options,
+                label="Sélectionne 1 à 5 tags pour les comparer",
+                multiple=True,
+                value=[],
+            ).classes("w-full").props("outlined dense use-chips clearable")
 
-                tag_btn = ui.button(
-                    "Charger", icon="search", on_click=lambda: None,
-                ).props("color=green-8 unelevated")
+            tag_results_container = ui.column().classes("w-full gap-3 q-mt-sm")
 
-            tag_chart_container = ui.column().classes("w-full")
-            tag_status = ui.label("").classes("text-caption text-grey-6")
-
-            async def _load_tag_ca():
-                tag = tag_select.value
-                if not tag:
-                    ui.notify("Sélectionne un tag.", type="warning")
+            async def _on_tag_change(_evt=None):
+                selected = list(tag_select.value or [])[:5]
+                tag_results_container.clear()
+                if not selected:
                     return
 
-                tag_chart_container.clear()
-                tag_status.text = f"Chargement CA pour le tag « {tag} »..."
-                tag_btn.disable()
+                with tag_results_container:
+                    with ui.row().classes("w-full items-center gap-2 q-pa-md"):
+                        ui.spinner("dots", size="md", color="green")
+                        ui.label(
+                            f"Chargement de {len(selected)} tag(s)..."
+                        ).classes("text-grey-6")
 
                 try:
                     from pages._commercial_calc import fetch_ca_comparison_with_tag
 
-                    tag_result = await asyncio.to_thread(
-                        fetch_ca_comparison_with_tag, tag, year_a, year_b,
-                    )
-
-                    tag_chart_container.clear()
-                    with tag_chart_container:
-                        section_title(f"CA « {tag} » — {year_a} vs {year_b}", "sell")
-                        _render_chart(
-                            tag_result["months"], year_a, year_b, current_month,
+                    tasks = [
+                        asyncio.to_thread(
+                            fetch_ca_comparison_with_tag, t, year_a, year_b,
                         )
-                        _render_table(
-                            tag_result["months"], year_a, year_b, current_month,
-                            tag_result["ca_cible"],
+                        for t in selected
+                    ]
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=45,
+                    )
+                except TimeoutError:
+                    tag_results_container.clear()
+                    with tag_results_container:
+                        ui.label(
+                            "⏱ Chargement des tags trop long (>45s). Réessaye."
+                        ).classes("text-negative q-pa-md")
+                    return
+
+                tag_results_container.clear()
+                with tag_results_container:
+                    for tag, res in zip(selected, results):
+                        if isinstance(res, Exception):
+                            _log.warning("Tag %s failed: %s", tag, res)
+                            with ui.card().props("flat bordered"):
+                                with ui.card_section().classes("q-pa-md"):
+                                    ui.label(
+                                        f"⚠ Tag « {tag} » : {res}"
+                                    ).classes("text-negative")
+                            continue
+                        _render_tag_card(
+                            tag, res, year_a, year_b, current_month, current_day,
                         )
 
-                    tag_status.text = (
-                        f"Tag « {tag} » : taux glissant "
-                        f"{'+' if tag_result['growth_rate'] > 0 else ''}"
-                        f"{tag_result['growth_rate']:.1f}%"
-                    )
-                except Exception as exc:
-                    _log.exception("Erreur chargement CA tag %s", tag)
-                    tag_status.text = f"Erreur : {exc}"
-                    tag_status.classes("text-negative")
-                finally:
-                    tag_btn.enable()
-
-            tag_btn.on_click(_load_tag_ca)
+            tag_select.on_value_change(_on_tag_change)
 
         # ══════════════════════════════════════════════════════════════
         # Section 4 : Objectifs annuels par marque / enseigne
@@ -556,12 +630,10 @@ async def page_commercial():
                 f"Objectifs {obj_year} — suivi par enseigne", "flag",
             )
 
-            # Conteneur pour le chargement asynchrone
             obj_container = ui.column().classes("w-full gap-4")
-
             with obj_container:
                 with ui.row().classes("w-full items-center gap-2 q-pa-md"):
-                    obj_spinner = ui.spinner("dots", size="md", color="green")
+                    ui.spinner("dots", size="md", color="green")
                     ui.label("Chargement du suivi des objectifs...").classes(
                         "text-caption text-grey-6"
                     )
@@ -569,10 +641,20 @@ async def page_commercial():
             async def _load_objectives():
                 try:
                     from pages._commercial_calc import fetch_objectives_tracking
-
-                    obj_result = await asyncio.to_thread(
-                        fetch_objectives_tracking, obj_cfg,
+                    obj_result = await asyncio.wait_for(
+                        asyncio.to_thread(fetch_objectives_tracking, obj_cfg),
+                        timeout=90,
                     )
+                except TimeoutError:
+                    obj_container.clear()
+                    with obj_container:
+                        with ui.card().props("flat bordered"):
+                            with ui.card_section().classes("q-pa-md"):
+                                ui.label(
+                                    "⏱ Chargement objectifs > 90s. EasyBeer est lent — "
+                                    "recharge la page (les données seront en cache 10 min)."
+                                ).classes("text-negative")
+                    return
                 except Exception as exc:
                     _log.exception("Erreur chargement objectifs")
                     obj_container.clear()
@@ -584,7 +666,6 @@ async def page_commercial():
                 with obj_container:
                     _render_objectives_section(obj_result, obj_year, obj_year_ref)
 
-            # Lancer le chargement des objectifs
             asyncio.ensure_future(_load_objectives())
 
 
@@ -604,168 +685,190 @@ def _render_objectives_section(
     year: int,
     year_ref: int,
 ) -> None:
-    """Rendu complet de la section objectifs : KPIs par marque + graphiques par enseigne."""
+    """Rendu objectifs : KPI global agrégé + cards par marque + grid par enseigne."""
 
     brands = data.get("brands") or []
     current_month = data.get("current_month", 1)
+    total_realized = data.get("total_realized", 0.0)
+    total_target = data.get("total_target", 0.0)
+    total_pct = data.get("total_progress_pct", 0.0)
 
-    # ── KPI par marque (Symbiose / Niko) ────────────────────────
-    with ui.row().classes("w-full gap-4 q-mb-lg"):
+    # ── KPI global agrégé (somme des marques) ──────────────────────
+    global_color = _progress_color(total_pct)
+    with ui.card().classes("w-full q-mb-md").props("flat bordered"):
+        with ui.card_section().classes("q-pa-md"):
+            with ui.row().classes("items-center gap-3"):
+                with ui.element("div").style(
+                    f"background: {global_color}15; border-radius: 8px; padding: 6px 10px"
+                ):
+                    ui.icon("flag", size="md").style(f"color: {global_color}")
+                with ui.column().classes("gap-0"):
+                    ui.label(f"Objectif global {year} — toutes marques").classes(
+                        "text-caption"
+                    ).style(f"color: {COLORS['ink2']}; font-weight: 500")
+                    ui.label(f"Référence {year_ref} : {_fmt_eur(total_target)}").classes(
+                        "text-caption"
+                    ).style(f"color: {COLORS['ink2']}")
+                ui.element("div").classes("flex-1")
+                with ui.column().classes("gap-0 items-end"):
+                    with ui.row().classes("items-baseline gap-2"):
+                        ui.label(_fmt_eur(total_realized)).classes("text-h5").style(
+                            f"color: {COLORS['ink']}; font-weight: 700"
+                        )
+                        ui.label(f"/ {_fmt_eur(total_target)}").classes(
+                            "text-body2 text-grey-6"
+                        )
+                    ui.label(f"{total_pct:.1f} % atteint").classes(
+                        "text-caption"
+                    ).style(f"color: {global_color}; font-weight: 600")
+
+            bar_pct = min(total_pct, 100)
+            with ui.element("div").classes("w-full q-mt-md").style(
+                "background: #E5E7EB; border-radius: 6px; height: 12px; overflow: hidden"
+            ):
+                ui.element("div").style(
+                    f"width: {bar_pct}%; height: 100%; "
+                    f"background: {global_color}; border-radius: 6px; "
+                    "transition: width 0.5s ease;"
+                )
+
+    # ── KPI par marque (Symbiose / NIKO) ──────────────────────────
+    with ui.row().classes("w-full gap-3 q-mb-md"):
         for brand in brands:
-            ca_realized = brand.get("ca_realized", 0)
-            ca_ref_total = brand.get("ca_ref_total", 0)
-            target = brand.get("target", 0)
-            pct = brand.get("progress_pct", 0)
-            label = brand.get("label", brand.get("tag", "?"))
-            color = _progress_color(pct)
-            has_error = brand.get("_error", False)
-            target_delta = brand.get("target_delta", 0)
+            _render_brand_card(brand, year_ref)
 
-            with ui.card().classes("flex-1 q-pa-none").props("flat"):
-                with ui.card_section().classes("q-pa-md"):
-                    with ui.row().classes("items-center gap-3 q-mb-sm"):
-                        with ui.element("div").classes("q-pa-xs").style(
-                            f"background: {color}15; border-radius: 6px"
-                        ):
-                            ui.icon("flag", size="sm").style(f"color: {color}")
-                        ui.label(label).classes("text-subtitle1").style(
-                            f"color: {COLORS['ink']}; font-weight: 600"
-                        )
-
-                    if has_error:
-                        ui.label("Données indisponibles (erreur API EasyBeer)").classes(
-                            "text-caption text-negative"
-                        )
-                    else:
-                        # CA réalisé / objectif
-                        with ui.row().classes("items-baseline gap-2"):
-                            ui.label(_fmt_eur(ca_realized)).classes("text-h5").style(
-                                f"color: {COLORS['ink']}; font-weight: 700"
-                            )
-                            ui.label(f"/ {_fmt_eur(target)}").classes(
-                                "text-body2 text-grey-6"
-                            )
-
-                        # Barre de progression
-                        bar_pct = min(pct, 100)
-                        with ui.element("div").classes("w-full q-mt-sm").style(
-                            "background: #E5E7EB; border-radius: 4px; height: 8px; overflow: hidden"
-                        ):
-                            ui.element("div").style(
-                                f"width: {bar_pct}%; height: 100%; "
-                                f"background: {color}; border-radius: 4px; "
-                                f"transition: width 0.5s ease"
-                            )
-
-                        # Détails sous la barre
-                        with ui.row().classes("w-full justify-between q-mt-sm"):
-                            with ui.column().classes("gap-0"):
-                                delta_str = f"+{target_delta:,.0f} €".replace(",", " ")
-                                ui.label(f"Objectif croissance : {delta_str}").classes(
-                                    "text-caption text-grey-6"
-                                )
-                                ui.label(
-                                    f"CA {year_ref} : {_fmt_eur(ca_ref_total)}"
-                                ).classes("text-caption text-grey-5")
-                            ui.label(f"{pct:.0f} %").classes("text-h6").style(
-                                f"color: {color}; font-weight: 700"
-                            )
-
-    # ── Graphique récapitulatif par enseigne ────────────────────
+    # ── Détail enseignes par marque (grid de mini-cards) ──────────
     for brand in brands:
         enseignes = brand.get("enseignes") or []
         if not enseignes:
             continue
 
         section_title(
-            f"{brand.get('label', '?')} — CA {year} vs Objectif {year} (à date)",
+            f"{brand.get('label', '?')} — Enseignes ({len(enseignes)})",
             "storefront",
         )
+        with ui.row().classes("w-full gap-2 flex-wrap"):
+            for ens in enseignes:
+                _render_enseigne_mini_card(ens, year, year_ref, current_month)
 
-        GREEN = COLORS["green"]
-        INK = COLORS["ink"]
 
-        # Préparer les données pour le graphique unique
-        ens_labels: list[str] = []
-        ca_realized_vals: list[int] = []
-        obj_ytd_vals: list[int] = []
+def _render_brand_card(brand: dict[str, Any], year_ref: int) -> None:
+    """Card compacte par marque avec progress bar et chiffres clés."""
+    ca_realized = brand.get("ca_realized", 0)
+    ca_ref_total = brand.get("ca_ref_total", 0)
+    target = brand.get("target", 0)
+    pct = brand.get("progress_pct", 0)
+    label = brand.get("label", brand.get("tag", "?"))
+    color = _progress_color(pct)
+    has_error = brand.get("_error", False)
+    target_delta = brand.get("target_delta", 0)
 
-        for ens in enseignes:
-            ens_label = ens.get("label", ens.get("tag", "?"))
-            ens_months = ens.get("months") or []
-            ca_real = ens.get("ca_realized", 0)
-            has_error = ens.get("_error", False)
+    with ui.card().classes("flex-1 q-pa-none").props("flat bordered"):
+        with ui.card_section().classes("q-pa-md"):
+            with ui.row().classes("items-center gap-2 q-mb-sm"):
+                with ui.element("div").style(
+                    f"background: {color}15; border-radius: 6px; padding: 3px 6px"
+                ):
+                    ui.icon("flag", size="xs").style(f"color: {color}")
+                ui.label(label).classes("text-subtitle1").style(
+                    f"color: {COLORS['ink']}; font-weight: 600"
+                )
 
-            # Objectif YTD = somme des objectifs mensuels jusqu'au mois en cours
-            obj_ytd = 0.0
-            if not has_error:
-                for m_data in ens_months:
-                    if m_data["month"] <= current_month:
-                        obj_ytd += m_data.get("objective", 0)
+            if has_error:
+                ui.label("⚠ Données indisponibles (erreur API EasyBeer)").classes(
+                    "text-caption text-negative"
+                )
+                return
 
-            ens_labels.append(ens_label)
-            ca_realized_vals.append(round(ca_real))
-            obj_ytd_vals.append(round(obj_ytd))
+            with ui.row().classes("items-baseline gap-2"):
+                ui.label(_fmt_eur(ca_realized)).classes("text-h5").style(
+                    f"color: {COLORS['ink']}; font-weight: 700"
+                )
+                ui.label(f"/ {_fmt_eur(target)}").classes("text-body2 text-grey-6")
 
-        ui.echart({
-            "tooltip": {
-                "trigger": "axis",
-                "axisPointer": {"type": "shadow"},
-                "formatter": None,
-            },
-            "legend": {
-                "data": [
-                    f"CA {year} (réalisé)",
-                    f"Objectif {year} (à date)",
-                ],
-                "top": 5,
-                "textStyle": {"fontSize": 12},
-            },
-            "grid": {
-                "left": 80, "right": 30,
-                "top": 45, "bottom": 60,
-            },
-            "xAxis": {
-                "type": "category",
-                "data": ens_labels,
-                "axisLabel": {
-                    "rotate": 20,
-                    "fontSize": 11,
-                    "fontWeight": "bold",
-                },
-            },
-            "yAxis": {
-                "type": "value",
-                "axisLabel": {"formatter": "{value} €"},
-            },
-            "series": [
-                {
-                    "name": f"CA {year} (réalisé)",
-                    "type": "bar",
-                    "data": ca_realized_vals,
-                    "itemStyle": {"color": GREEN},
-                    "barGap": "10%",
-                    "label": {
-                        "show": True,
-                        "position": "top",
-                        "fontSize": 10,
-                        "formatter": "{c} €",
-                    },
-                },
-                {
-                    "name": f"Objectif {year} (à date)",
-                    "type": "bar",
-                    "data": obj_ytd_vals,
-                    "itemStyle": {"color": INK},
-                    "label": {
-                        "show": True,
-                        "position": "top",
-                        "fontSize": 10,
-                        "formatter": "{c} €",
-                    },
-                },
-            ],
-        }).classes("w-full").style("height: 420px")
+            bar_pct = min(pct, 100)
+            with ui.element("div").classes("w-full q-mt-sm").style(
+                "background: #E5E7EB; border-radius: 4px; height: 8px; overflow: hidden"
+            ):
+                ui.element("div").style(
+                    f"width: {bar_pct}%; height: 100%; "
+                    f"background: {color}; border-radius: 4px; "
+                    "transition: width 0.5s ease;"
+                )
+
+            with ui.row().classes("w-full justify-between q-mt-sm"):
+                with ui.column().classes("gap-0"):
+                    delta_str = f"+{target_delta:,.0f} €".replace(",", " ")
+                    ui.label(f"Croissance visée : {delta_str}").classes(
+                        "text-caption text-grey-6"
+                    )
+                    ui.label(f"CA {year_ref} : {_fmt_eur(ca_ref_total)}").classes(
+                        "text-caption text-grey-5"
+                    )
+                ui.label(f"{pct:.0f} %").classes("text-h6").style(
+                    f"color: {color}; font-weight: 700"
+                )
+
+
+def _render_enseigne_mini_card(
+    ens: dict[str, Any], year: int, year_ref: int, current_month: int,
+) -> None:
+    """Mini-card par enseigne (compact, dans une grille)."""
+    label = ens.get("label", ens.get("tag", "?"))
+    ca_realized = ens.get("ca_realized", 0)
+    target = ens.get("target", 0)
+    pct = ens.get("progress_pct", 0)
+    color = _progress_color(pct)
+    has_error = ens.get("_error", False)
+
+    obj_ytd = 0.0
+    if not has_error:
+        for m_data in ens.get("months") or []:
+            if m_data["month"] <= current_month:
+                obj_ytd += m_data.get("objective", 0)
+    ytd_pct = (ca_realized / obj_ytd * 100) if obj_ytd > 0 else 0.0
+
+    with ui.card().classes("q-pa-none").props("flat bordered").style(
+        "flex: 1 1 220px; min-width: 220px; max-width: 280px"
+    ):
+        with ui.card_section().classes("q-pa-sm"):
+            ui.label(label).classes("text-body2").style(
+                f"color: {COLORS['ink']}; font-weight: 600"
+            )
+
+            if has_error:
+                ui.label("⚠ Erreur").classes("text-caption text-negative")
+                return
+
+            with ui.row().classes("items-baseline gap-1 q-mt-xs"):
+                ui.label(_fmt_eur(ca_realized)).classes("text-body1").style(
+                    f"font-weight: 700; color: {COLORS['ink']}"
+                )
+                ui.label(f"/ {_fmt_eur(target)}").classes("text-caption text-grey-6")
+
+            # Progress vs objectif annuel
+            bar_pct = min(pct, 100)
+            with ui.element("div").classes("w-full q-mt-xs").style(
+                "background: #E5E7EB; border-radius: 3px; height: 6px; overflow: hidden"
+            ):
+                ui.element("div").style(
+                    f"width: {bar_pct}%; height: 100%; "
+                    f"background: {color}; border-radius: 3px;"
+                )
+
+            with ui.row().classes("w-full items-center justify-between q-mt-xs"):
+                ui.label(f"{pct:.0f} % annuel").classes("text-caption").style(
+                    f"color: {color}; font-weight: 700"
+                )
+                # Comparaison vs objectif YTD (à date)
+                ytd_color = (
+                    COLORS["green"] if ytd_pct >= 100
+                    else COLORS["orange"] if ytd_pct >= 80
+                    else COLORS["error"]
+                )
+                ui.label(f"{ytd_pct:.0f} % à date").classes("text-caption").style(
+                    f"color: {ytd_color}; font-weight: 600"
+                )
 
 
 # ─── Tableau détaillé (réutilisable) ────────────────────────────────────────
