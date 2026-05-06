@@ -205,14 +205,19 @@ def build_bl_enlevements_pdf(
     pdf.set_fill_color(230, 230, 230)
 
     headers = ["R\u00e9f\u00e9rence", "Produit", "DDM", "Nb cartons", "Nb palettes", "Poids (kg)"]
-    widths_base = [30, 66, 26, 24, 22, 12]
+    # En mode mise \u00e0 jour, "Nb cartons" devient "123 (etait 99)" (~24mm),
+    # qui ne tient pas dans 24mm \u2192 \u00e9largir la colonne (-6mm sur Produit).
+    if is_update:
+        widths_base = [30, 60, 26, 30, 22, 12]
+    else:
+        widths_base = [30, 66, 26, 24, 22, 12]
     widths = widths_base[:]
     header_h = 8
     line_h = 6
 
     pdf.set_font("Helvetica", "B", 10)
     margin_mm = 2.5
-    min_w = {0: 30.0, 1: 58.0, 2: 26.0, 3: 22.0, 4: 20.0, 5: 18.0}
+    min_w = {0: 30.0, 1: 58.0, 2: 26.0, 3: 28.0 if is_update else 22.0, 4: 20.0, 5: 18.0}
     extra_needed = 0.0
     for j, h in enumerate(headers):
         if j == 1:
@@ -296,8 +301,24 @@ def build_bl_enlevements_pdf(
             ref_display = ref
             cart_display = str(qc)
 
-        prod_lines = pdf.multi_cell(widths[1], line_h, prod, split_only=True)
-        row_h = max(line_h, line_h * len(prod_lines))
+        # Hauteur de ligne = max wrap des cellules. Sans ça, une cellule qui
+        # wrappe avec h=row_h occupe 2× row_h et déborde sur la ligne suivante
+        # (cas typique : cart_display "12 (etait 8)" en mode mise à jour quand
+        # la colonne "Nb cartons" est étroite).
+        cells_data = [
+            (widths[0], ref_display,  "C"),
+            (widths[1], prod,         "L"),
+            (widths[2], ddm,          "C"),
+            (widths[3], cart_display, "C"),
+            (widths[4], str(qp),      "C"),
+            (widths[5], str(po),      "C"),
+        ]
+        n_lines_per_cell = [
+            max(1, len(pdf.multi_cell(w, line_h, t, split_only=True)))
+            for (w, t, _a) in cells_data
+        ]
+        n_max = max(n_lines_per_cell)
+        row_h = line_h * n_max
         _maybe_break(row_h)
 
         # Applique la couleur de fond pour toutes les cellules de cette ligne
@@ -307,24 +328,15 @@ def build_bl_enlevements_pdf(
 
         xrow = left
         yrow = pdf.get_y()
-        pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[0], row_h, ref_display, border=1, align="C", fill=use_fill)
-        xrow += widths[0]
-        pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[1], line_h, prod, border=1, align="L",
-                       max_line_height=line_h, fill=use_fill)
-        xrow += widths[1]
-        pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[2], row_h, ddm, border=1, align="C", fill=use_fill)
-        xrow += widths[2]
-        pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[3], row_h, cart_display, border=1, align="C", fill=use_fill)
-        xrow += widths[3]
-        pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[4], row_h, str(qp), border=1, align="C", fill=use_fill)
-        xrow += widths[4]
-        pdf.set_xy(xrow, yrow)
-        pdf.multi_cell(widths[5], row_h, str(po), border=1, align="C", fill=use_fill)
+        for (w, txt, align), n_own in zip(cells_data, n_lines_per_cell):
+            pdf.set_xy(xrow, yrow)
+            pdf.multi_cell(w, line_h, txt, border=1, align=align,
+                           max_line_height=line_h, fill=use_fill)
+            if n_own < n_max:
+                # Padding pour aligner les cellules courtes sur row_h
+                pdf.set_xy(xrow, yrow + n_own * line_h)
+                pdf.cell(w, (n_max - n_own) * line_h, "", border=1, fill=use_fill)
+            xrow += w
         pdf.set_xy(left, yrow + row_h)
 
     # Totaux — reset couleur grise pour cohérence avec en-tête
