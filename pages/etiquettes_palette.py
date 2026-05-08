@@ -130,20 +130,22 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
     }
 
     # ────────────────────────────────────────────────────────────────────
-    # Scanner caméra (ZXing-JS) — chargé une fois en tête de page
+    # Scanner caméra (html5-qrcode) — bundle autonome, marche sur iPad Safari
     # ────────────────────────────────────────────────────────────────────
     ui.add_head_html(
-        '<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>'
+        '<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>'
     )
 
     scanner_dialog = ui.dialog().props("persistent maximized")
     with scanner_dialog, ui.card().classes("w-full h-full q-pa-none").style("background: #000"):
         with ui.column().classes("w-full h-full items-center justify-center gap-4"):
             ui.label("Vise le code-barres du carton").classes("text-white text-h6")
+            # html5-qrcode injecte la <video> dans ce div
             ui.html(
-                '<video id="scanner-video" playsinline '
-                'style="width: 90vw; max-width: 600px; height: auto; '
-                'border: 3px solid #15803D; border-radius: 8px; background: #111;"></video>',
+                '<div id="scanner-container" '
+                'style="width: 90vw; max-width: 600px; '
+                'border: 3px solid #15803D; border-radius: 8px; background: #111; '
+                'overflow: hidden;"></div>',
             )
             scan_status = ui.label("Initialisation de la caméra…").classes(
                 "text-white text-body2 scan-status-label",
@@ -519,48 +521,70 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
 #      et déclenche un événement ``input`` que NiceGUI capte → callback Python.
 _SCANNER_JS_START = """
 (async () => {
-    const video = document.getElementById('scanner-video');
     const status = document.querySelector('.scan-status-label');
-    if (!window.ZXingBrowser) {
+    if (!window.Html5Qrcode) {
         if (status) status.innerText = '⚠ Bibliothèque de scan non chargée. Recharge la page.';
         return;
     }
+    if (window._fsScanRunning) return;
+    window._fsScanRunning = true;
+
+    const formats = [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+    ];
+
     if (!window._fsScanReader) {
-        const { BrowserMultiFormatReader } = window.ZXingBrowser;
-        window._fsScanReader = new BrowserMultiFormatReader();
+        try {
+            window._fsScanReader = new Html5Qrcode('scanner-container', { formatsToSupport: formats, verbose: false });
+        } catch (e) {
+            if (status) status.innerText = '✗ Init scanner : ' + e;
+            window._fsScanRunning = false;
+            return;
+        }
     }
     const reader = window._fsScanReader;
     if (status) status.innerText = 'Caméra : autorise l\\'accès si demandé…';
+
+    const onSuccess = (decodedText, decodedResult) => {
+        if (status) status.innerText = '✓ Code lu : ' + decodedText;
+        // Écrire dans l'input caché de NiceGUI puis trigger input
+        const inputWrapper = document.querySelector('.ean-scan-buffer');
+        const input = inputWrapper ? inputWrapper.querySelector('input') : null;
+        if (input) {
+            const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value',
+            ).set;
+            setter.call(input, decodedText);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        // Stop pour éviter les scans multiples
+        try {
+            reader.stop().catch(() => {});
+        } catch(e) {}
+        window._fsScanRunning = false;
+    };
+
+    const onScanError = (errMsg) => {
+        // Erreur de parsing par frame — silencieux, html5-qrcode log déjà
+    };
+
     try {
-        await reader.decodeFromConstraints(
-            { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } },
-            video,
-            (result, err, controls) => {
-                if (result) {
-                    const ean = result.getText();
-                    if (status) status.innerText = '✓ Code lu : ' + ean;
-                    // Écrire dans l'input caché de NiceGUI puis trigger input
-                    const inputWrapper = document.querySelector('.ean-scan-buffer');
-                    const input = inputWrapper ? inputWrapper.querySelector('input') : null;
-                    if (input) {
-                        // Forcer Quasar à émettre update:model-value
-                        const setter = Object.getOwnPropertyDescriptor(
-                            window.HTMLInputElement.prototype, 'value',
-                        ).set;
-                        setter.call(input, ean);
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
-                    // Stop l'analyse pour éviter les scans multiples
-                    if (window._fsScanReader) {
-                        try { window._fsScanReader.reset(); } catch(e) {}
-                    }
-                }
-            },
+        await reader.start(
+            { facingMode: { ideal: 'environment' } },
+            { fps: 10, qrbox: { width: 280, height: 140 }, aspectRatio: 1.6 },
+            onSuccess,
+            onScanError,
         );
         if (status) status.innerText = 'Vise le code-barres du carton';
     } catch (e) {
         console.error('Scanner error:', e);
         if (status) status.innerText = '✗ Caméra inaccessible : ' + (e.message || e);
+        window._fsScanRunning = false;
     }
 })();
 """
@@ -568,13 +592,11 @@ _SCANNER_JS_START = """
 _SCANNER_JS_STOP = """
 try {
     if (window._fsScanReader) {
-        window._fsScanReader.reset();
+        window._fsScanReader.stop().then(() => {
+            try { window._fsScanReader.clear(); } catch(e) {}
+        }).catch(() => {});
     }
-    const video = document.getElementById('scanner-video');
-    if (video && video.srcObject) {
-        video.srcObject.getTracks().forEach(t => t.stop());
-        video.srcObject = null;
-    }
+    window._fsScanRunning = false;
 } catch(e) { console.warn('stop scan error', e); }
 """
 
