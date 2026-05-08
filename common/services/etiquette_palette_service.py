@@ -3,87 +3,78 @@ common/services/etiquette_palette_service.py
 ============================================
 Service domaine : étiquettes palette logistique avec code-barres GS1-128.
 
-Flow métier :
-  1. L'opérateur sélectionne un produit + format → on récupère l'EAN-13 caisse
-     depuis la matrice codes-barres EasyBeer (cache L2 24 h).
-  2. Il sélectionne un brassin actif → le code brassin sert de lot, et la DDM
-     est calculée depuis la date encodée dans le code brassin + ``ddm_days``.
-  3. Il indique soit "palette pleine", soit (étages pleins + caisses sur le
-     dernier étage) — on calcule le nombre total de caisses.
-  4. On construit une chaîne d'Application Identifiers GS1 :
-        (01)<GTIN-14> (15)<YYMMDD> (37)<count, padding 3> (10)<lot>
-     encodable directement en Code 128 (sans FNC1 — la séparation des AI
-     variables est garantie par le padding fixe sur AI 37 et le placement
-     de AI 10 en dernier).
+Source des données :
+  La dernière opération sync (table ``sync_operations``) contient déjà tout ce
+  dont on a besoin (marque, GTIN colis, lot, DDM). On évite ainsi un nouvel
+  aller-retour EasyBeer et on s'aligne sur ce que la page Paramètres
+  > Étiquettes affiche déjà.
+
+Flow opérateur (UI à 3 sélecteurs cascadés) :
+  1. Marque : NIKO / SYMBIOSE
+  2. Type de bouteille : 33cl / 75cl SAFT / 75cl Eau gazeuse
+  3. Goût : Gingembre, Mangue Passion, Original, …
+  → on retrouve l'EAN colis, le lot et la DDM automatiquement.
+
+Construction du code-barres (sans FNC1 — Code 128 standard, parsable AI) :
+
+    (01)<GTIN-14> (15)<YYMMDD> (37)<count, padding 3> (10)<lot>
 
 Le module est sans NiceGUI : utilisable depuis CLI / cron / tests.
 """
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-import requests
-
-from common.brassin_builder import extract_date_from_brassin_code
-from common.data import get_business_config
-from common.easybeer import (
-    EasyBeerError,
-    get_all_products,
-    get_brassins_en_cours_cached,
-    get_code_barre_matrice,
-)
-from common.ramasse import clean_product_label, get_palette_layout, parse_barcode_matrix
+from common.ramasse import clean_product_label, extract_gout, get_palette_layout
+from db.conn import run_sql
 
 _log = logging.getLogger("ferment.services.etiquette_palette")
+
+
+# ─── Constantes typage ───────────────────────────────────────────────────────
+
+BOTTLE_33 = "33cl"
+BOTTLE_75_SAFT = "75cl SAFT"
+BOTTLE_75_EAU_GAZ = "75cl Eau gazeuse"
+
+BOTTLE_TYPES = (BOTTLE_33, BOTTLE_75_SAFT, BOTTLE_75_EAU_GAZ)
+
+BRAND_NIKO = "NIKO"
+BRAND_SYMBIOSE = "SYMBIOSE"
+
+# Padding du compteur AI 37 : 3 digits suffisent (palette max ~252 caisses).
+_AI37_WIDTH = 3
+_LOT_MAX_LEN = 20            # contrainte GS1 sur AI 10
+_LOT_ALLOWED_RE = re.compile(r"[^A-Z0-9\-./]")
 
 
 # ─── Modèles typés ───────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
-class ProductFormat:
-    """Un combo (produit × format) avec son EAN-13 caisse."""
-    id_produit: int
-    libelle: str           # libellé produit nettoyé (ex: "Kéfir Mangue Passion")
-    fmt: str               # ex: "12x33", "6x75"
-    ean13: str             # 13 digits
-    lot_label: str         # ex: "Carton de 12" (issu de la matrice EasyBeer)
-
-
-@dataclass(frozen=True)
-class BrassinChoice:
-    """Brassin sélectionnable comme source du lot + DDM."""
-    id_brassin: int
-    code: str              # ex: "KME27042026" — sert de lot par défaut
-    libelle_produit: str   # libellé du produit du brassin (info contextuelle)
-    ddm_date: _dt.date     # date métier extraite du code + ddm_days
-
-
-@dataclass(frozen=True)
-class EtiquettePaletteData:
-    """Données chargées au boot de la page (1 seul aller-retour EB groupé)."""
-    products: list[ProductFormat]
-    brassins: list[BrassinChoice]
-    errors: list[str]
+class LabelEntry:
+    """Un produit prêt à étiqueter, issu de la dernière sync."""
+    marque: str               # "NIKO" | "SYMBIOSE"
+    bottle_type: str          # "33cl" | "75cl SAFT" | "75cl Eau gazeuse"
+    gout: str                 # ex: "Gingembre", "Mangue Passion", "Original"
+    designation: str          # ex: "Kéfir Gingembre — 12x33cl"
+    fmt: str                  # ex: "12x33", "6x33", "6x75", "4x75"
+    pcb: int                  # ex: 12, 6, 4
+    ean_colis: str            # GTIN colis (carton) — 13 ou 14 digits
+    code_interne: str         # ex: "SK-KDF-33-GIN"
+    lot_str: str              # ex: "08052027" (= DDMMYYYY de la DDM, depuis la sync)
+    ddm_date: _dt.date        # date DDM
+    product_label: str        # libellé produit nettoyé (ex: "Kéfir Gingembre")
 
 
 @dataclass(frozen=True)
 class Gs1Payload:
     """Payload GS1-128 prêt pour l'encodage."""
-    content: str           # chaîne à encoder en Code 128 (sans parenthèses)
-    hri: str               # version lisible humainement avec parenthèses
-
-
-# ─── Constantes ──────────────────────────────────────────────────────────────
-
-# Padding du compteur AI 37 : 3 digits suffisent (palette max ~252 caisses).
-# Permet de séparer AI 37 de AI 10 sans FNC1.
-_AI37_WIDTH = 3
-_LOT_MAX_LEN = 20          # contrainte GS1 sur AI 10
-_LOT_ALLOWED_RE = re.compile(r"[^A-Z0-9\-./]")  # GS1 AI 10 = subset ASCII
+    content: str              # chaîne à encoder en Code 128 (sans parenthèses)
+    hri: str                  # version lisible humainement avec parenthèses
 
 
 # ─── Calcul du nombre de caisses ────────────────────────────────────────────
@@ -133,23 +124,18 @@ def compute_case_count(
 
 # ─── Construction du payload GS1-128 ────────────────────────────────────────
 
-def _ean13_to_gtin14(ean13: str) -> str:
+def _ean_to_gtin14(ean: str) -> str:
     """Préfixe un EAN-13 avec '0' pour obtenir un GTIN-14 (logistic indicator)."""
-    digits = re.sub(r"\D+", "", ean13 or "")
+    digits = re.sub(r"\D+", "", ean or "")
     if len(digits) == 14:
         return digits
     if len(digits) == 13:
         return "0" + digits
-    raise ValueError(f"EAN/GTIN invalide (attendu 13 ou 14 digits) : {ean13!r}")
+    raise ValueError(f"EAN/GTIN invalide (attendu 13 ou 14 digits) : {ean!r}")
 
 
 def _normalize_lot(lot: str) -> str:
-    """Normalise un lot pour AI 10 : majuscules, ASCII restreint, longueur ≤ 20.
-
-    Caractères autorisés en GS1 AI 10 : A-Z 0-9 et un sous-ensemble de
-    ponctuation. On filtre tout le reste (accents, espaces, etc.) plutôt que
-    de rejeter — les codes brassin sont déjà ``[A-Z0-9]+`` par construction.
-    """
+    """Normalise un lot pour AI 10 : majuscules, ASCII restreint, longueur ≤ 20."""
     s = (lot or "").strip().upper()
     s = _LOT_ALLOWED_RE.sub("", s)
     if not s:
@@ -172,9 +158,6 @@ def build_gs1_128_payload(
       - 15 (DDM YYMMDD, 6 digits fixes)
       - 37 (count, padding sur ``_AI37_WIDTH`` digits)
       - 10 (lot, variable, en DERNIER pour ne pas avoir besoin de FNC1)
-
-    Returns:
-        Gs1Payload(content=concat sans parenthèses, hri=version lisible).
     """
     if count <= 0:
         raise ValueError("count doit être > 0")
@@ -182,7 +165,7 @@ def build_gs1_128_payload(
     if count > max_count:
         raise ValueError(f"count > {max_count} (incrémenter _AI37_WIDTH)")
 
-    gtin14 = _ean13_to_gtin14(ean13)
+    gtin14 = _ean_to_gtin14(ean13)
     yymmdd = ddm.strftime("%y%m%d")
     count_str = str(count).zfill(_AI37_WIDTH)
     lot_norm = _normalize_lot(lot)
@@ -192,110 +175,188 @@ def build_gs1_128_payload(
     return Gs1Payload(content=content, hri=hri)
 
 
-# ─── Calcul DDM depuis code brassin ──────────────────────────────────────────
+# ─── Classification depuis le payload sync ──────────────────────────────────
 
-def compute_ddm_from_brassin_code(code: str | None) -> _dt.date | None:
-    """Calcule la DDM = date_brassin + business.ddm_days.
+def classify_bottle_type(designation: str, marque: str, pcb: int | float) -> str | None:
+    """Classifie un produit en 33cl / 75cl SAFT / 75cl Eau gazeuse.
 
-    Retourne ``None`` si le code ne suit pas le pattern attendu (..DDMMYYYY).
+    Règles :
+      - 33cl si la désignation contient "33cl"
+      - 75cl SAFT si NIKO ou si Symbiose en PCB=4
+      - 75cl Eau gazeuse si Symbiose en PCB=6
+      - None si on ne peut pas conclure (rare, log warning)
     """
-    base = extract_date_from_brassin_code(code)
-    if base is None:
+    desig = (designation or "").lower()
+    pcb_int = int(pcb or 0)
+    marque_up = (marque or "").upper()
+
+    if "33cl" in desig or "33 cl" in desig:
+        return BOTTLE_33
+    if "75cl" in desig or "75 cl" in desig:
+        if marque_up == BRAND_NIKO:
+            return BOTTLE_75_SAFT
+        if pcb_int == 4:
+            return BOTTLE_75_SAFT
+        if pcb_int == 6:
+            return BOTTLE_75_EAU_GAZ
+    return None
+
+
+def extract_label_gout(designation: str, marque: str, product_label: str = "") -> str:
+    """Extrait le goût (sans préfixe marque/produit) depuis la désignation.
+
+    Ex:
+      "Kéfir Gingembre — 12x33cl"                     → "Gingembre"
+      "NIKO - Kéfir de fruits Gingembre — 12x33cl"    → "Gingembre"
+      "Infusion probiotique Zest d'agrumes — 6x33cl"  → "Zest d'agrumes"
+    """
+    # Préfère le product_label nettoyé si dispo (déjà sans suffixe degré)
+    base = product_label or designation
+    # Couper sur '—' (séparateur format)
+    if "—" in base:
+        base = base.split("—", 1)[0].strip()
+    elif "–" in base:
+        base = base.split("–", 1)[0].strip()
+
+    # Retirer le préfixe NIKO si présent
+    base = re.sub(r"^\s*NIKO\s*[-:]\s*", "", base, flags=re.IGNORECASE).strip()
+
+    base = clean_product_label(base)
+    return extract_gout(base) or base
+
+
+def _format_lot_str(lot_raw) -> str:
+    """Formate un lot depuis le payload (int/float/str) en str.
+
+    Le payload sync stocke le lot comme float (ex: 8052027.0). On retourne
+    un string sans la décimale, et padding à 8 digits pour les dates DDMMYYYY
+    (ex: 8052027 → "08052027").
+    """
+    if lot_raw is None or lot_raw == "":
+        return ""
+    try:
+        n = int(float(lot_raw))
+    except (TypeError, ValueError):
+        return str(lot_raw)
+    s = str(n)
+    if len(s) == 7:
+        # DDMMYYYY avec un seul digit pour le jour → pad
+        s = "0" + s
+    return s
+
+
+def _parse_ddm_iso(ddm_raw) -> _dt.date | None:
+    if not ddm_raw:
         return None
-    ddm_days = int((get_business_config() or {}).get("ddm_days", 365))
-    return base + _dt.timedelta(days=ddm_days)
+    try:
+        return _dt.date.fromisoformat(str(ddm_raw)[:10])
+    except (ValueError, TypeError):
+        return None
 
 
-# ─── Chargement initial (matrice CB + brassins en cours) ─────────────────────
+# ─── Chargement depuis sync_operations ───────────────────────────────────────
 
-def _load_products_with_formats() -> list[ProductFormat]:
-    """Construit la liste produits×formats depuis EasyBeer.
+def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | None]:
+    """Charge les produits étiquetables depuis la dernière sync du tenant.
 
-    Combine ``get_code_barre_matrice()`` (donne EAN par idProduit + format) et
-    ``get_all_products()`` (donne les libellés par idProduit). Les produits
-    sans EAN ne sont pas exposés (rien à imprimer).
+    Stratégie : on cherche d'abord la dernière sync ``applied``. Si aucune,
+    fallback sur la dernière ``pending`` ou ``fetched`` (car le payload est
+    déjà construit dès la création).
+
+    Returns:
+        (liste_de_LabelEntry, message_d_info).
+        Le message d'info est ``None`` si tout va bien, sinon une chaîne à
+        afficher en bandeau (ex: "Aucune sync — lance d'abord la sync").
     """
-    raw_matrice = get_code_barre_matrice()
-    cb_by_product = parse_barcode_matrix(raw_matrice)
+    rows = run_sql(
+        """SELECT id, payload, status, applied_at, created_at
+           FROM sync_operations
+           WHERE tenant_id = :t AND status IN ('applied', 'pending', 'fetched')
+           ORDER BY (status = 'applied') DESC, created_at DESC
+           LIMIT 1""",
+        {"t": tenant_id},
+    )
+    if not rows:
+        return [], (
+            "Aucune sync étiquettes disponible. Va dans "
+            "Paramètres → Étiquettes et clique sur « Lancer la sync maintenant »."
+        )
 
-    # Index libellé par idProduit
-    products_list = get_all_products() or []
-    label_by_id: dict[int, str] = {}
-    for p in products_list:
-        pid = p.get("idProduit")
-        lbl = (p.get("libelle") or "").strip()
-        if pid and lbl:
-            label_by_id[int(pid)] = lbl
+    op = rows[0]
+    payload = op.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return [], "Payload sync illisible (JSON invalide)."
 
-    out: list[ProductFormat] = []
-    for id_produit, formats in cb_by_product.items():
-        libelle = clean_product_label(label_by_id.get(id_produit, ""))
-        if not libelle:
+    if not isinstance(payload, list) or not payload:
+        return [], "La dernière sync est vide. Relance la sync étiquettes."
+
+    entries: list[LabelEntry] = []
+    skipped = 0
+    for p in payload:
+        designation = (p.get("designation") or "").strip()
+        marque = (p.get("marque") or "").upper().strip()
+        pcb_raw = p.get("pcb") or 0
+        try:
+            pcb = int(float(pcb_raw))
+        except (TypeError, ValueError):
+            pcb = 0
+
+        ean_colis = re.sub(r"\D+", "", str(p.get("gtin_colis") or ""))
+        if not (designation and marque and pcb and ean_colis):
+            skipped += 1
             continue
-        for f in formats:
-            out.append(ProductFormat(
-                id_produit=id_produit,
-                libelle=libelle,
-                fmt=f["fmt_str"],
-                ean13=f["full_code"],
-                lot_label=f.get("lot_label", ""),
-            ))
 
-    out.sort(key=lambda x: (x.libelle.lower(), x.fmt))
-    return out
-
-
-def _load_active_brassins() -> list[BrassinChoice]:
-    """Charge les brassins en cours (ceux qui peuvent être conditionnés)."""
-    raw = get_brassins_en_cours_cached() or []
-    out: list[BrassinChoice] = []
-    for b in raw:
-        id_brassin = b.get("idBrassin")
-        nom = (b.get("nom") or "").strip()
-        if not id_brassin or not nom:
+        bottle_type = classify_bottle_type(designation, marque, pcb)
+        if bottle_type is None:
+            skipped += 1
             continue
-        produit = (b.get("produit") or {}).get("libelle") or ""
-        ddm = compute_ddm_from_brassin_code(nom)
-        if ddm is None:
-            # Code brassin sans pattern DDMMYYYY → DDM par défaut = aujourd'hui + ddm_days
-            ddm_days = int((get_business_config() or {}).get("ddm_days", 365))
-            ddm = _dt.date.today() + _dt.timedelta(days=ddm_days)
-        out.append(BrassinChoice(
-            id_brassin=int(id_brassin),
-            code=nom,
-            libelle_produit=clean_product_label(produit),
-            ddm_date=ddm,
+
+        if "—" in designation:
+            product_label = clean_product_label(designation.split("—")[0])
+        else:
+            product_label = clean_product_label(designation)
+        gout = extract_label_gout(designation, marque, product_label)
+
+        # Format ex: "12x33", "6x75"
+        # Volume depuis bottle_type (33 ou 75), PCB depuis le payload
+        vol_cl = "33" if bottle_type == BOTTLE_33 else "75"
+        fmt = f"{pcb}x{vol_cl}"
+
+        ddm_date = _parse_ddm_iso(p.get("ddm"))
+        if ddm_date is None:
+            skipped += 1
+            continue
+
+        lot_str = _format_lot_str(p.get("lot"))
+        if not lot_str:
+            # Fallback : DDM au format DDMMYYYY (cohérent avec collector)
+            lot_str = ddm_date.strftime("%d%m%Y")
+
+        entries.append(LabelEntry(
+            marque=marque,
+            bottle_type=bottle_type,
+            gout=gout,
+            designation=designation,
+            fmt=fmt,
+            pcb=pcb,
+            ean_colis=ean_colis,
+            code_interne=(p.get("code_interne") or "").strip(),
+            lot_str=lot_str,
+            ddm_date=ddm_date,
+            product_label=product_label,
         ))
-    out.sort(key=lambda x: x.code)
-    return out
 
+    if skipped:
+        _log.info("load_label_data_from_sync : %d entrées ignorées (champs manquants)", skipped)
 
-def load_initial_data() -> EtiquettePaletteData:
-    """Charge produits×formats et brassins en cours en parallèle.
+    msg: str | None = None
+    if op.get("status") != "applied":
+        msg = (
+            "La dernière sync n'a pas encore été appliquée par l'agent — "
+            "les données affichées peuvent être obsolètes."
+        )
 
-    Tolérant : si un fetch EasyBeer échoue (transport ou rate-limit), on
-    renvoie une liste vide pour ce volet et on accumule l'erreur — la page
-    reste utilisable en mode dégradé (l'opérateur peut saisir lot/DDM à la main
-    si la liste de brassins est vide).
-    """
-    errors: list[str] = []
-    products: list[ProductFormat] = []
-    brassins: list[BrassinChoice] = []
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        f_products = pool.submit(_load_products_with_formats)
-        f_brassins = pool.submit(_load_active_brassins)
-
-        try:
-            products = f_products.result()
-        except (EasyBeerError, requests.RequestException, OSError) as exc:
-            _log.warning("Échec chargement produits×formats EasyBeer", exc_info=True)
-            errors.append(f"Produits indisponibles : {exc}")
-
-        try:
-            brassins = f_brassins.result()
-        except (EasyBeerError, requests.RequestException, OSError) as exc:
-            _log.warning("Échec chargement brassins en cours EasyBeer", exc_info=True)
-            errors.append(f"Brassins indisponibles : {exc}")
-
-    return EtiquettePaletteData(products=products, brassins=brassins, errors=errors)
+    return entries, msg
