@@ -69,6 +69,7 @@ class LabelEntry:
     fmt: str                  # ex: "12x33", "6x33", "6x75", "4x75"
     pcb: int                  # ex: 12, 6, 4
     ean_colis: str            # GTIN colis (carton) — 13 ou 14 digits
+    ean_uvc: str              # GTIN bouteille (peut être "" si non disponible)
     code_interne: str         # ex: "SK-KDF-33-GIN"
     lot_str: str              # ex: "08052027" (= DDMMYYYY de la DDM, depuis la sync)
     ddm_date: _dt.date        # date DDM
@@ -325,6 +326,7 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
             pcb = 0
 
         ean_colis = re.sub(r"\D+", "", str(p.get("gtin_colis") or ""))
+        ean_uvc = re.sub(r"\D+", "", str(p.get("gtin_uvc") or ""))
         if not (designation and marque and pcb and ean_colis):
             skipped += 1
             continue
@@ -363,6 +365,7 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
             fmt=fmt,
             pcb=pcb,
             ean_colis=ean_colis,
+            ean_uvc=ean_uvc,
             code_interne=(p.get("code_interne") or "").strip(),
             lot_str=lot_str,
             ddm_date=ddm_date,
@@ -380,6 +383,36 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
         )
 
     return entries, msg
+
+
+def find_entry_by_ean(entries: list[LabelEntry], scanned_ean: str) -> LabelEntry | None:
+    """Trouve une entrée à partir d'un EAN scanné.
+
+    Match par ordre de priorité :
+      1. ``ean_colis`` exact (l'étiquette carton porte le GTIN du carton)
+      2. ``ean_uvc`` exact (fallback : l'étiquette imprime parfois l'EAN bouteille)
+      3. Suffixe : on compare les 13 derniers digits (cas EAN-13 vs GTIN-14)
+
+    L'EAN scanné est nettoyé (digits seulement). Retourne ``None`` si pas trouvé.
+    """
+    digits = re.sub(r"\D+", "", scanned_ean or "")
+    if not digits:
+        return None
+
+    # 1. Match colis exact
+    for e in entries:
+        if e.ean_colis == digits:
+            return e
+    # 2. Match UVC exact
+    for e in entries:
+        if e.ean_uvc and e.ean_uvc == digits:
+            return e
+    # 3. Match par suffixe 13 digits (gestion EAN-13 ↔ GTIN-14)
+    suffix = digits[-13:]
+    for e in entries:
+        if e.ean_colis.endswith(suffix) or (e.ean_uvc and e.ean_uvc.endswith(suffix)):
+            return e
+    return None
 
 
 def get_sync_status(tenant_id: str) -> SyncStatus:

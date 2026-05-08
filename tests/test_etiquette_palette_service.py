@@ -27,8 +27,29 @@ from common.services.etiquette_palette_service import (
     classify_bottle_type,
     compute_case_count,
     extract_label_gout,
+    find_entry_by_ean,
     load_label_data_from_sync,
 )
+
+
+def _make_entry(**overrides) -> LabelEntry:
+    """Helper pour construire une LabelEntry de test."""
+    defaults = dict(
+        marque=BRAND_SYMBIOSE,
+        bottle_type=BOTTLE_33,
+        gout="Gingembre",
+        designation="Kéfir Gingembre — 6x33cl",
+        fmt="6x33",
+        pcb=6,
+        ean_colis="23770014427018",
+        ean_uvc="3770014427014",
+        code_interne="SK-KDF-33-GIN",
+        lot_str="08052027",
+        ddm_date=_dt.date(2027, 5, 8),
+        product_label="Kéfir Gingembre",
+    )
+    defaults.update(overrides)
+    return LabelEntry(**defaults)
 
 # ─── compute_case_count ──────────────────────────────────────────────────────
 
@@ -390,6 +411,43 @@ class TestLoadLabelDataFromSync:
         assert len(entries) == 1
 
 
+# ─── find_entry_by_ean ───────────────────────────────────────────────────────
+
+class TestFindEntryByEan:
+
+    def test_match_colis_exact(self):
+        e1 = _make_entry(ean_colis="23770014427018", gout="Gingembre")
+        e2 = _make_entry(ean_colis="13770014427325", gout="Mangue")
+        assert find_entry_by_ean([e1, e2], "23770014427018") is e1
+        assert find_entry_by_ean([e1, e2], "13770014427325") is e2
+
+    def test_match_uvc_fallback(self):
+        """Si l'étiquette imprime l'EAN bouteille (UVC), on doit matcher."""
+        e1 = _make_entry(ean_colis="23770014427018", ean_uvc="3770014427014")
+        assert find_entry_by_ean([e1], "3770014427014") is e1
+
+    def test_match_ignores_non_digits(self):
+        e1 = _make_entry(ean_colis="23770014427018")
+        assert find_entry_by_ean([e1], " 2377-0014 4270 18 ") is e1
+
+    def test_no_match(self):
+        e1 = _make_entry(ean_colis="23770014427018", ean_uvc="3770014427014")
+        assert find_entry_by_ean([e1], "9999999999999") is None
+
+    def test_match_suffix_13_digits(self):
+        """GTIN-14 sur la base, EAN-13 scanné → match par suffixe 13 digits."""
+        e1 = _make_entry(ean_colis="03770014427014", ean_uvc="")
+        # On scanne le EAN-13 sans le 0 indicateur logistique de tête
+        assert find_entry_by_ean([e1], "3770014427014") is e1
+
+    def test_empty_input(self):
+        assert find_entry_by_ean([_make_entry()], "") is None
+        assert find_entry_by_ean([_make_entry()], None) is None  # type: ignore[arg-type]
+
+    def test_empty_entries(self):
+        assert find_entry_by_ean([], "23770014427018") is None
+
+
 # ─── Sanity checks ───────────────────────────────────────────────────────────
 
 class TestDataclasses:
@@ -403,6 +461,7 @@ class TestDataclasses:
             fmt="12x33",
             pcb=12,
             ean_colis="3770014427014",
+            ean_uvc="3770014427000",
             code_interne="SK-KDF-33-GIN",
             lot_str="08052027",
             ddm_date=_dt.date(2027, 5, 8),

@@ -31,6 +31,7 @@ from common.services.etiquette_palette_service import (
     LabelEntry,
     SyncStatus,
     compute_case_count,
+    find_entry_by_ean,
     get_sync_status,
     load_label_data_from_sync,
     trigger_sync_now,
@@ -127,6 +128,45 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
         "gout": None,          # str
         "entry": None,         # LabelEntry sélectionnée (résolue via la cascade)
     }
+
+    # ────────────────────────────────────────────────────────────────────
+    # Scanner caméra (ZXing-JS) — chargé une fois en tête de page
+    # ────────────────────────────────────────────────────────────────────
+    ui.add_head_html(
+        '<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>'
+    )
+
+    scanner_dialog = ui.dialog().props("persistent maximized")
+    with scanner_dialog, ui.card().classes("w-full h-full q-pa-none").style("background: #000"):
+        with ui.column().classes("w-full h-full items-center justify-center gap-4"):
+            ui.label("Vise le code-barres du carton").classes("text-white text-h6")
+            ui.html(
+                '<video id="scanner-video" playsinline '
+                'style="width: 90vw; max-width: 600px; height: auto; '
+                'border: 3px solid #15803D; border-radius: 8px; background: #111;"></video>',
+            )
+            scan_status = ui.label("Initialisation de la caméra…").classes(
+                "text-white text-body2 scan-status-label",
+            )
+            _ = scan_status  # référence : la mise à jour se fait via JS
+            with ui.row().classes("gap-3"):
+                ui.button(
+                    "Annuler",
+                    icon="close",
+                    on_click=lambda: _close_scanner(scanner_dialog),
+                ).props("color=white outline size=lg")
+
+    # Input caché : le JS écrira l'EAN scanné ici, on déclenche le match Python
+    ean_buffer = ui.input().classes("ean-scan-buffer").style(
+        "position: absolute; left: -9999px; top: -9999px",
+    )
+
+    with ui.row().classes("w-full justify-end q-mb-sm"):
+        ui.button(
+            "Scanner un carton",
+            icon="qr_code_scanner",
+            on_click=lambda: _open_scanner(scanner_dialog),
+        ).props("color=green-8 unelevated size=md")
 
     # ────────────────────────────────────────────────────────────────────
     # Step 1 — Marque
@@ -367,6 +407,43 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
     def _on_extras_change(_e):
         _refresh_total()
 
+    def _on_ean_scanned(e):
+        """Reçu depuis le JS via l'input caché ean_buffer.
+
+        Match l'EAN scanné dans `entries` (gtin_colis prioritaire, puis gtin_uvc),
+        pré-sélectionne marque + bouteille + goût et ferme le scanner.
+        """
+        ean = (e.value or "").strip()
+        if not ean:
+            return
+        ean_buffer.set_value("")  # reset pour permettre un re-scan
+        matched = find_entry_by_ean(entries, ean)
+        if not matched:
+            ui.notify(
+                f"EAN {ean} introuvable dans la dernière sync. "
+                "Sélectionne le produit manuellement.",
+                type="warning",
+                timeout=5000,
+            )
+            _close_scanner(scanner_dialog)
+            return
+        # Auto-sélection en cascade
+        _on_marque_click(matched.marque)
+        _on_bottle_click(matched.bottle_type)
+        # Renseigner le goût (le sélecteur est maintenant peuplé après les 2 clicks)
+        gout_select.value = matched.gout
+        state["gout"] = matched.gout
+        _refresh_recap()
+        ui.notify(
+            f"✓ {matched.designation}",
+            type="positive",
+            icon="check",
+            timeout=3000,
+        )
+        _close_scanner(scanner_dialog)
+
+    ean_buffer.on("update:model-value", _on_ean_scanned)
+
     for m, btn in marque_buttons.items():
         btn.on_click(lambda _e, mm=m: _on_marque_click(mm))
     for bt, btn in bottle_buttons.items():
@@ -430,6 +507,88 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
             generate_btn.props(remove="loading")
 
     generate_btn.on_click(_on_generate)
+
+
+# ─── Scanner caméra (ZXing-JS) ──────────────────────────────────────────────
+
+# Le JS ci-dessous est injecté à l'ouverture du dialog scanner. Il :
+#   1. Vérifie que ZXing-JS est chargé (CDN inclus en head).
+#   2. Ouvre la caméra arrière de l'iPad via getUserMedia.
+#   3. Lance le décodage continu (EAN-13, Code 128, GS1-128) sur le flux vidéo.
+#   4. Au premier code lu, écrit la valeur dans l'input caché ``[data-scan-buffer]``
+#      et déclenche un événement ``input`` que NiceGUI capte → callback Python.
+_SCANNER_JS_START = """
+(async () => {
+    const video = document.getElementById('scanner-video');
+    const status = document.querySelector('.scan-status-label');
+    if (!window.ZXingBrowser) {
+        if (status) status.innerText = '⚠ Bibliothèque de scan non chargée. Recharge la page.';
+        return;
+    }
+    if (!window._fsScanReader) {
+        const { BrowserMultiFormatReader } = window.ZXingBrowser;
+        window._fsScanReader = new BrowserMultiFormatReader();
+    }
+    const reader = window._fsScanReader;
+    if (status) status.innerText = 'Caméra : autorise l\\'accès si demandé…';
+    try {
+        await reader.decodeFromConstraints(
+            { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } },
+            video,
+            (result, err, controls) => {
+                if (result) {
+                    const ean = result.getText();
+                    if (status) status.innerText = '✓ Code lu : ' + ean;
+                    // Écrire dans l'input caché de NiceGUI puis trigger input
+                    const inputWrapper = document.querySelector('.ean-scan-buffer');
+                    const input = inputWrapper ? inputWrapper.querySelector('input') : null;
+                    if (input) {
+                        // Forcer Quasar à émettre update:model-value
+                        const setter = Object.getOwnPropertyDescriptor(
+                            window.HTMLInputElement.prototype, 'value',
+                        ).set;
+                        setter.call(input, ean);
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    // Stop l'analyse pour éviter les scans multiples
+                    if (window._fsScanReader) {
+                        try { window._fsScanReader.reset(); } catch(e) {}
+                    }
+                }
+            },
+        );
+        if (status) status.innerText = 'Vise le code-barres du carton';
+    } catch (e) {
+        console.error('Scanner error:', e);
+        if (status) status.innerText = '✗ Caméra inaccessible : ' + (e.message || e);
+    }
+})();
+"""
+
+_SCANNER_JS_STOP = """
+try {
+    if (window._fsScanReader) {
+        window._fsScanReader.reset();
+    }
+    const video = document.getElementById('scanner-video');
+    if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+    }
+} catch(e) { console.warn('stop scan error', e); }
+"""
+
+
+def _open_scanner(dialog) -> None:
+    """Ouvre le dialog plein écran et lance le scan caméra."""
+    dialog.open()
+    ui.run_javascript(_SCANNER_JS_START)
+
+
+def _close_scanner(dialog) -> None:
+    """Stoppe le scan + libère la caméra + ferme le dialog."""
+    ui.run_javascript(_SCANNER_JS_STOP)
+    dialog.close()
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
