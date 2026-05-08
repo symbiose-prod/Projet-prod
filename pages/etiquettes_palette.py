@@ -573,13 +573,23 @@ _SCANNER_JS_START = """
         // Erreur de parsing par frame — silencieux, html5-qrcode log déjà
     };
 
+    // html5-qrcode accepte 'environment' (string) ou { exact: 'environment' }.
+    // On essaie 'environment' d'abord ; en fallback (caméra arrière indisponible
+    // sur certains devices), on tente 'user'.
+    const tryStart = async (facing) => reader.start(
+        { facingMode: facing },
+        { fps: 10, qrbox: { width: 280, height: 140 }, aspectRatio: 1.6 },
+        onSuccess,
+        onScanError,
+    );
+
     try {
-        await reader.start(
-            { facingMode: { ideal: 'environment' } },
-            { fps: 10, qrbox: { width: 280, height: 140 }, aspectRatio: 1.6 },
-            onSuccess,
-            onScanError,
-        );
+        try {
+            await tryStart('environment');
+        } catch (innerErr) {
+            console.warn('environment camera failed, trying user', innerErr);
+            await tryStart('user');
+        }
         if (status) status.innerText = 'Vise le code-barres du carton';
     } catch (e) {
         console.error('Scanner error:', e);
