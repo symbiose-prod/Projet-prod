@@ -26,6 +26,7 @@ from common.services.etiquette_palette_service import (
     build_gs1_128_payload,
     classify_bottle_type,
     compute_case_count,
+    extract_ean_from_image,
     extract_label_gout,
     find_entry_by_ean,
     load_label_data_from_sync,
@@ -409,6 +410,41 @@ class TestLoadLabelDataFromSync:
         entries, _ = load_label_data_from_sync("tenant-x")
         # Seul le premier doit être conservé
         assert len(entries) == 1
+
+
+# ─── extract_ean_from_image ──────────────────────────────────────────────────
+
+class TestExtractEanFromImage:
+
+    def _make_gs1_image_bytes(self, data_with_parens: str) -> bytes:
+        """Génère une image PNG d'un GS1-128 via treepoem (fixture jetable)."""
+        import io as _io
+
+        import treepoem
+        img = treepoem.generate_barcode(barcode_type="gs1-128", data=data_with_parens)
+        buf = _io.BytesIO()
+        img.convert("RGB").save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_decode_gs1_128_extracts_gtin_only(self):
+        """Pour un GS1-128 avec AI 01, on retourne seulement les 14 digits du GTIN."""
+        png = self._make_gs1_image_bytes("(01)03770014427250(15)270511(10)110527")
+        result = extract_ean_from_image(png)
+        assert result == "03770014427250"
+
+    def test_decode_empty_image_returns_none(self):
+        """Une image vierge (1×1 blanc) ne contient aucun code-barres."""
+        import io as _io
+
+        from PIL import Image
+        img = Image.new("RGB", (10, 10), color="white")
+        buf = _io.BytesIO()
+        img.save(buf, format="PNG")
+        assert extract_ean_from_image(buf.getvalue()) is None
+
+    def test_decode_invalid_bytes_returns_none(self):
+        """Bytes corrompus → None (pas d'exception)."""
+        assert extract_ean_from_image(b"not an image at all") is None
 
 
 # ─── find_entry_by_ean ───────────────────────────────────────────────────────

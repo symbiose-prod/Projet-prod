@@ -693,6 +693,53 @@ async def _sync_trigger(request: Request):
         return JSONResponse({"error": "Sync failed"}, status_code=500)
 
 
+# ─── Décodage de code-barres (page Étiquettes palette) ──────────────────────
+
+_MAX_BARCODE_IMAGE_BYTES = 12 * 1024 * 1024  # 12 MB (photo iPhone HEIC/JPG)
+
+
+@app.post("/api/scan-barcode")
+async def _api_scan_barcode(request: Request):
+    """Décode un code-barres depuis une image uploadée (caméra iPhone/iPad).
+
+    Auth : session NiceGUI (l'opérateur est forcément connecté pour scanner).
+    Body : multipart/form-data avec un champ 'file' (image JPG/PNG/HEIC).
+    Retour : ``{"ean": "<digits>"}`` ou ``{"error": "<msg>"}`` (HTTP 4xx).
+    """
+    user_store = app.storage.user
+    if not user_store.get("authenticated"):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"error": "Invalid form data"}, status_code=400)
+
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        return JSONResponse({"error": "Missing 'file' field"}, status_code=400)
+
+    try:
+        image_bytes = await upload.read()
+    except Exception:
+        _log.exception("Erreur lecture upload scan-barcode")
+        return JSONResponse({"error": "Cannot read uploaded file"}, status_code=400)
+
+    if len(image_bytes) == 0:
+        return JSONResponse({"error": "Empty file"}, status_code=400)
+    if len(image_bytes) > _MAX_BARCODE_IMAGE_BYTES:
+        return JSONResponse(
+            {"error": f"File too large ({len(image_bytes) // 1024} KB > {_MAX_BARCODE_IMAGE_BYTES // 1024} KB)"},
+            status_code=413,
+        )
+
+    from common.services.etiquette_palette_service import extract_ean_from_image
+    ean = await asyncio.to_thread(extract_ean_from_image, image_bytes)
+    if not ean:
+        return JSONResponse({"error": "No barcode detected"}, status_code=200)
+    return JSONResponse({"ean": ean})
+
+
 # ─── Nettoyage périodique (sessions / resets expirés) ────────────────────────
 
 _CLEANUP_INTERVAL = 3600  # 1 heure

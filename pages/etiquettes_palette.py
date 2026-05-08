@@ -600,22 +600,34 @@ _SCANNER_JS_START = """
             const file = e.target.files && e.target.files[0];
             if (!file) return;
             const s = document.querySelector('.scan-status-label');
-            if (s) s.innerText = '🔍 Décodage de la photo…';
+            if (s) s.innerText = '🔍 Envoi de la photo au serveur…';
             try {
-                // On stoppe le live scanner s'il tourne (même container)
+                // Stop le live (même container caméra) avant l'upload
                 if (window._fsScanReader && window._fsScanRunning) {
                     try { await window._fsScanReader.stop(); } catch(_) {}
                     window._fsScanRunning = false;
                 }
-                // Reader éphémère pour le décodage de fichier
-                const fileReader = new Html5Qrcode('scanner-container', {
-                    formatsToSupport: formats, verbose: false,
+                // Upload au serveur — décodage zxing-cpp (natif C++, robuste)
+                const formData = new FormData();
+                formData.append('file', file, file.name || 'photo.jpg');
+                const resp = await fetch('/api/scan-barcode', {
+                    method: 'POST', body: formData,
                 });
-                const text = await fileReader.scanFile(file, false);
-                window._fsHandleEan(text);
+                if (!resp.ok) {
+                    let msg = '✗ Erreur serveur ' + resp.status;
+                    try { const j = await resp.json(); msg = '✗ ' + (j.error || msg); } catch(_) {}
+                    if (s) s.innerText = msg;
+                    return;
+                }
+                const data = await resp.json();
+                if (data.error) {
+                    if (s) s.innerText = '✗ ' + data.error + '. Réessaie en cadrant mieux.';
+                } else if (data.ean) {
+                    window._fsHandleEan(data.ean);
+                }
             } catch (err) {
-                console.error('scanFile error', err);
-                if (s) s.innerText = '✗ Pas de code-barres détecté. Réessaie en cadrant mieux.';
+                console.error('upload error', err);
+                if (s) s.innerText = '✗ Erreur réseau : ' + err;
             }
             e.target.value = '';
         });

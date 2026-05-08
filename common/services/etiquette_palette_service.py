@@ -385,6 +385,58 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
     return entries, msg
 
 
+def extract_ean_from_image(image_bytes: bytes) -> str | None:
+    """Décode un code-barres depuis les bytes d'une image (JPG/PNG/HEIC).
+
+    Utilise ``zxing-cpp`` (wrapper natif C++ ZXing). Pour un GS1-128, le
+    texte retourné est ``"(01)<GTIN>(15)<DDM>(10)<lot>"`` — on extrait juste
+    le GTIN (AI 01) pour le matching produit, ou le code complet si ce n'est
+    pas un GS1-128.
+
+    Returns:
+        Une string :
+          - Si GS1-128 avec AI 01 : juste le GTIN-14 (14 digits)
+          - Si EAN-13/UPC : le code tel quel
+          - Sinon : le texte décodé brut
+        ``None`` si rien décodé.
+    """
+    try:
+        import io as _io
+
+        import zxingcpp
+        from PIL import Image
+    except ImportError as exc:
+        _log.error("zxing-cpp ou Pillow indisponible : %s", exc)
+        return None
+
+    try:
+        img = Image.open(_io.BytesIO(image_bytes))
+        # Convertir en RGB si l'image est CMYK / RGBA / palette / etc.
+        if img.mode not in ("L", "RGB"):
+            img = img.convert("RGB")
+        results = zxingcpp.read_barcodes(img)
+    except Exception:
+        _log.exception("Erreur décodage code-barres image")
+        return None
+
+    if not results:
+        return None
+
+    # Préférer le premier résultat valide. Pour un GS1-128 (Code 128 + AI),
+    # le texte est de la forme "(01)<14 digits>(15)<...>(10)<...>".
+    for r in results:
+        text = (r.text or "").strip()
+        if not text:
+            continue
+        # Si c'est un GS1-128 avec AI 01 → on extrait le GTIN
+        m = re.match(r"^\(01\)(\d{14})", text)
+        if m:
+            return m.group(1)
+        # Sinon on retourne le texte brut (digits si EAN/UPC)
+        return text
+    return None
+
+
 def find_entry_by_ean(entries: list[LabelEntry], scanned_ean: str) -> LabelEntry | None:
     """Trouve une entrée à partir d'un EAN scanné.
 

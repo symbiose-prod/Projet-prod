@@ -89,12 +89,17 @@ jobs:
             # Installer les dépendances Python dans le venv utilisé par ferment.service
             # (ExecStart=/home/ubuntu/app/venv/bin/python).
             sudo /home/ubuntu/app/venv/bin/pip install -r requirements.txt
-            # Vérifier que treepoem est importable et fonctionne (Ghostscript OK)
+            # Vérifier que treepoem (génération GS1-128) marche
             sudo /home/ubuntu/app/venv/bin/python -c "
             import treepoem
             img = treepoem.generate_barcode(barcode_type='gs1-128', data='(02)03770014427014(15)260901(10)KME27042026(37)126')
             print('✅ treepoem OK, barcode size:', img.size)
             " || (echo "❌ treepoem FAILED"; exit 1)
+            # Vérifier que zxing-cpp (lecture côté scan) est importable
+            sudo /home/ubuntu/app/venv/bin/python -c "
+            import zxingcpp
+            print('✅ zxing-cpp OK, version:', zxingcpp.__version__ if hasattr(zxingcpp, '__version__') else 'unknown')
+            " || (echo "❌ zxing-cpp FAILED"; exit 1)
             sudo systemctl stop ferment
             # Attendre que le port 8503 soit libéré (max 10s)
             for i in $(seq 1 10); do
