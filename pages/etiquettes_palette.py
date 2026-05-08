@@ -130,86 +130,70 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
     }
 
     # ────────────────────────────────────────────────────────────────────
-    # Scanner caméra (html5-qrcode) — bundle autonome, marche sur iPad Safari
+    # Scanner caméra : un seul tap → caméra iOS native (capture="environment")
+    # → photo HD → POST /api/scan-barcode → zxing-cpp côté serveur → emitEvent.
+    # Pattern <input> imbriqué dans <label> : robuste cross-browser sans JS.
     # ────────────────────────────────────────────────────────────────────
-    ui.add_head_html(
-        '<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>'
-    )
-
-    scanner_dialog = ui.dialog().props("persistent maximized")
-    with scanner_dialog, ui.card().classes("w-full h-full q-pa-none").style("background: #000"):
-        with ui.column().classes("w-full h-full items-center justify-center gap-4"):
-            ui.label("Vise le code-barres du carton").classes("text-white text-h6")
-            # html5-qrcode injecte la <video> dans ce div
-            ui.html(
-                '<div id="scanner-container" '
-                'style="width: 90vw; max-width: 600px; '
-                'border: 3px solid #15803D; border-radius: 8px; background: #111; '
-                'overflow: hidden;"></div>',
-            )
-            scan_status = ui.label("Initialisation de la caméra…").classes(
-                "text-white text-body2 scan-status-label",
-            )
-            _ = scan_status  # référence : la mise à jour se fait via JS
-
-            # Bouton « Prendre une photo » : input imbriqué DANS le label,
-            # couvrant toute sa surface (opacity:0). C'est le pattern le plus
-            # robuste cross-browser (Safari/Chrome iOS, Android, desktop) car
-            # le clic sur le label = clic natif sur l'input.
-            ui.html(
-                '<label '
-                'style="display:inline-flex; align-items:center; gap:8px; '
-                'padding:14px 24px; background:#1976d2; color:white; '
-                'border-radius:4px; cursor:pointer; font-size:16px; '
-                'font-weight:500; user-select:none; position:relative; '
-                'overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.2); '
-                '-webkit-tap-highlight-color: rgba(255,255,255,0.2);">'
-                '<span class="material-icons" style="font-size:22px;">photo_camera</span>'
-                'Prendre une photo nette'
-                '<input type="file" id="photo-capture-input" '
-                'accept="image/*" capture="environment" '
-                'style="position:absolute; inset:0; opacity:0; cursor:pointer; '
-                'width:100%; height:100%;">'
-                '</label>',
-            )
-
-            # Fallback : saisie manuelle de l'EAN
-            with ui.row().classes("w-full max-w-md items-end gap-2 q-mt-md"):
-                manual_ean_input = ui.input(
-                    label="Saisie manuelle EAN",
-                    placeholder="ex: 3770014427250",
-                ).classes("flex-1").props("outlined dark dense input-class=text-white")
-
-                def _submit_manual():
-                    val = (manual_ean_input.value or "").strip()
-                    if not val:
-                        return
-                    ean_buffer.set_value(val)
-                    manual_ean_input.set_value("")
-
-                ui.button(
-                    "Valider", icon="check",
-                    on_click=_submit_manual,
-                ).props("color=green-8 unelevated")
-
-            with ui.row().classes("gap-3 q-mt-md"):
-                ui.button(
-                    "Annuler",
-                    icon="close",
-                    on_click=lambda: _close_scanner(scanner_dialog),
-                ).props("color=white outline size=lg")
-
-    # Input caché : le JS écrira l'EAN scanné ici, on déclenche le match Python
-    ean_buffer = ui.input().classes("ean-scan-buffer").style(
-        "position: absolute; left: -9999px; top: -9999px",
-    )
-
-    with ui.row().classes("w-full justify-end q-mb-sm"):
+    with ui.row().classes("w-full justify-end q-mb-sm gap-2 items-center"):
+        ui.html(
+            '<label '
+            'style="display:inline-flex; align-items:center; gap:8px; '
+            'padding:10px 18px; background:#15803D; color:white; '
+            'border-radius:6px; cursor:pointer; font-size:14px; '
+            'font-weight:500; user-select:none; position:relative; '
+            'overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.2); '
+            '-webkit-tap-highlight-color: rgba(255,255,255,0.2);">'
+            '<span class="material-icons" style="font-size:20px;">qr_code_scanner</span>'
+            'Scanner un carton'
+            '<input type="file" id="photo-capture-input" '
+            'accept="image/*" capture="environment" '
+            'style="position:absolute; inset:0; opacity:0; cursor:pointer; '
+            'width:100%; height:100%;">'
+            '</label>',
+        )
+        # Bouton secondaire : saisie manuelle (au cas où le scan ne matche rien)
         ui.button(
-            "Scanner un carton",
-            icon="qr_code_scanner",
-            on_click=lambda: _open_scanner(scanner_dialog),
-        ).props("color=green-8 unelevated size=md")
+            "Saisir EAN",
+            icon="keyboard",
+            on_click=lambda: _open_manual_ean_dialog(_handle_scanned_ean),
+        ).props("flat color=grey-7 dense")
+
+    # Listener JS du file input — installé une fois, écoute le change,
+    # upload au serveur et émet l'EAN décodé via emitEvent (canal NiceGUI).
+    ui.add_body_html("""
+    <script>
+    (function() {
+        if (window._fsScanInputBound) return;
+        window._fsScanInputBound = true;
+        const wait = () => {
+            const input = document.getElementById('photo-capture-input');
+            if (!input) { setTimeout(wait, 200); return; }
+            input.addEventListener('change', async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file, file.name || 'photo.jpg');
+                    const resp = await fetch('/api/scan-barcode', {
+                        method: 'POST', body: formData,
+                    });
+                    const data = await resp.json();
+                    if (data.ean) {
+                        emitEvent('barcode_scanned', data.ean);
+                    } else {
+                        emitEvent('barcode_error',
+                            (data.error || 'Aucun code-barres détecté'));
+                    }
+                } catch (err) {
+                    emitEvent('barcode_error', String(err));
+                }
+                e.target.value = '';
+            });
+        };
+        wait();
+    })();
+    </script>
+    """)
 
     # ────────────────────────────────────────────────────────────────────
     # Step 1 — Marque
@@ -450,16 +434,15 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
     def _on_extras_change(_e):
         _refresh_total()
 
-    def _on_ean_scanned(e):
-        """Reçu depuis le JS via l'input caché ean_buffer.
+    def _handle_scanned_ean(ean: str):
+        """Traite un EAN reçu (scan ou saisie manuelle).
 
-        Match l'EAN scanné dans `entries` (gtin_colis prioritaire, puis gtin_uvc),
-        pré-sélectionne marque + bouteille + goût et ferme le scanner.
+        Match l'EAN dans `entries` (gtin_colis prioritaire, puis gtin_uvc) et
+        pré-sélectionne marque + bouteille + goût en cascade.
         """
-        ean = (e.value or "").strip()
+        ean = (ean or "").strip()
         if not ean:
             return
-        ean_buffer.set_value("")  # reset pour permettre un re-scan
         matched = find_entry_by_ean(entries, ean)
         if not matched:
             ui.notify(
@@ -468,12 +451,9 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
                 type="warning",
                 timeout=5000,
             )
-            _close_scanner(scanner_dialog)
             return
-        # Auto-sélection en cascade
         _on_marque_click(matched.marque)
         _on_bottle_click(matched.bottle_type)
-        # Renseigner le goût (le sélecteur est maintenant peuplé après les 2 clicks)
         gout_select.value = matched.gout
         state["gout"] = matched.gout
         _refresh_recap()
@@ -483,9 +463,15 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
             icon="check",
             timeout=3000,
         )
-        _close_scanner(scanner_dialog)
 
-    ean_buffer.on("update:model-value", _on_ean_scanned)
+    # Events JS → Python via canal WebSocket NiceGUI (emitEvent côté JS)
+    ui.on("barcode_scanned", lambda e: _handle_scanned_ean(e.args))
+    ui.on(
+        "barcode_error",
+        lambda e: ui.notify(
+            f"Scan : {e.args}", type="warning", timeout=4000,
+        ),
+    )
 
     for m, btn in marque_buttons.items():
         btn.on_click(lambda _e, mm=m: _on_marque_click(mm))
@@ -552,175 +538,34 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
     generate_btn.on_click(_on_generate)
 
 
-# ─── Scanner caméra (ZXing-JS) ──────────────────────────────────────────────
+# ─── Saisie manuelle EAN (fallback si scan échoue) ──────────────────────────
 
-# Le JS ci-dessous est injecté à l'ouverture du dialog scanner. Il :
-#   1. Vérifie que ZXing-JS est chargé (CDN inclus en head).
-#   2. Ouvre la caméra arrière de l'iPad via getUserMedia.
-#   3. Lance le décodage continu (EAN-13, Code 128, GS1-128) sur le flux vidéo.
-#   4. Au premier code lu, écrit la valeur dans l'input caché ``[data-scan-buffer]``
-#      et déclenche un événement ``input`` que NiceGUI capte → callback Python.
-_SCANNER_JS_START = """
-(async () => {
-    const status = document.querySelector('.scan-status-label');
-    if (!window.Html5Qrcode) {
-        if (status) status.innerText = '⚠ Bibliothèque de scan non chargée. Recharge la page.';
-        return;
-    }
+def _open_manual_ean_dialog(handler) -> None:
+    """Petit dialog pour saisie manuelle d'un EAN, avec callback handler(ean).
 
-    // Helper global : pousse un EAN décodé vers le buffer NiceGUI
-    if (!window._fsHandleEan) {
-        window._fsHandleEan = (ean) => {
-            const inputWrapper = document.querySelector('.ean-scan-buffer');
-            const input = inputWrapper ? inputWrapper.querySelector('input') : null;
-            if (input) {
-                const setter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value',
-                ).set;
-                setter.call(input, ean);
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            const s = document.querySelector('.scan-status-label');
-            if (s) s.innerText = '✓ Code lu : ' + ean;
-        };
-    }
+    Utilisé quand le scan ne donne rien ou que l'EAN n'est pas dans la sync.
+    """
+    with ui.dialog() as dlg, ui.card().classes("q-pa-md").style("min-width: 320px"):
+        ui.label("Saisie manuelle EAN").classes("text-subtitle1")
+        ean_input = ui.input(
+            placeholder="ex: 3770014427250",
+        ).classes("w-full").props("outlined dense autofocus")
 
-    // Formats : EAN-13 (UVC), ITF-14 (cartons GTIN-14), Code 128 (Domino), GS1-128.
-    const formats = [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.ITF,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.CODE_93,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.DATA_MATRIX,
-    ];
+        def _submit():
+            val = (ean_input.value or "").strip()
+            if not val:
+                return
+            dlg.close()
+            handler(val)
 
-    // Listener "Prendre une photo nette" — caméra iOS native, photo HD avec
-    // autofocus, beaucoup plus fiable que le flux vidéo en live.
-    const photoInput = document.getElementById('photo-capture-input');
-    if (photoInput && !photoInput._fsListenerAdded) {
-        photoInput._fsListenerAdded = true;
-        photoInput.addEventListener('change', async (e) => {
-            const file = e.target.files && e.target.files[0];
-            if (!file) return;
-            const s = document.querySelector('.scan-status-label');
-            if (s) s.innerText = '🔍 Envoi de la photo au serveur…';
-            try {
-                // Stop le live (même container caméra) avant l'upload
-                if (window._fsScanReader && window._fsScanRunning) {
-                    try { await window._fsScanReader.stop(); } catch(_) {}
-                    window._fsScanRunning = false;
-                }
-                // Upload au serveur — décodage zxing-cpp (natif C++, robuste)
-                const formData = new FormData();
-                formData.append('file', file, file.name || 'photo.jpg');
-                const resp = await fetch('/api/scan-barcode', {
-                    method: 'POST', body: formData,
-                });
-                if (!resp.ok) {
-                    let msg = '✗ Erreur serveur ' + resp.status;
-                    try { const j = await resp.json(); msg = '✗ ' + (j.error || msg); } catch(_) {}
-                    if (s) s.innerText = msg;
-                    return;
-                }
-                const data = await resp.json();
-                if (data.error) {
-                    if (s) s.innerText = '✗ ' + data.error + '. Réessaie en cadrant mieux.';
-                } else if (data.ean) {
-                    window._fsHandleEan(data.ean);
-                }
-            } catch (err) {
-                console.error('upload error', err);
-                if (s) s.innerText = '✗ Erreur réseau : ' + err;
-            }
-            e.target.value = '';
-        });
-    }
-
-    if (window._fsScanRunning) return;
-    window._fsScanRunning = true;
-
-    if (!window._fsScanReader) {
-        try {
-            window._fsScanReader = new Html5Qrcode('scanner-container', {
-                formatsToSupport: formats,
-                verbose: false,
-                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-            });
-        } catch (e) {
-            if (status) status.innerText = '✗ Init scanner : ' + e;
-            window._fsScanRunning = false;
-            return;
-        }
-    }
-    const reader = window._fsScanReader;
-    if (status) status.innerText = 'Caméra : autorise l\\'accès si demandé…';
-
-    const onSuccess = (decodedText) => {
-        window._fsHandleEan(decodedText);
-        try { reader.stop().catch(() => {}); } catch(e) {}
-        window._fsScanRunning = false;
-    };
-
-    const onScanError = (_errMsg) => { /* silencieux */ };
-
-    const tryStart = async (facing) => reader.start(
-        { facingMode: facing },
-        {
-            fps: 15,
-            aspectRatio: 1.333,
-            disableFlip: true,
-            videoConstraints: {
-                facingMode: facing,
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
-            },
-        },
-        onSuccess,
-        onScanError,
-    );
-
-    try {
-        try {
-            await tryStart('environment');
-        } catch (innerErr) {
-            console.warn('environment camera failed, trying user', innerErr);
-            await tryStart('user');
-        }
-        if (status) status.innerText = 'Vise le code-barres ou prends une photo';
-    } catch (e) {
-        console.error('Scanner error:', e);
-        if (status) status.innerText = '✗ Caméra inaccessible : ' + (e.message || e);
-        window._fsScanRunning = false;
-    }
-})();
-"""
-
-_SCANNER_JS_STOP = """
-try {
-    if (window._fsScanReader) {
-        window._fsScanReader.stop().then(() => {
-            try { window._fsScanReader.clear(); } catch(e) {}
-        }).catch(() => {});
-    }
-    window._fsScanRunning = false;
-} catch(e) { console.warn('stop scan error', e); }
-"""
-
-
-def _open_scanner(dialog) -> None:
-    """Ouvre le dialog plein écran et lance le scan caméra."""
-    dialog.open()
-    ui.run_javascript(_SCANNER_JS_START)
-
-
-def _close_scanner(dialog) -> None:
-    """Stoppe le scan + libère la caméra + ferme le dialog."""
-    ui.run_javascript(_SCANNER_JS_STOP)
-    dialog.close()
+        with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+            ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
+            ui.button(
+                "Valider", icon="check",
+                on_click=_submit,
+            ).props("color=green-8 unelevated")
+        ean_input.on("keydown.enter", _submit)
+    dlg.open()
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
