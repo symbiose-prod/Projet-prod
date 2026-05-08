@@ -3,20 +3,24 @@ pages/etiquettes_palette.py
 ============================
 Page d'édition d'étiquettes palette logistique avec code-barres GS1-128.
 
-Flux opérateur (iPad-friendly) — 3 sélecteurs cascadés :
-  1. Marque : NIKO / SYMBIOSE
-  2. Type de bouteille : 33cl / 75cl SAFT / 75cl Eau gazeuse
-  3. Goût : Gingembre, Mangue Passion, Original, …
+Mode scan-first :
+  1. L'opérateur tape sur « Scanner un carton » (bouton hero vert).
+  2. La caméra iOS native s'ouvre via ``<input capture="environment">``.
+  3. La photo est resizée côté client (canvas 1280px max) puis uploadée à
+     ``/api/scan-barcode``.
+  4. Le serveur décode le GS1-128 (zxing-cpp), extrait EAN/lot/DDM, puis
+     interroge la matrice codes-barres EasyBeer (cache 24 h) pour résoudre
+     marque/format/PCB/désignation/goût.
+  5. Tout est pré-rempli dans le récap (avec photo produit). L'opérateur
+     n'a plus qu'à cocher palette pleine / saisir le détail des étages,
+     puis générer le PDF (1 ou 2 exemplaires selon recommandation GS1).
 
-Les données proviennent de la dernière sync étiquettes (table ``sync_operations``,
-même source que la page Paramètres → Étiquettes). Pas d'aller-retour EasyBeer
-direct : si l'opérateur veut des données fraîches, il lance la sync depuis
-Paramètres → Étiquettes.
+Fallback : si le scan échoue ou que l'EAN n'est pas dans la matrice EB,
+l'opérateur peut ouvrir la cascade « Sélection manuelle » (collapsée par
+défaut) ou saisir l'EAN à la main. La cascade est alimentée par la sync
+étiquettes (table ``sync_operations``) — moins fraîche que la matrice EB.
 
-Une fois le produit sélectionné, l'opérateur indique :
-  - Soit "palette pleine"
-  - Soit étages pleins + caisses sur le dernier étage incomplet
-puis clique pour générer le PDF (102×152 mm, AirPrint vers Dymo 5XL Wireless).
+PDF : 102×152 mm (Dymo 5XL Wireless), AirPrint depuis l'iPad.
 """
 from __future__ import annotations
 
@@ -29,13 +33,16 @@ from nicegui import ui
 from common.ramasse import get_palette_layout
 from common.services.etiquette_palette_service import (
     BOTTLE_TYPES,
+    HistoryEntry,
     LabelEntry,
     SyncStatus,
     compute_case_count,
     find_entry_by_ean,
     get_product_image_url,
     get_sync_status,
+    list_recent_labels,
     load_label_data_from_sync,
+    save_label_history,
     trigger_sync_now,
 )
 from pages.auth import require_auth
@@ -77,6 +84,7 @@ async def page_etiquettes_palette():
             entries or [],
             tenant_name=user.get("tenant_name") or _resolve_tenant_name(),
             tenant_id=tenant_id,
+            user_email=user.get("email", ""),
             sync_status=status,
         )
 
@@ -87,6 +95,7 @@ def _render_form(
     entries: list[LabelEntry],
     tenant_name: str = "",
     tenant_id: str = "",
+    user_email: str = "",
     sync_status: SyncStatus | None = None,
 ) -> None:
     """Rend le formulaire scan-first : bouton hero scanner, photo produit dans
@@ -663,6 +672,24 @@ def _render_form(
                 f"{entry.gout.replace(' ', '_')}_{entry.lot_str}_{count}c.pdf"
             )
             ui.download(pdf_bytes, fname)
+            # Audit + historique pour réimpression future (fire-and-forget)
+            await asyncio.to_thread(
+                save_label_history,
+                tenant_id,
+                user_email=user_email,
+                ean=entry.ean_colis,
+                lot=entry.lot_str,
+                ddm=entry.ddm_date,
+                fmt=entry.fmt,
+                marque=entry.marque,
+                designation=entry.designation,
+                gout=entry.gout,
+                case_count=count,
+                full_pallet=bool(full_pallet_toggle.value),
+                n_copies=ctx.n_copies,
+                pcb=entry.pcb,
+            )
+            _refresh_history()
             ui.notify(
                 "Étiquette générée — ouvre-la et imprime via AirPrint.",
                 type="positive",
@@ -676,6 +703,91 @@ def _render_form(
             generate_btn.props(remove="loading")
 
     generate_btn.on_click(_on_generate)
+
+    # ────────────────────────────────────────────────────────────────────
+    # Étiquettes récentes (historique pour réimpression et audit)
+    # ────────────────────────────────────────────────────────────────────
+    history_section = ui.column().classes("w-full q-mt-lg")
+
+    async def _do_reprint(h: HistoryEntry):
+        try:
+            from common.etiquette_palette_pdf import (
+                EtiquetteContext,
+                build_etiquette_palette_pdf,
+            )
+            ctx = EtiquetteContext(
+                product_label=h.designation or f"GTIN {h.ean}",
+                fmt=h.fmt,
+                ean13=h.ean,
+                lot=h.lot,
+                ddm=h.ddm,
+                case_count=h.case_count,
+                full_pallet=h.full_pallet,
+                tenant_name=tenant_name,
+                n_copies=h.n_copies,
+            )
+            pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
+            fname = (
+                f"etiquette_REIMPR_{h.marque}_{h.fmt}_{h.lot}_{h.case_count}c.pdf"
+            )
+            ui.download(pdf_bytes, fname)
+            ui.notify(
+                f"✓ Étiquette « {h.designation or h.ean} » regénérée.",
+                type="positive", icon="check",
+            )
+        except Exception as exc:
+            _log.exception("Erreur réimpression étiquette palette")
+            ui.notify(f"Erreur réimpression : {exc}", type="negative")
+
+    def _refresh_history():
+        """Recharge la section historique (appelée après chaque génération)."""
+        history_section.clear()
+        if not tenant_id:
+            return
+        recent = list_recent_labels(tenant_id, limit=10)
+        if not recent:
+            return
+        with history_section:
+            section_title("Étiquettes récentes", "history")
+            with ui.card().classes("w-full q-pa-none").props("flat bordered"):
+                for i, h in enumerate(recent):
+                    if i > 0:
+                        ui.separator()
+                    with ui.card_section().classes("q-pa-sm"):
+                        with ui.row().classes("w-full items-center gap-3 no-wrap"):
+                            img_url = get_product_image_url(h.gout)
+                            if img_url:
+                                ui.image(img_url).classes("rounded").style(
+                                    "width:48px; height:48px; object-fit:cover; "
+                                    "background:#f3f4f6",
+                                )
+                            with ui.column().classes("gap-0 flex-1"):
+                                title = h.designation or f"GTIN {h.ean}"
+                                ui.label(f"{title} — {h.fmt}").classes(
+                                    "text-body2",
+                                ).style(f"color: {COLORS['ink']}; font-weight: 500")
+                                meta = (
+                                    f"Lot {h.lot} · DDM {h.ddm.strftime('%d/%m/%Y')} · "
+                                    f"{h.case_count} caisses"
+                                )
+                                if h.n_copies > 1:
+                                    meta += f" · {h.n_copies} ex."
+                                ui.label(meta).classes("text-caption").style(
+                                    f"color: {COLORS['ink2']}",
+                                )
+                                when = h.generated_at.strftime("%d/%m/%Y %H:%M") if hasattr(
+                                    h.generated_at, "strftime",
+                                ) else str(h.generated_at)
+                                who = f" par {h.user_email}" if h.user_email else ""
+                                ui.label(f"Imprimée le {when}{who}").classes(
+                                    "text-caption",
+                                ).style(f"color: {COLORS['ink2']}")
+                            ui.button(
+                                "Réimprimer", icon="print",
+                                on_click=lambda _e, hh=h: _do_reprint(hh),
+                            ).props("flat color=green-8 dense")
+
+    _refresh_history()
 
 
 # ─── Saisie manuelle EAN (fallback si scan échoue) ──────────────────────────

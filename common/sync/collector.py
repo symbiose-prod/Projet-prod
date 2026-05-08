@@ -376,14 +376,7 @@ def _fetch_stock_codes() -> dict[tuple[int, str], str]:
 # ─── Étape 6 : Assemblage ────────────────────────────────────────────────────
 
 
-def _determine_brand(product_label: str) -> str:
-    """Détermine la marque à partir du libellé produit.
-
-    Si le nom contient 'niko' → NIKO, sinon SYMBIOSE.
-    """
-    if "niko" in product_label.lower():
-        return "NIKO"
-    return "SYMBIOSE"
+from common.easybeer.products import determine_brand_from_label as _determine_brand
 
 
 def collect_label_data() -> list[dict[str, Any]]:

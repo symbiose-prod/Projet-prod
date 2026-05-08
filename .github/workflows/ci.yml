@@ -100,6 +100,11 @@ jobs:
             import zxingcpp
             print('✅ zxing-cpp OK, version:', zxingcpp.__version__ if hasattr(zxingcpp, '__version__') else 'unknown')
             " || (echo "❌ zxing-cpp FAILED"; exit 1)
+            # Appliquer les migrations DB (idempotent grâce aux IF NOT EXISTS)
+            sudo cp /home/ubuntu/app/db/migrate.sql /tmp/migrate.sql
+            sudo -u postgres psql -d "whole-tomato-leopard" -f /tmp/migrate.sql > /dev/null \
+              && echo "✅ DB migrations OK" \
+              || (echo "❌ DB migrations FAILED"; exit 1)
             sudo systemctl stop ferment
             # Attendre que le port 8503 soit libéré (max 10s)
             for i in $(seq 1 10); do

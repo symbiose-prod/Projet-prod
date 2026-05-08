@@ -41,6 +41,15 @@ def _cache_valid(cache: dict[str, Any]) -> bool:
 _products_cache: dict[str, Any] = {"data": None, "ts": 0.0}
 
 
+def determine_brand_from_label(product_label: str) -> str:
+    """Marque ('NIKO' ou 'SYMBIOSE') déduite d'un libellé produit EasyBeer.
+
+    Les produits NIKO sont préfixés par « NIKO - » dans les libellés EasyBeer.
+    Tous les autres sont considérés Symbiose Kéfir.
+    """
+    return "NIKO" if "niko" in (product_label or "").lower() else "SYMBIOSE"
+
+
 @retry_api
 def get_all_products() -> list[dict[str, Any]]:
     """Liste complète des produits — L1 in-memory, L2 DB cache, L3 API."""

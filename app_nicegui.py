@@ -192,19 +192,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        # camera=(self) : autorisé sur ce domaine pour le scanner code-barres
-        # (page /etiquettes-palette via ZXing-JS).
-        response.headers["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=()"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         # CSP : NiceGUI nécessite 'unsafe-inline' + 'unsafe-eval' pour Quasar/Vue3 + WebSocket
         # Google Fonts (Inter) : fonts.googleapis.com (CSS) + fonts.gstatic.com (woff2)
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            # cdn.jsdelivr.net : ZXing-JS (scanner code-barres, page étiquettes-palette)
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            # blob: pour les vidéos/canvas du scanner ZXing-JS
-            "img-src 'self' data: blob:; "
-            "media-src 'self' blob:; "
+            "img-src 'self' data:; "
             "connect-src 'self' wss: ws:; "
             "font-src 'self' data: https://fonts.gstatic.com; "
             "frame-ancestors 'none'"

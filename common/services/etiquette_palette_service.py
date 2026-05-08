@@ -39,6 +39,7 @@ from common.easybeer import (
     get_all_products,
     get_code_barre_matrice,
 )
+from common.easybeer.products import determine_brand_from_label
 from common.ramasse import clean_product_label, extract_gout, get_palette_layout, parse_barcode_matrix
 from db.conn import run_sql
 
@@ -90,6 +91,25 @@ class Gs1Payload:
     """
     data_with_parens: str     # ex: "(02)03760381620415(15)260812(10)L6104(37)150"
     hri: str                  # version lisible humainement (espacée pour l'œil)
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    """Une étiquette générée précédemment, prête pour réimpression."""
+    id: int
+    ean: str
+    lot: str
+    ddm: _dt.date
+    fmt: str
+    marque: str
+    designation: str
+    gout: str
+    case_count: int
+    full_pallet: bool
+    n_copies: int
+    pcb: int
+    user_email: str
+    generated_at: _dt.datetime
 
 
 @dataclass(frozen=True)
@@ -203,22 +223,35 @@ def build_gs1_128_payload(
 
 # ─── Classification depuis le payload sync ──────────────────────────────────
 
-def classify_bottle_type(designation: str, marque: str, pcb: int | float) -> str | None:
+def classify_bottle_type(
+    designation: str,
+    marque: str,
+    pcb: int | float,
+    fmt: str = "",
+) -> str | None:
     """Classifie un produit en 33cl / 75cl SAFT / 75cl Eau gazeuse.
 
+    Cherche le volume dans la ``designation`` ou dans ``fmt`` (ex: "6x33").
     Règles :
-      - 33cl si la désignation contient "33cl"
+      - 33cl si volume = 33
       - 75cl SAFT si NIKO ou si Symbiose en PCB=4
       - 75cl Eau gazeuse si Symbiose en PCB=6
-      - None si on ne peut pas conclure (rare, log warning)
     """
     desig = (designation or "").lower()
+    fmt_low = (fmt or "").lower()
     pcb_int = int(pcb or 0)
     marque_up = (marque or "").upper()
 
-    if "33cl" in desig or "33 cl" in desig:
+    has_33 = (
+        "33cl" in desig or "33 cl" in desig or "x33" in fmt_low or fmt_low.endswith("33")
+    )
+    has_75 = (
+        "75cl" in desig or "75 cl" in desig or "x75" in fmt_low or fmt_low.endswith("75")
+    )
+
+    if has_33:
         return BOTTLE_33
-    if "75cl" in desig or "75 cl" in desig:
+    if has_75:
         if marque_up == BRAND_NIKO:
             return BOTTLE_75_SAFT
         if pcb_int == 4:
@@ -618,8 +651,8 @@ def lookup_product_by_ean(ean: str) -> dict | None:
             pcb = int(m.group(1)) if m else 0
             raw_label = label_by_id.get(id_produit, "") or ""
             designation = clean_product_label(raw_label)
-            marque = BRAND_NIKO if "niko" in raw_label.lower() else BRAND_SYMBIOSE
-            bottle_type = classify_bottle_type(designation, marque, pcb)
+            marque = determine_brand_from_label(raw_label)
+            bottle_type = classify_bottle_type(designation, marque, pcb, fmt=fmt)
             gout = extract_label_gout(designation, marque, designation)
             return {
                 "id_produit": id_produit,
@@ -635,7 +668,11 @@ def lookup_product_by_ean(ean: str) -> dict | None:
 
 
 def find_entry_by_ean(entries: list[LabelEntry], scanned_ean: str) -> LabelEntry | None:
-    """Trouve une entrée à partir d'un EAN scanné.
+    """Fallback : trouve une entrée dans la sync étiquettes à partir d'un EAN.
+
+    Préférer ``lookup_product_by_ean`` (interroge la matrice EasyBeer, plus
+    fraîche). Cette fonction reste utile quand la matrice EB est indisponible
+    ou que le produit y a été déclaré sans EAN colis.
 
     Match par ordre de priorité :
       1. ``ean_colis`` exact (l'étiquette carton porte le GTIN du carton)
@@ -662,6 +699,98 @@ def find_entry_by_ean(entries: list[LabelEntry], scanned_ean: str) -> LabelEntry
         if e.ean_colis.endswith(suffix) or (e.ean_uvc and e.ean_uvc.endswith(suffix)):
             return e
     return None
+
+
+def save_label_history(
+    tenant_id: str,
+    *,
+    user_email: str,
+    ean: str,
+    lot: str,
+    ddm: _dt.date,
+    fmt: str,
+    marque: str,
+    designation: str,
+    gout: str,
+    case_count: int,
+    full_pallet: bool,
+    n_copies: int,
+    pcb: int,
+) -> int | None:
+    """Persiste une étiquette palette dans l'historique pour réimpression future.
+
+    Fire-and-forget : log l'erreur et retourne None plutôt que de propager,
+    pour ne pas bloquer la génération du PDF si la DB est indisponible.
+
+    Returns:
+        L'id de la ligne insérée, ou ``None`` en cas d'échec DB.
+    """
+    try:
+        rows = run_sql(
+            """INSERT INTO etiquette_palette_history
+               (tenant_id, user_email, ean, lot, ddm, fmt, marque, designation,
+                gout, case_count, full_pallet, n_copies, pcb)
+               VALUES (:t, :u, :ean, :lot, :ddm, :fmt, :m, :des, :g,
+                       :cc, :fp, :n, :pcb)
+               RETURNING id""",
+            {
+                "t": tenant_id, "u": user_email, "ean": ean, "lot": lot,
+                "ddm": ddm, "fmt": fmt, "m": marque, "des": designation,
+                "g": gout, "cc": int(case_count), "fp": bool(full_pallet),
+                "n": int(n_copies), "pcb": int(pcb),
+            },
+        )
+        return int(rows[0]["id"]) if rows else None
+    except Exception:
+        _log.exception("Échec sauvegarde historique étiquette palette (fire-and-forget)")
+        return None
+
+
+def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
+    """Retourne les ``limit`` dernières étiquettes générées pour le tenant."""
+    try:
+        rows = run_sql(
+            """SELECT id, ean, lot, ddm, fmt, marque, designation, gout,
+                      case_count, full_pallet, n_copies, pcb,
+                      user_email, generated_at
+               FROM etiquette_palette_history
+               WHERE tenant_id = :t
+               ORDER BY generated_at DESC
+               LIMIT :n""",
+            {"t": tenant_id, "n": int(limit)},
+        ) or []
+    except Exception:
+        _log.exception("Échec lecture historique étiquettes palette")
+        return []
+
+    out: list[HistoryEntry] = []
+    for r in rows:
+        try:
+            out.append(HistoryEntry(
+                id=int(r["id"]),
+                ean=str(r["ean"] or ""),
+                lot=str(r["lot"] or ""),
+                ddm=r["ddm"] if isinstance(r["ddm"], _dt.date) else _dt.date.fromisoformat(str(r["ddm"])[:10]),
+                fmt=str(r["fmt"] or ""),
+                marque=str(r["marque"] or ""),
+                designation=str(r["designation"] or ""),
+                gout=str(r["gout"] or ""),
+                case_count=int(r["case_count"] or 0),
+                full_pallet=bool(r["full_pallet"]),
+                n_copies=int(r["n_copies"] or 1),
+                pcb=int(r["pcb"] or 0),
+                user_email=str(r["user_email"] or ""),
+                generated_at=r["generated_at"],
+            ))
+        except (KeyError, TypeError, ValueError):
+            _log.warning("Ligne historique invalide ignorée : %r", r, exc_info=True)
+    return out
+
+
+def get_history_entry(tenant_id: str, entry_id: int) -> HistoryEntry | None:
+    """Récupère une entrée d'historique par son id (pour la réimpression)."""
+    rows = list_recent_labels(tenant_id, limit=1000)
+    return next((e for e in rows if e.id == entry_id), None)
 
 
 def get_sync_status(tenant_id: str) -> SyncStatus:

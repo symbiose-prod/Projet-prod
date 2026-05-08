@@ -453,6 +453,31 @@ CREATE INDEX IF NOT EXISTS idx_ms_tenant_year
   ON monthly_sales(tenant_id, year);
 
 -- =========================
+-- Étiquettes palette : historique des étiquettes générées
+-- (page /etiquettes-palette — pour ré-impression et audit trail)
+-- =========================
+CREATE TABLE IF NOT EXISTS etiquette_palette_history (
+  id            BIGSERIAL PRIMARY KEY,
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_email    TEXT,
+  ean           TEXT NOT NULL,
+  lot           TEXT NOT NULL,
+  ddm           DATE NOT NULL,
+  fmt           TEXT NOT NULL,                -- ex: "6x33", "12x33", "6x75", "4x75"
+  marque        TEXT NOT NULL,                -- "NIKO" | "SYMBIOSE"
+  designation   TEXT,                         -- libellé produit nettoyé (peut être vide)
+  gout          TEXT,                         -- ex: "Gingembre"
+  case_count    INTEGER NOT NULL,
+  full_pallet   BOOLEAN NOT NULL DEFAULT false,
+  n_copies      INTEGER NOT NULL DEFAULT 1,
+  pcb           INTEGER NOT NULL DEFAULT 0,
+  generated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_etiq_pal_tenant_date
+  ON etiquette_palette_history(tenant_id, generated_at DESC);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -465,7 +490,8 @@ BEGIN
                        product_bom, ramasse_history,
                        client_cache, client_tags_cache,
                        eb_cache, eb_sync_meta,
-                       email_queue, monthly_sales TO shark;
+                       email_queue, monthly_sales,
+                       etiquette_palette_history TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;
