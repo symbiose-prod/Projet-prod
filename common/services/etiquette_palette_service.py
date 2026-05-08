@@ -97,7 +97,7 @@ class Gs1Payload:
 class HistoryEntry:
     """Une étiquette générée précédemment, prête pour réimpression."""
     id: int
-    ean: str
+    ean: str                    # GTIN colis (carton)
     lot: str
     ddm: _dt.date
     fmt: str
@@ -108,6 +108,9 @@ class HistoryEntry:
     full_pallet: bool
     n_copies: int
     pcb: int
+    gtin_uvc: str
+    code_interne: str
+    bio: bool
     user_email: str
     generated_at: _dt.datetime
 
@@ -716,28 +719,30 @@ def save_label_history(
     full_pallet: bool,
     n_copies: int,
     pcb: int,
+    gtin_uvc: str = "",
+    code_interne: str = "",
+    bio: bool = True,
 ) -> int | None:
     """Persiste une étiquette palette dans l'historique pour réimpression future.
 
-    Fire-and-forget : log l'erreur et retourne None plutôt que de propager,
-    pour ne pas bloquer la génération du PDF si la DB est indisponible.
-
-    Returns:
-        L'id de la ligne insérée, ou ``None`` en cas d'échec DB.
+    Fire-and-forget : log l'erreur et retourne None plutôt que de propager.
     """
     try:
         rows = run_sql(
             """INSERT INTO etiquette_palette_history
                (tenant_id, user_email, ean, lot, ddm, fmt, marque, designation,
-                gout, case_count, full_pallet, n_copies, pcb)
+                gout, case_count, full_pallet, n_copies, pcb,
+                gtin_uvc, code_interne, bio)
                VALUES (:t, :u, :ean, :lot, :ddm, :fmt, :m, :des, :g,
-                       :cc, :fp, :n, :pcb)
+                       :cc, :fp, :n, :pcb, :uvc, :ci, :bio)
                RETURNING id""",
             {
                 "t": tenant_id, "u": user_email, "ean": ean, "lot": lot,
                 "ddm": ddm, "fmt": fmt, "m": marque, "des": designation,
                 "g": gout, "cc": int(case_count), "fp": bool(full_pallet),
                 "n": int(n_copies), "pcb": int(pcb),
+                "uvc": gtin_uvc or "", "ci": code_interne or "",
+                "bio": bool(bio),
             },
         )
         return int(rows[0]["id"]) if rows else None
@@ -752,6 +757,7 @@ def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
         rows = run_sql(
             """SELECT id, ean, lot, ddm, fmt, marque, designation, gout,
                       case_count, full_pallet, n_copies, pcb,
+                      gtin_uvc, code_interne, bio,
                       user_email, generated_at
                FROM etiquette_palette_history
                WHERE tenant_id = :t
@@ -779,6 +785,9 @@ def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
                 full_pallet=bool(r["full_pallet"]),
                 n_copies=int(r["n_copies"] or 1),
                 pcb=int(r["pcb"] or 0),
+                gtin_uvc=str(r.get("gtin_uvc") or ""),
+                code_interne=str(r.get("code_interne") or ""),
+                bio=bool(r.get("bio", True)),
                 user_email=str(r["user_email"] or ""),
                 generated_at=r["generated_at"],
             ))

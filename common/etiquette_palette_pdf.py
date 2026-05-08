@@ -67,30 +67,38 @@ class EtiquetteContext:
     """Données nécessaires au rendu d'une étiquette palette."""
     product_label: str       # ex: "Kéfir Mangue Passion"
     fmt: str                 # ex: "12x33", "6x75"
-    ean13: str               # 13 digits
+    ean13: str               # GTIN colis (carton) — 13 ou 14 digits
     lot: str                 # ex: "KME27042026"
     ddm: _dt.date            # date de DDM
     case_count: int          # nb total de caisses sur la palette
     full_pallet: bool        # vrai si palette pleine (info indicative)
     tenant_name: str = ""    # ex: "Symbiose Kéfir" — affiché en footer
     n_copies: int = 1        # nb d'exemplaires (GS1 recommande 2 : 2 faces)
+    marque: str = ""         # "SYMBIOSE" | "NIKO" — pour le logo marque
+    code_interne: str = ""   # ex: "SK-KDF-PECHE-75"
+    gtin_uvc: str = ""       # GTIN unité-consommateur (bouteille) — 13 digits
+    pcb: int = 0             # nb bouteilles par carton
+    bio: bool = True         # affiche "*FR_BIO_01" sous le titre si vrai
 
 
 def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
     """Construit le PDF d'étiquette palette (102×152 mm).
 
-    Structure d'une page :
-      - Header : nom produit en gros + format
-      - Bloc en clair : CONTENU / QTÉ / LOT / DLUO (mots-clés GS1)
-      - Code-barres GS1-128 (Code 128 + AI structurés) + HRI
-      - Footer : tenant
+    Layout aligné sur le modèle interne « Étiquette Palette.pptx » :
+      - Header : « FERMENT STATION » à gauche + logo marque à droite
+      - Titre produit en grand (majuscules)
+      - Mention bio « *FR_BIO_01 » (si ctx.bio)
+      - Bloc de champs alignés à gauche (label en gras + valeur) :
+        MARQUE / CODE INTERNE / PCB / QTÉ / LOT / DDM
+        GTIN UVC (bouteille) / GTIN COLIS (carton)
+      - Code-barres GS1-128 (Code 128 + AI) + HRI
 
-    Si ``ctx.n_copies > 1`` (recommandation GS1 : 2 faces de palette), le PDF
-    contient ``n_copies`` pages identiques.
+    Si ``ctx.n_copies > 1`` (GS1 : 2 faces de palette), n pages identiques.
     """
     payload = build_gs1_128_payload(ctx.ean13, ctx.lot, ctx.ddm, ctx.case_count)
     barcode_png = _generate_barcode_png(payload.data_with_parens)
-    gtin14 = _ean_to_gtin14(ctx.ean13)
+    gtin_colis_14 = _ean_to_gtin14(ctx.ean13)
+    gtin_uvc = (ctx.gtin_uvc or "").strip()
 
     pdf = FPDF(orientation="P", unit="mm", format=(_LABEL_WIDTH_MM, _LABEL_HEIGHT_MM))
     pdf.set_auto_page_break(auto=False)
@@ -99,41 +107,81 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
     inner_width = _LABEL_WIDTH_MM - 2 * _LABEL_MARGIN_MM
     n_copies = max(1, int(ctx.n_copies or 1))
 
+    # Logo marque (chargé une fois)
+    repo_root = Path(__file__).resolve().parent.parent
+    logo_path: Path | None = None
+    if (ctx.marque or "").upper() == "NIKO":
+        candidate = repo_root / "assets" / "signature" / "NIKO_Logo.png"
+        if candidate.exists():
+            logo_path = candidate
+    else:
+        candidate = repo_root / "assets" / "signature" / "logo_symbiose.png"
+        if candidate.exists():
+            logo_path = candidate
+
     for _ in range(n_copies):
         pdf.add_page()
 
-        # ── Partie libre : titre produit + format ─────────────────────
+        # ── Header : FERMENT STATION + logo marque à droite ──────────
         pdf.set_xy(_LABEL_MARGIN_MM, _LABEL_MARGIN_MM)
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(inner_width, 8, _txt(ctx.product_label.upper()), border=0,
-                 align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(inner_width / 2, 6, _txt("FERMENT STATION"), border=0, align="L")
+        if logo_path is not None:
+            try:
+                # Logo aligné à droite, hauteur 8 mm
+                logo_h = 8.0
+                logo_w = 24.0  # largeur max approximative (auto-scaled à H par fpdf)
+                pdf.image(
+                    str(logo_path),
+                    x=_LABEL_WIDTH_MM - _LABEL_MARGIN_MM - logo_w,
+                    y=_LABEL_MARGIN_MM,
+                    h=logo_h,
+                )
+            except Exception:
+                pass  # logo manquant = on continue sans
+        pdf.ln(8)
 
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.set_text_color(80, 80, 80)
-        pdf.cell(inner_width, 6, _txt(f"Format {ctx.fmt}cl"), border=0,
-                 align="C", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(0, 0, 0)
+        _hline(pdf, inner_width)
+
+        # ── Titre produit ─────────────────────────────────────────────
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 14)
+        title = f"{ctx.product_label.upper()} {ctx.fmt[-2:]}CL"
+        pdf.set_x(_LABEL_MARGIN_MM)
+        pdf.multi_cell(inner_width, 6, _txt(title), border=0, align="L")
+
+        if ctx.bio:
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(80, 80, 80)
+            pdf.set_x(_LABEL_MARGIN_MM)
+            pdf.cell(inner_width, 4, _txt("*FR_BIO_01"), border=0, align="L",
+                     new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0, 0, 0)
 
         pdf.ln(1)
         _hline(pdf, inner_width)
+        pdf.ln(1.5)
 
-        # ── Bloc en clair (mots-clés GS1) ─────────────────────────────
-        pdf.ln(2)
-        label_w = 36.0
+        # ── Bloc de champs (label gras + valeur, modèle PPTX) ────────
+        label_w = 32.0
         value_w = inner_width - label_w
-        line_h = 6.5
+        line_h = 5.4
 
         rows = [
-            ("CONTENU",     gtin14),
-            ("QTÉ",         _format_count(ctx.case_count, ctx.full_pallet)),
-            ("LOT",         ctx.lot),
-            ("DLUO",        ctx.ddm.strftime("%d.%m.%y")),
+            ("MARQUE",       (ctx.marque or "—").upper()),
+            ("CODE INTERNE", ctx.code_interne or "—"),
+            ("PCB",          str(ctx.pcb) if ctx.pcb else "—"),
+            ("QTÉ",          _format_count(ctx.case_count, ctx.full_pallet)),
+            ("LOT",          ctx.lot),
+            ("DDM",          ctx.ddm.strftime("%d/%m/%Y")),
+            ("GTIN UVC",     gtin_uvc or "—"),
+            ("GTIN COLIS",   gtin_colis_14),
         ]
         for label, value in rows:
             pdf.set_x(_LABEL_MARGIN_MM)
-            pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(label_w, line_h, _txt(label), border=0, align="L")
-            pdf.set_font("Helvetica", "", 11)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(label_w, line_h, _txt(label + " :"), border=0, align="L")
+            pdf.set_font("Helvetica", "", 9)
             pdf.cell(value_w, line_h, _txt(value), border=0, align="L",
                      new_x="LMARGIN", new_y="NEXT")
 
@@ -141,22 +189,14 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
         _hline(pdf, inner_width)
 
         # ── Code-barres GS1-128 ─────────────────────────────────────
-        barcode_y = pdf.get_y() + 3
-        barcode_height_mm = 28.0
+        barcode_y = pdf.get_y() + 2
+        barcode_height_mm = 22.0
         pdf.image(io.BytesIO(barcode_png), x=_LABEL_MARGIN_MM, y=barcode_y,
                   w=inner_width, h=barcode_height_mm)
-        pdf.set_y(barcode_y + barcode_height_mm + 1)
+        pdf.set_y(barcode_y + barcode_height_mm + 0.5)
 
-        pdf.set_font("Courier", "", 7)
-        pdf.multi_cell(inner_width, 3.5, _txt(payload.hri), border=0, align="C")
-
-        # ── Footer : tenant ──────────────────────────────────────────
-        pdf.set_y(_LABEL_HEIGHT_MM - _LABEL_MARGIN_MM - 6)
-        pdf.set_font("Helvetica", "I", 9)
-        pdf.set_text_color(120, 120, 120)
-        footer_text = ctx.tenant_name or "Ferment Station"
-        pdf.cell(inner_width, 5, _txt(footer_text), border=0, align="C")
-        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Courier", "", 6.5)
+        pdf.multi_cell(inner_width, 3.0, _txt(payload.hri), border=0, align="C")
 
     out = pdf.output()
     if isinstance(out, str):
@@ -206,14 +246,20 @@ def _format_count(count: int, full_pallet: bool) -> str:
 
 if __name__ == "__main__":
     sample = EtiquetteContext(
-        product_label="Kéfir Mangue Passion",
-        fmt="12x33",
-        ean13="3770014427014",
-        lot="KME27042026",
-        ddm=_dt.date(2027, 4, 27),
-        case_count=126,
+        product_label="Kéfir de Fruits Pêche",
+        fmt="6x75",
+        ean13="3770014427250",
+        lot="160227",
+        ddm=_dt.date(2027, 2, 16),
+        case_count=96,
         full_pallet=True,
         tenant_name="Symbiose Kéfir",
+        marque="SYMBIOSE",
+        code_interne="SK-KDF-PECHE-75",
+        gtin_uvc="3770014427014",
+        pcb=6,
+        bio=True,
+        n_copies=1,
     )
     pdf_bytes = build_etiquette_palette_pdf(sample)
     out = Path("/tmp/etiquette_palette_sample.pdf")

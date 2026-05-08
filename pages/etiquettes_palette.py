@@ -665,6 +665,11 @@ def _render_form(
                 full_pallet=bool(full_pallet_toggle.value),
                 tenant_name=tenant_name,
                 n_copies=2 if double_copies_toggle.value else 1,
+                marque=entry.marque,
+                code_interne=entry.code_interne,
+                gtin_uvc=entry.ean_uvc,
+                pcb=entry.pcb,
+                bio=True,
             )
             pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
             fname = (
@@ -688,6 +693,9 @@ def _render_form(
                 full_pallet=bool(full_pallet_toggle.value),
                 n_copies=ctx.n_copies,
                 pcb=entry.pcb,
+                gtin_uvc=entry.ean_uvc,
+                code_interne=entry.code_interne,
+                bio=True,
             )
             _refresh_history()
             ui.notify(
@@ -725,6 +733,11 @@ def _render_form(
                 full_pallet=h.full_pallet,
                 tenant_name=tenant_name,
                 n_copies=h.n_copies,
+                marque=h.marque,
+                code_interne=h.code_interne,
+                gtin_uvc=h.gtin_uvc,
+                pcb=h.pcb,
+                bio=h.bio,
             )
             pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
             fname = (

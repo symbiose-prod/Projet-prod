@@ -95,8 +95,10 @@ class TestScanToPdf:
         page0_text = reader.pages[0].extract_text()
         assert "PAMPLEMOUSSE" in page0_text.upper()
         assert "110527" in page0_text  # lot
-        assert "11.05.27" in page0_text  # DLUO formatée
+        assert "11/05/2027" in page0_text  # DDM formatée jj/mm/aaaa
         assert "96" in page0_text  # quantité
+        assert "FERMENT STATION" in page0_text
+        assert "GTIN COLIS" in page0_text
 
 
 # ─── lookup_product_by_ean (avec mocks EasyBeer) ────────────────────────────

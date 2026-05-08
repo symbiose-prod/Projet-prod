@@ -460,12 +460,12 @@ CREATE TABLE IF NOT EXISTS etiquette_palette_history (
   id            BIGSERIAL PRIMARY KEY,
   tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   user_email    TEXT,
-  ean           TEXT NOT NULL,
+  ean           TEXT NOT NULL,                -- GTIN colis (carton)
   lot           TEXT NOT NULL,
   ddm           DATE NOT NULL,
   fmt           TEXT NOT NULL,                -- ex: "6x33", "12x33", "6x75", "4x75"
   marque        TEXT NOT NULL,                -- "NIKO" | "SYMBIOSE"
-  designation   TEXT,                         -- libellé produit nettoyé (peut être vide)
+  designation   TEXT,                         -- libellé produit nettoyé
   gout          TEXT,                         -- ex: "Gingembre"
   case_count    INTEGER NOT NULL,
   full_pallet   BOOLEAN NOT NULL DEFAULT false,
@@ -476,6 +476,12 @@ CREATE TABLE IF NOT EXISTS etiquette_palette_history (
 
 CREATE INDEX IF NOT EXISTS idx_etiq_pal_tenant_date
   ON etiquette_palette_history(tenant_id, generated_at DESC);
+
+-- Colonnes additionnelles ajoutées après création initiale (idempotent)
+ALTER TABLE etiquette_palette_history
+  ADD COLUMN IF NOT EXISTS gtin_uvc TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS code_interne TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS bio BOOLEAN NOT NULL DEFAULT true;
 
 -- =========================
 -- Permissions (user applicatif "shark")
