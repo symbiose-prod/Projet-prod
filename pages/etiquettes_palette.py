@@ -21,6 +21,7 @@ puis clique pour générer le PDF (102×152 mm, AirPrint vers Dymo 5XL Wireless)
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import logging
 
 from nicegui import ui
@@ -155,7 +156,7 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
         ui.button(
             "Saisir EAN",
             icon="keyboard",
-            on_click=lambda: _open_manual_ean_dialog(_handle_scanned_ean),
+            on_click=lambda: _open_manual_ean_dialog(_handle_scanned_data),
         ).props("flat color=grey-7 dense")
 
     # Listener JS du file input — installé une fois, écoute le change,
@@ -346,22 +347,40 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
         gout_select.enable()
 
     def _refresh_recap():
-        """Met à jour la card récapitulatif et résout l'entry sélectionnée."""
-        matches = _filter_entries()
-        if state["marque"] and state["bottle"] and state["gout"] and matches:
-            entry = matches[0]
-            state["entry"] = entry
+        """Met à jour la card récap. Préserve l'entry synthétique d'un scan."""
+        # Cas 1 : entry déjà posée (par un scan EAN qui matche EasyBeer ou la
+        # sync) et cohérente avec les sélecteurs courants → on la garde telle
+        # quelle (avec lot/DDM scannés).
+        existing = state.get("entry")
+        entry: LabelEntry | None = None
+        if (
+            existing is not None
+            and state.get("marque") == existing.marque
+            and state.get("bottle") == existing.bottle_type
+        ):
+            entry = existing
+        else:
+            # Cas 2 : résoudre via la cascade sync (entries)
+            matches = _filter_entries()
+            if state["marque"] and state["bottle"] and state["gout"] and matches:
+                entry = matches[0]
+                state["entry"] = entry
+            else:
+                state["entry"] = None
+                entry = None
+
+        if entry:
             recap_label.text = entry.designation
             recap_label.style(f"color: {COLORS['ink']}; font-weight: 600")
             recap_details.clear()
             with recap_details:
-                _kv("Code interne", entry.code_interne or "—")
+                if entry.code_interne:
+                    _kv("Code interne", entry.code_interne)
                 _kv("GTIN colis (EAN)", entry.ean_colis)
                 _kv("Lot", entry.lot_str)
                 _kv("DDM", entry.ddm_date.strftime("%d/%m/%Y"))
                 _kv("Format", f"{entry.fmt} (PCB {entry.pcb})")
             recap_details.set_visibility(True)
-            # Borner les inputs partial selon le layout du format
             layout = get_palette_layout(entry.fmt, entry.product_label)
             layers_input.props(f"max={layout['layers']}")
             extras_input.props(f"max={max(0, layout['per_layer'] - 1)}")
@@ -370,7 +389,6 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
                 f"Caisses sur le dernier étage (max {layout['per_layer'] - 1})"
             )
         else:
-            state["entry"] = None
             recap_label.text = (
                 "Sélectionne marque, bouteille et goût pour voir les détails du produit."
             )
@@ -434,38 +452,116 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
     def _on_extras_change(_e):
         _refresh_total()
 
-    def _handle_scanned_ean(ean: str):
-        """Traite un EAN reçu (scan ou saisie manuelle).
+    def _apply_synthetic_entry(entry: LabelEntry):
+        """Applique une LabelEntry directement dans le state + UI (sans cascade).
 
-        Match l'EAN dans `entries` (gtin_colis prioritaire, puis gtin_uvc) et
-        pré-sélectionne marque + bouteille + goût en cascade.
+        Permet de pré-remplir tout depuis un scan EasyBeer sans dépendre de
+        la sync étiquettes (le produit peut ne pas y être encore).
         """
-        ean = (ean or "").strip()
+        state["entry"] = entry
+        state["marque"] = entry.marque
+        state["bottle"] = entry.bottle_type
+        state["gout"] = entry.gout
+        # Mise à jour visuelle (en best-effort si les boutons existent)
+        _set_active_button(marque_buttons, entry.marque)
+        _refresh_bottles()
+        # On force enable du bouton bouteille même si la sync ne le proposait pas
+        if entry.bottle_type in bottle_buttons:
+            bottle_buttons[entry.bottle_type].enable()
+        _set_active_button(bottle_buttons, entry.bottle_type)
+        _refresh_gouts()
+        # Ajoute le goût scanné aux options s'il n'est pas déjà là
+        current_options = list(gout_select.options or [])
+        if entry.gout and entry.gout not in current_options:
+            gout_select.options = current_options + [entry.gout]
+        gout_select.value = entry.gout
+        gout_select.enable()
+        _refresh_recap()
+
+    def _handle_scanned_data(data):
+        """Traite les données scannées (dict ou string ean).
+
+        Format attendu (objet) :
+            {ean, lot, ddm, product?: {marque, fmt, pcb, bottle_type,
+                                        designation, gout, ean_colis}}
+
+        Si ``product`` présent (lookup matrice EasyBeer OK) → on construit
+        une LabelEntry synthétique avec lot/DDM scannés et on auto-sélectionne.
+        Sinon → match dans la sync (fallback) ou notification d'échec.
+        """
+        # Compatibilité ascendante : si on reçoit juste un EAN string
+        if isinstance(data, str):
+            data = {"ean": data, "lot": "", "ddm": None, "product": None}
+        if not isinstance(data, dict):
+            return
+        ean = (data.get("ean") or "").strip()
         if not ean:
             return
-        matched = find_entry_by_ean(entries, ean)
-        if not matched:
+        scan_lot = (data.get("lot") or "").strip()
+        scan_ddm_iso = data.get("ddm")
+        scan_ddm: _dt.date | None = None
+        if scan_ddm_iso:
+            try:
+                scan_ddm = _dt.date.fromisoformat(str(scan_ddm_iso)[:10])
+            except (ValueError, TypeError):
+                scan_ddm = None
+
+        product = data.get("product") or None
+
+        if product and product.get("bottle_type"):
+            # Construire un LabelEntry à partir des données EasyBeer + scan
+            ddm = scan_ddm or _dt.date.today() + _dt.timedelta(days=365)
+            lot = scan_lot or ddm.strftime("%d%m%Y")
+            synth = LabelEntry(
+                marque=product.get("marque") or "",
+                bottle_type=product.get("bottle_type") or "",
+                gout=product.get("gout") or "—",
+                designation=product.get("designation") or f"GTIN {ean}",
+                fmt=product.get("fmt") or "",
+                pcb=int(product.get("pcb") or 0),
+                ean_colis=product.get("ean_colis") or ean,
+                ean_uvc="",
+                code_interne="",
+                lot_str=lot,
+                ddm_date=ddm,
+                product_label=product.get("designation") or "",
+            )
+            _apply_synthetic_entry(synth)
             ui.notify(
-                f"EAN {ean} introuvable dans la dernière sync. "
-                "Sélectionne le produit manuellement.",
-                type="warning",
-                timeout=5000,
+                f"✓ {synth.designation} — Lot {lot} — DDM {ddm.strftime('%d/%m/%Y')}",
+                type="positive",
+                icon="check",
+                timeout=4000,
             )
             return
-        _on_marque_click(matched.marque)
-        _on_bottle_click(matched.bottle_type)
-        gout_select.value = matched.gout
-        state["gout"] = matched.gout
-        _refresh_recap()
+
+        # Pas de product (matrice EB) : fallback sur la sync étiquettes
+        matched = find_entry_by_ean(entries, ean)
+        if matched:
+            # Override lot/DDM avec les données scannées si présentes
+            if scan_ddm or scan_lot:
+                lot = scan_lot or matched.lot_str
+                ddm = scan_ddm or matched.ddm_date
+                matched = LabelEntry(
+                    **{**matched.__dict__, "lot_str": lot, "ddm_date": ddm},
+                )
+            _apply_synthetic_entry(matched)
+            ui.notify(
+                f"✓ {matched.designation}",
+                type="positive",
+                icon="check",
+                timeout=3000,
+            )
+            return
+
         ui.notify(
-            f"✓ {matched.designation}",
-            type="positive",
-            icon="check",
-            timeout=3000,
+            f"Produit avec EAN {ean} introuvable (ni matrice EasyBeer, ni sync).",
+            type="warning",
+            timeout=6000,
         )
 
     # Events JS → Python via canal WebSocket NiceGUI (emitEvent côté JS)
-    ui.on("barcode_scanned", lambda e: _handle_scanned_ean(e.args))
+    ui.on("barcode_scanned", lambda e: _handle_scanned_data(e.args))
     ui.on(
         "barcode_error",
         lambda e: ui.notify(

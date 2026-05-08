@@ -34,7 +34,12 @@ import logging
 import re
 from dataclasses import dataclass
 
-from common.ramasse import clean_product_label, extract_gout, get_palette_layout
+from common.easybeer import (
+    EasyBeerError,
+    get_all_products,
+    get_code_barre_matrice,
+)
+from common.ramasse import clean_product_label, extract_gout, get_palette_layout, parse_barcode_matrix
 from db.conn import run_sql
 
 _log = logging.getLogger("ferment.services.etiquette_palette")
@@ -385,6 +390,102 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
     return entries, msg
 
 
+def parse_gs1_string(text: str) -> dict[str, str]:
+    """Parse une chaîne GS1-128 au format avec parenthèses.
+
+    Ex: ``"(01)03770014427250(15)270511(10)110527"``
+    →   ``{"01": "03770014427250", "15": "270511", "10": "110527"}``
+
+    Sans parenthèses (GS1-128 brut avec FNC1), seule l'extraction du GTIN
+    via AI 01 (longueur fixe) est tentée — les AI à longueur variable sans
+    FNC1 sont ambigus. Si pas de parenthèses ni de FNC1, retourne {}.
+    """
+    out: dict[str, str] = {}
+    if not text:
+        return out
+    # Format avec parenthèses (treepoem / human readable)
+    pattern = re.compile(r"\((\d{2,4})\)([^(]*)")
+    matches = pattern.findall(text)
+    if matches:
+        for ai, val in matches:
+            out[ai] = val.strip()
+        return out
+    # Fallback : essayer d'extraire AI 01 si la chaîne commence par "01" + 14 digits
+    m = re.match(r"^01(\d{14})", text)
+    if m:
+        out["01"] = m.group(1)
+    return out
+
+
+def parse_gs1_ddm(yymmdd: str) -> _dt.date | None:
+    """Parse une date GS1 au format YYMMDD → date Python.
+
+    Convention GS1 : YY 00-49 → 20YY, YY 50-99 → 19YY (rolling century window).
+    En pratique, pour des produits récents, on est dans 20YY.
+    """
+    if not yymmdd or len(yymmdd) != 6 or not yymmdd.isdigit():
+        return None
+    yy = int(yymmdd[0:2])
+    mm = int(yymmdd[2:4])
+    dd = int(yymmdd[4:6])
+    year = 2000 + yy if yy < 50 else 1900 + yy
+    try:
+        return _dt.date(year, mm, dd)
+    except ValueError:
+        return None
+
+
+def extract_gs1_data_from_image(image_bytes: bytes) -> dict[str, str | _dt.date] | None:
+    """Décode et parse un GS1-128 depuis une image.
+
+    Returns:
+        ``{"ean": <14 digits>, "lot": <str>, "ddm": <date>}`` si on a au moins
+        AI 01 (les autres sont optionnels). ``None`` si rien décodé ou pas
+        d'AI 01 lisible.
+    """
+    try:
+        import io as _io
+
+        import zxingcpp
+        from PIL import Image
+    except ImportError as exc:
+        _log.error("zxing-cpp ou Pillow indisponible : %s", exc)
+        return None
+
+    try:
+        img = Image.open(_io.BytesIO(image_bytes))
+        if img.mode not in ("L", "RGB"):
+            img = img.convert("RGB")
+        results = zxingcpp.read_barcodes(img)
+    except Exception:
+        _log.exception("Erreur décodage image")
+        return None
+
+    if not results:
+        return None
+
+    for r in results:
+        text = (r.text or "").strip()
+        if not text:
+            continue
+        ais = parse_gs1_string(text)
+        ean = ais.get("01")
+        if not ean:
+            # Si c'est un EAN-13/UPC pur (pas de GS1), retourner tel quel
+            digits = re.sub(r"\D+", "", text)
+            if 12 <= len(digits) <= 14:
+                return {"ean": digits, "lot": "", "ddm": None}  # type: ignore[dict-item]
+            continue
+        ddm_str = ais.get("15") or ais.get("17") or ""
+        ddm_date = parse_gs1_ddm(ddm_str)
+        return {
+            "ean": ean,
+            "lot": ais.get("10", ""),
+            "ddm": ddm_date,  # type: ignore[dict-item]
+        }
+    return None
+
+
 def extract_ean_from_image(image_bytes: bytes) -> str | None:
     """Décode un code-barres depuis les bytes d'une image (JPG/PNG/HEIC).
 
@@ -434,6 +535,70 @@ def extract_ean_from_image(image_bytes: bytes) -> str | None:
             return m.group(1)
         # Sinon on retourne le texte brut (digits si EAN/UPC)
         return text
+    return None
+
+
+def lookup_product_by_ean(ean: str) -> dict | None:
+    """Cherche un produit dans la matrice codes-barres EasyBeer (cache 24 h).
+
+    Source unique de vérité, indépendante de la sync étiquettes (qui peut
+    être en retard d'une journée). Si le produit a été déclaré côté EasyBeer
+    avec son EAN colis, ce lookup le trouvera immédiatement.
+
+    Returns:
+        Dict avec les clés : ``id_produit``, ``designation``, ``marque``,
+        ``fmt``, ``pcb``, ``bottle_type``, ``gout``, ``ean_colis``.
+        ``None`` si pas trouvé ou EasyBeer indisponible.
+    """
+    digits = re.sub(r"\D+", "", ean or "")
+    if not digits:
+        return None
+    digits_13 = digits[-13:] if len(digits) > 13 else digits
+
+    try:
+        raw_matrice = get_code_barre_matrice()
+    except (EasyBeerError, Exception) as exc:
+        _log.warning("Lookup EAN : matrice CB EasyBeer indisponible (%s)", exc)
+        return None
+    cb_by_product = parse_barcode_matrix(raw_matrice)
+
+    try:
+        products_list = get_all_products() or []
+    except (EasyBeerError, Exception):
+        products_list = []
+    label_by_id: dict[int, str] = {}
+    for p in products_list:
+        pid = p.get("idProduit")
+        lbl = (p.get("libelle") or "").strip()
+        if pid and lbl:
+            label_by_id[int(pid)] = lbl
+
+    for id_produit, formats in cb_by_product.items():
+        for f in formats:
+            full_code = (f.get("full_code") or "").strip()
+            if not full_code:
+                continue
+            if full_code != digits and full_code != digits_13 and not full_code.endswith(digits_13):
+                continue
+            # Match !
+            fmt = f.get("fmt_str") or ""
+            m = re.match(r"(\d+)x", fmt)
+            pcb = int(m.group(1)) if m else 0
+            raw_label = label_by_id.get(id_produit, "") or ""
+            designation = clean_product_label(raw_label)
+            marque = BRAND_NIKO if "niko" in raw_label.lower() else BRAND_SYMBIOSE
+            bottle_type = classify_bottle_type(designation, marque, pcb)
+            gout = extract_label_gout(designation, marque, designation)
+            return {
+                "id_produit": id_produit,
+                "designation": designation,
+                "marque": marque,
+                "fmt": fmt,
+                "pcb": pcb,
+                "bottle_type": bottle_type,
+                "gout": gout,
+                "ean_colis": full_code,
+            }
     return None
 
 

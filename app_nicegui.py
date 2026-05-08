@@ -733,11 +733,25 @@ async def _api_scan_barcode(request: Request):
             status_code=413,
         )
 
-    from common.services.etiquette_palette_service import extract_ean_from_image
-    ean = await asyncio.to_thread(extract_ean_from_image, image_bytes)
-    if not ean:
+    from common.services.etiquette_palette_service import (
+        extract_gs1_data_from_image,
+        lookup_product_by_ean,
+    )
+
+    scan = await asyncio.to_thread(extract_gs1_data_from_image, image_bytes)
+    if not scan:
         return JSONResponse({"error": "No barcode detected"}, status_code=200)
-    return JSONResponse({"ean": ean})
+
+    # Lookup produit via la matrice codes-barres EasyBeer (cache 24 h)
+    product = await asyncio.to_thread(lookup_product_by_ean, str(scan.get("ean") or ""))
+
+    ddm = scan.get("ddm")
+    return JSONResponse({
+        "ean": scan.get("ean") or "",
+        "lot": scan.get("lot") or "",
+        "ddm": ddm.isoformat() if ddm else None,
+        "product": product,
+    })
 
 
 # ─── Nettoyage périodique (sessions / resets expirés) ────────────────────────
