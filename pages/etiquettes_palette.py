@@ -152,11 +152,25 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
             )
             _ = scan_status  # référence : la mise à jour se fait via JS
 
-            # Fallback : saisie manuelle de l'EAN (si le scan ne capte rien)
+            # Bouton "Prendre une photo" (iOS native camera, plus fiable que live scan)
+            ui.html(
+                '<input type="file" id="photo-capture-input" '
+                'accept="image/*" capture="environment" style="display:none;">',
+            )
+            with ui.row().classes("gap-3 q-mt-md"):
+                ui.button(
+                    "Prendre une photo nette",
+                    icon="photo_camera",
+                    on_click=lambda: ui.run_javascript(
+                        "document.getElementById('photo-capture-input').click()",
+                    ),
+                ).props("color=blue-6 unelevated size=lg")
+
+            # Fallback : saisie manuelle de l'EAN
             with ui.row().classes("w-full max-w-md items-end gap-2 q-mt-md"):
                 manual_ean_input = ui.input(
                     label="Saisie manuelle EAN",
-                    placeholder="ex: 23770014427018",
+                    placeholder="ex: 3770014427250",
                 ).classes("flex-1").props("outlined dark dense input-class=text-white")
 
                 def _submit_manual():
@@ -546,11 +560,25 @@ _SCANNER_JS_START = """
         if (status) status.innerText = '⚠ Bibliothèque de scan non chargée. Recharge la page.';
         return;
     }
-    if (window._fsScanRunning) return;
-    window._fsScanRunning = true;
 
-    // Formats lus sur les étiquettes carton : EAN-13 (UVC), ITF (= ITF-14, GTIN-14
-    // imprimé sur les cartons), Code 128 (étiquettes Domino), GS1-128 (palette).
+    // Helper global : pousse un EAN décodé vers le buffer NiceGUI
+    if (!window._fsHandleEan) {
+        window._fsHandleEan = (ean) => {
+            const inputWrapper = document.querySelector('.ean-scan-buffer');
+            const input = inputWrapper ? inputWrapper.querySelector('input') : null;
+            if (input) {
+                const setter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value',
+                ).set;
+                setter.call(input, ean);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            const s = document.querySelector('.scan-status-label');
+            if (s) s.innerText = '✓ Code lu : ' + ean;
+        };
+    }
+
+    // Formats : EAN-13 (UVC), ITF-14 (cartons GTIN-14), Code 128 (Domino), GS1-128.
     const formats = [
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
@@ -563,14 +591,44 @@ _SCANNER_JS_START = """
         Html5QrcodeSupportedFormats.DATA_MATRIX,
     ];
 
+    // Listener "Prendre une photo nette" — caméra iOS native, photo HD avec
+    // autofocus, beaucoup plus fiable que le flux vidéo en live.
+    const photoInput = document.getElementById('photo-capture-input');
+    if (photoInput && !photoInput._fsListenerAdded) {
+        photoInput._fsListenerAdded = true;
+        photoInput.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const s = document.querySelector('.scan-status-label');
+            if (s) s.innerText = '🔍 Décodage de la photo…';
+            try {
+                // On stoppe le live scanner s'il tourne (même container)
+                if (window._fsScanReader && window._fsScanRunning) {
+                    try { await window._fsScanReader.stop(); } catch(_) {}
+                    window._fsScanRunning = false;
+                }
+                // Reader éphémère pour le décodage de fichier
+                const fileReader = new Html5Qrcode('scanner-container', {
+                    formatsToSupport: formats, verbose: false,
+                });
+                const text = await fileReader.scanFile(file, false);
+                window._fsHandleEan(text);
+            } catch (err) {
+                console.error('scanFile error', err);
+                if (s) s.innerText = '✗ Pas de code-barres détecté. Réessaie en cadrant mieux.';
+            }
+            e.target.value = '';
+        });
+    }
+
+    if (window._fsScanRunning) return;
+    window._fsScanRunning = true;
+
     if (!window._fsScanReader) {
         try {
             window._fsScanReader = new Html5Qrcode('scanner-container', {
                 formatsToSupport: formats,
                 verbose: false,
-                // Active l'API native BarcodeDetector si le navigateur la supporte
-                // (iOS 17+, Chrome récent). Beaucoup plus rapide ET supporte les
-                // orientations verticales du code-barres.
                 experimentalFeatures: { useBarCodeDetectorIfSupported: true },
             });
         } catch (e) {
@@ -582,37 +640,14 @@ _SCANNER_JS_START = """
     const reader = window._fsScanReader;
     if (status) status.innerText = 'Caméra : autorise l\\'accès si demandé…';
 
-    const onSuccess = (decodedText, decodedResult) => {
-        if (status) status.innerText = '✓ Code lu : ' + decodedText;
-        // Écrire dans l'input caché de NiceGUI puis trigger input
-        const inputWrapper = document.querySelector('.ean-scan-buffer');
-        const input = inputWrapper ? inputWrapper.querySelector('input') : null;
-        if (input) {
-            const setter = Object.getOwnPropertyDescriptor(
-                window.HTMLInputElement.prototype, 'value',
-            ).set;
-            setter.call(input, decodedText);
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        // Stop pour éviter les scans multiples
-        try {
-            reader.stop().catch(() => {});
-        } catch(e) {}
+    const onSuccess = (decodedText) => {
+        window._fsHandleEan(decodedText);
+        try { reader.stop().catch(() => {}); } catch(e) {}
         window._fsScanRunning = false;
     };
 
-    const onScanError = (errMsg) => {
-        // Erreur de parsing par frame — silencieux, html5-qrcode log déjà
-    };
+    const onScanError = (_errMsg) => { /* silencieux */ };
 
-    // html5-qrcode accepte 'environment' (string) ou { exact: 'environment' }.
-    // On essaie 'environment' d'abord ; en fallback (caméra arrière indisponible
-    // sur certains devices), on tente 'user'.
-    // qrbox supprimé : on scanne le cadre vidéo entier (mieux pour les codes-barres
-    // longs/larges type GS1-128 / EAN-128 / ITF-14). disableFlip=true : pas de flip
-    // mirror sur la caméra arrière (accélère le décodage).
-    // videoConstraints : on demande 1920×1080 — le GS1-128 carton fait 60-80 modules,
-    // une résolution caméra basse (640×480) ne suffit pas à le décoder.
     const tryStart = async (facing) => reader.start(
         { facingMode: facing },
         {
@@ -636,7 +671,7 @@ _SCANNER_JS_START = """
             console.warn('environment camera failed, trying user', innerErr);
             await tryStart('user');
         }
-        if (status) status.innerText = 'Vise le code-barres du carton';
+        if (status) status.innerText = 'Vise le code-barres ou prends une photo';
     } catch (e) {
         console.error('Scanner error:', e);
         if (status) status.innerText = '✗ Caméra inaccessible : ' + (e.message || e);
