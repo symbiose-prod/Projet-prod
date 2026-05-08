@@ -84,6 +84,13 @@ jobs:
             # --ignore-installed : évite l'erreur "Cannot uninstall <pkg> RECORD file
             # not found" sur les packages installés par apt (debian).
             sudo pip install --break-system-packages --ignore-installed -r requirements.txt
+            # ── Diagnostic : vérifier que python-barcode est importable ──
+            echo "=== Python diagnostic ==="
+            which python3
+            python3 --version
+            python3 -c "import sys; print('sys.path:'); [print('  ', p) for p in sys.path]"
+            python3 -c "import barcode; print('✅ barcode imported from:', barcode.__file__)" \
+              || echo "❌ barcode import FAILED"
             sudo systemctl stop ferment
             # Attendre que le port 8503 soit libéré (max 10s)
             for i in $(seq 1 10); do
