@@ -15,9 +15,14 @@ Flow opérateur (UI à 3 sélecteurs cascadés) :
   3. Goût : Gingembre, Mangue Passion, Original, …
   → on retrouve l'EAN colis, le lot et la DDM automatiquement.
 
-Construction du code-barres (sans FNC1 — Code 128 standard, parsable AI) :
+Construction du code-barres GS1-128 (avec FNC1 — généré par BWIPP/treepoem) :
 
-    (01)<GTIN-14> (15)<YYMMDD> (37)<count, padding 3> (10)<lot>
+    (02)<GTIN-14> (15)<YYMMDD> (10)<lot> (37)<count>
+
+L'AI 02 désigne le GTIN des **articles contenus** dans la palette (= les
+caisses), conformément à l'usage logistique pour étiquette palette. L'ordre
+choisi place les AI à longueur fixe (02, 15) avant les variables (10, 37),
+avec FNC1 inséré automatiquement par treepoem entre les AI variables.
 
 Le module est sans NiceGUI : utilisable depuis CLI / cron / tests.
 """
@@ -46,8 +51,8 @@ BOTTLE_TYPES = (BOTTLE_33, BOTTLE_75_SAFT, BOTTLE_75_EAU_GAZ)
 BRAND_NIKO = "NIKO"
 BRAND_SYMBIOSE = "SYMBIOSE"
 
-# Padding du compteur AI 37 : 3 digits suffisent (palette max ~252 caisses).
-_AI37_WIDTH = 3
+# AI 37 = "Count of trade items", longueur variable (max 8 digits).
+# On ne padde pas : un "150" reste "150", treepoem gère la séparation FNC1.
 _LOT_MAX_LEN = 20            # contrainte GS1 sur AI 10
 _LOT_ALLOWED_RE = re.compile(r"[^A-Z0-9\-./]")
 
@@ -72,9 +77,13 @@ class LabelEntry:
 
 @dataclass(frozen=True)
 class Gs1Payload:
-    """Payload GS1-128 prêt pour l'encodage."""
-    content: str              # chaîne à encoder en Code 128 (sans parenthèses)
-    hri: str                  # version lisible humainement avec parenthèses
+    """Payload GS1-128 prêt pour l'encodage par treepoem.
+
+    ``data_with_parens`` est passé tel quel à ``treepoem.generate_barcode``
+    (BWIPP convertit les ``(NN)`` en FNC1 + AI selon la spec GS1).
+    """
+    data_with_parens: str     # ex: "(02)03760381620415(15)260812(10)L6104(37)150"
+    hri: str                  # version lisible humainement (espacée pour l'œil)
 
 
 @dataclass(frozen=True)
@@ -160,28 +169,30 @@ def build_gs1_128_payload(
     ddm: _dt.date,
     count: int,
 ) -> Gs1Payload:
-    """Construit la chaîne GS1 (AI 01 + 15 + 37 + 10) prête à encoder.
+    """Construit la chaîne GS1-128 au format avec parenthèses pour treepoem.
 
-    Ordre des AI :
-      - 01 (GTIN-14, 14 digits fixes)
-      - 15 (DDM YYMMDD, 6 digits fixes)
-      - 37 (count, padding sur ``_AI37_WIDTH`` digits)
-      - 10 (lot, variable, en DERNIER pour ne pas avoir besoin de FNC1)
+    Ordre des AI (aligné sur l'usage logistique standard) :
+      - 02 (GTIN-14 des articles **contenus** dans la palette, 14 digits)
+      - 15 (DDM YYMMDD, 6 digits)
+      - 10 (lot/batch, variable jusqu'à 20 caractères)
+      - 37 (count, variable jusqu'à 8 digits)
+
+    treepoem (BWIPP) insère automatiquement les FNC1 entre AI variables et
+    le FNC1 de tête qui marque le code comme GS1-128.
     """
     if count <= 0:
         raise ValueError("count doit être > 0")
-    max_count = 10 ** _AI37_WIDTH - 1
-    if count > max_count:
-        raise ValueError(f"count > {max_count} (incrémenter _AI37_WIDTH)")
+    if count > 99_999_999:
+        raise ValueError("count > 99 999 999 (limite AI 37)")
 
     gtin14 = _ean_to_gtin14(ean13)
     yymmdd = ddm.strftime("%y%m%d")
-    count_str = str(count).zfill(_AI37_WIDTH)
     lot_norm = _normalize_lot(lot)
 
-    content = f"01{gtin14}15{yymmdd}37{count_str}10{lot_norm}"
-    hri = f"(01){gtin14} (15){yymmdd} (37){count_str} (10){lot_norm}"
-    return Gs1Payload(content=content, hri=hri)
+    # Format passé tel quel à treepoem : il convertit les (NN) en AI + FNC1
+    data_with_parens = f"(02){gtin14}(15){yymmdd}(10){lot_norm}(37){count}"
+    hri = f"(02){gtin14}  (15){yymmdd}  (10){lot_norm}  (37){count}"
+    return Gs1Payload(data_with_parens=data_with_parens, hri=hri)
 
 
 # ─── Classification depuis le payload sync ──────────────────────────────────

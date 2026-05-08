@@ -19,6 +19,9 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Install system dependencies (Ghostscript pour treepoem)
+        run: sudo apt-get update && sudo apt-get install -y ghostscript
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -51,9 +54,8 @@ jobs:
             git fetch origin staging
             git checkout staging
             git pull origin staging
-            # Installer les dépendances dans le venv staging
-            sudo /home/ubuntu/app-staging/venv/bin/pip install -r requirements.txt \
-              || sudo pip install --break-system-packages --ignore-installed -r requirements.txt
+            sudo apt-get install -y ghostscript
+            sudo /home/ubuntu/app-staging/venv/bin/pip install -r requirements.txt
             sudo systemctl restart ferment-staging
             sleep 3
             if sudo systemctl is-active --quiet ferment-staging; then
@@ -82,12 +84,17 @@ jobs:
           script: |
             cd /home/ubuntu/app
             git pull origin main
+            # Ghostscript : requis par treepoem pour générer le GS1-128 via BWIPP
+            sudo apt-get install -y ghostscript
             # Installer les dépendances Python dans le venv utilisé par ferment.service
             # (ExecStart=/home/ubuntu/app/venv/bin/python).
             sudo /home/ubuntu/app/venv/bin/pip install -r requirements.txt
-            # Vérifier que python-barcode est importable depuis le venv
-            sudo /home/ubuntu/app/venv/bin/python -c "import barcode; print('✅ barcode OK:', barcode.__file__)" \
-              || (echo "❌ barcode import FAILED"; exit 1)
+            # Vérifier que treepoem est importable et fonctionne (Ghostscript OK)
+            sudo /home/ubuntu/app/venv/bin/python -c "
+            import treepoem
+            img = treepoem.generate_barcode(barcode_type='gs1-128', data='(02)03770014427014(15)260901(10)KME27042026(37)126')
+            print('✅ treepoem OK, barcode size:', img.size)
+            " || (echo "❌ treepoem FAILED"; exit 1)
             sudo systemctl stop ferment
             # Attendre que le port 8503 soit libéré (max 10s)
             for i in $(seq 1 10); do

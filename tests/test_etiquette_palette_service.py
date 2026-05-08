@@ -78,42 +78,48 @@ class TestBuildGs1128Payload:
     def _payload(self, **overrides) -> Gs1Payload:
         defaults = dict(
             ean13="3770014427014",
-            lot="08052027",
-            ddm=_dt.date(2026, 9, 1),
-            count=126,
+            lot="L6104",
+            ddm=_dt.date(2026, 8, 12),
+            count=150,
         )
         defaults.update(overrides)
         return build_gs1_128_payload(**defaults)
 
-    def test_content_structure(self):
+    def test_data_with_parens_format(self):
+        """Format aligné sur l'étiquette logistique standard :
+        (02)<GTIN-14>(15)<YYMMDD>(10)<lot>(37)<count>."""
         p = self._payload()
-        assert p.content == "0103770014427014" + "15260901" + "37126" + "1008052027"
+        assert p.data_with_parens == "(02)03770014427014(15)260812(10)L6104(37)150"
 
-    def test_hri_has_parens(self):
+    def test_hri_has_all_ais(self):
         p = self._payload()
-        assert "(01)" in p.hri
+        assert "(02)" in p.hri
         assert "(15)" in p.hri
-        assert "(37)" in p.hri
         assert "(10)" in p.hri
+        assert "(37)" in p.hri
 
     def test_ean13_to_gtin14_padding(self):
+        """EAN-13 → GTIN-14 par préfixage avec '0'."""
         p = self._payload(ean13="3770014427014")
-        assert p.content.startswith("01" + "0" + "3770014427014")
+        assert p.data_with_parens.startswith("(02)03770014427014")
 
     def test_gtin14_passthrough(self):
         p = self._payload(ean13="03770014427014")
-        assert p.content.startswith("01" + "03770014427014")
+        assert p.data_with_parens.startswith("(02)03770014427014")
 
     def test_invalid_ean_raises(self):
         with pytest.raises(ValueError, match="EAN/GTIN invalide"):
             self._payload(ean13="123")
 
-    def test_count_padding(self):
-        assert self._payload(count=5).content.endswith("370051008052027")
+    def test_count_no_padding(self):
+        """AI 37 = longueur variable, pas de padding (treepoem gère via FNC1)."""
+        assert "(37)5" in self._payload(count=5).data_with_parens
+        assert "(37)126" in self._payload(count=126).data_with_parens
+        assert "(37)1234567" in self._payload(count=1234567).data_with_parens
 
     def test_count_too_high_raises(self):
         with pytest.raises(ValueError, match="count"):
-            self._payload(count=1000)
+            self._payload(count=100_000_000)
 
     def test_count_zero_raises(self):
         with pytest.raises(ValueError, match="count"):
@@ -121,16 +127,16 @@ class TestBuildGs1128Payload:
 
     def test_lot_normalization_uppercase(self):
         p = self._payload(lot="km27042026")
-        assert "10KM27042026" in p.content
+        assert "(10)KM27042026" in p.data_with_parens
 
     def test_lot_strips_invalid_chars(self):
         p = self._payload(lot="KMÉ 27/04 2026")
-        assert "10KM27/042026" in p.content
+        assert "(10)KM27/042026" in p.data_with_parens
 
     def test_lot_truncated_at_20(self):
         long_lot = "A" * 30
         p = self._payload(lot=long_lot)
-        assert p.content.endswith("10" + "A" * 20)
+        assert "(10)" + "A" * 20 in p.data_with_parens
 
     def test_lot_empty_raises(self):
         with pytest.raises(ValueError, match="Lot vide"):
@@ -138,7 +144,16 @@ class TestBuildGs1128Payload:
 
     def test_ddm_format_yymmdd(self):
         p = self._payload(ddm=_dt.date(2027, 4, 27))
-        assert "15270427" in p.content
+        assert "(15)270427" in p.data_with_parens
+
+    def test_ai_order_02_15_10_37(self):
+        """Vérifie l'ordre des AI : (02) → (15) → (10) → (37)."""
+        p = self._payload()
+        i02 = p.data_with_parens.index("(02)")
+        i15 = p.data_with_parens.index("(15)")
+        i10 = p.data_with_parens.index("(10)")
+        i37 = p.data_with_parens.index("(37)")
+        assert i02 < i15 < i10 < i37
 
 
 # ─── classify_bottle_type ────────────────────────────────────────────────────

@@ -2,16 +2,20 @@
 common/etiquette_palette_pdf.py
 ================================
 Génération du PDF d'étiquette palette logistique (102×152 mm, format Dymo 5XL
-ou équivalent 4"×6"). Utilise ``python-barcode`` (Code 128) pour le code-barres
-et ``fpdf2`` pour la mise en page.
+ou équivalent 4"×6"). Utilise ``treepoem`` (wrapper BWIPP) pour générer un
+**vrai GS1-128 avec FNC1** lisible par toutes les douchettes logistiques.
 
-Le contenu encodé est une chaîne d'Application Identifiers GS1 (sans FNC1) :
+Format encodé (Application Identifiers GS1) :
 
-    (01)<GTIN-14> (15)<YYMMDD> (37)<count, padding 3> (10)<lot>
+    (02)<GTIN-14>  (15)<YYMMDD>  (10)<lot>  (37)<count>
 
-La chaîne est lisible par toute douchette Code 128 standard. Pour un parsing
-GS1-128 strict (avec FNC1), le système qui scanne devra basculer sur un encodeur
-spécialisé (treepoem/BWIPP) — voir docs/ARCHITECTURE.md.
+AI 02 = GTIN des articles contenus dans la palette (les caisses).
+AI 15 = Best before date.
+AI 10 = Batch / Lot number.
+AI 37 = Count of trade items.
+
+Dépendances système : Ghostscript (``apt install ghostscript``) requis par
+treepoem pour exécuter BWIPP via PostScript.
 """
 from __future__ import annotations
 
@@ -21,8 +25,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from barcode import Code128
-from barcode.writer import ImageWriter
+import treepoem
 from fpdf import FPDF
 
 from common.services.etiquette_palette_service import build_gs1_128_payload
@@ -79,7 +82,7 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
       - Footer : tenant
     """
     payload = build_gs1_128_payload(ctx.ean13, ctx.lot, ctx.ddm, ctx.case_count)
-    barcode_png = _generate_barcode_png(payload.content)
+    barcode_png = _generate_barcode_png(payload.data_with_parens)
 
     pdf = FPDF(orientation="P", unit="mm", format=(_LABEL_WIDTH_MM, _LABEL_HEIGHT_MM))
     pdf.set_auto_page_break(auto=False)
@@ -151,19 +154,24 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
-def _generate_barcode_png(content: str) -> bytes:
-    """Génère un PNG du Code 128 avec ``python-barcode`` (sans HRI intégré)."""
-    writer = ImageWriter()
-    options = {
-        "module_height": 14.0,
-        "module_width": 0.30,
-        "quiet_zone": 2.0,
-        "write_text": False,   # le HRI est dessiné par fpdf2 en dessous
-        "background": "white",
-        "foreground": "black",
-    }
+def _generate_barcode_png(data_with_parens: str) -> bytes:
+    """Génère un PNG du GS1-128 via ``treepoem`` (BWIPP).
+
+    L'argument ``data_with_parens`` est passé tel quel : BWIPP convertit les
+    ``(NN)`` en Application Identifiers + FNC1 selon la spec GS1-128.
+    """
+    img = treepoem.generate_barcode(
+        barcode_type="gs1-128",
+        data=data_with_parens,
+        # parsefnc=True implicite quand on utilise (NN) — BWIPP détecte les AI.
+        # On désactive le HRI intégré : il sera dessiné par fpdf2 en dessous
+        # avec une typo cohérente.
+        options={"includetext": False, "height": 0.6},
+    )
+    # treepoem retourne une PIL.Image — on la convertit en PNG bytes
+    img_rgba = img.convert("RGB") if img.mode != "RGB" else img
     buf = io.BytesIO()
-    Code128(content, writer=writer).write(buf, options=options)
+    img_rgba.save(buf, format="PNG")
     return buf.getvalue()
 
 
