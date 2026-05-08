@@ -565,7 +565,14 @@ _SCANNER_JS_START = """
 
     if (!window._fsScanReader) {
         try {
-            window._fsScanReader = new Html5Qrcode('scanner-container', { formatsToSupport: formats, verbose: false });
+            window._fsScanReader = new Html5Qrcode('scanner-container', {
+                formatsToSupport: formats,
+                verbose: false,
+                // Active l'API native BarcodeDetector si le navigateur la supporte
+                // (iOS 17+, Chrome récent). Beaucoup plus rapide ET supporte les
+                // orientations verticales du code-barres.
+                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+            });
         } catch (e) {
             if (status) status.innerText = '✗ Init scanner : ' + e;
             window._fsScanRunning = false;
