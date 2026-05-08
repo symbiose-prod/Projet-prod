@@ -51,7 +51,9 @@ jobs:
             git fetch origin staging
             git checkout staging
             git pull origin staging
-            sudo pip install --break-system-packages --ignore-installed -r requirements.txt
+            # Installer les dépendances dans le venv staging
+            sudo /home/ubuntu/app-staging/venv/bin/pip install -r requirements.txt \
+              || sudo pip install --break-system-packages --ignore-installed -r requirements.txt
             sudo systemctl restart ferment-staging
             sleep 3
             if sudo systemctl is-active --quiet ferment-staging; then
@@ -80,21 +82,12 @@ jobs:
           script: |
             cd /home/ubuntu/app
             git pull origin main
-            # Installer les dépendances Python si requirements.txt a changé.
-            # --ignore-installed : évite l'erreur "Cannot uninstall <pkg> RECORD file
-            # not found" sur les packages installés par apt (debian).
-            sudo pip install --break-system-packages --ignore-installed -r requirements.txt
-            # ── Diagnostic : vérifier que python-barcode est importable ──
-            echo "=== Python diagnostic ==="
-            which python3
-            python3 --version
-            python3 -c "import sys; print('sys.path:'); [print('  ', p) for p in sys.path]"
-            python3 -c "import barcode; print('✅ barcode imported from:', barcode.__file__)" \
-              || echo "❌ barcode import FAILED"
-            echo "=== ferment.service ==="
-            sudo systemctl cat ferment 2>&1 | head -40
-            echo "=== ferment process Python (si actif) ==="
-            sudo systemctl status ferment --no-pager 2>&1 | head -20
+            # Installer les dépendances Python dans le venv utilisé par ferment.service
+            # (ExecStart=/home/ubuntu/app/venv/bin/python).
+            sudo /home/ubuntu/app/venv/bin/pip install -r requirements.txt
+            # Vérifier que python-barcode est importable depuis le venv
+            sudo /home/ubuntu/app/venv/bin/python -c "import barcode; print('✅ barcode OK:', barcode.__file__)" \
+              || (echo "❌ barcode import FAILED"; exit 1)
             sudo systemctl stop ferment
             # Attendre que le port 8503 soit libéré (max 10s)
             for i in $(seq 1 10); do
