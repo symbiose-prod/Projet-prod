@@ -77,6 +77,15 @@ class Gs1Payload:
     hri: str                  # version lisible humainement avec parenthèses
 
 
+@dataclass(frozen=True)
+class SyncStatus:
+    """Métadonnées sur la dernière sync étiquettes pour affichage UI."""
+    has_sync: bool
+    age_hours: float | None       # âge en heures depuis la dernière sync
+    status: str | None            # 'applied' | 'pending' | 'fetched' | None
+    product_count: int            # nb de produits dans la dernière sync
+
+
 # ─── Calcul du nombre de caisses ────────────────────────────────────────────
 
 def compute_case_count(
@@ -360,3 +369,51 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
         )
 
     return entries, msg
+
+
+def get_sync_status(tenant_id: str) -> SyncStatus:
+    """Retourne l'âge et le statut de la dernière sync étiquettes du tenant."""
+    rows = run_sql(
+        """SELECT status, applied_at, created_at, product_count
+           FROM sync_operations
+           WHERE tenant_id = :t AND status IN ('applied', 'pending', 'fetched')
+           ORDER BY (status = 'applied') DESC, created_at DESC
+           LIMIT 1""",
+        {"t": tenant_id},
+    )
+    if not rows:
+        return SyncStatus(has_sync=False, age_hours=None, status=None, product_count=0)
+
+    op = rows[0]
+    ref_dt = op.get("applied_at") or op.get("created_at")
+    age_hours: float | None = None
+    if ref_dt is not None:
+        try:
+            now = _dt.datetime.now(ref_dt.tzinfo) if ref_dt.tzinfo else _dt.datetime.now()
+            age_hours = (now - ref_dt).total_seconds() / 3600.0
+        except (TypeError, AttributeError):
+            age_hours = None
+
+    return SyncStatus(
+        has_sync=True,
+        age_hours=age_hours,
+        status=op.get("status"),
+        product_count=int(op.get("product_count") or 0),
+    )
+
+
+def trigger_sync_now(tenant_id: str) -> dict:
+    """Déclenche une nouvelle sync étiquettes (collecte EasyBeer + insertion DB).
+
+    Bloquant — utilise ``asyncio.to_thread`` côté UI pour ne pas figer l'event loop.
+    Retourne {"id": <op_id>, "product_count": N} ou {"id": None, "product_count": 0}
+    si EasyBeer ne renvoie aucun brassin actif.
+    """
+    from common.sync import create_sync_operation
+    from common.sync.collector import collect_label_data
+
+    products = collect_label_data()
+    if not products:
+        return {"id": None, "product_count": 0}
+    op = create_sync_operation(products, tenant_id=tenant_id, triggered_by="manual")
+    return op

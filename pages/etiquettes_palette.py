@@ -29,8 +29,11 @@ from common.ramasse import get_palette_layout
 from common.services.etiquette_palette_service import (
     BOTTLE_TYPES,
     LabelEntry,
+    SyncStatus,
     compute_case_count,
+    get_sync_status,
     load_label_data_from_sync,
+    trigger_sync_now,
 )
 from pages.auth import require_auth
 from pages.theme import COLORS, error_banner, page_layout, section_title
@@ -54,11 +57,46 @@ async def page_etiquettes_palette():
 
         loading_card = ui.card().classes("w-full q-pa-lg items-center").props("flat bordered")
         with loading_card:
-            ui.spinner("dots", size="lg", color="green-8")
-            ui.label("Chargement des produits…").classes("text-body2 q-mt-sm")
+            spinner = ui.spinner("dots", size="lg", color="green-8")  # noqa: F841
+            loading_label = ui.label("Chargement des produits…").classes("text-body2 q-mt-sm")
 
+        # ── Si aucune sync n'existe, en lancer une automatiquement ──────────
+        try:
+            status = await asyncio.to_thread(get_sync_status, tenant_id)
+        except Exception as exc:
+            _log.exception("Erreur lecture statut sync")
+            loading_card.delete()
+            error_banner(f"Impossible de vérifier le statut sync : {exc}", dismissible=False)
+            return
+
+        if not status.has_sync:
+            loading_label.text = (
+                "Première utilisation — collecte des produits depuis EasyBeer "
+                "(ça peut prendre 1-2 min)…"
+            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(trigger_sync_now, tenant_id),
+                    timeout=180,
+                )
+            except TimeoutError:
+                loading_card.delete()
+                error_banner(
+                    "La sync EasyBeer a dépassé 3 min. Réessaie ou lance la sync "
+                    "depuis Paramètres → Étiquettes.",
+                    dismissible=False,
+                )
+                return
+            except Exception as exc:
+                _log.exception("Erreur sync auto au premier chargement")
+                loading_card.delete()
+                error_banner(f"Erreur sync auto : {exc}", dismissible=False)
+                return
+
+        # ── Charger le payload (existant ou fraîchement créé) ──────────────
         try:
             entries, info_msg = await asyncio.to_thread(load_label_data_from_sync, tenant_id)
+            status = await asyncio.to_thread(get_sync_status, tenant_id)
         except Exception as exc:
             _log.exception("Erreur chargement payload sync étiquettes")
             loading_card.delete()
@@ -69,6 +107,9 @@ async def page_etiquettes_palette():
 
         if info_msg:
             error_banner(info_msg, dismissible=True)
+
+        # ── Bandeau statut sync + bouton rafraîchir ────────────────────────
+        _render_sync_bar(tenant_id, status)
 
         if not entries:
             return
@@ -392,6 +433,81 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
+
+def _render_sync_bar(tenant_id: str, status: SyncStatus) -> None:
+    """Affiche l'âge de la dernière sync + un bouton 'Rafraîchir' qui relance."""
+    age_label = _format_age(status.age_hours)
+    color = _age_color(status.age_hours)
+
+    with ui.card().classes("w-full").props("flat bordered"):
+        with ui.card_section().classes("row items-center gap-3 q-pa-sm"):
+            ui.icon("schedule", size="sm").style(f"color: {color}")
+            with ui.column().classes("gap-0 flex-1"):
+                ui.label(f"Données mises à jour {age_label}").classes(
+                    "text-body2",
+                ).style(f"color: {color}; font-weight: 500")
+                ui.label(
+                    f"{status.product_count} produits — statut : {status.status or '—'}",
+                ).classes("text-caption").style(f"color: {COLORS['ink2']}")
+
+            async def _do_refresh():
+                refresh_btn.disable()
+                refresh_btn.props("loading")
+                try:
+                    result = await asyncio.wait_for(
+                        asyncio.to_thread(trigger_sync_now, tenant_id),
+                        timeout=180,
+                    )
+                    if result.get("id"):
+                        ui.notify(
+                            f"Sync OK — {result['product_count']} produits. "
+                            "Rechargement de la page…",
+                            type="positive",
+                        )
+                        await asyncio.sleep(1)
+                        ui.navigate.to("/etiquettes-palette")
+                    else:
+                        ui.notify(
+                            "Aucun brassin en cours détecté — sync vide.",
+                            type="warning",
+                        )
+                except TimeoutError:
+                    ui.notify("La sync a dépassé 3 min. Réessaie.", type="negative")
+                except Exception as exc:
+                    _log.exception("Erreur sync manuelle")
+                    ui.notify(f"Erreur sync : {exc}", type="negative")
+                finally:
+                    refresh_btn.enable()
+                    refresh_btn.props(remove="loading")
+
+            refresh_btn = ui.button(
+                "Rafraîchir",
+                icon="refresh",
+                on_click=_do_refresh,
+            ).props("outline color=green-8 dense")
+
+
+def _format_age(age_hours: float | None) -> str:
+    """Formate l'âge en string lisible : 'à l'instant', 'il y a 3h', 'il y a 2j'."""
+    if age_hours is None:
+        return "(date inconnue)"
+    if age_hours < 1.0:
+        mins = max(1, int(age_hours * 60))
+        return f"il y a {mins} min"
+    if age_hours < 24.0:
+        return f"il y a {int(age_hours)}h"
+    days = int(age_hours / 24)
+    return f"il y a {days}j"
+
+
+def _age_color(age_hours: float | None) -> str:
+    """Couleur selon l'âge : vert < 12h, ambre < 36h, rouge ≥ 36h."""
+    if age_hours is None or age_hours >= 36:
+        return COLORS["error"]
+    if age_hours >= 12:
+        return COLORS["warning"]
+    return COLORS["success"]
+
 
 def _kv(label: str, value: str) -> None:
     """Affiche une ligne 'label : value' dans le récap."""

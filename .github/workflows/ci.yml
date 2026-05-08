@@ -51,6 +51,7 @@ jobs:
             git fetch origin staging
             git checkout staging
             git pull origin staging
+            sudo pip install --break-system-packages -r requirements.txt
             sudo systemctl restart ferment-staging
             sleep 3
             if sudo systemctl is-active --quiet ferment-staging; then
@@ -79,6 +80,8 @@ jobs:
           script: |
             cd /home/ubuntu/app
             git pull origin main
+            # Installer les dépendances Python si requirements.txt a changé
+            sudo pip install --break-system-packages -r requirements.txt
             sudo systemctl stop ferment
             # Attendre que le port 8503 soit libéré (max 10s)
             for i in $(seq 1 10); do
