@@ -151,7 +151,27 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
                 "text-white text-body2 scan-status-label",
             )
             _ = scan_status  # référence : la mise à jour se fait via JS
-            with ui.row().classes("gap-3"):
+
+            # Fallback : saisie manuelle de l'EAN (si le scan ne capte rien)
+            with ui.row().classes("w-full max-w-md items-end gap-2 q-mt-md"):
+                manual_ean_input = ui.input(
+                    label="Saisie manuelle EAN",
+                    placeholder="ex: 23770014427018",
+                ).classes("flex-1").props("outlined dark dense input-class=text-white")
+
+                def _submit_manual():
+                    val = (manual_ean_input.value or "").strip()
+                    if not val:
+                        return
+                    ean_buffer.set_value(val)
+                    manual_ean_input.set_value("")
+
+                ui.button(
+                    "Valider", icon="check",
+                    on_click=_submit_manual,
+                ).props("color=green-8 unelevated")
+
+            with ui.row().classes("gap-3 q-mt-md"):
                 ui.button(
                     "Annuler",
                     icon="close",
@@ -582,11 +602,22 @@ _SCANNER_JS_START = """
     // On essaie 'environment' d'abord ; en fallback (caméra arrière indisponible
     // sur certains devices), on tente 'user'.
     // qrbox supprimé : on scanne le cadre vidéo entier (mieux pour les codes-barres
-    // longs/larges des cartons type ITF-14). disableFlip=true : pas besoin de flip
-    // mirror sur la caméra arrière (et ça accélère le décodage).
+    // longs/larges type GS1-128 / EAN-128 / ITF-14). disableFlip=true : pas de flip
+    // mirror sur la caméra arrière (accélère le décodage).
+    // videoConstraints : on demande 1920×1080 — le GS1-128 carton fait 60-80 modules,
+    // une résolution caméra basse (640×480) ne suffit pas à le décoder.
     const tryStart = async (facing) => reader.start(
         { facingMode: facing },
-        { fps: 15, aspectRatio: 1.333, disableFlip: true },
+        {
+            fps: 15,
+            aspectRatio: 1.333,
+            disableFlip: true,
+            videoConstraints: {
+                facingMode: facing,
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+            },
+        },
         onSuccess,
         onScanError,
     );
