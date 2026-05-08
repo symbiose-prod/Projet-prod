@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 
 _PARIS = ZoneInfo("Europe/Paris")
 
+_BRASSIN_DATE_RE = re.compile(r"(\d{8})$")
+
 
 def generate_brassin_code(
     gout: str,
@@ -31,6 +33,24 @@ def generate_brassin_code(
     if "infusion" in product_label.lower():
         return "IP" + gout[:1].upper() + date_str
     return "K" + gout[:2].upper() + date_str
+
+
+def extract_date_from_brassin_code(nom: str | None) -> _dt.date | None:
+    """Extrait la date métier (DDMMYYYY) depuis le suffixe du code brassin.
+
+    Inverse de `generate_brassin_code`. Retourne None si le nom ne se termine
+    pas par 8 chiffres ou si la date est invalide.
+    """
+    if not nom:
+        return None
+    m = _BRASSIN_DATE_RE.search(str(nom).strip())
+    if not m:
+        return None
+    s = m.group(1)
+    try:
+        return _dt.date(int(s[4:8]), int(s[2:4]), int(s[0:2]))
+    except ValueError:
+        return None
 
 
 def _local_to_utc_iso(date_iso: str, hour: int, minute: int) -> str:

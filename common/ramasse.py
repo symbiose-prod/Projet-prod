@@ -22,6 +22,7 @@ from dateutil.tz import gettz
 
 _log = logging.getLogger("ferment.ramasse")
 
+from common.brassin_builder import extract_date_from_brassin_code
 from common.data import get_business_config as _get_biz
 from common.easybeer import (
     get_brassin_detail,
@@ -299,17 +300,25 @@ def build_ramasse_lines(
             )
             detail = brassin_summary
 
-        # DDM calculée = date début fermentation + _DDM_DAYS jours
-        ddm_date = today_paris() + dt.timedelta(days=_DDM_DAYS)
-        _raw_debut = detail.get("dateDebutFormulaire")
-        if _raw_debut:
-            try:
-                if isinstance(_raw_debut, (int, float)):
-                    ddm_date = dt.date.fromtimestamp(_raw_debut / 1000) + dt.timedelta(days=_DDM_DAYS)
-                else:
-                    ddm_date = dt.date.fromisoformat(str(_raw_debut)[:10]) + dt.timedelta(days=_DDM_DAYS)
-            except (ValueError, TypeError, OSError):
-                pass
+        # DDM = date métier du brassin + _DDM_DAYS jours.
+        # Priorité au code brassin (ex: 'KME27042026' → 27/04/2026) qui reste
+        # stable même si dateDebutFormulaire est décalée (manque MP, etc.).
+        # Fallback sur dateDebutFormulaire si le nom ne suit pas le pattern.
+        ddm_base = extract_date_from_brassin_code(
+            detail.get("nom") or brassin_summary.get("nom")
+        )
+        if ddm_base is None:
+            ddm_base = today_paris()
+            _raw_debut = detail.get("dateDebutFormulaire")
+            if _raw_debut:
+                try:
+                    if isinstance(_raw_debut, (int, float)):
+                        ddm_base = dt.date.fromtimestamp(_raw_debut / 1000)
+                    else:
+                        ddm_base = dt.date.fromisoformat(str(_raw_debut)[:10])
+                except (ValueError, TypeError, OSError):
+                    pass
+        ddm_date = ddm_base + dt.timedelta(days=_DDM_DAYS)
 
         # Index des quantites existantes : (prod_libelle_lower, fmt_str) -> quantite
         _existing_prods = detail.get("productions") or detail.get("planificationsProductions") or []

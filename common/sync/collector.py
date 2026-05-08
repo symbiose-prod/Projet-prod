@@ -23,6 +23,7 @@ import re
 import time
 from typing import Any
 
+from common.brassin_builder import extract_date_from_brassin_code
 from common.easybeer._client import (
     BASE,
     TIMEOUT,
@@ -118,14 +119,23 @@ def _fetch_active_brassins() -> list[dict[str, Any]]:
 
 
 def _compute_ddm(detail: dict[str, Any]) -> dt.date:
-    """Calcule la DDM = date début brassin + 365 jours.
+    """Calcule la DDM = date métier du brassin + 365 jours.
 
-    Le champ dateDebutFormulaire est un timestamp ms (int/float) ou une string ISO.
-    Fallback : date du jour + 365 jours.
+    Priorité : date encodée dans le code brassin (suffixe DDMMYYYY, ex: 'KME27042026').
+    Fallback : `dateDebutFormulaire` (timestamp ms ou string ISO).
+    Dernier recours : date du jour + 365 jours.
+
+    Le code brassin reflète la date métier "originelle" planifiée, qui reste
+    stable même si dateDebutFormulaire glisse (manque de matière première,
+    décalage de production, etc.).
     """
+    base = extract_date_from_brassin_code(detail.get("nom"))
+    if base is not None:
+        return base + dt.timedelta(days=_DDM_DAYS)
+
     raw_debut = detail.get("dateDebutFormulaire")
     if not raw_debut:
-        _log.warning("Brassin sans dateDebutFormulaire, fallback DDM=today+365")
+        _log.warning("Brassin sans nom ni dateDebutFormulaire, fallback DDM=today+365")
         return dt.date.today() + dt.timedelta(days=_DDM_DAYS)
     try:
         if isinstance(raw_debut, (int, float)):
