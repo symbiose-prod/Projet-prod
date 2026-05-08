@@ -529,13 +529,18 @@ _SCANNER_JS_START = """
     if (window._fsScanRunning) return;
     window._fsScanRunning = true;
 
+    // Formats lus sur les étiquettes carton : EAN-13 (UVC), ITF (= ITF-14, GTIN-14
+    // imprimé sur les cartons), Code 128 (étiquettes Domino), GS1-128 (palette).
     const formats = [
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.ITF,
         Html5QrcodeSupportedFormats.CODE_128,
         Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODE_93,
         Html5QrcodeSupportedFormats.UPC_A,
         Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
     ];
 
     if (!window._fsScanReader) {
@@ -576,9 +581,12 @@ _SCANNER_JS_START = """
     // html5-qrcode accepte 'environment' (string) ou { exact: 'environment' }.
     // On essaie 'environment' d'abord ; en fallback (caméra arrière indisponible
     // sur certains devices), on tente 'user'.
+    // qrbox supprimé : on scanne le cadre vidéo entier (mieux pour les codes-barres
+    // longs/larges des cartons type ITF-14). disableFlip=true : pas besoin de flip
+    // mirror sur la caméra arrière (et ça accélère le décodage).
     const tryStart = async (facing) => reader.start(
         { facingMode: facing },
-        { fps: 10, qrbox: { width: 280, height: 140 }, aspectRatio: 1.6 },
+        { fps: 15, aspectRatio: 1.333, disableFlip: true },
         onSuccess,
         onScanError,
     );
