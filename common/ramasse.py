@@ -24,6 +24,7 @@ _log = logging.getLogger("ferment.ramasse")
 
 from common.brassin_builder import extract_date_from_brassin_code
 from common.data import get_business_config as _get_biz
+from common.data import get_palette_layouts_config as _get_palette_layouts
 from common.easybeer import (
     get_brassin_detail,
     get_planification_matrice,
@@ -31,6 +32,36 @@ from common.easybeer import (
 
 # DDM (Date de Durabilité Minimale) — loaded from config.yaml business.ddm_days
 _DDM_DAYS: int = _get_biz().get("ddm_days", 365)
+
+
+def _build_palette_capacity_from_config() -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+    """Calcule (PALETTE_CAPACITY, PALETTE_CAPACITY_OVERRIDES) depuis la config.
+
+    Source : business.palette_layouts dans config.yaml. Total = layers × per_layer.
+    Garde la rétro-compatibilité avec les consommateurs existants (tests, code legacy).
+    """
+    layouts = _get_palette_layouts()
+    capacity: dict[str, int] = {}
+    overrides: dict[str, dict[str, int]] = {}
+    for fmt_key, layout in (layouts or {}).items():
+        try:
+            layers = int(layout.get("layers") or 0)
+            per_layer = int(layout.get("per_layer") or 0)
+        except (TypeError, ValueError):
+            continue
+        if layers > 0 and per_layer > 0:
+            capacity[fmt_key] = layers * per_layer
+        ov = layout.get("overrides") or {}
+        if isinstance(ov, dict):
+            for keyword, ov_layout in ov.items():
+                try:
+                    ov_layers = int(ov_layout.get("layers") or 0)
+                    ov_per_layer = int(ov_layout.get("per_layer") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if ov_layers > 0 and ov_per_layer > 0:
+                    overrides.setdefault(fmt_key, {})[keyword] = ov_layers * ov_per_layer
+    return capacity, overrides
 
 # ─── Config poids cartons ────────────────────────────────────────────────────
 # 5 valeurs distinctes extraites de l'ancien info_FDR.csv.
@@ -50,22 +81,39 @@ WEIGHT_OVERRIDES_FALLBACK: dict[str, dict[str, float]] = {
 }
 
 # ─── Config palettes ────────────────────────────────────────────────────────
-# Nombre de cartons par palette, par format.
+# Source de vérité : business.palette_layouts dans config.yaml.
+# Les constantes ci-dessous sont calculées au chargement (étages × caisses/étage).
 
 PALETTE_EMPTY_WEIGHT: float = 25.0  # kg
 
-PALETTE_CAPACITY: dict[str, int] = {
-    "12x33": 126,
-    "6x33":  252,
-    "6x75":  96,   # Eaugazeuse (Verralia) par défaut
-    "4x75":  112,  # SAFT
-}
+PALETTE_CAPACITY, PALETTE_CAPACITY_OVERRIDES = _build_palette_capacity_from_config()
 
-PALETTE_CAPACITY_OVERRIDES: dict[str, dict[str, int]] = {
-    "6x75": {
-        "niko": 84,  # SAFT (Niko)
-    },
-}
+
+def get_palette_layout(fmt: str, product_label: str = "") -> dict[str, int]:
+    """Retourne {layers, per_layer, total} pour un format + libellé produit donnés.
+
+    Applique l'override de marque si le libellé contient un mot-clé d'override
+    (ex: "niko" dans "Kéfir Niko" → utilise l'override 6x75/niko).
+
+    Returns:
+        Dict avec ``layers``, ``per_layer``, ``total``. Tous à 0 si format inconnu.
+    """
+    fmt_key = fmt.lower().replace("cl", "").replace(" ", "")
+    layouts = _get_palette_layouts()
+    layout = (layouts or {}).get(fmt_key) or {}
+
+    label_canon = _canon(product_label) if product_label else ""
+    overrides = layout.get("overrides") or {}
+    if label_canon and isinstance(overrides, dict):
+        for keyword, ov_layout in overrides.items():
+            if keyword in label_canon:
+                layers = int(ov_layout.get("layers") or 0)
+                per_layer = int(ov_layout.get("per_layer") or 0)
+                return {"layers": layers, "per_layer": per_layer, "total": layers * per_layer}
+
+    layers = int(layout.get("layers") or 0)
+    per_layer = int(layout.get("per_layer") or 0)
+    return {"layers": layers, "per_layer": per_layer, "total": layers * per_layer}
 
 
 def get_carton_weight(

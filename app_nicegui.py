@@ -298,6 +298,7 @@ import pages.accueil  # noqa: F401 — /accueil
 import pages.admin  # noqa: F401 — /admin (admin only)
 import pages.auth  # noqa: F401 — /login, /reset/{token}
 import pages.commercial  # noqa: F401 — /commercial
+import pages.etiquettes_palette  # noqa: F401 — /etiquettes-palette
 import pages.nomenclatures  # noqa: F401 — /nomenclatures
 import pages.previsions  # noqa: F401 — /previsions
 import pages.production  # noqa: F401 — /production

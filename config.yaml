@@ -23,6 +23,29 @@ business:
   # Fenêtre de données par défaut (jours) — fallback si non détectée dans l'Excel
   default_window_days: 60
 
+  # ─── Palettes ────────────────────────────────────────────────────────────
+  # Décomposition des palettes par format (étages × caisses par étage).
+  # Le total est calculé automatiquement (layers × per_layer).
+  # Les `overrides` permettent de surcharger par marque (matching mot-clé sur
+  # le libellé produit normalisé, ex: "niko" matche "Kéfir Niko").
+  palette_layouts:
+    "12x33":
+      layers: 7
+      per_layer: 18      # → 126 caisses
+    "6x33":
+      layers: 7
+      per_layer: 36      # → 252 caisses
+    "6x75":
+      layers: 4
+      per_layer: 24      # → 96 caisses (Eaugazeuse Verallia par défaut)
+      overrides:
+        niko:
+          layers: 4
+          per_layer: 21  # → 84 caisses (SAFT Niko)
+    "4x75":
+      layers: 4
+      per_layer: 28      # → 112 caisses
+
   # Configurations cuves
   tanks:
     "Cuve de 7200L (1 goût)":

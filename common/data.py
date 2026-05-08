@@ -37,6 +37,15 @@ _BUSINESS_DEFAULTS: dict = {
     },
 }
 
+# Fallback si business.palette_layouts est absent de config.yaml.
+# Source historique : valeurs codées en dur dans common/ramasse.py.
+_PALETTE_LAYOUTS_DEFAULTS: dict[str, dict] = {
+    "12x33": {"layers": 7, "per_layer": 18},
+    "6x33":  {"layers": 7, "per_layer": 36},
+    "6x75":  {"layers": 4, "per_layer": 24, "overrides": {"niko": {"layers": 4, "per_layer": 21}}},
+    "4x75":  {"layers": 4, "per_layer": 28},
+}
+
 def load_config() -> dict[str, Any]:
     path = "config.yaml"
     if os.path.exists(path):
@@ -50,15 +59,31 @@ def get_business_config() -> dict[str, Any]:
     """Retourne la section 'business' de config.yaml avec valeurs par défaut."""
     cfg = load_config()
     biz = cfg.get("business", {})
-    result = {**_BUSINESS_DEFAULTS, **{k: v for k, v in biz.items() if k != "tanks"}}
+    skip_keys = {"tanks", "palette_layouts"}
+    result = {**_BUSINESS_DEFAULTS, **{k: v for k, v in biz.items() if k not in skip_keys}}
     # Merge tanks: fichier config prend le dessus sur les défauts
     result["tanks"] = {**_BUSINESS_DEFAULTS["tanks"], **(biz.get("tanks") or {})}
     return result
 
 
+@lru_cache(maxsize=1)
+def get_palette_layouts_config() -> dict[str, dict[str, Any]]:
+    """Retourne business.palette_layouts (mapping format → {layers, per_layer, [overrides]}).
+
+    Fallback sur les valeurs historiques de common/ramasse.py si non défini.
+    """
+    cfg = load_config()
+    biz = cfg.get("business") or {}
+    layouts = biz.get("palette_layouts")
+    if not isinstance(layouts, dict) or not layouts:
+        return _PALETTE_LAYOUTS_DEFAULTS
+    return layouts
+
+
 def invalidate_config_cache() -> None:
     """Invalide tous les caches config (utile après reload ou mise à jour config.yaml)."""
     get_business_config.cache_clear()
+    get_palette_layouts_config.cache_clear()
     get_stocks_config.cache_clear()
     get_security_config.cache_clear()
     get_commercial_config.cache_clear()
