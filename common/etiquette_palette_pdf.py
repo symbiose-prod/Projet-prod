@@ -73,16 +73,20 @@ class EtiquetteContext:
     case_count: int          # nb total de caisses sur la palette
     full_pallet: bool        # vrai si palette pleine (info indicative)
     tenant_name: str = ""    # ex: "Symbiose Kéfir" — affiché en footer
+    n_copies: int = 1        # nb d'exemplaires (GS1 recommande 2 : 2 faces)
 
 
 def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
     """Construit le PDF d'étiquette palette (102×152 mm).
 
-    Structure de l'étiquette :
+    Structure d'une page :
       - Header : nom produit en gros + format
+      - Bloc en clair : CONTENU / QTÉ / LOT / DLUO (mots-clés GS1)
       - Code-barres GS1-128 (Code 128 + AI structurés) + HRI
-      - Bloc info : Lot, DDM, Nb caisses, Date impression
       - Footer : tenant
+
+    Si ``ctx.n_copies > 1`` (recommandation GS1 : 2 faces de palette), le PDF
+    contient ``n_copies`` pages identiques.
     """
     payload = build_gs1_128_payload(ctx.ean13, ctx.lot, ctx.ddm, ctx.case_count)
     barcode_png = _generate_barcode_png(payload.data_with_parens)
@@ -91,65 +95,68 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
     pdf = FPDF(orientation="P", unit="mm", format=(_LABEL_WIDTH_MM, _LABEL_HEIGHT_MM))
     pdf.set_auto_page_break(auto=False)
     pdf.set_margins(_LABEL_MARGIN_MM, _LABEL_MARGIN_MM, _LABEL_MARGIN_MM)
-    pdf.add_page()
 
     inner_width = _LABEL_WIDTH_MM - 2 * _LABEL_MARGIN_MM
+    n_copies = max(1, int(ctx.n_copies or 1))
 
-    # ── Partie libre : titre produit + format (GS1 §3 : « partie libre ») ──
-    pdf.set_xy(_LABEL_MARGIN_MM, _LABEL_MARGIN_MM)
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(inner_width, 8, _txt(ctx.product_label.upper()), border=0, align="C", new_x="LMARGIN", new_y="NEXT")
+    for _ in range(n_copies):
+        pdf.add_page()
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_text_color(80, 80, 80)
-    pdf.cell(inner_width, 6, _txt(f"Format {ctx.fmt}cl"), border=0, align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_text_color(0, 0, 0)
+        # ── Partie libre : titre produit + format ─────────────────────
+        pdf.set_xy(_LABEL_MARGIN_MM, _LABEL_MARGIN_MM)
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(inner_width, 8, _txt(ctx.product_label.upper()), border=0,
+                 align="C", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.ln(1)
-    _hline(pdf, inner_width)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_text_color(80, 80, 80)
+        pdf.cell(inner_width, 6, _txt(f"Format {ctx.fmt}cl"), border=0,
+                 align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
 
-    # ── Bloc en clair (mots-clés GS1 standards, manuel France 2015 §3) ──
-    # Ces données dupliquent celles encodées dans le code-barres GS1-128.
-    pdf.ln(2)
-    label_w = 36.0
-    value_w = inner_width - label_w
-    line_h = 6.5
+        pdf.ln(1)
+        _hline(pdf, inner_width)
 
-    rows = [
-        ("CONTENU",     gtin14),
-        ("QTÉ",         _format_count(ctx.case_count, ctx.full_pallet)),
-        ("LOT",         ctx.lot),
-        ("DLUO",        ctx.ddm.strftime("%d.%m.%y")),
-    ]
-    for label, value in rows:
-        pdf.set_x(_LABEL_MARGIN_MM)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(label_w, line_h, _txt(label), border=0, align="L")
-        pdf.set_font("Helvetica", "", 11)
-        pdf.cell(value_w, line_h, _txt(value), border=0, align="L",
-                 new_x="LMARGIN", new_y="NEXT")
+        # ── Bloc en clair (mots-clés GS1) ─────────────────────────────
+        pdf.ln(2)
+        label_w = 36.0
+        value_w = inner_width - label_w
+        line_h = 6.5
 
-    pdf.ln(1)
-    _hline(pdf, inner_width)
+        rows = [
+            ("CONTENU",     gtin14),
+            ("QTÉ",         _format_count(ctx.case_count, ctx.full_pallet)),
+            ("LOT",         ctx.lot),
+            ("DLUO",        ctx.ddm.strftime("%d.%m.%y")),
+        ]
+        for label, value in rows:
+            pdf.set_x(_LABEL_MARGIN_MM)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(label_w, line_h, _txt(label), border=0, align="L")
+            pdf.set_font("Helvetica", "", 11)
+            pdf.cell(value_w, line_h, _txt(value), border=0, align="L",
+                     new_x="LMARGIN", new_y="NEXT")
 
-    # ── Code-barres GS1-128 (au plus bas — recommandation GS1) ──────────
-    barcode_y = pdf.get_y() + 3
-    barcode_height_mm = 28.0
-    pdf.image(io.BytesIO(barcode_png), x=_LABEL_MARGIN_MM, y=barcode_y,
-              w=inner_width, h=barcode_height_mm)
-    pdf.set_y(barcode_y + barcode_height_mm + 1)
+        pdf.ln(1)
+        _hline(pdf, inner_width)
 
-    # HRI (Human Readable Interpretation) sous le code-barres
-    pdf.set_font("Courier", "", 7)
-    pdf.multi_cell(inner_width, 3.5, _txt(payload.hri), border=0, align="C")
+        # ── Code-barres GS1-128 ─────────────────────────────────────
+        barcode_y = pdf.get_y() + 3
+        barcode_height_mm = 28.0
+        pdf.image(io.BytesIO(barcode_png), x=_LABEL_MARGIN_MM, y=barcode_y,
+                  w=inner_width, h=barcode_height_mm)
+        pdf.set_y(barcode_y + barcode_height_mm + 1)
 
-    # ── Footer : tenant ─────────────────────────────────────────────────
-    pdf.set_y(_LABEL_HEIGHT_MM - _LABEL_MARGIN_MM - 6)
-    pdf.set_font("Helvetica", "I", 9)
-    pdf.set_text_color(120, 120, 120)
-    footer_text = ctx.tenant_name or "Ferment Station"
-    pdf.cell(inner_width, 5, _txt(footer_text), border=0, align="C")
-    pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Courier", "", 7)
+        pdf.multi_cell(inner_width, 3.5, _txt(payload.hri), border=0, align="C")
+
+        # ── Footer : tenant ──────────────────────────────────────────
+        pdf.set_y(_LABEL_HEIGHT_MM - _LABEL_MARGIN_MM - 6)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_text_color(120, 120, 120)
+        footer_text = ctx.tenant_name or "Ferment Station"
+        pdf.cell(inner_width, 5, _txt(footer_text), border=0, align="C")
+        pdf.set_text_color(0, 0, 0)
 
     out = pdf.output()
     if isinstance(out, str):

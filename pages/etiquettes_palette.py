@@ -33,6 +33,7 @@ from common.services.etiquette_palette_service import (
     SyncStatus,
     compute_case_count,
     find_entry_by_ean,
+    get_product_image_url,
     get_sync_status,
     load_label_data_from_sync,
     trigger_sync_now,
@@ -57,94 +58,68 @@ async def page_etiquettes_palette():
             "imprime via AirPrint depuis l'iPad."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
 
-        loading_card = ui.card().classes("w-full q-pa-lg items-center").props("flat bordered")
-        with loading_card:
-            spinner = ui.spinner("dots", size="lg", color="green-8")  # noqa: F841
-            loading_label = ui.label("Chargement des produits…").classes("text-body2 q-mt-sm")
-
-        # ── Si aucune sync n'existe, en lancer une automatiquement ──────────
-        try:
-            status = await asyncio.to_thread(get_sync_status, tenant_id)
-        except Exception as exc:
-            _log.exception("Erreur lecture statut sync")
-            loading_card.delete()
-            error_banner(f"Impossible de vérifier le statut sync : {exc}", dismissible=False)
-            return
-
-        if not status.has_sync:
-            loading_label.text = (
-                "Première utilisation — collecte des produits depuis EasyBeer "
-                "(ça peut prendre 1-2 min)…"
-            )
-            try:
-                await asyncio.wait_for(
-                    asyncio.to_thread(trigger_sync_now, tenant_id),
-                    timeout=180,
-                )
-            except TimeoutError:
-                loading_card.delete()
-                error_banner(
-                    "La sync EasyBeer a dépassé 3 min. Réessaie ou lance la sync "
-                    "depuis Paramètres → Étiquettes.",
-                    dismissible=False,
-                )
-                return
-            except Exception as exc:
-                _log.exception("Erreur sync auto au premier chargement")
-                loading_card.delete()
-                error_banner(f"Erreur sync auto : {exc}", dismissible=False)
-                return
-
-        # ── Charger le payload (existant ou fraîchement créé) ──────────────
+        # Mode scan-first : on ne déclenche PAS de sync au boot. Le scan
+        # interroge directement la matrice codes-barres EasyBeer (cache 24 h),
+        # qui contient tous les produits déclarés. La sync étiquettes ne sert
+        # plus qu'à alimenter le formulaire de saisie manuelle (fallback).
         try:
             entries, info_msg = await asyncio.to_thread(load_label_data_from_sync, tenant_id)
             status = await asyncio.to_thread(get_sync_status, tenant_id)
         except Exception as exc:
             _log.exception("Erreur chargement payload sync étiquettes")
-            loading_card.delete()
             error_banner(f"Impossible de charger les données : {exc}", dismissible=False)
             return
-
-        loading_card.delete()
 
         if info_msg:
             error_banner(info_msg, dismissible=True)
 
-        # ── Bandeau statut sync + bouton rafraîchir ────────────────────────
-        _render_sync_bar(tenant_id, status)
-
-        if not entries:
-            return
-
-        _render_form(entries, tenant_name=user.get("tenant_name") or _resolve_tenant_name())
+        _render_form(
+            entries or [],
+            tenant_name=user.get("tenant_name") or _resolve_tenant_name(),
+            tenant_id=tenant_id,
+            sync_status=status,
+        )
 
 
 # ─── UI principale ──────────────────────────────────────────────────────────
 
-def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
-    """Rend le formulaire avec 3 sélecteurs cascadés + section quantité."""
+def _render_form(
+    entries: list[LabelEntry],
+    tenant_name: str = "",
+    tenant_id: str = "",
+    sync_status: SyncStatus | None = None,
+) -> None:
+    """Rend le formulaire scan-first : bouton hero scanner, photo produit dans
+    le récap, cascade marque/bouteille/goût en mode fallback (collapsed)."""
     state: dict = {
-        "marque": None,        # str
-        "bottle": None,        # str
-        "gout": None,          # str
-        "entry": None,         # LabelEntry sélectionnée (résolue via la cascade)
+        "marque": None,
+        "bottle": None,
+        "gout": None,
+        "entry": None,
     }
 
     # ────────────────────────────────────────────────────────────────────
-    # Scanner caméra : un seul tap → caméra iOS native (capture="environment")
-    # → photo HD → POST /api/scan-barcode → zxing-cpp côté serveur → emitEvent.
-    # Pattern <input> imbriqué dans <label> : robuste cross-browser sans JS.
+    # Sync bar (discret) — affichée uniquement si une sync existe.
+    # En mode scan-first, la sync sert seulement au formulaire de saisie
+    # manuelle. Le scan interroge la matrice EasyBeer directement.
     # ────────────────────────────────────────────────────────────────────
-    with ui.row().classes("w-full justify-end q-mb-sm gap-2 items-center"):
+    if sync_status and sync_status.has_sync and tenant_id:
+        _render_sync_bar(tenant_id, sync_status)
+
+    # ────────────────────────────────────────────────────────────────────
+    # HERO : Scanner un carton (caméra iOS native via <label>+<input>)
+    # ────────────────────────────────────────────────────────────────────
+    with ui.row().classes("w-full justify-center q-mt-md q-mb-sm"):
         ui.html(
             '<label '
-            'style="display:inline-flex; align-items:center; gap:8px; '
-            'padding:10px 18px; background:#15803D; color:white; '
+            'style="display:inline-flex; align-items:center; gap:12px; '
+            'padding:22px 36px; background:#15803D; color:white; '
             'border-radius:6px; cursor:pointer; font-size:14px; '
-            'font-weight:500; user-select:none; position:relative; '
-            'overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.2); '
+            'border-radius:12px; cursor:pointer; font-size:20px; '
+            'font-weight:600; user-select:none; position:relative; '
+            'overflow:hidden; box-shadow:0 4px 12px rgba(21,128,61,0.3); '
             '-webkit-tap-highlight-color: rgba(255,255,255,0.2);">'
-            '<span class="material-icons" style="font-size:20px;">qr_code_scanner</span>'
+            '<span class="material-icons" style="font-size:32px;">qr_code_scanner</span>'
             'Scanner un carton'
             '<input type="file" id="photo-capture-input" '
             'accept="image/*" capture="environment" '
@@ -152,35 +127,78 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
             'width:100%; height:100%;">'
             '</label>',
         )
-        # Bouton secondaire : saisie manuelle (au cas où le scan ne matche rien)
+
+    with ui.row().classes("w-full justify-center q-mb-md"):
         ui.button(
-            "Saisir EAN",
+            "Saisir l'EAN à la main",
             icon="keyboard",
             on_click=lambda: _open_manual_ean_dialog(_handle_scanned_data),
         ).props("flat color=grey-7 dense")
 
-    # Listener JS du file input — installé une fois, écoute le change,
-    # upload au serveur et émet l'EAN décodé via emitEvent (canal NiceGUI).
+    # Listener JS du file input — resize côté client (canvas 1280px max) avant
+    # upload pour réduire la latence de 3-5 s sur 4G à <1 s, sans perte de
+    # qualité utile pour zxing-cpp. Émet l'EAN décodé via emitEvent.
     ui.add_body_html("""
     <script>
     (function() {
         if (window._fsScanInputBound) return;
         window._fsScanInputBound = true;
+
+        // Resize via canvas : conserve l'aspect ratio, max 1280px sur le grand
+        // côté, JPEG 85% (qualité largement suffisante pour décodage barcode).
+        async function _fsResizeImage(file, maxDim) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = () => reject(new Error('FileReader'));
+                reader.onload = () => {
+                    const img = new Image();
+                    img.onerror = () => reject(new Error('Image load'));
+                    img.onload = () => {
+                        let w = img.naturalWidth, h = img.naturalHeight;
+                        const scale = Math.min(1, maxDim / Math.max(w, h));
+                        w = Math.round(w * scale);
+                        h = Math.round(h * scale);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        canvas.toBlob(
+                            (blob) => blob ? resolve(blob)
+                                : reject(new Error('toBlob')),
+                            'image/jpeg', 0.85,
+                        );
+                    };
+                    img.src = reader.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         const wait = () => {
             const input = document.getElementById('photo-capture-input');
             if (!input) { setTimeout(wait, 200); return; }
             input.addEventListener('change', async (e) => {
                 const file = e.target.files && e.target.files[0];
                 if (!file) return;
+                emitEvent('barcode_uploading', file.size);
                 try {
+                    let toUpload;
+                    try {
+                        toUpload = await _fsResizeImage(file, 1280);
+                    } catch (err) {
+                        // Fallback : envoie le fichier original si le resize
+                        // échoue (HEIC pur que le navigateur ne décode pas)
+                        console.warn('resize failed, sending original', err);
+                        toUpload = file;
+                    }
                     const formData = new FormData();
-                    formData.append('file', file, file.name || 'photo.jpg');
+                    formData.append('file', toUpload, 'photo.jpg');
                     const resp = await fetch('/api/scan-barcode', {
                         method: 'POST', body: formData,
                     });
                     const data = await resp.json();
                     if (data.ean) {
-                        emitEvent('barcode_scanned', data.ean);
+                        emitEvent('barcode_scanned', data);
                     } else {
                         emitEvent('barcode_error',
                             (data.error || 'Aucun code-barres détecté'));
@@ -197,61 +215,69 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
     """)
 
     # ────────────────────────────────────────────────────────────────────
-    # Step 1 — Marque
+    # Récapitulatif produit (photo + détails) — visible dès qu'un scan a lieu
     # ────────────────────────────────────────────────────────────────────
-    section_title("1. Marque", "branding_watermark")
-    marques_dispo = sorted({e.marque for e in entries})
-    marque_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-    marque_buttons: dict[str, ui.button] = {}
-    with marque_card:
-        with ui.row().classes("w-full gap-3"):
-            for m in marques_dispo:
-                btn = ui.button(m).classes("flex-1").props("size=lg outline color=green-8")
-                marque_buttons[m] = btn
-
-    # ────────────────────────────────────────────────────────────────────
-    # Step 2 — Type de bouteille
-    # ────────────────────────────────────────────────────────────────────
-    section_title("2. Type de bouteille", "wine_bar")
-    bottle_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-    bottle_buttons: dict[str, ui.button] = {}
-    with bottle_card:
-        with ui.row().classes("w-full gap-3"):
-            for bt in BOTTLE_TYPES:
-                btn = ui.button(bt).classes("flex-1").props("size=lg outline color=green-8")
-                btn.disable()
-                bottle_buttons[bt] = btn
-
-    # ────────────────────────────────────────────────────────────────────
-    # Step 3 — Goût
-    # ────────────────────────────────────────────────────────────────────
-    section_title("3. Goût", "local_drink")
-    gout_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-    with gout_card:
-        gout_select = ui.select(
-            options=[],
-            label="Choisir le goût",
-            with_input=True,
-        ).classes("w-full").props("outlined dense fill-input use-input input-debounce=0")
-        gout_select.disable()
-
-    # ────────────────────────────────────────────────────────────────────
-    # Récapitulatif produit
-    # ────────────────────────────────────────────────────────────────────
+    section_title("Produit identifié", "info")
     recap_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
     with recap_card:
-        with ui.row().classes("w-full items-center gap-3"):
-            ui.icon("info", size="sm").style(f"color: {COLORS['blue']}")
-            recap_label = ui.label(
-                "Sélectionne marque, bouteille et goût pour voir les détails du produit."
-            ).classes("text-body2").style(f"color: {COLORS['ink2']}")
-        recap_details = ui.column().classes("w-full gap-1 q-mt-sm")
-        recap_details.set_visibility(False)
+        with ui.row().classes("w-full items-center gap-4 no-wrap"):
+            recap_image = ui.image("").classes("rounded").style(
+                "width:84px; height:84px; object-fit:cover; "
+                "background:#f3f4f6; border:1px solid " + COLORS["border"],
+            )
+            recap_image.set_visibility(False)
+            with ui.column().classes("gap-0 flex-1"):
+                recap_label = ui.label(
+                    "Scanne un carton ou saisis l'EAN pour identifier le produit.",
+                ).classes("text-body1").style(f"color: {COLORS['ink2']}")
+                recap_details = ui.column().classes("w-full gap-1 q-mt-xs")
+                recap_details.set_visibility(False)
 
     # ────────────────────────────────────────────────────────────────────
-    # Step 4 — Quantité
+    # Saisie manuelle (cascade marque/bouteille/goût) — collapsée par défaut
     # ────────────────────────────────────────────────────────────────────
-    section_title("4. Quantité de caisses", "inventory_2")
+    marques_dispo = sorted({e.marque for e in entries})
+    marque_buttons: dict[str, ui.button] = {}
+    bottle_buttons: dict[str, ui.button] = {}
+    with ui.expansion(
+        text="Sélection manuelle (marque / bouteille / goût)",
+        icon="tune",
+    ).classes("w-full q-mb-sm").props("dense") as manual_expansion:
+        # Step 1 — Marque
+        section_title("Marque", "branding_watermark")
+        marque_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+        with marque_card:
+            with ui.row().classes("w-full gap-3"):
+                for m in marques_dispo:
+                    btn = ui.button(m).classes("flex-1").props("size=lg outline color=green-8")
+                    marque_buttons[m] = btn
+
+        # Step 2 — Type de bouteille
+        section_title("Type de bouteille", "wine_bar")
+        bottle_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+        with bottle_card:
+            with ui.row().classes("w-full gap-3"):
+                for bt in BOTTLE_TYPES:
+                    btn = ui.button(bt).classes("flex-1").props("size=lg outline color=green-8")
+                    btn.disable()
+                    bottle_buttons[bt] = btn
+
+        # Step 3 — Goût
+        section_title("Goût", "local_drink")
+        gout_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+        with gout_card:
+            gout_select = ui.select(
+                options=[],
+                label="Choisir le goût",
+                with_input=True,
+            ).classes("w-full").props("outlined dense fill-input use-input input-debounce=0")
+            gout_select.disable()
+    _ = manual_expansion  # référence pour pouvoir l'ouvrir/fermer plus tard si besoin
+
+    # ────────────────────────────────────────────────────────────────────
+    # Quantité de caisses
+    # ────────────────────────────────────────────────────────────────────
+    section_title("Quantité de caisses", "inventory_2")
     qty_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
     with qty_card:
         full_pallet_toggle = ui.switch("Palette pleine", value=True).classes("q-mb-sm")
@@ -278,9 +304,14 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
         )
 
     # ────────────────────────────────────────────────────────────────────
-    # Step 5 — Action
+    # Génération du PDF — checkbox 2 exemplaires + bouton
     # ────────────────────────────────────────────────────────────────────
-    section_title("5. Génération de l'étiquette", "qr_code_2")
+    with ui.row().classes("w-full items-center gap-3 q-mt-sm"):
+        double_copies_toggle = ui.checkbox(
+            "Imprimer 2 étiquettes (recommandé GS1 : 2 faces de palette)",
+            value=True,
+        )
+
     with ui.row().classes("w-full gap-3"):
         generate_btn = ui.button(
             "Générer & télécharger le PDF",
@@ -371,15 +402,20 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
 
         if entry:
             recap_label.text = entry.designation
-            recap_label.style(f"color: {COLORS['ink']}; font-weight: 600")
+            recap_label.style(f"color: {COLORS['ink']}; font-weight: 600; font-size: 17px")
+            # Photo produit (depuis assets/) si goût mappé
+            img_url = get_product_image_url(entry.gout)
+            if img_url:
+                recap_image.set_source(img_url)
+                recap_image.set_visibility(True)
+            else:
+                recap_image.set_visibility(False)
             recap_details.clear()
             with recap_details:
-                if entry.code_interne:
-                    _kv("Code interne", entry.code_interne)
-                _kv("GTIN colis (EAN)", entry.ean_colis)
+                _kv("EAN", entry.ean_colis)
                 _kv("Lot", entry.lot_str)
                 _kv("DDM", entry.ddm_date.strftime("%d/%m/%Y"))
-                _kv("Format", f"{entry.fmt} (PCB {entry.pcb})")
+                _kv("Format", f"{entry.fmt} ({entry.pcb} btl/carton)")
             recap_details.set_visibility(True)
             layout = get_palette_layout(entry.fmt, entry.product_label)
             layers_input.props(f"max={layout['layers']}")
@@ -389,10 +425,11 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
                 f"Caisses sur le dernier étage (max {layout['per_layer'] - 1})"
             )
         else:
+            recap_image.set_visibility(False)
             recap_label.text = (
-                "Sélectionne marque, bouteille et goût pour voir les détails du produit."
+                "Scanne un carton ou saisis l'EAN pour identifier le produit."
             )
-            recap_label.style(f"color: {COLORS['ink2']}")
+            recap_label.style(f"color: {COLORS['ink2']}; font-weight: 400; font-size: 14px")
             recap_details.set_visibility(False)
         _refresh_total()
 
@@ -568,6 +605,12 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
             f"Scan : {e.args}", type="warning", timeout=4000,
         ),
     )
+    ui.on(
+        "barcode_uploading",
+        lambda e: ui.notify(
+            "📤 Décodage en cours…", type="info", timeout=2000,
+        ),
+    )
 
     for m, btn in marque_buttons.items():
         btn.on_click(lambda _e, mm=m: _on_marque_click(mm))
@@ -612,6 +655,7 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
                 case_count=count,
                 full_pallet=bool(full_pallet_toggle.value),
                 tenant_name=tenant_name,
+                n_copies=2 if double_copies_toggle.value else 1,
             )
             pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
             fname = (

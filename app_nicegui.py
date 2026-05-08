@@ -59,11 +59,14 @@ _log_http = _logging.getLogger("ferment.http")
 
 # ─── Fichiers statiques PWA (icônes, manifest, service-worker) ───────────────
 app.add_static_files("/static", Path(__file__).resolve().parent / "static")
+# /assets : photos produits (pour la page Étiquettes palette, etc.)
+app.add_static_files("/assets", Path(__file__).resolve().parent / "assets")
 
 # Pages publiques (pas besoin d'etre connecte)
 PUBLIC_PATHS = {
     "/login", "/_nicegui", "/favicon.ico", "/reset",
-    "/health", "/metrics", "/static", "/service-worker.js", "/api/sync",
+    "/health", "/metrics", "/static", "/assets",
+    "/service-worker.js", "/api/sync",
 }
 
 # Cookie remember-me : duree par defaut (30 jours)

@@ -390,6 +390,38 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
     return entries, msg
 
 
+def get_product_image_url(gout: str | None) -> str | None:
+    """Retourne l'URL absolue de l'image produit pour un goût donné.
+
+    Lit le mapping ``assets/image_map.csv`` (canonical → filename).
+    Retourne ``None`` si pas de mapping, ou si le fichier n'existe pas.
+    L'URL retournée est servie via ``app.add_static_files('/assets', ...)``.
+    """
+    if not gout:
+        return None
+    try:
+        from pathlib import Path
+
+        import pandas as pd
+        repo = Path(__file__).resolve().parent.parent.parent
+        csv_path = repo / "assets" / "image_map.csv"
+        if not csv_path.exists():
+            return None
+        df = pd.read_csv(csv_path, encoding="utf-8")
+    except Exception:
+        _log.debug("Erreur chargement image_map.csv", exc_info=True)
+        return None
+
+    target = gout.strip().lower()
+    for _, row in df.iterrows():
+        canonical = str(row.get("canonical", "")).strip().lower()
+        if canonical == target or target in canonical or canonical in target:
+            filename = str(row.get("filename", "")).strip()
+            if filename and (repo / "assets" / filename).exists():
+                return f"/assets/{filename}"
+    return None
+
+
 def parse_gs1_string(text: str) -> dict[str, str]:
     """Parse une chaîne GS1-128 au format avec parenthèses.
 
