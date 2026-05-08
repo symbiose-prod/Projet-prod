@@ -91,6 +91,10 @@ jobs:
             python3 -c "import sys; print('sys.path:'); [print('  ', p) for p in sys.path]"
             python3 -c "import barcode; print('✅ barcode imported from:', barcode.__file__)" \
               || echo "❌ barcode import FAILED"
+            echo "=== ferment.service ==="
+            sudo systemctl cat ferment 2>&1 | head -40
+            echo "=== ferment process Python (si actif) ==="
+            sudo systemctl status ferment --no-pager 2>&1 | head -20
             sudo systemctl stop ferment
             # Attendre que le port 8503 soit libéré (max 10s)
             for i in $(seq 1 10); do
