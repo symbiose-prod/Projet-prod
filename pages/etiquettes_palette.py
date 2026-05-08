@@ -35,18 +35,15 @@ from common.services.etiquette_palette_service import (
     BOTTLE_TYPES,
     HistoryEntry,
     LabelEntry,
-    SyncStatus,
     compute_case_count,
     find_entry_by_ean,
     get_product_image_url,
-    get_sync_status,
     list_recent_labels,
     load_label_data_from_sync,
     save_label_history,
-    trigger_sync_now,
 )
 from pages.auth import require_auth
-from pages.theme import COLORS, error_banner, page_layout, section_title
+from pages.theme import COLORS, page_layout, section_title
 
 _log = logging.getLogger("ferment.etiquettes_palette")
 
@@ -65,27 +62,22 @@ async def page_etiquettes_palette():
             "imprime via AirPrint depuis l'iPad."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
 
-        # Mode scan-first : on ne déclenche PAS de sync au boot. Le scan
-        # interroge directement la matrice codes-barres EasyBeer (cache 24 h),
-        # qui contient tous les produits déclarés. La sync étiquettes ne sert
-        # plus qu'à alimenter le formulaire de saisie manuelle (fallback).
+        # Mode scan-first : le scan interroge directement la matrice codes-barres
+        # EasyBeer (cache 24 h). La sync étiquettes alimente uniquement le
+        # formulaire de saisie manuelle (fallback) — on la charge mais sans
+        # bloquer l'UI si elle est vide.
         try:
-            entries, info_msg = await asyncio.to_thread(load_label_data_from_sync, tenant_id)
-            status = await asyncio.to_thread(get_sync_status, tenant_id)
+            entries, _info_msg = await asyncio.to_thread(load_label_data_from_sync, tenant_id)
         except Exception as exc:
             _log.exception("Erreur chargement payload sync étiquettes")
-            error_banner(f"Impossible de charger les données : {exc}", dismissible=False)
-            return
-
-        if info_msg:
-            error_banner(info_msg, dismissible=True)
+            entries = []
+            _log.warning("Sync étiquettes indisponible : %s — page utilisable via scan", exc)
 
         _render_form(
             entries or [],
             tenant_name=user.get("tenant_name") or _resolve_tenant_name(),
             tenant_id=tenant_id,
             user_email=user.get("email", ""),
-            sync_status=status,
         )
 
 
@@ -96,7 +88,6 @@ def _render_form(
     tenant_name: str = "",
     tenant_id: str = "",
     user_email: str = "",
-    sync_status: SyncStatus | None = None,
 ) -> None:
     """Rend le formulaire scan-first : bouton hero scanner, photo produit dans
     le récap, cascade marque/bouteille/goût en mode fallback (collapsed)."""
@@ -106,14 +97,6 @@ def _render_form(
         "gout": None,
         "entry": None,
     }
-
-    # ────────────────────────────────────────────────────────────────────
-    # Sync bar (discret) — affichée uniquement si une sync existe.
-    # En mode scan-first, la sync sert seulement au formulaire de saisie
-    # manuelle. Le scan interroge la matrice EasyBeer directement.
-    # ────────────────────────────────────────────────────────────────────
-    if sync_status and sync_status.has_sync and tenant_id:
-        _render_sync_bar(tenant_id, sync_status)
 
     # ────────────────────────────────────────────────────────────────────
     # HERO : Scanner un carton (caméra iOS native via <label>+<input>)
@@ -834,81 +817,6 @@ def _open_manual_ean_dialog(handler) -> None:
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
-
-def _render_sync_bar(tenant_id: str, status: SyncStatus) -> None:
-    """Affiche l'âge de la dernière sync + un bouton 'Rafraîchir' qui relance."""
-    age_label = _format_age(status.age_hours)
-    color = _age_color(status.age_hours)
-
-    with ui.card().classes("w-full").props("flat bordered"):
-        with ui.card_section().classes("row items-center gap-3 q-pa-sm"):
-            ui.icon("schedule", size="sm").style(f"color: {color}")
-            with ui.column().classes("gap-0 flex-1"):
-                ui.label(f"Données mises à jour {age_label}").classes(
-                    "text-body2",
-                ).style(f"color: {color}; font-weight: 500")
-                ui.label(
-                    f"{status.product_count} produits — statut : {status.status or '—'}",
-                ).classes("text-caption").style(f"color: {COLORS['ink2']}")
-
-            async def _do_refresh():
-                refresh_btn.disable()
-                refresh_btn.props("loading")
-                try:
-                    result = await asyncio.wait_for(
-                        asyncio.to_thread(trigger_sync_now, tenant_id),
-                        timeout=180,
-                    )
-                    if result.get("id"):
-                        ui.notify(
-                            f"Sync OK — {result['product_count']} produits. "
-                            "Rechargement de la page…",
-                            type="positive",
-                        )
-                        await asyncio.sleep(1)
-                        ui.navigate.to("/etiquettes-palette")
-                    else:
-                        ui.notify(
-                            "Aucun brassin en cours détecté — sync vide.",
-                            type="warning",
-                        )
-                except TimeoutError:
-                    ui.notify("La sync a dépassé 3 min. Réessaie.", type="negative")
-                except Exception as exc:
-                    _log.exception("Erreur sync manuelle")
-                    ui.notify(f"Erreur sync : {exc}", type="negative")
-                finally:
-                    refresh_btn.enable()
-                    refresh_btn.props(remove="loading")
-
-            refresh_btn = ui.button(
-                "Rafraîchir",
-                icon="refresh",
-                on_click=_do_refresh,
-            ).props("outline color=green-8 dense")
-
-
-def _format_age(age_hours: float | None) -> str:
-    """Formate l'âge en string lisible : 'à l'instant', 'il y a 3h', 'il y a 2j'."""
-    if age_hours is None:
-        return "(date inconnue)"
-    if age_hours < 1.0:
-        mins = max(1, int(age_hours * 60))
-        return f"il y a {mins} min"
-    if age_hours < 24.0:
-        return f"il y a {int(age_hours)}h"
-    days = int(age_hours / 24)
-    return f"il y a {days}j"
-
-
-def _age_color(age_hours: float | None) -> str:
-    """Couleur selon l'âge : vert < 12h, ambre < 36h, rouge ≥ 36h."""
-    if age_hours is None or age_hours >= 36:
-        return COLORS["error"]
-    if age_hours >= 12:
-        return COLORS["warning"]
-    return COLORS["success"]
-
 
 def _kv(label: str, value: str) -> None:
     """Affiche une ligne 'label : value' dans le récap."""
