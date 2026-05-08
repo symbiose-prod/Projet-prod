@@ -152,27 +152,25 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
             )
             _ = scan_status  # référence : la mise à jour se fait via JS
 
-            # Bouton « Prendre une photo » via <label> + onclick fallback —
-            # le pattern <label for="..."> ouvre nativement le file picker
-            # (caméra iOS / Android Chrome via capture="environment").
-            # On garde un fallback JS qui force input.click() pour les
-            # navigateurs qui ne propagent pas le clic du label.
+            # Bouton « Prendre une photo » : input imbriqué DANS le label,
+            # couvrant toute sa surface (opacity:0). C'est le pattern le plus
+            # robuste cross-browser (Safari/Chrome iOS, Android, desktop) car
+            # le clic sur le label = clic natif sur l'input.
             ui.html(
-                '<label for="photo-capture-input" '
-                'onclick="document.getElementById(\'photo-capture-input\').click();" '
+                '<label '
                 'style="display:inline-flex; align-items:center; gap:8px; '
                 'padding:14px 24px; background:#1976d2; color:white; '
                 'border-radius:4px; cursor:pointer; font-size:16px; '
-                'font-weight:500; user-select:none; '
-                'box-shadow:0 2px 4px rgba(0,0,0,0.2); '
+                'font-weight:500; user-select:none; position:relative; '
+                'overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,0.2); '
                 '-webkit-tap-highlight-color: rgba(255,255,255,0.2);">'
                 '<span class="material-icons" style="font-size:22px;">photo_camera</span>'
                 'Prendre une photo nette'
-                '</label>'
                 '<input type="file" id="photo-capture-input" '
                 'accept="image/*" capture="environment" '
-                'style="position:fixed; left:-9999px; top:auto; '
-                'width:1px; height:1px; opacity:0;">',
+                'style="position:absolute; inset:0; opacity:0; cursor:pointer; '
+                'width:100%; height:100%;">'
+                '</label>',
             )
 
             # Fallback : saisie manuelle de l'EAN
