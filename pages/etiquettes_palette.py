@@ -152,19 +152,24 @@ def _render_form(entries: list[LabelEntry], tenant_name: str = "") -> None:
             )
             _ = scan_status  # référence : la mise à jour se fait via JS
 
-            # Bouton "Prendre une photo" (iOS native camera, plus fiable que live scan)
+            # Bouton « Prendre une photo » via <label> — iOS Safari refuse
+            # input.click() programmatique sur un file input avec display:none.
+            # On utilise donc un <label for="..."> qui ouvre nativement le file
+            # picker au clic (camera native iOS via capture="environment").
             ui.html(
+                '<label for="photo-capture-input" '
+                'style="display:inline-flex; align-items:center; gap:8px; '
+                'padding:14px 24px; background:#1976d2; color:white; '
+                'border-radius:4px; cursor:pointer; font-size:16px; '
+                'font-weight:500; user-select:none; box-shadow:0 2px 4px rgba(0,0,0,0.2);">'
+                '<span class="material-icons" style="font-size:22px;">photo_camera</span>'
+                'Prendre une photo nette'
+                '</label>'
                 '<input type="file" id="photo-capture-input" '
-                'accept="image/*" capture="environment" style="display:none;">',
+                'accept="image/*" capture="environment" '
+                'style="position:absolute; width:1px; height:1px; opacity:0; '
+                'pointer-events:none;">',
             )
-            with ui.row().classes("gap-3 q-mt-md"):
-                ui.button(
-                    "Prendre une photo nette",
-                    icon="photo_camera",
-                    on_click=lambda: ui.run_javascript(
-                        "document.getElementById('photo-capture-input').click()",
-                    ),
-                ).props("color=blue-6 unelevated size=lg")
 
             # Fallback : saisie manuelle de l'EAN
             with ui.row().classes("w-full max-w-md items-end gap-2 q-mt-md"):
