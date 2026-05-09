@@ -7,16 +7,11 @@
         "Rue Hélène Boucher, 91320 Wissous"
       ],
       "email_recipients": [
-        "z.dawam@sofripa.fr",
-        "nicolas@symbiose-kefir.fr",
-        "g.marlier@sofripa.fr",
-        "f.ricard@sofripa.fr",
-        "c.boulon@sofripa.fr",
-        "a.teixeira@sofripa.fr",
-        "prepa@sofripa.fr",
-        "annonces@sofripa.fr",
         "exploitation@sofripa.fr",
-        "b.alves@sofripa.fr"
+        "z.dawam@sofripa.fr",
+        "prepa@sofripa.fr",
+        "a.teixeira@sofripa.fr",
+        "annonces@sofripa.fr"
       ],
       "packaging_items": [
         {"id": "pal_bt_33", "label": "Palette Bouteilles 33cl", "unit": "palette", "active": true},
