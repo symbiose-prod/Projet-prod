@@ -355,6 +355,46 @@ def mark_driver_passed(
     return False
 
 
+def unmark_driver_passed(
+    ramasse_id: str,
+    tenant_id: str | None = None,
+    user_id: str | None = None,
+) -> bool:
+    """Annule le marquage 'chauffeur passé' — déverrouille l'édition de la fiche.
+
+    Remet ``driver_passed = FALSE`` et nettoie ``driver_passed_at`` /
+    ``driver_passed_by``. Permet à l'utilisateur de rééditer une ramasse marquée
+    livrée par erreur (ex: chauffeur finalement repassé le lendemain matin avant
+    enlèvement, BL à corriger après validation).
+
+    Retourne True si le déverrouillage a eu lieu, False sinon (introuvable ou
+    déjà non-livrée). Idempotent : ne modifie pas si ``driver_passed = FALSE``.
+    """
+    tid = tenant_id or current_tenant_id()
+    uid = user_id or current_user_id()
+    rows = run_sql(
+        """
+        UPDATE ramasse_history
+        SET driver_passed    = FALSE,
+            driver_passed_at = NULL,
+            driver_passed_by = NULL,
+            updated_at       = now()
+        WHERE id = :rid AND tenant_id = :tid AND driver_passed = TRUE
+        RETURNING id
+        """,
+        {"rid": ramasse_id, "tid": tid},
+    )
+    if rows:
+        _log.info("Ramasse déverrouillée (driver_passed annulé): id=%s user=%s", ramasse_id, uid)
+        from common.audit import ACTION_RAMASSE_DRIVER_UNMARKED
+        _audit(ACTION_RAMASSE_DRIVER_UNMARKED, tid, {
+            "ramasse_id": ramasse_id,
+            "user_id": uid,
+        })
+        return True
+    return False
+
+
 def delete_ramasse(
     ramasse_id: str,
     tenant_id: str | None = None,

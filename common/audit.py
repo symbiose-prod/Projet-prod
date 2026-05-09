@@ -33,6 +33,7 @@ ACTION_RAMASSE_UPDATED = "ramasse_updated"
 ACTION_RAMASSE_DELETED = "ramasse_deleted"
 ACTION_RAMASSE_RESTORED = "ramasse_restored"
 ACTION_RAMASSE_DRIVER_PASSED = "ramasse_driver_passed"
+ACTION_RAMASSE_DRIVER_UNMARKED = "ramasse_driver_unmarked"
 
 
 def log_event(

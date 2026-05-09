@@ -61,6 +61,7 @@ from common.ramasse_history import (
     mark_driver_passed,
     restore_ramasse,
     save_ramasse,
+    unmark_driver_passed,
     update_ramasse,
 )
 from common.services.ramasse_service import (
@@ -1399,6 +1400,11 @@ async def page_ramasse():
                                     @click="() => $parent.$emit('mark_driver_passed', {id: props.row.id})" >
                                     <q-tooltip>Marquer comme livrée (chauffeur passé)</q-tooltip>
                                 </q-btn>
+                                <q-btn v-if="props.row.driver_passed"
+                                    flat round dense icon="lock_open" size="sm" color="orange-8"
+                                    @click="() => $parent.$emit('unmark_driver_passed', {id: props.row.id, date: props.row.date, dest: props.row.dest})" >
+                                    <q-tooltip>Annuler la livraison (déverrouille pour rééditer)</q-tooltip>
+                                </q-btn>
                                 <q-btn flat round dense icon="picture_as_pdf" size="sm" color="green-8"
                                     @click="() => $parent.$emit('download_hist_pdf', {id: props.row.id})" >
                                     <q-tooltip>Télécharger le PDF</q-tooltip>
@@ -1504,6 +1510,49 @@ async def page_ramasse():
                                               on_click=_confirm).props("color=green-7 unelevated")
                             dlg.open()
 
+                        async def _on_unmark_driver_passed(e):
+                            rid = e.args.get("id")
+                            date_str = e.args.get("date", "?")
+                            dest_str = e.args.get("dest", "?")
+                            with ui.dialog() as dlg, ui.card():
+                                ui.label("Annuler la livraison ?").classes("text-h6")
+                                ui.label(
+                                    f"Ramasse du {date_str} — {dest_str}"
+                                ).classes("text-body2").style(
+                                    f"color: {COLORS['ink']}; font-weight: 500"
+                                )
+                                ui.label(
+                                    "La fiche sera de nouveau modifiable. À utiliser si "
+                                    "le chauffeur n'est finalement pas passé ou si la "
+                                    "fiche doit être corrigée avant l'enlèvement."
+                                ).classes("text-caption q-mt-sm").style(
+                                    f"color: {COLORS.get('ink2', '#6B7280')}"
+                                )
+                                with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                                    ui.button("Retour", on_click=dlg.close).props("flat")
+                                    async def _confirm_unmark():
+                                        dlg.close()
+                                        try:
+                                            ok = await asyncio.to_thread(unmark_driver_passed, rid)
+                                            if ok:
+                                                ui.notify(
+                                                    "Livraison annulée — fiche modifiable.",
+                                                    type="positive", icon="lock_open",
+                                                )
+                                                _refresh_history()
+                                            else:
+                                                ui.notify(
+                                                    "Impossible d'annuler (ramasse introuvable "
+                                                    "ou déjà non-livrée).",
+                                                    type="warning",
+                                                )
+                                        except Exception:
+                                            _log.warning("Erreur annulation livraison", exc_info=True)
+                                            ui.notify("Erreur lors de l'annulation.", type="negative")
+                                    ui.button("Annuler la livraison", icon="lock_open",
+                                              on_click=_confirm_unmark).props("color=orange-8 unelevated")
+                            dlg.open()
+
                         async def _on_delete_hist(e):
                             rid = e.args.get("id")
                             date_str = e.args.get("date", "?")
@@ -1552,6 +1601,7 @@ async def page_ramasse():
                         ht.on("resend_hist", _on_resend_hist)
                         ht.on("edit_hist", _on_edit_hist)
                         ht.on("mark_driver_passed", _on_mark_driver_passed)
+                        ht.on("unmark_driver_passed", _on_unmark_driver_passed)
                         ht.on("delete_hist", _on_delete_hist)
 
                     hist_exp.on_value_change(lambda e: _load_history_data() if e.value else None)
