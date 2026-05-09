@@ -19,6 +19,7 @@ Ferment Station is a multi-tenant NiceGUI web application for fermentation produ
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — couches (transport / domaine / UI), règles, patterns, checklists "nouvel endpoint" / "nouveau service" / "nouvelle page".
 - **[docs/RUNBOOK.md](docs/RUNBOOK.md)** — ops + backup/restore + troubleshooting.
+- **[docs/ETIQUETTES_PALETTE.md](docs/ETIQUETTES_PALETTE.md)** — feature étiquettes palette (scan iPhone/iPad → décodage GS1-128 → PDF AirPrint) : flow, format GS1, gotchas, dépendances Ghostscript/treepoem/zxing-cpp, table historique.
 - **[tests/test_architecture_layers.py](tests/test_architecture_layers.py)** — 4 guards CI qui bloquent les régressions de couches (lancé à chaque `pytest`).
 - **Slash commands projet** (`.claude/commands/`) — workflows répétables :
   - `/project:migrate-endpoint <fonction>` — migrer un endpoint EB vers `execute_endpoint`.
@@ -52,10 +53,12 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `pages/accueil.py` | `/accueil` | Home — file upload, EasyBeer sync |
 | `pages/production.py` | `/production` | Production planning + EasyBeer brassin creation |
 | `pages/ramasse.py` | `/ramasse` | Harvest/collection sheet + BL PDF/Excel export |
+| `pages/etiquettes_palette.py` | `/etiquettes-palette` | Scan carton iPhone/iPad → PDF étiquette palette (GS1-128) — voir [docs/ETIQUETTES_PALETTE.md](docs/ETIQUETTES_PALETTE.md) |
 | `pages/stocks.py` | `/stocks` | Stock autonomy by supplier, order suggestions |
 | `pages/ressources.py` | `/ressources` | Supplier ordering constraints editor (lead time, min pallets) |
 | `pages/theme.py` | — | Design system, page layout, custom components |
 | `common/services/production_service.py` | — | Service domaine : calculs production (optimiseur, split cuves) — no UI, thread-safe |
+| `common/services/etiquette_palette_service.py` | — | Service domaine étiquettes palette : parsing GS1-128, lookup matrice EB, classify, save/list/purge historique |
 | `pages/_production_easybeer.py` | — | EasyBeer brassin creation section |
 | `common/services/stocks_service.py` | — | Service domaine : autonomie stocks + BOM + propositions commande (no UI) |
 
@@ -76,6 +79,7 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `common/brassin_builder.py` | Brassin code generation, payload building, recipe scaling |
 | `common/ai.py` | Claude/Anthropic client for supplier order email generation |
 | `common/xlsx_fill/` | Excel/PDF generation package (fiche production, BL, bon de commande) |
+| `common/etiquette_palette_pdf.py` | Génération PDF étiquette palette 102×152 mm (GS1-128 via `treepoem` + Ghostscript, layout fpdf2 inspiré du modèle PPTX interne) |
 | `common/easybeer/` | EasyBeer API client package (stocks, brassins, recipes, conditioning, suppliers, history) |
 
 ### Core Modules
@@ -93,7 +97,7 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 
 ## Database
 
-PostgreSQL 16 with 8 tables:
+PostgreSQL 16 with 9 tables principales :
 
 - **tenants** — organization isolation (multi-tenancy)
 - **users** — per-tenant accounts (email, PBKDF2-SHA256 password hash, role)
@@ -103,6 +107,7 @@ PostgreSQL 16 with 8 tables:
 - **login_failures** — brute-force lockout tracking (persistent)
 - **audit_log** — action audit trail (tenant_id, user_email, action, details JSONB)
 - **supplier_configs** — editable supplier ordering constraints per tenant (JSONB, UNIQUE per tenant+supplier)
+- **etiquette_palette_history** — audit + réimpression des étiquettes palette générées (purge auto à 500 par tenant)
 
 Schema: `db/migrate.sql`
 Run migrations: `python scripts/app_bootstrap.py`
@@ -383,6 +388,8 @@ python-dotenv        # Environment loading
 python-dateutil      # Date parsing
 pyyaml               # Config parsing
 anthropic            # Claude AI SDK (supplier order email generation)
+treepoem             # GS1-128 (FNC1) via BWIPP — étiquettes palette
+zxing-cpp            # Décodage codes-barres serveur — scan iPad/iPhone
 ```
 
 Dev/Testing:
@@ -391,5 +398,7 @@ ruff                 # Python linter/formatter
 pytest, pytest-cov   # Unit tests + coverage
 pip-audit            # Dependency vulnerability scanning
 ```
+
+**Dépendance système requise (VPS prod) :** `apt install ghostscript` — utilisé par `treepoem` pour générer le GS1-128 via PostScript. Le workflow CI/CD le réinstalle à chaque déploiement.
 
 Full list: `requirements.txt`
