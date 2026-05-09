@@ -51,6 +51,26 @@ from pages.theme import COLORS, page_layout, section_title
 _log = logging.getLogger("ferment.etiquettes_palette")
 
 
+def _step_title(step_num: int, title: str, icon: str = "") -> None:
+    """Titre de section avec badge numéroté (1/2/3/4) — utilisé pour le
+    flow wizard de la page : l'opérateur voit clairement quelle étape il
+    est en train de remplir."""
+    with ui.element("div").classes("section-header row items-center gap-2"):
+        # Pastille verte avec le numéro de step
+        with ui.element("div").style(
+            f"width: 28px; height: 28px; border-radius: 50%; "
+            f"background: {COLORS['green']}; color: white; "
+            "display: inline-flex; align-items: center; justify-content: center; "
+            "font-weight: 700; font-size: 14px; flex-shrink: 0",
+        ):
+            ui.label(str(step_num))
+        if icon:
+            ui.icon(icon, size="xs").style(f"color: {COLORS['green']}")
+        ui.label(title).classes("text-subtitle1").style(
+            f"color: {COLORS['ink']}; font-weight: 600",
+        )
+
+
 @ui.page("/etiquettes-palette")
 async def page_etiquettes_palette():
     user = require_auth()
@@ -107,27 +127,13 @@ def _render_form(
         "full_pallet": None,
     }
 
-    # ────────────────────────────────────────────────────────────────────
-    # HERO : Scanner un carton (caméra iOS native via <label>+<input>)
-    # ────────────────────────────────────────────────────────────────────
-    with ui.row().classes("w-full justify-center q-mt-md q-mb-sm"):
-        ui.html(
-            '<label '
-            'style="display:inline-flex; align-items:center; gap:12px; '
-            'padding:22px 36px; background:#15803D; color:white; '
-            'border-radius:6px; cursor:pointer; font-size:14px; '
-            'border-radius:12px; cursor:pointer; font-size:20px; '
-            'font-weight:600; user-select:none; position:relative; '
-            'overflow:hidden; box-shadow:0 4px 12px rgba(21,128,61,0.3); '
-            '-webkit-tap-highlight-color: rgba(255,255,255,0.2);">'
-            '<span class="material-icons" style="font-size:32px;">qr_code_scanner</span>'
-            'Scanner un carton'
-            '<input type="file" id="photo-capture-input" '
-            'accept="image/*" capture="environment" '
-            'style="position:absolute; inset:0; opacity:0; cursor:pointer; '
-            'width:100%; height:100%;">'
-            '</label>',
-        )
+    # ════════════════════════════════════════════════════════════════════
+    # FLOW WIZARD — 4 étapes progressives.
+    # Étape 1 (scan) : toujours visible.
+    # Étapes 2/3/4 (produit/qty/imprimer) : révélées au fur et à mesure.
+    # On masque les étapes en avance pour focaliser l'opérateur sur
+    # l'action courante. Reset complet sur "Scanner le suivant".
+    # ════════════════════════════════════════════════════════════════════
 
     async def _handle_manual_ean(ean: str):
         """Saisie manuelle EAN : interroge d'abord la matrice EasyBeer (source
@@ -149,195 +155,241 @@ def _render_form(
             "ean": cleaned, "lot": "", "ddm": None, "product": product,
         })
 
-    with ui.row().classes("w-full justify-center q-mb-md"):
-        ui.button(
-            "Saisir l'EAN à la main",
-            icon="keyboard",
-            on_click=lambda: _open_manual_ean_dialog(_handle_manual_ean),
-        ).props("outline color=grey-8")
+    # ────────────────────────────────────────────────────────────────────
+    # ÉTAPE 1 — Scanner un carton (toujours visible)
+    # ────────────────────────────────────────────────────────────────────
+    step1_section = ui.column().classes("w-full")
+    with step1_section:
+        _step_title(1, "Scanner un carton", "qr_code_scanner")
+        with ui.row().classes("w-full justify-center q-mt-sm q-mb-sm"):
+            ui.html(
+                '<label '
+                'style="display:inline-flex; align-items:center; gap:12px; '
+                'padding:22px 36px; background:#15803D; color:white; '
+                'border-radius:12px; cursor:pointer; font-size:20px; '
+                'font-weight:600; user-select:none; position:relative; '
+                'overflow:hidden; box-shadow:0 4px 12px rgba(21,128,61,0.3); '
+                '-webkit-tap-highlight-color: rgba(255,255,255,0.2); '
+                'touch-action: manipulation;">'
+                '<span class="material-icons" style="font-size:32px;">qr_code_scanner</span>'
+                'Scanner un carton'
+                '<input type="file" id="photo-capture-input" '
+                'accept="image/*" capture="environment" '
+                'style="position:absolute; inset:0; opacity:0; cursor:pointer; '
+                'width:100%; height:100%;">'
+                '</label>',
+            )
+
+        with ui.row().classes("w-full justify-center q-mb-sm"):
+            ui.button(
+                "Saisir l'EAN à la main",
+                icon="keyboard",
+                on_click=lambda: _open_manual_ean_dialog(_handle_manual_ean),
+            ).props("outline color=grey-8")
+
+        # Fallback discret : la cascade marque/bouteille/goût pour les cas
+        # extrêmes où ni le scan ni l'EAN manuel ne donnent rien (carton
+        # totalement abîmé, produit ajouté côté EB mais EAN absent).
+        marques_dispo = sorted({e.marque for e in entries})
+        marque_buttons: dict[str, ui.button] = {}
+        bottle_buttons: dict[str, ui.button] = {}
+        with ui.expansion(
+            text="Tu ne trouves pas ton produit ? Sélection manuelle",
+            icon="tune",
+        ).classes("w-full q-mb-sm").props("dense") as manual_expansion:
+            section_title("Marque", "branding_watermark")
+            marque_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+            with marque_card:
+                with ui.row().classes("w-full gap-3"):
+                    for m in marques_dispo:
+                        btn = ui.button(m).classes("flex-1").props(
+                            "size=lg outline color=green-8",
+                        )
+                        marque_buttons[m] = btn
+
+            section_title("Type de bouteille", "wine_bar")
+            bottle_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+            with bottle_card:
+                with ui.row().classes("w-full gap-3"):
+                    for bt in BOTTLE_TYPES:
+                        btn = ui.button(bt).classes("flex-1").props(
+                            "size=lg outline color=green-8",
+                        )
+                        btn.disable()
+                        bottle_buttons[bt] = btn
+
+            section_title("Goût", "local_drink")
+            gout_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+            with gout_card:
+                gout_select = ui.select(
+                    options=[],
+                    label="Choisir le goût",
+                    with_input=True,
+                ).classes("w-full").props(
+                    "outlined dense fill-input use-input input-debounce=0",
+                )
+                gout_select.disable()
+        _ = manual_expansion
 
     _install_scan_input_listener()
 
     # ────────────────────────────────────────────────────────────────────
-    # Récapitulatif produit (photo + détails) — visible dès qu'un scan a lieu
+    # ÉTAPE 2 — Produit identifié (révélée après scan/EAN OK)
     # ────────────────────────────────────────────────────────────────────
-    section_title("Produit identifié", "info")
-    recap_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-    with recap_card:
-        with ui.row().classes("w-full items-center gap-4 no-wrap"):
-            recap_image = ui.image("").classes("rounded").style(
-                "width:84px; height:84px; object-fit:cover; "
-                "background:#f3f4f6; border:1px solid " + COLORS["border"],
+    produit_section = ui.column().classes("w-full q-mt-md")
+    produit_section.props('id="step-produit"')
+    with produit_section:
+        _step_title(2, "Produit identifié", "info")
+        recap_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+        with recap_card:
+            with ui.row().classes("w-full items-center gap-4 no-wrap"):
+                recap_image = ui.image("").classes("rounded").style(
+                    "width:84px; height:84px; object-fit:cover; "
+                    "background:#f3f4f6; border:1px solid " + COLORS["border"],
+                )
+                recap_image.set_visibility(False)
+                with ui.column().classes("gap-0 flex-1"):
+                    recap_label = ui.label(
+                        "Scanne un carton ou saisis l'EAN pour identifier le produit.",
+                    ).classes("text-body1").style(f"color: {COLORS['ink2']}")
+                    recap_details = ui.column().classes("w-full gap-1 q-mt-xs")
+                    recap_details.set_visibility(False)
+            # Bandeau d'alerte DDM dépassée — rendu plus visible qu'une notify
+            # éphémère. L'opérateur le voit jusqu'au prochain scan.
+            ddm_warning = ui.row().classes("w-full items-center gap-2 q-mt-sm q-pa-sm").style(
+                "background:#FEF2F2; border:1px solid #FCA5A5; border-radius:6px",
             )
-            recap_image.set_visibility(False)
-            with ui.column().classes("gap-0 flex-1"):
-                recap_label = ui.label(
-                    "Scanne un carton ou saisis l'EAN pour identifier le produit.",
-                ).classes("text-body1").style(f"color: {COLORS['ink2']}")
-                recap_details = ui.column().classes("w-full gap-1 q-mt-xs")
-                recap_details.set_visibility(False)
-        # Bandeau d'alerte DDM dépassée — rendu plus visible qu'une notify
-        # éphémère. L'opérateur le voit jusqu'au prochain scan.
-        ddm_warning = ui.row().classes("w-full items-center gap-2 q-mt-sm q-pa-sm").style(
-            "background:#FEF2F2; border:1px solid #FCA5A5; border-radius:6px",
-        )
-        with ddm_warning:
-            ui.icon("warning", size="sm").style("color:#B91C1C")
-            ddm_warning_label = ui.label("").classes("text-body2").style(
-                "color:#7F1D1D; font-weight:600",
-            )
-        ddm_warning.set_visibility(False)
-
-    # ────────────────────────────────────────────────────────────────────
-    # Saisie manuelle (cascade marque/bouteille/goût) — collapsée par défaut
-    # ────────────────────────────────────────────────────────────────────
-    marques_dispo = sorted({e.marque for e in entries})
-    marque_buttons: dict[str, ui.button] = {}
-    bottle_buttons: dict[str, ui.button] = {}
-    with ui.expansion(
-        text="Sélection manuelle (marque / bouteille / goût)",
-        icon="tune",
-    ).classes("w-full q-mb-sm").props("dense") as manual_expansion:
-        # Step 1 — Marque
-        section_title("Marque", "branding_watermark")
-        marque_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-        with marque_card:
-            with ui.row().classes("w-full gap-3"):
-                for m in marques_dispo:
-                    btn = ui.button(m).classes("flex-1").props("size=lg outline color=green-8")
-                    marque_buttons[m] = btn
-
-        # Step 2 — Type de bouteille
-        section_title("Type de bouteille", "wine_bar")
-        bottle_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-        with bottle_card:
-            with ui.row().classes("w-full gap-3"):
-                for bt in BOTTLE_TYPES:
-                    btn = ui.button(bt).classes("flex-1").props("size=lg outline color=green-8")
-                    btn.disable()
-                    bottle_buttons[bt] = btn
-
-        # Step 3 — Goût
-        section_title("Goût", "local_drink")
-        gout_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-        with gout_card:
-            gout_select = ui.select(
-                options=[],
-                label="Choisir le goût",
-                with_input=True,
-            ).classes("w-full").props("outlined dense fill-input use-input input-debounce=0")
-            gout_select.disable()
-    _ = manual_expansion  # référence pour pouvoir l'ouvrir/fermer plus tard si besoin
-
-    # ────────────────────────────────────────────────────────────────────
-    # Quantité de caisses
-    # ────────────────────────────────────────────────────────────────────
-    section_title("Quantité de caisses", "inventory_2")
-    qty_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-    with qty_card:
-        ui.label(
-            "Choisis le type de palette :",
-        ).classes("text-body2 q-mb-xs").style(f"color: {COLORS['ink2']}")
-        with ui.row().classes("w-full gap-3 no-wrap"):
-            full_pallet_btn = ui.button(
-                "PALETTE PLEINE", icon="inventory_2",
-            ).classes("flex-1").props("size=lg outline color=green-8").style("min-height: 64px")
-            partial_pallet_btn = ui.button(
-                "PALETTE PARTIELLE", icon="layers",
-            ).classes("flex-1").props("size=lg outline color=orange-8").style("min-height: 64px")
-
-        partial_container = ui.column().classes("w-full gap-3 q-mt-md")
-        with partial_container:
-            layers_label = ui.label("Tape sur l'étage le plus haut qui est complet :").classes(
-                "text-body2",
-            ).style(f"color: {COLORS['ink']}; font-weight: 500")
-
-            # Diagramme palette : empilement de boutons-étages cliquables.
-            # Reconstruit dynamiquement à chaque scan (le format change).
-            layers_diagram = ui.column().classes("w-full gap-1").style("max-width: 360px")
-            no_layer_btn = ui.button(
-                "Aucun étage rempli",
-            ).classes("w-full q-mt-xs").props("flat color=grey-7 size=sm")
-
-            ui.separator().classes("q-my-sm")
-
-            extras_label = ui.label(
-                "Caisses sur le dessus (étage incomplet) :",
-            ).classes("text-body2").style(f"color: {COLORS['ink']}; font-weight: 500")
-            with ui.row().classes("w-full items-center justify-center gap-3 q-mt-xs"):
-                # touch-action: manipulation → désactive le double-tap-to-zoom
-                # iOS Safari, garantit que les taps répétés sur +/- ne zooment pas
-                # la page. Idem sur les boutons étages.
-                extras_minus_btn = ui.button("−").props(
-                    "size=lg color=grey-8 round outline",
-                ).style(
-                    "min-width: 56px; min-height: 56px; font-size: 28px; "
-                    "touch-action: manipulation",
+            with ddm_warning:
+                ui.icon("warning", size="sm").style("color:#B91C1C")
+                ddm_warning_label = ui.label("").classes("text-body2").style(
+                    "color:#7F1D1D; font-weight:600",
                 )
-                extras_value_label = ui.label("0").style(
-                    f"color: {COLORS['ink']}; font-weight: 700; "
-                    "font-size: 36px; min-width: 64px; text-align: center",
+            ddm_warning.set_visibility(False)
+    produit_section.set_visibility(False)
+
+    # ────────────────────────────────────────────────────────────────────
+    # ÉTAPE 3 — Quantité de caisses (révélée si DDM OK après produit)
+    # ────────────────────────────────────────────────────────────────────
+    qty_section = ui.column().classes("w-full q-mt-md")
+    qty_section.props('id="step-qty"')
+    with qty_section:
+        _step_title(3, "Quantité de caisses", "inventory_2")
+        qty_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
+        with qty_card:
+            ui.label(
+                "Choisis le type de palette :",
+            ).classes("text-body2 q-mb-xs").style(f"color: {COLORS['ink2']}")
+            with ui.row().classes("w-full gap-3 no-wrap"):
+                full_pallet_btn = ui.button(
+                    "PALETTE PLEINE", icon="inventory_2",
+                ).classes("flex-1").props(
+                    "size=lg outline color=green-8",
+                ).style("min-height: 64px; touch-action: manipulation")
+                partial_pallet_btn = ui.button(
+                    "PALETTE PARTIELLE", icon="layers",
+                ).classes("flex-1").props(
+                    "size=lg outline color=orange-8",
+                ).style("min-height: 64px; touch-action: manipulation")
+
+            partial_container = ui.column().classes("w-full gap-3 q-mt-md")
+            with partial_container:
+                layers_label = ui.label("Tape sur l'étage le plus haut qui est complet :").classes(
+                    "text-body2",
+                ).style(f"color: {COLORS['ink']}; font-weight: 500")
+
+                # Diagramme palette : empilement de boutons-étages cliquables.
+                # Reconstruit dynamiquement à chaque scan (le format change).
+                layers_diagram = ui.column().classes("w-full gap-1").style("max-width: 360px")
+                no_layer_btn = ui.button(
+                    "Aucun étage rempli",
+                ).classes("w-full q-mt-xs").props("flat color=grey-7 size=sm")
+
+                ui.separator().classes("q-my-sm")
+
+                extras_label = ui.label(
+                    "Caisses sur le dessus (étage incomplet) :",
+                ).classes("text-body2").style(f"color: {COLORS['ink']}; font-weight: 500")
+                with ui.row().classes("w-full items-center justify-center gap-3 q-mt-xs"):
+                    # touch-action: manipulation → désactive le double-tap-to-zoom
+                    # iOS Safari sur les taps répétés (+/-).
+                    extras_minus_btn = ui.button("−").props(
+                        "size=lg color=grey-8 round outline",
+                    ).style(
+                        "min-width: 56px; min-height: 56px; font-size: 28px; "
+                        "touch-action: manipulation",
+                    )
+                    extras_value_label = ui.label("0").style(
+                        f"color: {COLORS['ink']}; font-weight: 700; "
+                        "font-size: 36px; min-width: 64px; text-align: center",
+                    )
+                    extras_plus_btn = ui.button("+").props(
+                        "size=lg color=green-8 round outline",
+                    ).style(
+                        "min-width: 56px; min-height: 56px; font-size: 28px; "
+                        "touch-action: manipulation",
+                    )
+                    extras_max_label = ui.label("").classes("text-caption q-ml-md").style(
+                        f"color: {COLORS['ink2']}",
+                    )
+
+                # State holders cachés : la logique réactive existante
+                # (compute_case_count, _refresh_total) lit ces valeurs.
+                layers_input = ui.number(value=0, min=0, max=7, step=1)
+                layers_input.set_visibility(False)
+                extras_input = ui.number(value=0, min=0, max=35, step=1)
+                extras_input.set_visibility(False)
+
+            partial_container.set_visibility(False)
+            # Boutons-étages reconstruits dans _rebuild_layers_diagram (au scan)
+            layer_buttons: list[tuple[int, ui.button]] = []
+
+            ui.separator().classes("q-my-md")
+            # Total surdimensionné — c'est LE chiffre que l'opérateur doit
+            # vérifier avant d'imprimer. On veut qu'il soit impossible à rater.
+            with ui.column().classes("w-full items-center gap-0"):
+                ui.label("CARTONS SUR LA PALETTE").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; letter-spacing: 1px; font-weight: 600",
                 )
-                extras_plus_btn = ui.button("+").props(
-                    "size=lg color=green-8 round outline",
-                ).style(
-                    "min-width: 56px; min-height: 56px; font-size: 28px; "
-                    "touch-action: manipulation",
+                total_display = ui.label("—").style(
+                    f"color: {COLORS['ink2']}; font-weight: 700; "
+                    "font-size: 56px; line-height: 1.1; text-align: center",
                 )
-                extras_max_label = ui.label("").classes("text-caption q-ml-md").style(
+                total_capacity_label = ui.label("").classes("text-caption").style(
                     f"color: {COLORS['ink2']}",
                 )
-
-            # State holders cachés : la logique réactive existante
-            # (compute_case_count, _refresh_total) lit ces valeurs.
-            layers_input = ui.number(value=0, min=0, max=7, step=1)
-            layers_input.set_visibility(False)
-            extras_input = ui.number(value=0, min=0, max=35, step=1)
-            extras_input.set_visibility(False)
-
-        partial_container.set_visibility(False)
-        # Boutons-étages reconstruits dans _rebuild_layers_diagram (au scan)
-        layer_buttons: list[tuple[int, ui.button]] = []
-
-        ui.separator().classes("q-my-md")
-        # Total surdimensionné — c'est LE chiffre que l'opérateur doit
-        # vérifier avant d'imprimer. On veut qu'il soit impossible à rater.
-        with ui.column().classes("w-full items-center gap-0"):
-            ui.label("CARTONS SUR LA PALETTE").classes("text-caption").style(
-                f"color: {COLORS['ink2']}; letter-spacing: 1px; font-weight: 600",
-            )
-            total_display = ui.label("—").style(
-                f"color: {COLORS['ink2']}; font-weight: 700; "
-                "font-size: 56px; line-height: 1.1; text-align: center",
-            )
-            total_capacity_label = ui.label("").classes("text-caption").style(
-                f"color: {COLORS['ink2']}",
-            )
+    qty_section.set_visibility(False)
 
     # ────────────────────────────────────────────────────────────────────
-    # Génération du PDF — checkbox 2 exemplaires + bouton
+    # ÉTAPE 4 — Imprimer (révélée quand quantité valide + DDM OK)
     # ────────────────────────────────────────────────────────────────────
-    with ui.row().classes("w-full items-center gap-3 q-mt-sm"):
-        double_copies_toggle = ui.checkbox(
-            "Imprimer 2 étiquettes (recommandé GS1 : 2 faces de palette)",
-            value=True,
-        )
+    generate_section = ui.column().classes("w-full q-mt-md")
+    generate_section.props('id="step-generate"')
+    with generate_section:
+        _step_title(4, "Imprimer", "print")
+        with ui.row().classes("w-full items-center gap-3 q-mt-sm"):
+            double_copies_toggle = ui.checkbox(
+                "Imprimer 2 étiquettes (recommandé GS1 : 2 faces de palette)",
+                value=True,
+            )
 
-    with ui.row().classes("w-full gap-3"):
-        generate_btn = ui.button(
-            "Générer & télécharger le PDF",
-            icon="picture_as_pdf",
-        ).classes("flex-1").props("color=green-8 unelevated size=lg")
-        generate_btn.disable()
+        with ui.row().classes("w-full gap-3"):
+            generate_btn = ui.button(
+                "Générer & télécharger le PDF",
+                icon="picture_as_pdf",
+            ).classes("flex-1").props(
+                "color=green-8 unelevated size=lg",
+            ).style("touch-action: manipulation")
+            generate_btn.disable()
 
-    # Bouton "Scanner le suivant" — apparaît après une impression réussie
-    next_scan_row = ui.row().classes("w-full justify-center q-mt-sm")
-    with next_scan_row:
-        next_scan_btn = ui.button(
-            "📷 Scanner le carton suivant",
-            on_click=lambda: _reset_for_next_scan(),
-        ).props("color=blue-7 outline size=md")
-    next_scan_row.set_visibility(False)
+        # Bouton "Scanner le suivant" — apparaît après une impression réussie
+        next_scan_row = ui.row().classes("w-full justify-center q-mt-sm")
+        with next_scan_row:
+            next_scan_btn = ui.button(
+                "📷 Scanner le carton suivant",
+                on_click=lambda: _reset_for_next_scan(),
+            ).props("color=blue-7 outline size=md")
+        next_scan_row.set_visibility(False)
+    generate_section.set_visibility(False)
 
     # ────────────────────────────────────────────────────────────────────
     # Logique réactive
@@ -547,6 +599,15 @@ def _render_form(
             layer_buttons.clear()
             layers_diagram.clear()
             extras_max_label.text = ""
+        # Wizard : produit visible si entry, qty visible si entry + DDM OK.
+        # generate_section est piloté par _refresh_total selon la quantité.
+        if entry is not None:
+            produit_section.set_visibility(True)
+            qty_section.set_visibility(entry.ddm_date >= _dt.date.today())
+        else:
+            produit_section.set_visibility(False)
+            qty_section.set_visibility(False)
+            generate_section.set_visibility(False)
         _refresh_total()
 
     def _refresh_total():
@@ -605,10 +666,23 @@ def _render_form(
                 total_capacity_label.text = ""
         # DDM dépassée → on bloque la génération même si la quantité est valide.
         # Le bandeau d'avertissement dans la card récap explique pourquoi.
-        if count > 0 and entry.ddm_date >= _dt.date.today():
+        ready = count > 0 and entry.ddm_date >= _dt.date.today()
+        if ready:
             generate_btn.enable()
         else:
             generate_btn.disable()
+        # Wizard : révéler l'étape 4 (Imprimer) une fois la quantité valide.
+        # Si c'est la première fois (passage de hidden → visible), on
+        # scrolle vers le bouton pour montrer ce qu'il reste à faire.
+        was_hidden = not generate_section.visible
+        generate_section.set_visibility(ready)
+        if ready and was_hidden:
+            ui.run_javascript(
+                "setTimeout(() => {"
+                "const el = document.getElementById('step-generate');"
+                "if (el) el.scrollIntoView({behavior:'smooth', block:'center'});"
+                "}, 100);",
+            )
 
     def _on_marque_click(m: str):
         state["marque"] = m
@@ -712,7 +786,16 @@ def _render_form(
             gout_select.options = current_options + [entry.gout]
         gout_select.value = entry.gout
         gout_select.enable()
-        _refresh_recap()
+        _refresh_recap()  # gère la reveal des sections via la logique centrale
+        # Scroll vers la section produit pour que l'opérateur voie le récap
+        # (utile surtout sur le chemin scan : sur cascade manuelle, l'opérateur
+        # est déjà dans le bas de page, le scroll vers le haut est cohérent).
+        ui.run_javascript(
+            "setTimeout(() => {"
+            "const el = document.getElementById('step-produit');"
+            "if (el) el.scrollIntoView({behavior:'smooth', block:'start'});"
+            "}, 100);",
+        )
 
     def _handle_scanned_data(data):
         """Traite les données scannées (dict ou string ean).
@@ -1025,6 +1108,10 @@ def _render_form(
         _set_pallet_type_buttons(state["full_pallet"])
         next_scan_row.set_visibility(False)
         _refresh_recap()
+        # Wizard : ré-cacher les étapes 2/3/4. Seul step 1 (scan) reste visible.
+        produit_section.set_visibility(False)
+        qty_section.set_visibility(False)
+        generate_section.set_visibility(False)
         # Remonter en haut pour montrer le bouton "Scanner un carton"
         ui.run_javascript("window.scrollTo({top: 0, behavior: 'smooth'})")
 
