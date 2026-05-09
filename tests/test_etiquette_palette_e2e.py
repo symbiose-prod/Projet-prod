@@ -21,6 +21,7 @@ from common.services.etiquette_palette_service import (
     extract_ean_from_image,
     extract_gs1_data_from_image,
     list_recent_labels,
+    purge_old_label_history,
     save_label_history,
 )
 
@@ -254,6 +255,37 @@ class TestHistoryPipeline:
                 n_copies=1, pcb=6,
             )
         assert result is None  # pas d'exception propagée
+
+    def test_purge_keeps_only_recent(self):
+        """purge_old_label_history doit garder les `keep` plus récentes."""
+        captured: dict = {}
+
+        def _fake_run_sql(query, params=None):
+            captured["query"] = query
+            captured["params"] = params or {}
+            # Simule 7 lignes anciennes supprimées
+            return [{"id": i} for i in range(7)]
+
+        with patch(
+            "common.services.etiquette_palette_service.run_sql",
+            side_effect=_fake_run_sql,
+        ):
+            n = purge_old_label_history("tenant-x", keep=500)
+
+        assert n == 7
+        assert captured["params"]["t"] == "tenant-x"
+        assert captured["params"]["keep"] == 500
+        assert "DELETE" in captured["query"]
+        assert "ORDER BY generated_at DESC" in captured["query"]
+
+    def test_purge_swallows_db_error(self):
+        """Si la DB est down, on ne propage pas l'erreur (fire-and-forget)."""
+        with patch(
+            "common.services.etiquette_palette_service.run_sql",
+            side_effect=RuntimeError("DB down"),
+        ):
+            n = purge_old_label_history("tenant-x")
+        assert n == 0
 
     def test_list_recent_parses_all_columns(self):
         """Vérifie que list_recent_labels lit bien gtin_uvc / code_interne / bio."""

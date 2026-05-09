@@ -802,6 +802,46 @@ def get_history_entry(tenant_id: str, entry_id: int) -> HistoryEntry | None:
     return next((e for e in rows if e.id == entry_id), None)
 
 
+# Nb max de lignes d'historique à conserver par tenant. Au-delà, les plus
+# anciennes sont supprimées par purge_old_label_history (appelée fire-and-forget
+# après chaque INSERT). 500 = ~3-5 mois d'usage normal pour Symbiose.
+_HISTORY_MAX_PER_TENANT = 500
+
+
+def purge_old_label_history(tenant_id: str, keep: int = _HISTORY_MAX_PER_TENANT) -> int:
+    """Supprime les entrées les plus anciennes au-delà de ``keep`` pour ce tenant.
+
+    Fire-and-forget : log l'erreur sans propager. Appelée après chaque INSERT
+    pour maintenir la table à taille bornée. Idempotent.
+
+    Returns:
+        Nb de lignes supprimées.
+    """
+    try:
+        rows = run_sql(
+            """DELETE FROM etiquette_palette_history
+               WHERE tenant_id = :t
+                 AND id NOT IN (
+                   SELECT id FROM etiquette_palette_history
+                   WHERE tenant_id = :t
+                   ORDER BY generated_at DESC
+                   LIMIT :keep
+                 )
+               RETURNING id""",
+            {"t": tenant_id, "keep": int(keep)},
+        ) or []
+        n = len(rows)
+        if n > 0:
+            _log.info(
+                "Purge historique étiquettes : %d lignes supprimées pour tenant %s",
+                n, tenant_id,
+            )
+        return n
+    except Exception:
+        _log.exception("Échec purge historique étiquettes (fire-and-forget)")
+        return 0
+
+
 def get_sync_status(tenant_id: str) -> SyncStatus:
     """Retourne l'âge et le statut de la dernière sync étiquettes du tenant."""
     rows = run_sql(

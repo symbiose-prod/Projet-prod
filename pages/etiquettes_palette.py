@@ -40,6 +40,7 @@ from common.services.etiquette_palette_service import (
     get_product_image_url,
     list_recent_labels,
     load_label_data_from_sync,
+    purge_old_label_history,
     save_label_history,
 )
 from pages.auth import require_auth
@@ -127,84 +128,7 @@ def _render_form(
             on_click=lambda: _open_manual_ean_dialog(_handle_scanned_data),
         ).props("flat color=grey-7 dense")
 
-    # Listener JS du file input — resize côté client (canvas 1280px max) avant
-    # upload pour réduire la latence de 3-5 s sur 4G à <1 s, sans perte de
-    # qualité utile pour zxing-cpp. Émet l'EAN décodé via emitEvent.
-    ui.add_body_html("""
-    <script>
-    (function() {
-        if (window._fsScanInputBound) return;
-        window._fsScanInputBound = true;
-
-        // Resize via canvas : conserve l'aspect ratio, max 1280px sur le grand
-        // côté, JPEG 85% (qualité largement suffisante pour décodage barcode).
-        async function _fsResizeImage(file, maxDim) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onerror = () => reject(new Error('FileReader'));
-                reader.onload = () => {
-                    const img = new Image();
-                    img.onerror = () => reject(new Error('Image load'));
-                    img.onload = () => {
-                        let w = img.naturalWidth, h = img.naturalHeight;
-                        const scale = Math.min(1, maxDim / Math.max(w, h));
-                        w = Math.round(w * scale);
-                        h = Math.round(h * scale);
-                        const canvas = document.createElement('canvas');
-                        canvas.width = w; canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, w, h);
-                        canvas.toBlob(
-                            (blob) => blob ? resolve(blob)
-                                : reject(new Error('toBlob')),
-                            'image/jpeg', 0.85,
-                        );
-                    };
-                    img.src = reader.result;
-                };
-                reader.readAsDataURL(file);
-            });
-        }
-
-        const wait = () => {
-            const input = document.getElementById('photo-capture-input');
-            if (!input) { setTimeout(wait, 200); return; }
-            input.addEventListener('change', async (e) => {
-                const file = e.target.files && e.target.files[0];
-                if (!file) return;
-                emitEvent('barcode_uploading', file.size);
-                try {
-                    let toUpload;
-                    try {
-                        toUpload = await _fsResizeImage(file, 1280);
-                    } catch (err) {
-                        // Fallback : envoie le fichier original si le resize
-                        // échoue (HEIC pur que le navigateur ne décode pas)
-                        console.warn('resize failed, sending original', err);
-                        toUpload = file;
-                    }
-                    const formData = new FormData();
-                    formData.append('file', toUpload, 'photo.jpg');
-                    const resp = await fetch('/api/scan-barcode', {
-                        method: 'POST', body: formData,
-                    });
-                    const data = await resp.json();
-                    if (data.ean) {
-                        emitEvent('barcode_scanned', data);
-                    } else {
-                        emitEvent('barcode_error',
-                            (data.error || 'Aucun code-barres détecté'));
-                    }
-                } catch (err) {
-                    emitEvent('barcode_error', String(err));
-                }
-                e.target.value = '';
-            });
-        };
-        wait();
-    })();
-    </script>
-    """)
+    _install_scan_input_listener()
 
     # ────────────────────────────────────────────────────────────────────
     # Récapitulatif produit (photo + détails) — visible dès qu'un scan a lieu
@@ -705,6 +629,8 @@ def _render_form(
                 code_interne=entry.code_interne,
                 bio=True,
             )
+            # Purge automatique : maintient la table à taille bornée
+            await asyncio.to_thread(purge_old_label_history, tenant_id)
             _refresh_history()
             next_scan_row.set_visibility(True)
             ui.notify(
@@ -774,47 +700,8 @@ def _render_form(
         if not tenant_id:
             return
         recent = list_recent_labels(tenant_id, limit=10)
-        if not recent:
-            return
         with history_section:
-            section_title("Étiquettes récentes", "history")
-            with ui.card().classes("w-full q-pa-none").props("flat bordered"):
-                for i, h in enumerate(recent):
-                    if i > 0:
-                        ui.separator()
-                    with ui.card_section().classes("q-pa-sm"):
-                        with ui.row().classes("w-full items-center gap-3 no-wrap"):
-                            img_url = get_product_image_url(h.gout)
-                            if img_url:
-                                ui.image(img_url).classes("rounded").style(
-                                    "width:48px; height:48px; object-fit:cover; "
-                                    "background:#f3f4f6",
-                                )
-                            with ui.column().classes("gap-0 flex-1"):
-                                title = h.designation or f"GTIN {h.ean}"
-                                ui.label(f"{title} — {h.fmt}").classes(
-                                    "text-body2",
-                                ).style(f"color: {COLORS['ink']}; font-weight: 500")
-                                meta = (
-                                    f"Lot {h.lot} · DDM {h.ddm.strftime('%d/%m/%Y')} · "
-                                    f"{h.case_count} caisses"
-                                )
-                                if h.n_copies > 1:
-                                    meta += f" · {h.n_copies} ex."
-                                ui.label(meta).classes("text-caption").style(
-                                    f"color: {COLORS['ink2']}",
-                                )
-                                when = h.generated_at.strftime("%d/%m/%Y %H:%M") if hasattr(
-                                    h.generated_at, "strftime",
-                                ) else str(h.generated_at)
-                                who = f" par {h.user_email}" if h.user_email else ""
-                                ui.label(f"Imprimée le {when}{who}").classes(
-                                    "text-caption",
-                                ).style(f"color: {COLORS['ink2']}")
-                            ui.button(
-                                "Réimprimer", icon="print",
-                                on_click=lambda _e, hh=h: _do_reprint(hh),
-                            ).props("flat color=green-8 dense")
+            _render_history_card(recent, on_reprint=_do_reprint)
 
     _refresh_history()
 
@@ -850,6 +737,144 @@ def _open_manual_ean_dialog(handler) -> None:
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
+
+_SCAN_INPUT_LISTENER_JS = """
+<script>
+(function() {
+    if (window._fsScanInputBound) return;
+    window._fsScanInputBound = true;
+
+    // Resize via canvas : conserve l'aspect ratio, max 1280px sur le grand
+    // côté, JPEG 85% (qualité largement suffisante pour décodage barcode).
+    async function _fsResizeImage(file, maxDim) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error('FileReader'));
+            reader.onload = () => {
+                const img = new Image();
+                img.onerror = () => reject(new Error('Image load'));
+                img.onload = () => {
+                    let w = img.naturalWidth, h = img.naturalHeight;
+                    const scale = Math.min(1, maxDim / Math.max(w, h));
+                    w = Math.round(w * scale);
+                    h = Math.round(h * scale);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    canvas.toBlob(
+                        (blob) => blob ? resolve(blob)
+                            : reject(new Error('toBlob')),
+                        'image/jpeg', 0.85,
+                    );
+                };
+                img.src = reader.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    const wait = () => {
+        const input = document.getElementById('photo-capture-input');
+        if (!input) { setTimeout(wait, 200); return; }
+        input.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            emitEvent('barcode_uploading', file.size);
+            try {
+                let toUpload;
+                try {
+                    toUpload = await _fsResizeImage(file, 1280);
+                } catch (err) {
+                    // Fallback : envoie le fichier original si le resize
+                    // échoue (HEIC pur que le navigateur ne décode pas)
+                    console.warn('resize failed, sending original', err);
+                    toUpload = file;
+                }
+                const formData = new FormData();
+                formData.append('file', toUpload, 'photo.jpg');
+                const resp = await fetch('/api/scan-barcode', {
+                    method: 'POST', body: formData,
+                });
+                const data = await resp.json();
+                if (data.ean) {
+                    emitEvent('barcode_scanned', data);
+                } else {
+                    emitEvent('barcode_error',
+                        (data.error || 'Aucun code-barres détecté'));
+                }
+            } catch (err) {
+                emitEvent('barcode_error', String(err));
+            }
+            e.target.value = '';
+        });
+    };
+    wait();
+})();
+</script>
+"""
+
+
+def _render_history_card(
+    entries: list[HistoryEntry],
+    *,
+    on_reprint,
+) -> None:
+    """Rend la card « Étiquettes récentes » à partir d'une liste d'entries.
+
+    Doit être appelé dans un contexte UI (entre ``with section:`` du caller).
+    Si ``entries`` est vide, ne rend rien (silencieux).
+    """
+    if not entries:
+        return
+    section_title("Étiquettes récentes", "history")
+    with ui.card().classes("w-full q-pa-none").props("flat bordered"):
+        for i, h in enumerate(entries):
+            if i > 0:
+                ui.separator()
+            with ui.card_section().classes("q-pa-sm"):
+                with ui.row().classes("w-full items-center gap-3 no-wrap"):
+                    img_url = get_product_image_url(h.gout)
+                    if img_url:
+                        ui.image(img_url).classes("rounded").style(
+                            "width:48px; height:48px; object-fit:cover; "
+                            "background:#f3f4f6",
+                        )
+                    with ui.column().classes("gap-0 flex-1"):
+                        title = h.designation or f"GTIN {h.ean}"
+                        ui.label(f"{title} — {h.fmt}").classes(
+                            "text-body2",
+                        ).style(f"color: {COLORS['ink']}; font-weight: 500")
+                        meta = (
+                            f"Lot {h.lot} · DDM {h.ddm.strftime('%d/%m/%Y')} · "
+                            f"{h.case_count} caisses"
+                        )
+                        if h.n_copies > 1:
+                            meta += f" · {h.n_copies} ex."
+                        ui.label(meta).classes("text-caption").style(
+                            f"color: {COLORS['ink2']}",
+                        )
+                        when = h.generated_at.strftime("%d/%m/%Y %H:%M") if hasattr(
+                            h.generated_at, "strftime",
+                        ) else str(h.generated_at)
+                        who = f" par {h.user_email}" if h.user_email else ""
+                        ui.label(f"Imprimée le {when}{who}").classes(
+                            "text-caption",
+                        ).style(f"color: {COLORS['ink2']}")
+                    ui.button(
+                        "Réimprimer", icon="print",
+                        on_click=lambda _e, hh=h: on_reprint(hh),
+                    ).props("flat color=green-8 dense")
+
+
+def _install_scan_input_listener() -> None:
+    """Injecte le JS qui écoute le file input + upload + emitEvent vers Python.
+
+    Idempotent : ``window._fsScanInputBound`` empêche le double-binding si la
+    page est ré-ouverte sans full reload (édge case Quasar/NiceGUI).
+    """
+    ui.add_body_html(_SCAN_INPUT_LISTENER_JS)
+
 
 def _ctx_from_entry(
     entry: LabelEntry, count: int,
