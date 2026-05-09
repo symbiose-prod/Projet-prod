@@ -1322,10 +1322,20 @@ async def page_ramasse():
                             "Télécharge l'historique (500 dernières, y compris corbeille)"
                         )
 
+                    # Container persistant pour le tableau — rempli au lazy-load.
+                    # Sans ce slot, les éléments créés dans _load_history_data se
+                    # retrouvent hors de l'expansion (callback exécuté après sortie
+                    # du `with hist_exp`).
+                    hist_body = ui.column().classes("w-full q-px-sm q-pb-sm")
+
                     def _load_history_data():
                         if hist_data_loaded["done"]:
                             return
                         hist_data_loaded["done"] = True
+                        with hist_body:
+                            _populate_history_body()
+
+                    def _populate_history_body():
                         try:
                             items = list_ramasses(limit=20)
                         except Exception:
