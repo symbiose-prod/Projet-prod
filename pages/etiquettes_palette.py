@@ -12,13 +12,16 @@ Mode scan-first :
      interroge la matrice codes-barres EasyBeer (cache 24 h) pour résoudre
      marque/format/PCB/désignation/goût.
   5. Tout est pré-rempli dans le récap (avec photo produit). L'opérateur
-     n'a plus qu'à cocher palette pleine / saisir le détail des étages,
-     puis générer le PDF (1 ou 2 exemplaires selon recommandation GS1).
+     choisit ensuite palette pleine/partielle, ajuste les caisses via le
+     diagramme cliquable + compteur +/-, puis génère le PDF.
 
-Fallback : si le scan échoue ou que l'EAN n'est pas dans la matrice EB,
-l'opérateur peut ouvrir la cascade « Sélection manuelle » (collapsée par
-défaut) ou saisir l'EAN à la main. La cascade est alimentée par la sync
-étiquettes (table ``sync_operations``) — moins fraîche que la matrice EB.
+Fallback : si le scan échoue, l'opérateur peut saisir l'EAN à la main —
+le lookup interroge la matrice codes-barres EasyBeer fraîche (cache
+24 h) puis tombe sur la sync étiquettes (``sync_operations``) si
+EasyBeer n'a pas le produit.
+
+UI en wizard 4 étapes (révélation progressive) : [1] Scan, [2] Produit
+identifié, [3] Quantité, [4] Imprimer.
 
 PDF : 102×152 mm (Dymo 5XL Wireless), AirPrint depuis l'iPad.
 """
@@ -34,7 +37,6 @@ from nicegui import ui
 
 from common.ramasse import get_palette_layout
 from common.services.etiquette_palette_service import (
-    BOTTLE_TYPES,
     HistoryEntry,
     LabelEntry,
     compute_case_count,
@@ -113,8 +115,8 @@ def _render_form(
     tenant_id: str = "",
     user_email: str = "",
 ) -> None:
-    """Rend le formulaire scan-first : bouton hero scanner, photo produit dans
-    le récap, cascade marque/bouteille/goût en mode fallback (collapsed)."""
+    """Rend le formulaire wizard 4 étapes : scan/EAN manuel → produit
+    identifié → quantité (palette pleine/partielle + diagramme) → imprimer."""
     state: dict = {
         "marque": None,
         "bottle": None,
@@ -188,49 +190,10 @@ def _render_form(
                 on_click=lambda: _open_manual_ean_dialog(_handle_manual_ean),
             ).props("outline color=grey-8")
 
-        # Fallback discret : la cascade marque/bouteille/goût pour les cas
-        # extrêmes où ni le scan ni l'EAN manuel ne donnent rien (carton
-        # totalement abîmé, produit ajouté côté EB mais EAN absent).
-        marques_dispo = sorted({e.marque for e in entries})
-        marque_buttons: dict[str, ui.button] = {}
-        bottle_buttons: dict[str, ui.button] = {}
-        with ui.expansion(
-            text="Tu ne trouves pas ton produit ? Sélection manuelle",
-            icon="tune",
-        ).classes("w-full q-mb-sm").props("dense") as manual_expansion:
-            section_title("Marque", "branding_watermark")
-            marque_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-            with marque_card:
-                with ui.row().classes("w-full gap-3"):
-                    for m in marques_dispo:
-                        btn = ui.button(m).classes("flex-1").props(
-                            "size=lg outline color=green-8",
-                        )
-                        marque_buttons[m] = btn
-
-            section_title("Type de bouteille", "wine_bar")
-            bottle_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-            with bottle_card:
-                with ui.row().classes("w-full gap-3"):
-                    for bt in BOTTLE_TYPES:
-                        btn = ui.button(bt).classes("flex-1").props(
-                            "size=lg outline color=green-8",
-                        )
-                        btn.disable()
-                        bottle_buttons[bt] = btn
-
-            section_title("Goût", "local_drink")
-            gout_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
-            with gout_card:
-                gout_select = ui.select(
-                    options=[],
-                    label="Choisir le goût",
-                    with_input=True,
-                ).classes("w-full").props(
-                    "outlined dense fill-input use-input input-debounce=0",
-                )
-                gout_select.disable()
-        _ = manual_expansion
+        # Cascade fallback (marque/bouteille/goût) supprimée : le flow se
+        # repose sur scan + saisie manuelle EAN. Si un opérateur tombe
+        # sur un carton illisible et un EAN inconnu, il prend un autre
+        # carton de la même palette.
 
     _install_scan_input_listener()
 
@@ -294,7 +257,7 @@ def _render_form(
 
             partial_container = ui.column().classes("w-full gap-3 q-mt-md")
             with partial_container:
-                layers_label = ui.label("Tape sur l'étage le plus haut qui est complet :").classes(
+                layers_label = ui.label("Indique le nombre d'étage complet :").classes(
                     "text-body2",
                 ).style(f"color: {COLORS['ink']}; font-weight: 500")
 
@@ -302,8 +265,10 @@ def _render_form(
                 # Reconstruit dynamiquement à chaque scan (le format change).
                 layers_diagram = ui.column().classes("w-full gap-1").style("max-width: 360px")
                 no_layer_btn = ui.button(
-                    "Aucun étage rempli",
-                ).classes("w-full q-mt-xs").props("flat color=grey-7 size=sm")
+                    "Aucun étage rempli", icon="block",
+                ).classes("w-full q-mt-xs").props(
+                    "outline color=grey-8 size=md",
+                ).style("min-height: 44px; touch-action: manipulation")
 
                 ui.separator().classes("q-my-sm")
 
@@ -468,82 +433,11 @@ def _render_form(
         _refresh_layers_visual()
         _refresh_extras_visual()
 
-    def _set_active_button(buttons: dict[str, ui.button], active_key: str | None):
-        """Marque visuellement le bouton sélectionné (color=green-8 unelevated)."""
-        for key, btn in buttons.items():
-            if key == active_key:
-                btn.props(remove="outline")
-                btn.props("unelevated color=green-8")
-            else:
-                btn.props(remove="unelevated")
-                btn.props("outline color=green-8")
-
-    def _filter_entries() -> list[LabelEntry]:
-        """Retourne les entries qui matchent l'état courant (marque, bottle, gout)."""
-        out = entries
-        if state["marque"]:
-            out = [e for e in out if e.marque == state["marque"]]
-        if state["bottle"]:
-            out = [e for e in out if e.bottle_type == state["bottle"]]
-        if state["gout"]:
-            out = [e for e in out if e.gout == state["gout"]]
-        return out
-
-    def _refresh_bottles():
-        """Active uniquement les bouteilles disponibles pour la marque choisie."""
-        if not state["marque"]:
-            for btn in bottle_buttons.values():
-                btn.disable()
-            return
-        available = {
-            e.bottle_type
-            for e in entries
-            if e.marque == state["marque"]
-        }
-        for bt, btn in bottle_buttons.items():
-            if bt in available:
-                btn.enable()
-            else:
-                btn.disable()
-
-    def _refresh_gouts():
-        """Met à jour les options du sélecteur goût."""
-        if not (state["marque"] and state["bottle"]):
-            gout_select.options = []
-            gout_select.value = None
-            gout_select.disable()
-            return
-        gouts = sorted({
-            e.gout
-            for e in entries
-            if e.marque == state["marque"] and e.bottle_type == state["bottle"]
-        }, key=str.lower)
-        gout_select.options = gouts
-        gout_select.value = None
-        gout_select.enable()
-
     def _refresh_recap():
-        """Met à jour la card récap. Préserve l'entry synthétique d'un scan."""
-        # Cas 1 : entry déjà posée (par un scan EAN qui matche EasyBeer ou la
-        # sync) et cohérente avec les sélecteurs courants → on la garde telle
-        # quelle (avec lot/DDM scannés).
-        existing = state.get("entry")
-        entry: LabelEntry | None = None
-        if (
-            existing is not None
-            and state.get("marque") == existing.marque
-            and state.get("bottle") == existing.bottle_type
-        ):
-            entry = existing
-        else:
-            # Cas 2 : résoudre via la cascade sync (entries)
-            matches = _filter_entries()
-            if state["marque"] and state["bottle"] and state["gout"] and matches:
-                entry = matches[0]
-                state["entry"] = entry
-            else:
-                state["entry"] = None
-                entry = None
+        """Met à jour la card récap depuis state["entry"] (posée par scan ou
+        saisie manuelle EAN). La cascade marque/bouteille/goût n'existe plus,
+        donc l'unique source d'entry est le chemin scan/EAN."""
+        entry: LabelEntry | None = state.get("entry")
 
         if entry:
             recap_label.text = entry.designation
@@ -580,8 +474,7 @@ def _render_form(
             layers_input.props(f"max={layout['layers']}")
             extras_input.props(f"max={max(0, layout['per_layer'] - 1)}")
             layers_label.text = (
-                f"Tape sur l'étage le plus haut qui est complet "
-                f"(max {layout['layers']}) :"
+                f"Indique le nombre d'étage complet (max {layout['layers']}) :"
             )
             extras_label.text = (
                 "Caisses sur le dessus (étage incomplet, "
@@ -678,37 +571,15 @@ def _render_form(
         was_hidden = not generate_section.visible
         generate_section.set_visibility(ready)
         if ready and was_hidden:
+            # block:'nearest' = scroll uniquement si l'étape Imprimer
+            # n'est pas déjà visible. Évite de masquer les +/- de l'étape
+            # 3 (qty) en sur-scrollant comme c'était le cas avec 'center'.
             ui.run_javascript(
                 "setTimeout(() => {"
                 "const el = document.getElementById('step-generate');"
-                "if (el) el.scrollIntoView({behavior:'smooth', block:'center'});"
+                "if (el) el.scrollIntoView({behavior:'smooth', block:'nearest'});"
                 "}, 100);",
             )
-
-    def _on_marque_click(m: str):
-        state["marque"] = m
-        # Reset des étapes suivantes
-        state["bottle"] = None
-        state["gout"] = None
-        _set_active_button(marque_buttons, m)
-        _set_active_button(bottle_buttons, None)
-        _refresh_bottles()
-        _refresh_gouts()
-        _refresh_recap()
-
-    def _on_bottle_click(bt: str):
-        if not state["marque"]:
-            ui.notify("Sélectionne d'abord la marque.", type="warning")
-            return
-        state["bottle"] = bt
-        state["gout"] = None
-        _set_active_button(bottle_buttons, bt)
-        _refresh_gouts()
-        _refresh_recap()
-
-    def _on_gout_change(e):
-        state["gout"] = e.value
-        _refresh_recap()
 
     def _set_pallet_type_buttons(active: bool | None):
         """Met à jour visuellement les boutons palette pleine/partielle."""
@@ -773,24 +644,8 @@ def _render_form(
         state["marque"] = entry.marque
         state["bottle"] = entry.bottle_type
         state["gout"] = entry.gout
-        # Mise à jour visuelle (en best-effort si les boutons existent)
-        _set_active_button(marque_buttons, entry.marque)
-        _refresh_bottles()
-        # On force enable du bouton bouteille même si la sync ne le proposait pas
-        if entry.bottle_type in bottle_buttons:
-            bottle_buttons[entry.bottle_type].enable()
-        _set_active_button(bottle_buttons, entry.bottle_type)
-        _refresh_gouts()
-        # Ajoute le goût scanné aux options s'il n'est pas déjà là
-        current_options = list(gout_select.options or [])
-        if entry.gout and entry.gout not in current_options:
-            gout_select.options = current_options + [entry.gout]
-        gout_select.value = entry.gout
-        gout_select.enable()
         _refresh_recap()  # gère la reveal des sections via la logique centrale
-        # Scroll vers la section produit pour que l'opérateur voie le récap
-        # (utile surtout sur le chemin scan : sur cascade manuelle, l'opérateur
-        # est déjà dans le bas de page, le scroll vers le haut est cohérent).
+        # Scroll vers la section produit pour que l'opérateur voie le récap.
         ui.run_javascript(
             "setTimeout(() => {"
             "const el = document.getElementById('step-produit');"
@@ -895,11 +750,6 @@ def _render_form(
         ),
     )
 
-    for m, btn in marque_buttons.items():
-        btn.on_click(lambda _e, mm=m: _on_marque_click(mm))
-    for bt, btn in bottle_buttons.items():
-        btn.on_click(lambda _e, b=bt: _on_bottle_click(b))
-    gout_select.on_value_change(_on_gout_change)
     full_pallet_btn.on_click(lambda _e: _on_full_pallet_click())
     partial_pallet_btn.on_click(lambda _e: _on_partial_pallet_click())
     no_layer_btn.on_click(lambda _e: _set_layers_full(0))
@@ -1091,13 +941,6 @@ def _render_form(
         state["bottle"] = None
         state["gout"] = None
         state["entry"] = None
-        _set_active_button(marque_buttons, None)
-        for btn in bottle_buttons.values():
-            btn.disable()
-        _set_active_button(bottle_buttons, None)
-        gout_select.options = []
-        gout_select.value = None
-        gout_select.disable()
         layers_input.value = 0
         extras_input.value = 0
         _refresh_layers_visual()
