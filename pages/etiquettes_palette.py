@@ -246,21 +246,49 @@ def _render_form(
                 "PALETTE PARTIELLE", icon="layers",
             ).classes("flex-1").props("size=lg outline color=orange-8").style("min-height: 64px")
 
-        partial_container = ui.column().classes("w-full gap-2 q-mt-sm")
+        partial_container = ui.column().classes("w-full gap-3 q-mt-md")
         with partial_container:
-            layers_label = ui.label("Étages pleins").classes("text-body2")
-            layers_input = ui.number(value=0, min=0, max=7, step=1).classes("w-full").props(
-                "outlined dense",
-            )
+            layers_label = ui.label("Tape sur l'étage le plus haut qui est complet :").classes(
+                "text-body2",
+            ).style(f"color: {COLORS['ink']}; font-weight: 500")
 
-            extras_label = ui.label("Caisses sur le dernier étage (incomplet)").classes(
-                "text-body2 q-mt-xs",
-            )
-            extras_input = ui.number(value=0, min=0, max=35, step=1).classes("w-full").props(
-                "outlined dense",
-            )
+            # Diagramme palette : empilement de boutons-étages cliquables.
+            # Reconstruit dynamiquement à chaque scan (le format change).
+            layers_diagram = ui.column().classes("w-full gap-1").style("max-width: 360px")
+            no_layer_btn = ui.button(
+                "Aucun étage rempli",
+            ).classes("w-full q-mt-xs").props("flat color=grey-7 size=sm")
+
+            ui.separator().classes("q-my-sm")
+
+            extras_label = ui.label(
+                "Caisses sur le dessus (étage incomplet) :",
+            ).classes("text-body2").style(f"color: {COLORS['ink']}; font-weight: 500")
+            with ui.row().classes("w-full items-center justify-center gap-3 q-mt-xs"):
+                extras_minus_btn = ui.button("−").props(
+                    "size=lg color=grey-8 round outline",
+                ).style("min-width: 56px; min-height: 56px; font-size: 28px")
+                extras_value_label = ui.label("0").style(
+                    f"color: {COLORS['ink']}; font-weight: 700; "
+                    "font-size: 36px; min-width: 64px; text-align: center",
+                )
+                extras_plus_btn = ui.button("+").props(
+                    "size=lg color=green-8 round outline",
+                ).style("min-width: 56px; min-height: 56px; font-size: 28px")
+                extras_max_label = ui.label("").classes("text-caption q-ml-md").style(
+                    f"color: {COLORS['ink2']}",
+                )
+
+            # State holders cachés : la logique réactive existante
+            # (compute_case_count, _refresh_total) lit ces valeurs.
+            layers_input = ui.number(value=0, min=0, max=7, step=1)
+            layers_input.set_visibility(False)
+            extras_input = ui.number(value=0, min=0, max=35, step=1)
+            extras_input.set_visibility(False)
 
         partial_container.set_visibility(False)
+        # Boutons-étages reconstruits dans _rebuild_layers_diagram (au scan)
+        layer_buttons: list[tuple[int, ui.button]] = []
 
         ui.separator().classes("q-my-md")
         # Total surdimensionné — c'est LE chiffre que l'opérateur doit
@@ -305,6 +333,69 @@ def _render_form(
     # ────────────────────────────────────────────────────────────────────
     # Logique réactive
     # ────────────────────────────────────────────────────────────────────
+
+    def _refresh_layers_visual():
+        """Met à jour la couleur des boutons-étages selon layers_input.value."""
+        k = int(layers_input.value or 0)
+        for i, btn in layer_buttons:
+            if i <= k:
+                btn.props(remove="outline")
+                btn.props("unelevated color=green-7")
+            else:
+                btn.props(remove="unelevated")
+                btn.props("outline color=grey-7")
+
+    def _set_layers_full(k: int):
+        layers_input.value = int(k)
+        _refresh_layers_visual()
+        _refresh_total()
+
+    def _refresh_extras_visual():
+        v = int(extras_input.value or 0)
+        extras_value_label.text = str(v)
+
+    def _on_extras_minus():
+        v = int(extras_input.value or 0)
+        if v > 0:
+            extras_input.value = v - 1
+            _refresh_extras_visual()
+            _refresh_total()
+
+    def _on_extras_plus():
+        entry: LabelEntry | None = state.get("entry")
+        if not entry:
+            return
+        layout = get_palette_layout(entry.fmt, entry.product_label)
+        max_v = max(0, int(layout.get("per_layer") or 0) - 1)
+        v = int(extras_input.value or 0)
+        if v < max_v:
+            extras_input.value = v + 1
+            _refresh_extras_visual()
+            _refresh_total()
+
+    def _rebuild_layers_diagram(layout: dict):
+        """Reconstruit la pile de boutons-étages selon le format du produit."""
+        layer_buttons.clear()
+        layers_diagram.clear()
+        n_layers = int(layout.get("layers") or 0)
+        per_layer = int(layout.get("per_layer") or 0)
+        if n_layers <= 0 or per_layer <= 0:
+            return
+        # Affichage top-down (étage le plus haut en premier visuellement),
+        # mais le numéro d'étage croit de bas en haut (étage 1 = sol).
+        with layers_diagram:
+            for i in range(n_layers, 0, -1):
+                btn = ui.button(
+                    f"Étage {i}  ·  {per_layer} caisses",
+                ).classes("w-full").props(
+                    "outline color=grey-7 size=md align=left",
+                ).style("min-height: 44px; font-weight: 500")
+                btn.on_click(lambda _e, k=i: _set_layers_full(k))
+                layer_buttons.append((i, btn))
+        extras_max_label.text = f"max {per_layer - 1}"
+        # Reset visuel cohérent avec layers_input.value courant
+        _refresh_layers_visual()
+        _refresh_extras_visual()
 
     def _set_active_button(buttons: dict[str, ui.button], active_key: str | None):
         """Marque visuellement le bouton sélectionné (color=green-8 unelevated)."""
@@ -417,10 +508,15 @@ def _render_form(
             layout = get_palette_layout(entry.fmt, entry.product_label)
             layers_input.props(f"max={layout['layers']}")
             extras_input.props(f"max={max(0, layout['per_layer'] - 1)}")
-            layers_label.text = f"Étages pleins (max {layout['layers']})"
-            extras_label.text = (
-                f"Caisses sur le dernier étage (max {layout['per_layer'] - 1})"
+            layers_label.text = (
+                f"Tape sur l'étage le plus haut qui est complet "
+                f"(max {layout['layers']}) :"
             )
+            extras_label.text = (
+                "Caisses sur le dessus (étage incomplet, "
+                f"max {layout['per_layer'] - 1}) :"
+            )
+            _rebuild_layers_diagram(layout)
         else:
             recap_image.set_visibility(False)
             recap_label.text = (
@@ -429,6 +525,10 @@ def _render_form(
             recap_label.style(f"color: {COLORS['ink2']}; font-weight: 400; font-size: 14px")
             recap_details.set_visibility(False)
             ddm_warning.set_visibility(False)
+            # Pas d'entry → pas de diagramme palette
+            layer_buttons.clear()
+            layers_diagram.clear()
+            extras_max_label.text = ""
         _refresh_total()
 
     def _refresh_total():
@@ -675,6 +775,11 @@ def _render_form(
     gout_select.on_value_change(_on_gout_change)
     full_pallet_btn.on_click(lambda _e: _on_full_pallet_click())
     partial_pallet_btn.on_click(lambda _e: _on_partial_pallet_click())
+    no_layer_btn.on_click(lambda _e: _set_layers_full(0))
+    extras_minus_btn.on_click(lambda _e: _on_extras_minus())
+    extras_plus_btn.on_click(lambda _e: _on_extras_plus())
+    # On garde les listeners sur les inputs cachés au cas où une saisie au
+    # clavier passerait par eux (defense in depth — pas de chemin actif aujourd'hui).
     layers_input.on_value_change(_on_layers_change)
     extras_input.on_value_change(_on_extras_change)
 
@@ -859,6 +964,8 @@ def _render_form(
         gout_select.disable()
         layers_input.value = 0
         extras_input.value = 0
+        _refresh_layers_visual()
+        _refresh_extras_visual()
         # On préserve state["full_pallet"] : si l'opérateur étiquette une série
         # de palettes pleines du même produit, il ne devrait pas avoir à
         # rechoisir à chaque fois. Visuel des boutons cohérent.
