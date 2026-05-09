@@ -717,6 +717,15 @@ async def _api_scan_barcode(request: Request):
     if upload is None or not hasattr(upload, "read"):
         return JSONResponse({"error": "Missing 'file' field"}, status_code=400)
 
+    # Validation MIME : on n'accepte que les images (le navigateur capture file
+    # envoie du image/jpeg, image/png ou rarement image/heic).
+    content_type = (getattr(upload, "content_type", "") or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        return JSONResponse(
+            {"error": f"Type de fichier non supporté ({content_type}). Image attendue."},
+            status_code=415,
+        )
+
     try:
         image_bytes = await upload.read()
     except Exception:
@@ -738,14 +747,20 @@ async def _api_scan_barcode(request: Request):
 
     scan = await asyncio.to_thread(extract_gs1_data_from_image, image_bytes)
     if not scan:
+        _log.info("Scan barcode : aucun code-barres détecté (%d KB)", len(image_bytes) // 1024)
         return JSONResponse({"error": "No barcode detected"}, status_code=200)
 
-    # Lookup produit via la matrice codes-barres EasyBeer (cache 24 h)
-    product = await asyncio.to_thread(lookup_product_by_ean, str(scan.get("ean") or ""))
+    ean = str(scan.get("ean") or "")
+    product = await asyncio.to_thread(lookup_product_by_ean, ean)
+    _log.info(
+        "Scan barcode : ean=%s lot=%s product=%s",
+        ean, scan.get("lot") or "—",
+        (product or {}).get("designation") or "(non trouvé EB)",
+    )
 
     ddm = scan.get("ddm")
     return JSONResponse({
-        "ean": scan.get("ean") or "",
+        "ean": ean,
         "lot": scan.get("lot") or "",
         "ddm": ddm.isoformat() if ddm else None,
         "product": product,

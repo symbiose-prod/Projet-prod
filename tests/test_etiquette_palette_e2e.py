@@ -17,8 +17,11 @@ import pypdf
 
 from common.etiquette_palette_pdf import EtiquetteContext, build_etiquette_palette_pdf
 from common.services.etiquette_palette_service import (
+    classify_bottle_type,
     extract_ean_from_image,
     extract_gs1_data_from_image,
+    list_recent_labels,
+    save_label_history,
 )
 
 
@@ -193,6 +196,173 @@ class TestLookupProductByEan:
         ):
             result = lookup_product_by_ean("23770014427018")
         assert result is None
+
+
+# ─── save_label_history & list_recent_labels (pipeline DB mocké) ────────────
+
+class TestHistoryPipeline:
+
+    def test_save_passes_all_columns(self):
+        """Vérifie que le service insère bien toutes les colonnes attendues
+        dans la table (anti-régression si on ajoute une colonne et qu'on
+        oublie de mettre à jour save_label_history)."""
+        captured: dict = {}
+
+        def _fake_run_sql(query, params=None):
+            captured["query"] = query
+            captured["params"] = params or {}
+            return [{"id": 42}]
+
+        with patch(
+            "common.services.etiquette_palette_service.run_sql",
+            side_effect=_fake_run_sql,
+        ):
+            new_id = save_label_history(
+                "tenant-x", user_email="op@test.fr",
+                ean="03770014427250", lot="110527",
+                ddm=_dt.date(2027, 5, 11),
+                fmt="6x75", marque="SYMBIOSE",
+                designation="Kéfir Pamplemousse Rose",
+                gout="Pamplemousse Rose",
+                case_count=96, full_pallet=True,
+                n_copies=2, pcb=6,
+                gtin_uvc="3770014427014",
+                code_interne="SK-KDF-PAMP-75",
+                bio=True,
+            )
+
+        assert new_id == 42
+        # Toutes les colonnes nouvellement ajoutées doivent être dans les params
+        params = captured["params"]
+        assert params["uvc"] == "3770014427014"
+        assert params["ci"] == "SK-KDF-PAMP-75"
+        assert params["bio"] is True
+        assert params["t"] == "tenant-x"
+        assert params["ean"] == "03770014427250"
+        assert params["m"] == "SYMBIOSE"
+
+    def test_save_failure_returns_none_not_raise(self):
+        """Fire-and-forget : si la DB est down, le service ne propage pas."""
+        with patch(
+            "common.services.etiquette_palette_service.run_sql",
+            side_effect=RuntimeError("DB down"),
+        ):
+            result = save_label_history(
+                "tenant-x", user_email="x", ean="0", lot="L",
+                ddm=_dt.date(2026, 1, 1), fmt="6x33", marque="SYMBIOSE",
+                designation="X", gout="G", case_count=1, full_pallet=True,
+                n_copies=1, pcb=6,
+            )
+        assert result is None  # pas d'exception propagée
+
+    def test_list_recent_parses_all_columns(self):
+        """Vérifie que list_recent_labels lit bien gtin_uvc / code_interne / bio."""
+        from datetime import datetime as _dtt
+        with patch(
+            "common.services.etiquette_palette_service.run_sql",
+            return_value=[{
+                "id": 1, "ean": "03770014427250", "lot": "110527",
+                "ddm": _dt.date(2027, 5, 11), "fmt": "6x75",
+                "marque": "SYMBIOSE", "designation": "Pamplemousse Rose",
+                "gout": "Pamplemousse Rose", "case_count": 96,
+                "full_pallet": True, "n_copies": 2, "pcb": 6,
+                "gtin_uvc": "3770014427014",
+                "code_interne": "SK-KDF-PAMP-75", "bio": True,
+                "user_email": "op@test.fr",
+                "generated_at": _dtt(2026, 5, 9, 10, 30),
+            }],
+        ):
+            entries = list_recent_labels("tenant-x", limit=10)
+        assert len(entries) == 1
+        e = entries[0]
+        assert e.gtin_uvc == "3770014427014"
+        assert e.code_interne == "SK-KDF-PAMP-75"
+        assert e.bio is True
+
+
+# ─── classify_bottle_type — edge cases ──────────────────────────────────────
+
+class TestClassifyBottleEdgeCases:
+
+    def test_unknown_volume_returns_none(self):
+        """Format 50cl, 1L hypothétique → pas dans nos 33/75."""
+        assert classify_bottle_type("Eau 50cl", "SYMBIOSE", 6, fmt="6x50") is None
+        assert classify_bottle_type("Lait 100", "SYMBIOSE", 6, fmt="6x100") is None
+
+    def test_75cl_pcb_8_falls_through(self):
+        """Symbiose 8×75 = format exotique non couvert → None."""
+        assert classify_bottle_type(
+            "Kéfir Test", "SYMBIOSE", 8, fmt="8x75",
+        ) is None
+
+    def test_designation_overrides_fmt(self):
+        """Si la désignation contient '33cl', priorité sur le fmt."""
+        assert classify_bottle_type(
+            "Kéfir 33cl Mangue", "SYMBIOSE", 6, fmt="",
+        ) == "33cl"
+
+    def test_fmt_only_no_designation(self):
+        """fmt seul suffit si la designation ne contient pas le volume."""
+        assert classify_bottle_type(
+            "Kéfir Mangue Passion", "SYMBIOSE", 6, fmt="6x33",
+        ) == "33cl"
+
+
+# ─── Réimpression bout-en-bout ──────────────────────────────────────────────
+
+class TestReprintIdentical:
+
+    def test_reprint_produces_identical_pdf(self):
+        """Une réimpression depuis une HistoryEntry doit générer un PDF
+        avec les mêmes données que l'impression initiale."""
+        from common.services.etiquette_palette_service import HistoryEntry
+
+        ctx_initial = EtiquetteContext(
+            product_label="Kéfir Pamplemousse Rose",
+            fmt="6x75", ean13="03770014427250",
+            lot="110527", ddm=_dt.date(2027, 5, 11),
+            case_count=96, full_pallet=True,
+            tenant_name="Symbiose Kéfir", n_copies=2,
+            marque="SYMBIOSE", code_interne="SK-KDF-PAMP-75",
+            gtin_uvc="3770014427014", pcb=6, bio=True,
+        )
+        pdf_initial = build_etiquette_palette_pdf(ctx_initial)
+
+        # Simuler le passage par DB et reconstruire depuis HistoryEntry
+        h = HistoryEntry(
+            id=1, ean="03770014427250", lot="110527",
+            ddm=_dt.date(2027, 5, 11), fmt="6x75",
+            marque="SYMBIOSE", designation="Kéfir Pamplemousse Rose",
+            gout="Pamplemousse Rose", case_count=96, full_pallet=True,
+            n_copies=2, pcb=6,
+            gtin_uvc="3770014427014",
+            code_interne="SK-KDF-PAMP-75", bio=True,
+            user_email="op@test.fr",
+            generated_at=_dt.datetime.now(),
+        )
+        ctx_reprint = EtiquetteContext(
+            product_label=h.designation or f"GTIN {h.ean}",
+            fmt=h.fmt, ean13=h.ean, lot=h.lot, ddm=h.ddm,
+            case_count=h.case_count, full_pallet=h.full_pallet,
+            tenant_name="Symbiose Kéfir", n_copies=h.n_copies,
+            marque=h.marque, code_interne=h.code_interne,
+            gtin_uvc=h.gtin_uvc, pcb=h.pcb, bio=h.bio,
+        )
+        pdf_reprint = build_etiquette_palette_pdf(ctx_reprint)
+
+        # Les contenus textuels doivent être identiques (le timestamp PDF
+        # diffère par bytes mais pas le contenu visible).
+        r1 = pypdf.PdfReader(io.BytesIO(pdf_initial))
+        r2 = pypdf.PdfReader(io.BytesIO(pdf_reprint))
+        assert len(r1.pages) == len(r2.pages) == 2
+
+        text1 = r1.pages[0].extract_text()
+        text2 = r2.pages[0].extract_text()
+        # Les éléments métier doivent être strictement identiques
+        for key in ("PAMPLEMOUSSE", "110527", "11/05/2027", "96",
+                    "SK-KDF-PAMP-75", "3770014427014", "03770014427250"):
+            assert key in text1, f"Initial PDF manque {key!r}"
+            assert key in text2, f"Reprint PDF manque {key!r}"
 
 
 # ─── get_product_image_url ──────────────────────────────────────────────────

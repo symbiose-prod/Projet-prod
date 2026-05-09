@@ -311,6 +311,15 @@ def _render_form(
         ).classes("flex-1").props("color=green-8 unelevated size=lg")
         generate_btn.disable()
 
+    # Bouton "Scanner le suivant" — apparaît après une impression réussie
+    next_scan_row = ui.row().classes("w-full justify-center q-mt-sm")
+    with next_scan_row:
+        next_scan_btn = ui.button(
+            "📷 Scanner le carton suivant",
+            on_click=lambda: _reset_for_next_scan(),
+        ).props("color=blue-7 outline size=md")
+    next_scan_row.set_visibility(False)
+
     # ────────────────────────────────────────────────────────────────────
     # Logique réactive
     # ────────────────────────────────────────────────────────────────────
@@ -487,6 +496,12 @@ def _render_form(
         Permet de pré-remplir tout depuis un scan EasyBeer sans dépendre de
         la sync étiquettes (le produit peut ne pas y être encore).
         """
+        # Cacher le bouton « Scanner le suivant » : un nouveau scan vient
+        # d'arriver, on est reparti pour un cycle complet.
+        try:
+            next_scan_row.set_visibility(False)
+        except (NameError, AttributeError):
+            pass
         state["entry"] = entry
         state["marque"] = entry.marque
         state["bottle"] = entry.bottle_type
@@ -630,29 +645,39 @@ def _render_form(
             ui.notify(str(exc), type="negative")
             return
 
+        # Validations métier
+        if count <= 0:
+            ui.notify(
+                "La quantité doit être > 0 pour générer une étiquette.",
+                type="warning",
+            )
+            return
+        if count > 999:
+            ui.notify(
+                f"Quantité {count} > 999 (limite encodage GS1-128 AI 37). "
+                "Vérifie ta saisie.",
+                type="negative",
+            )
+            return
+        if entry.ddm_date < _dt.date.today():
+            ui.notify(
+                f"⚠ DDM dépassée ({entry.ddm_date.strftime('%d/%m/%Y')}) — "
+                "scan une étiquette plus récente ou saisis manuellement.",
+                type="warning",
+                timeout=6000,
+            )
+            return
+
         generate_btn.disable()
         generate_btn.props("loading")
         try:
-            from common.etiquette_palette_pdf import (
-                EtiquetteContext,
-                build_etiquette_palette_pdf,
-            )
+            from common.etiquette_palette_pdf import build_etiquette_palette_pdf
 
-            ctx = EtiquetteContext(
-                product_label=entry.product_label,
-                fmt=entry.fmt,
-                ean13=entry.ean_colis,
-                lot=entry.lot_str,
-                ddm=entry.ddm_date,
-                case_count=count,
+            ctx = _ctx_from_entry(
+                entry, count,
                 full_pallet=bool(full_pallet_toggle.value),
-                tenant_name=tenant_name,
                 n_copies=2 if double_copies_toggle.value else 1,
-                marque=entry.marque,
-                code_interne=entry.code_interne,
-                gtin_uvc=entry.ean_uvc,
-                pcb=entry.pcb,
-                bio=True,
+                tenant_name=tenant_name,
             )
             pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
             fname = (
@@ -681,10 +706,13 @@ def _render_form(
                 bio=True,
             )
             _refresh_history()
+            next_scan_row.set_visibility(True)
             ui.notify(
-                "Étiquette générée — ouvre-la et imprime via AirPrint.",
+                "✓ Étiquette générée — imprime via AirPrint, "
+                "puis scanne le carton suivant.",
                 type="positive",
                 icon="check",
+                timeout=5000,
             )
         except Exception as exc:
             _log.exception("Erreur génération PDF étiquette palette")
@@ -695,6 +723,29 @@ def _render_form(
 
     generate_btn.on_click(_on_generate)
 
+    def _reset_for_next_scan():
+        """Reset le formulaire pour scanner un nouveau carton, en gardant les
+        préférences (palette pleine, 2 exemplaires) qui sont stables sur une
+        série de palettes du même produit."""
+        state["marque"] = None
+        state["bottle"] = None
+        state["gout"] = None
+        state["entry"] = None
+        _set_active_button(marque_buttons, None)
+        for btn in bottle_buttons.values():
+            btn.disable()
+        _set_active_button(bottle_buttons, None)
+        gout_select.options = []
+        gout_select.value = None
+        gout_select.disable()
+        layers_input.value = 0
+        extras_input.value = 0
+        partial_container.set_visibility(not bool(full_pallet_toggle.value))
+        next_scan_row.set_visibility(False)
+        _refresh_recap()
+        # Remonter en haut pour montrer le bouton "Scanner un carton"
+        ui.run_javascript("window.scrollTo({top: 0, behavior: 'smooth'})")
+
     # ────────────────────────────────────────────────────────────────────
     # Étiquettes récentes (historique pour réimpression et audit)
     # ────────────────────────────────────────────────────────────────────
@@ -702,26 +753,8 @@ def _render_form(
 
     async def _do_reprint(h: HistoryEntry):
         try:
-            from common.etiquette_palette_pdf import (
-                EtiquetteContext,
-                build_etiquette_palette_pdf,
-            )
-            ctx = EtiquetteContext(
-                product_label=h.designation or f"GTIN {h.ean}",
-                fmt=h.fmt,
-                ean13=h.ean,
-                lot=h.lot,
-                ddm=h.ddm,
-                case_count=h.case_count,
-                full_pallet=h.full_pallet,
-                tenant_name=tenant_name,
-                n_copies=h.n_copies,
-                marque=h.marque,
-                code_interne=h.code_interne,
-                gtin_uvc=h.gtin_uvc,
-                pcb=h.pcb,
-                bio=h.bio,
-            )
+            from common.etiquette_palette_pdf import build_etiquette_palette_pdf
+            ctx = _ctx_from_history(h, tenant_name=tenant_name)
             pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
             fname = (
                 f"etiquette_REIMPR_{h.marque}_{h.fmt}_{h.lot}_{h.case_count}c.pdf"
@@ -817,6 +850,51 @@ def _open_manual_ean_dialog(handler) -> None:
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
+
+def _ctx_from_entry(
+    entry: LabelEntry, count: int,
+    *, full_pallet: bool, n_copies: int, tenant_name: str,
+):
+    """Construit un EtiquetteContext depuis une LabelEntry + saisie quantité."""
+    from common.etiquette_palette_pdf import EtiquetteContext
+    return EtiquetteContext(
+        product_label=entry.product_label,
+        fmt=entry.fmt,
+        ean13=entry.ean_colis,
+        lot=entry.lot_str,
+        ddm=entry.ddm_date,
+        case_count=count,
+        full_pallet=full_pallet,
+        tenant_name=tenant_name,
+        n_copies=n_copies,
+        marque=entry.marque,
+        code_interne=entry.code_interne,
+        gtin_uvc=entry.ean_uvc,
+        pcb=entry.pcb,
+        bio=True,
+    )
+
+
+def _ctx_from_history(h: HistoryEntry, *, tenant_name: str):
+    """Construit un EtiquetteContext depuis une HistoryEntry (réimpression)."""
+    from common.etiquette_palette_pdf import EtiquetteContext
+    return EtiquetteContext(
+        product_label=h.designation or f"GTIN {h.ean}",
+        fmt=h.fmt,
+        ean13=h.ean,
+        lot=h.lot,
+        ddm=h.ddm,
+        case_count=h.case_count,
+        full_pallet=h.full_pallet,
+        tenant_name=tenant_name,
+        n_copies=h.n_copies,
+        marque=h.marque,
+        code_interne=h.code_interne,
+        gtin_uvc=h.gtin_uvc,
+        pcb=h.pcb,
+        bio=h.bio,
+    )
+
 
 def _kv(label: str, value: str) -> None:
     """Affiche une ligne 'label : value' dans le récap."""
