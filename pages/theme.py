@@ -549,8 +549,13 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
             )
 
     # ─── Drawer (sidebar) ────────────────────────────────────────────
-    # breakpoint=768 : en overlay sur mobile/tablette, persistant sur desktop
-    with ui.left_drawer(value=True, bordered=True).props("breakpoint=768").classes("q-pa-md") as drawer:
+    # value=False + show-if-above + breakpoint=768 : sur desktop (>=768px)
+    # le drawer est auto-affiché (show-if-above force open au-dessus du
+    # breakpoint), sur mobile il reste fermé et l'opérateur l'ouvre via le
+    # bouton hamburger. Évite que le menu mange l'écran sur iPhone au load.
+    with ui.left_drawer(value=False, bordered=True).props(
+        "breakpoint=768 show-if-above",
+    ).classes("q-pa-md") as drawer:
 
         def _render_nav_btn(nav_icon: str, nav_label: str, nav_path: str, *, indent: bool = False):
             is_active = current_path == nav_path
