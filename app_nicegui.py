@@ -14,6 +14,7 @@ import logging.config as _logging_config
 import os
 import time as _time
 import uuid as _uuid
+from collections import deque
 
 # ─── Chargement .env (python-dotenv, ne surcharge pas les vars existantes) ───
 from pathlib import Path
@@ -695,18 +696,64 @@ async def _sync_trigger(request: Request):
 
 _MAX_BARCODE_IMAGE_BYTES = 12 * 1024 * 1024  # 12 MB (photo iPhone HEIC/JPG)
 
+# Rate limit : ~30 scans / minute / utilisateur. Largement au-dessus de
+# l'usage normal en entrepôt (un opérateur scan max 1-2 cartons/min en
+# pratique), mais bloque les boucles JS accidentelles ou un script qui
+# saturerait le pool de threads (decode zxing-cpp + PIL en thread).
+_SCAN_RATE_LIMIT_WINDOW_SECONDS = 60
+_SCAN_RATE_LIMIT_MAX = 30
+# Fenêtre glissante des timestamps de scan par utilisateur. Mémoire bornée :
+# O(_SCAN_RATE_LIMIT_MAX × nb users actifs) → négligeable (~10 KB pour 100 users).
+_scan_rate_limit_state: dict[str, deque] = {}
+
+
+def _scan_rate_limit_check(user_key: str) -> bool:
+    """Retourne True si la requête est autorisée, False si rate-limitée."""
+    now = _time.monotonic()
+    times = _scan_rate_limit_state.setdefault(user_key, deque())
+    cutoff = now - _SCAN_RATE_LIMIT_WINDOW_SECONDS
+    while times and times[0] < cutoff:
+        times.popleft()
+    if len(times) >= _SCAN_RATE_LIMIT_MAX:
+        return False
+    times.append(now)
+    return True
+
 
 @app.post("/api/scan-barcode")
 async def _api_scan_barcode(request: Request):
     """Décode un code-barres depuis une image uploadée (caméra iPhone/iPad).
 
-    Auth : session NiceGUI (l'opérateur est forcément connecté pour scanner).
+    Auth : session NiceGUI + tenant_id obligatoire.
     Body : multipart/form-data avec un champ 'file' (image JPG/PNG/HEIC).
     Retour : ``{"ean": "<digits>"}`` ou ``{"error": "<msg>"}`` (HTTP 4xx).
     """
     user_store = app.storage.user
     if not user_store.get("authenticated"):
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    # Tenant check explicite : la matrice codes-barres EasyBeer est
+    # globale à la brasserie configurée (EASYBEER_ID_BRASSERIE), donc
+    # aujourd'hui mono-tenant. Mais on durcit dès maintenant pour le
+    # jour où NIKO devient un tenant séparé : sans tenant_id en session,
+    # on refuse l'accès.
+    tenant_id = user_store.get("tenant_id")
+    if not tenant_id:
+        return JSONResponse({"error": "No tenant in session"}, status_code=403)
+
+    # Rate limit par utilisateur (fallback sur tenant_id si pas d'email)
+    user_key = str(user_store.get("email") or tenant_id)
+    if not _scan_rate_limit_check(user_key):
+        _log.warning("Scan barcode : rate-limit atteint pour %s", user_key)
+        return JSONResponse(
+            {
+                "error": (
+                    f"Trop de scans (limite {_SCAN_RATE_LIMIT_MAX}/minute). "
+                    "Attends une minute."
+                ),
+            },
+            status_code=429,
+        )
 
     try:
         form = await request.form()

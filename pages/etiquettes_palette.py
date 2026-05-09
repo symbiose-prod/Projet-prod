@@ -25,6 +25,7 @@ PDF : 102×152 mm (Dymo 5XL Wireless), AirPrint depuis l'iPad.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime as _dt
 import logging
 import re
@@ -859,10 +860,10 @@ def _render_form(
         if matched:
             # Override lot/DDM avec les données scannées si présentes
             if scan_ddm or scan_lot:
-                lot = scan_lot or matched.lot_str
-                ddm = scan_ddm or matched.ddm_date
-                matched = LabelEntry(
-                    **{**matched.__dict__, "lot_str": lot, "ddm_date": ddm},
+                matched = dataclasses.replace(
+                    matched,
+                    lot_str=scan_lot or matched.lot_str,
+                    ddm_date=scan_ddm or matched.ddm_date,
                 )
             _apply_synthetic_entry(matched)
             ui.notify(

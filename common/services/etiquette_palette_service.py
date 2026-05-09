@@ -29,6 +29,7 @@ Le module est sans NiceGUI : utilisable depuis CLI / cron / tests.
 from __future__ import annotations
 
 import datetime as _dt
+import functools
 import json
 import logging
 import re
@@ -450,15 +451,12 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
     return entries, msg
 
 
-def get_product_image_url(gout: str | None) -> str | None:
-    """Retourne l'URL absolue de l'image produit pour un goût donné.
+def _load_image_map() -> list[tuple[str, str]]:
+    """Charge le mapping ``assets/image_map.csv`` une fois en mémoire.
 
-    Lit le mapping ``assets/image_map.csv`` (canonical → filename).
-    Retourne ``None`` si pas de mapping, ou si le fichier n'existe pas.
-    L'URL retournée est servie via ``app.add_static_files('/assets', ...)``.
+    Retourne une liste de tuples ``(canonical_lowercase, filename)``,
+    triée pour être déterministe. Cache module-level via ``lru_cache``.
     """
-    if not gout:
-        return None
     try:
         from pathlib import Path
 
@@ -466,19 +464,43 @@ def get_product_image_url(gout: str | None) -> str | None:
         repo = Path(__file__).resolve().parent.parent.parent
         csv_path = repo / "assets" / "image_map.csv"
         if not csv_path.exists():
-            return None
+            return []
         df = pd.read_csv(csv_path, encoding="utf-8")
     except Exception:
         _log.debug("Erreur chargement image_map.csv", exc_info=True)
-        return None
+        return []
 
-    target = gout.strip().lower()
+    out: list[tuple[str, str]] = []
     for _, row in df.iterrows():
         canonical = str(row.get("canonical", "")).strip().lower()
+        filename = str(row.get("filename", "")).strip()
+        if canonical and filename and (repo / "assets" / filename).exists():
+            out.append((canonical, filename))
+    return out
+
+
+# Cache module-level : le CSV ne change qu'à un déploiement, donc on le
+# charge une fois pour toute la durée de vie du process. Évite N lectures
+# disque + parsing pandas à chaque rendu de la card récap et des entrées
+# d'historique.
+_get_image_map_cached = functools.lru_cache(maxsize=1)(_load_image_map)
+
+
+def get_product_image_url(gout: str | None) -> str | None:
+    """Retourne l'URL absolue de l'image produit pour un goût donné.
+
+    Lit le mapping ``assets/image_map.csv`` (canonical → filename), avec
+    cache module-level (lru_cache). Retourne ``None`` si pas de mapping.
+    L'URL retournée est servie via ``app.add_static_files('/assets', ...)``.
+    """
+    if not gout:
+        return None
+    target = gout.strip().lower()
+    if not target:
+        return None
+    for canonical, filename in _get_image_map_cached():
         if canonical == target or target in canonical or canonical in target:
-            filename = str(row.get("filename", "")).strip()
-            if filename and (repo / "assets" / filename).exists():
-                return f"/assets/{filename}"
+            return f"/assets/{filename}"
     return None
 
 
