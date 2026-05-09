@@ -149,47 +149,48 @@ def compute_case_count(
 ) -> int:
     """Calcule le nombre total de caisses sur la palette.
 
-    Si ``full_pallet`` est vrai, retourne ``layers × per_layer`` du layout
-    correspondant (avec override de marque si applicable).
+    Si ``full_pallet`` est vrai : ``layout["total"] + extras_top``. Le mode
+    « palette pleine » accepte des caisses en surplus (cas entrepôt :
+    palette pleine + quelques caisses sur le dessus).
 
-    Sinon : ``layers_full × per_layer + extras_top``, en validant que :
+    Sinon : ``layers_full × per_layer + extras_top``.
+
+    Validations :
       - ``0 ≤ layers_full ≤ layers_max``
-      - ``0 ≤ extras_top < per_layer`` (un étage plein → on incrémente layers_full)
+      - ``0 ≤ extras_top < per_layer`` (un étage complet → on incrémente layers_full)
+
+    Note : on n'impose plus ``total ≤ layout["total"]`` car les opérateurs
+    chargent parfois la palette en surcharge (caisses additionnelles sur le
+    dessus d'une palette pleine, ou la dernière caisse d'une commande).
+    L'UI affiche un avertissement « surcharge » côté client mais accepte
+    la saisie.
 
     Raises:
-        ValueError: format inconnu, ou valeurs hors bornes.
+        ValueError: format inconnu, ou ``extras_top``/``layers_full`` hors bornes.
     """
     layout = get_palette_layout(fmt, product_label)
     if layout["total"] <= 0:
         raise ValueError(f"Format de palette inconnu : {fmt!r}")
 
-    if full_pallet:
-        return layout["total"]
-
     layers_max = layout["layers"]
     per_layer = layout["per_layer"]
+
+    if not (0 <= extras_top < per_layer):
+        raise ValueError(
+            f"extras_top doit être entre 0 et {per_layer - 1} pour le format {fmt!r} "
+            f"(un étage complet → cocher palette pleine ou ajouter un étage)",
+        )
+
+    if full_pallet:
+        # Palette pleine = capacité nominale + d'éventuelles caisses sur le
+        # dessus (cas surcharge). extras_top reste borné par per_layer-1.
+        return layout["total"] + extras_top
 
     if not (0 <= layers_full <= layers_max):
         raise ValueError(
             f"layers_full doit être entre 0 et {layers_max} pour le format {fmt!r}",
         )
-    if not (0 <= extras_top < per_layer):
-        raise ValueError(
-            f"extras_top doit être entre 0 et {per_layer - 1} pour le format {fmt!r} "
-            f"(un étage complet → augmenter layers_full)",
-        )
-
-    total = layers_full * per_layer + extras_top
-    # Sanity check : le total ne peut physiquement pas dépasser la capacité du
-    # format. Cas typique : layers_full = layers_max ET extras_top > 0
-    # (palette déclarée pleine + caisses sur un étage qui n'existe pas).
-    if total > layout["total"]:
-        raise ValueError(
-            f"Total {total} dépasse la capacité du format {fmt!r} "
-            f"({layout['total']} caisses max — {layers_max} étages × {per_layer}). "
-            f"Vérifie le nombre d'étages et de caisses du dessus.",
-        )
-    return total
+    return layers_full * per_layer + extras_top
 
 
 # ─── Construction du payload GS1-128 ────────────────────────────────────────

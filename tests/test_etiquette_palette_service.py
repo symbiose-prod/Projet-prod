@@ -92,6 +92,19 @@ class TestComputeCaseCount:
         with pytest.raises(ValueError, match="extras_top"):
             compute_case_count("12x33", full_pallet=False, layers_full=2, extras_top=-1)
 
+    def test_full_pallet_with_extras_overload(self):
+        """Cas entrepôt : palette pleine + caisses sur le dessus (surcharge)."""
+        # 12x33 = 126 caisses pleines + 4 sur le dessus = 130
+        assert compute_case_count(
+            "12x33", full_pallet=True, extras_top=4,
+        ) == 130
+
+    def test_full_pallet_extras_bounded_by_per_layer(self):
+        """En mode pleine, extras_top reste borné par per_layer - 1."""
+        with pytest.raises(ValueError, match="extras_top"):
+            # 12x33 per_layer=18 → max extras = 17
+            compute_case_count("12x33", full_pallet=True, extras_top=18)
+
 
 # ─── build_gs1_128_payload ───────────────────────────────────────────────────
 

@@ -265,16 +265,25 @@ def _render_form(
                 "Caisses sur le dessus (étage incomplet) :",
             ).classes("text-body2").style(f"color: {COLORS['ink']}; font-weight: 500")
             with ui.row().classes("w-full items-center justify-center gap-3 q-mt-xs"):
+                # touch-action: manipulation → désactive le double-tap-to-zoom
+                # iOS Safari, garantit que les taps répétés sur +/- ne zooment pas
+                # la page. Idem sur les boutons étages.
                 extras_minus_btn = ui.button("−").props(
                     "size=lg color=grey-8 round outline",
-                ).style("min-width: 56px; min-height: 56px; font-size: 28px")
+                ).style(
+                    "min-width: 56px; min-height: 56px; font-size: 28px; "
+                    "touch-action: manipulation",
+                )
                 extras_value_label = ui.label("0").style(
                     f"color: {COLORS['ink']}; font-weight: 700; "
                     "font-size: 36px; min-width: 64px; text-align: center",
                 )
                 extras_plus_btn = ui.button("+").props(
                     "size=lg color=green-8 round outline",
-                ).style("min-width: 56px; min-height: 56px; font-size: 28px")
+                ).style(
+                    "min-width: 56px; min-height: 56px; font-size: 28px; "
+                    "touch-action: manipulation",
+                )
                 extras_max_label = ui.label("").classes("text-caption q-ml-md").style(
                     f"color: {COLORS['ink2']}",
                 )
@@ -385,11 +394,20 @@ def _render_form(
         # mais le numéro d'étage croit de bas en haut (étage 1 = sol).
         with layers_diagram:
             for i in range(n_layers, 0, -1):
+                # Label avec total cumulé : "1 étage · 36 caisses",
+                # "2 étages · 72 caisses", etc. → l'opérateur lit directement
+                # le total qu'il obtient en tapant sur ce bouton, sans
+                # multiplier mentalement.
+                cumul = i * per_layer
+                etage_word = "étage" if i == 1 else "étages"
                 btn = ui.button(
-                    f"Étage {i}  ·  {per_layer} caisses",
+                    f"{i} {etage_word}  ·  {cumul} caisses",
                 ).classes("w-full").props(
                     "outline color=grey-7 size=md align=left",
-                ).style("min-height: 44px; font-weight: 500")
+                ).style(
+                    "min-height: 44px; font-weight: 500; "
+                    "touch-action: manipulation",
+                )
                 btn.on_click(lambda _e, k=i: _set_layers_full(k))
                 layer_buttons.append((i, btn))
         extras_max_label.text = f"max {per_layer - 1}"
@@ -562,15 +580,29 @@ def _render_form(
             generate_btn.disable()
             return
         total_display.text = str(count)
-        total_display.style(
-            f"color: {COLORS['green']}; font-weight: 700; "
-            "font-size: 56px; line-height: 1.1; text-align: center",
-        )
-        if max_total > 0:
-            pct = round(100 * count / max_total)
-            total_capacity_label.text = f"sur {max_total} max ({pct}% de la palette)"
+        # Couleur du total :
+        #   - vert : tout va bien
+        #   - orange : surcharge (count > capacité nominale) → autorisé mais
+        #     l'opérateur voit que c'est inhabituel
+        if max_total > 0 and count > max_total:
+            total_display.style(
+                f"color: {COLORS['orange']}; font-weight: 700; "
+                "font-size: 56px; line-height: 1.1; text-align: center",
+            )
+            total_capacity_label.text = (
+                f"⚠ surcharge — capacité nominale {max_total} "
+                f"(+{count - max_total} sur le dessus)"
+            )
         else:
-            total_capacity_label.text = ""
+            total_display.style(
+                f"color: {COLORS['green']}; font-weight: 700; "
+                "font-size: 56px; line-height: 1.1; text-align: center",
+            )
+            if max_total > 0:
+                pct = round(100 * count / max_total)
+                total_capacity_label.text = f"sur {max_total} max ({pct}% de la palette)"
+            else:
+                total_capacity_label.text = ""
         # DDM dépassée → on bloque la génération même si la quantité est valide.
         # Le bandeau d'avertissement dans la card récap explique pourquoi.
         if count > 0 and entry.ddm_date >= _dt.date.today():
@@ -624,13 +656,24 @@ def _render_form(
     def _on_full_pallet_click():
         state["full_pallet"] = True
         _set_pallet_type_buttons(True)
-        partial_container.set_visibility(False)
+        # En mode pleine : on cache le diagramme (inutile, palette = nominal)
+        # mais on affiche le bloc extras pour la surcharge "palette pleine + N".
+        partial_container.set_visibility(True)
+        layers_label.visible = False
+        layers_diagram.visible = False
+        no_layer_btn.visible = False
+        # Reset layers à 0 — c'est layout["total"] qui pilote le total en mode pleine
+        layers_input.value = 0
+        _refresh_layers_visual()
         _refresh_total()
 
     def _on_partial_pallet_click():
         state["full_pallet"] = False
         _set_pallet_type_buttons(False)
         partial_container.set_visibility(True)
+        layers_label.visible = True
+        layers_diagram.visible = True
+        no_layer_btn.visible = True
         _refresh_total()
 
     def _on_layers_change(_e):
@@ -895,6 +938,9 @@ def _render_form(
     def _open_confirm_dialog(entry: LabelEntry, count: int):
         n_copies = 2 if double_copies_toggle.value else 1
         full = bool(state["full_pallet"])
+        layout = get_palette_layout(entry.fmt, entry.product_label)
+        max_total = int(layout.get("total") or 0)
+        is_overload = max_total > 0 and count > max_total
         with ui.dialog() as confirm_dlg, ui.card().classes("q-pa-lg").style(
             "min-width: 360px; max-width: 420px",
         ):
@@ -903,20 +949,26 @@ def _render_form(
             )
             ui.separator().classes("q-my-sm")
 
-            # Le chiffre clé : énorme, centré, vert
+            # Le chiffre clé : énorme, centré, vert (orange si surcharge)
+            number_color = COLORS['orange'] if is_overload else COLORS['green']
             with ui.column().classes("w-full items-center gap-0 q-mb-sm"):
                 ui.label(str(count)).style(
-                    f"color: {COLORS['green']}; font-weight: 800; "
+                    f"color: {number_color}; font-weight: 800; "
                     "font-size: 72px; line-height: 1",
                 )
                 ui.label("CARTONS").classes("text-caption").style(
                     f"color: {COLORS['ink2']}; letter-spacing: 2px; font-weight: 600",
                 )
-                ui.label(
-                    "Palette pleine" if full else "Palette partielle",
-                ).classes("text-body2 q-mt-xs").style(
-                    f"color: {COLORS['green'] if full else COLORS['orange']}; "
-                    "font-weight: 600",
+                if is_overload:
+                    over = count - max_total
+                    type_label = (
+                        f"Palette pleine + {over} en surcharge"
+                        if full else f"Palette partielle ({over} de plus que la nominale)"
+                    )
+                else:
+                    type_label = "Palette pleine" if full else "Palette partielle"
+                ui.label(type_label).classes("text-body2 q-mt-xs").style(
+                    f"color: {number_color}; font-weight: 600",
                 )
 
             ui.separator().classes("q-my-sm")
