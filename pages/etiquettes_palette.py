@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import datetime as _dt
 import logging
+import re
 
 from nicegui import ui
 
@@ -40,6 +41,7 @@ from common.services.etiquette_palette_service import (
     get_product_image_url,
     list_recent_labels,
     load_label_data_from_sync,
+    lookup_product_by_ean,
     purge_old_label_history,
     save_label_history,
 )
@@ -97,6 +99,12 @@ def _render_form(
         "bottle": None,
         "gout": None,
         "entry": None,
+        # full_pallet : True | False | None (= pas encore choisi).
+        # On force l'opérateur à choisir explicitement la première fois pour
+        # éviter qu'il imprime "126 caisses palette pleine" sur une palette
+        # incomplète sans l'avoir vu. Le choix se conserve ensuite à travers
+        # les scans (séries de palettes du même produit).
+        "full_pallet": None,
     }
 
     # ────────────────────────────────────────────────────────────────────
@@ -121,12 +129,32 @@ def _render_form(
             '</label>',
         )
 
+    async def _handle_manual_ean(ean: str):
+        """Saisie manuelle EAN : interroge d'abord la matrice EasyBeer (source
+        fraîche, cache 24 h) avant de tomber dans le fallback sync étiquettes.
+
+        Sans cette étape, un produit ajouté récemment côté EasyBeer mais pas
+        encore syncé serait introuvable malgré l'API qui le connaît.
+        """
+        cleaned = (ean or "").strip()
+        if not cleaned:
+            return
+        ui.notify("🔍 Recherche du produit…", type="info", timeout=2000)
+        try:
+            product = await asyncio.to_thread(lookup_product_by_ean, cleaned)
+        except Exception:
+            _log.exception("Erreur lookup matrice EasyBeer (saisie manuelle)")
+            product = None
+        _handle_scanned_data({
+            "ean": cleaned, "lot": "", "ddm": None, "product": product,
+        })
+
     with ui.row().classes("w-full justify-center q-mb-md"):
         ui.button(
             "Saisir l'EAN à la main",
             icon="keyboard",
-            on_click=lambda: _open_manual_ean_dialog(_handle_scanned_data),
-        ).props("flat color=grey-7 dense")
+            on_click=lambda: _open_manual_ean_dialog(_handle_manual_ean),
+        ).props("outline color=grey-8")
 
     _install_scan_input_listener()
 
@@ -148,6 +176,17 @@ def _render_form(
                 ).classes("text-body1").style(f"color: {COLORS['ink2']}")
                 recap_details = ui.column().classes("w-full gap-1 q-mt-xs")
                 recap_details.set_visibility(False)
+        # Bandeau d'alerte DDM dépassée — rendu plus visible qu'une notify
+        # éphémère. L'opérateur le voit jusqu'au prochain scan.
+        ddm_warning = ui.row().classes("w-full items-center gap-2 q-mt-sm q-pa-sm").style(
+            "background:#FEF2F2; border:1px solid #FCA5A5; border-radius:6px",
+        )
+        with ddm_warning:
+            ui.icon("warning", size="sm").style("color:#B91C1C")
+            ddm_warning_label = ui.label("").classes("text-body2").style(
+                "color:#7F1D1D; font-weight:600",
+            )
+        ddm_warning.set_visibility(False)
 
     # ────────────────────────────────────────────────────────────────────
     # Saisie manuelle (cascade marque/bouteille/goût) — collapsée par défaut
@@ -196,9 +235,18 @@ def _render_form(
     section_title("Quantité de caisses", "inventory_2")
     qty_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
     with qty_card:
-        full_pallet_toggle = ui.switch("Palette pleine", value=True).classes("q-mb-sm")
+        ui.label(
+            "Choisis le type de palette :",
+        ).classes("text-body2 q-mb-xs").style(f"color: {COLORS['ink2']}")
+        with ui.row().classes("w-full gap-3 no-wrap"):
+            full_pallet_btn = ui.button(
+                "PALETTE PLEINE", icon="inventory_2",
+            ).classes("flex-1").props("size=lg outline color=green-8").style("min-height: 64px")
+            partial_pallet_btn = ui.button(
+                "PALETTE PARTIELLE", icon="layers",
+            ).classes("flex-1").props("size=lg outline color=orange-8").style("min-height: 64px")
 
-        partial_container = ui.column().classes("w-full gap-2")
+        partial_container = ui.column().classes("w-full gap-2 q-mt-sm")
         with partial_container:
             layers_label = ui.label("Étages pleins").classes("text-body2")
             layers_input = ui.number(value=0, min=0, max=7, step=1).classes("w-full").props(
@@ -214,10 +262,20 @@ def _render_form(
 
         partial_container.set_visibility(False)
 
-        ui.separator().classes("q-my-sm")
-        total_display = ui.label("Total : —").classes("text-h6").style(
-            f"color: {COLORS['green']}; font-weight: 600",
-        )
+        ui.separator().classes("q-my-md")
+        # Total surdimensionné — c'est LE chiffre que l'opérateur doit
+        # vérifier avant d'imprimer. On veut qu'il soit impossible à rater.
+        with ui.column().classes("w-full items-center gap-0"):
+            ui.label("CARTONS SUR LA PALETTE").classes("text-caption").style(
+                f"color: {COLORS['ink2']}; letter-spacing: 1px; font-weight: 600",
+            )
+            total_display = ui.label("—").style(
+                f"color: {COLORS['ink2']}; font-weight: 700; "
+                "font-size: 56px; line-height: 1.1; text-align: center",
+            )
+            total_capacity_label = ui.label("").classes("text-caption").style(
+                f"color: {COLORS['ink2']}",
+            )
 
     # ────────────────────────────────────────────────────────────────────
     # Génération du PDF — checkbox 2 exemplaires + bouton
@@ -335,13 +393,27 @@ def _render_form(
                 recap_image.set_visibility(True)
             else:
                 recap_image.set_visibility(False)
+            ddm_passed = entry.ddm_date < _dt.date.today()
             recap_details.clear()
             with recap_details:
                 _kv("EAN", entry.ean_colis)
                 _kv("Lot", entry.lot_str)
-                _kv("DDM", entry.ddm_date.strftime("%d/%m/%Y"))
+                # DDM en rouge gras si dépassée pour attirer l'œil immédiatement
+                if ddm_passed:
+                    _kv_red("DDM", entry.ddm_date.strftime("%d/%m/%Y") + "  ⚠ DÉPASSÉE")
+                else:
+                    _kv("DDM", entry.ddm_date.strftime("%d/%m/%Y"))
                 _kv("Format", f"{entry.fmt} ({entry.pcb} btl/carton)")
             recap_details.set_visibility(True)
+            # Bandeau d'alerte DDM dès le scan (plus tôt = moins de saisie inutile)
+            if ddm_passed:
+                ddm_warning_label.text = (
+                    f"DDM dépassée le {entry.ddm_date.strftime('%d/%m/%Y')} — "
+                    "ne pas imprimer cette étiquette. Scanne un carton plus récent."
+                )
+                ddm_warning.set_visibility(True)
+            else:
+                ddm_warning.set_visibility(False)
             layout = get_palette_layout(entry.fmt, entry.product_label)
             layers_input.props(f"max={layout['layers']}")
             extras_input.props(f"max={max(0, layout['per_layer'] - 1)}")
@@ -356,28 +428,55 @@ def _render_form(
             )
             recap_label.style(f"color: {COLORS['ink2']}; font-weight: 400; font-size: 14px")
             recap_details.set_visibility(False)
+            ddm_warning.set_visibility(False)
         _refresh_total()
 
     def _refresh_total():
         entry: LabelEntry | None = state["entry"]
         if not entry:
-            total_display.text = "Total : —"
+            total_display.text = "—"
+            total_display.style(f"color: {COLORS['ink2']}")
+            total_capacity_label.text = ""
+            generate_btn.disable()
+            return
+        layout = get_palette_layout(entry.fmt, entry.product_label)
+        max_total = layout.get("total") or 0
+        if state["full_pallet"] is None:
+            total_display.text = "—"
+            total_display.style(f"color: {COLORS['ink2']}")
+            total_capacity_label.text = "Choisis 'palette pleine' ou 'palette partielle' ci-dessus"
             generate_btn.disable()
             return
         try:
             count = compute_case_count(
                 entry.fmt,
-                full_pallet=bool(full_pallet_toggle.value),
+                full_pallet=bool(state["full_pallet"]),
                 layers_full=int(layers_input.value or 0),
                 extras_top=int(extras_input.value or 0),
                 product_label=entry.product_label,
             )
         except ValueError as exc:
-            total_display.text = f"⚠ {exc}"
+            total_display.text = "⚠"
+            total_display.style(f"color: {COLORS['orange']}; font-weight: 700; font-size: 56px")
+            total_capacity_label.text = str(exc)
             generate_btn.disable()
             return
-        total_display.text = f"Total : {count} caisses"
-        generate_btn.enable()
+        total_display.text = str(count)
+        total_display.style(
+            f"color: {COLORS['green']}; font-weight: 700; "
+            "font-size: 56px; line-height: 1.1; text-align: center",
+        )
+        if max_total > 0:
+            pct = round(100 * count / max_total)
+            total_capacity_label.text = f"sur {max_total} max ({pct}% de la palette)"
+        else:
+            total_capacity_label.text = ""
+        # DDM dépassée → on bloque la génération même si la quantité est valide.
+        # Le bandeau d'avertissement dans la card récap explique pourquoi.
+        if count > 0 and entry.ddm_date >= _dt.date.today():
+            generate_btn.enable()
+        else:
+            generate_btn.disable()
 
     def _on_marque_click(m: str):
         state["marque"] = m
@@ -404,8 +503,34 @@ def _render_form(
         state["gout"] = e.value
         _refresh_recap()
 
-    def _on_full_pallet_toggle(e):
-        partial_container.set_visibility(not e.value)
+    def _set_pallet_type_buttons(active: bool | None):
+        """Met à jour visuellement les boutons palette pleine/partielle."""
+        if active is True:
+            full_pallet_btn.props(remove="outline")
+            full_pallet_btn.props("unelevated color=green-8")
+            partial_pallet_btn.props(remove="unelevated")
+            partial_pallet_btn.props("outline color=orange-8")
+        elif active is False:
+            partial_pallet_btn.props(remove="outline")
+            partial_pallet_btn.props("unelevated color=orange-8")
+            full_pallet_btn.props(remove="unelevated")
+            full_pallet_btn.props("outline color=green-8")
+        else:
+            full_pallet_btn.props(remove="unelevated")
+            full_pallet_btn.props("outline color=green-8")
+            partial_pallet_btn.props(remove="unelevated")
+            partial_pallet_btn.props("outline color=orange-8")
+
+    def _on_full_pallet_click():
+        state["full_pallet"] = True
+        _set_pallet_type_buttons(True)
+        partial_container.set_visibility(False)
+        _refresh_total()
+
+    def _on_partial_pallet_click():
+        state["full_pallet"] = False
+        _set_pallet_type_buttons(False)
+        partial_container.set_visibility(True)
         _refresh_total()
 
     def _on_layers_change(_e):
@@ -548,19 +673,84 @@ def _render_form(
     for bt, btn in bottle_buttons.items():
         btn.on_click(lambda _e, b=bt: _on_bottle_click(b))
     gout_select.on_value_change(_on_gout_change)
-    full_pallet_toggle.on_value_change(_on_full_pallet_toggle)
+    full_pallet_btn.on_click(lambda _e: _on_full_pallet_click())
+    partial_pallet_btn.on_click(lambda _e: _on_partial_pallet_click())
     layers_input.on_value_change(_on_layers_change)
     extras_input.on_value_change(_on_extras_change)
+
+    async def _do_generate(entry: LabelEntry, count: int):
+        """Effectue la génération PDF + sauvegarde historique. Appelé après
+        validation par la modale de confirmation."""
+        generate_btn.disable()
+        generate_btn.props("loading")
+        try:
+            from common.etiquette_palette_pdf import build_etiquette_palette_pdf
+
+            ctx = _ctx_from_entry(
+                entry, count,
+                full_pallet=bool(state["full_pallet"]),
+                n_copies=2 if double_copies_toggle.value else 1,
+                tenant_name=tenant_name,
+            )
+            pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
+            safe_gout = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.gout or "")
+            fname = (
+                f"etiquette_{entry.marque}_{entry.fmt}_"
+                f"{safe_gout}_{entry.lot_str}_{count}c.pdf"
+            )
+            ui.download(pdf_bytes, fname)
+            # Audit + historique pour réimpression future (fire-and-forget)
+            await asyncio.to_thread(
+                save_label_history,
+                tenant_id,
+                user_email=user_email,
+                ean=entry.ean_colis,
+                lot=entry.lot_str,
+                ddm=entry.ddm_date,
+                fmt=entry.fmt,
+                marque=entry.marque,
+                designation=entry.designation,
+                gout=entry.gout,
+                case_count=count,
+                full_pallet=bool(state["full_pallet"]),
+                n_copies=ctx.n_copies,
+                pcb=entry.pcb,
+                gtin_uvc=entry.ean_uvc,
+                code_interne=entry.code_interne,
+                bio=True,
+            )
+            await asyncio.to_thread(purge_old_label_history, tenant_id)
+            _refresh_history()
+            next_scan_row.set_visibility(True)
+            ui.notify(
+                "✓ Étiquette générée — imprime via AirPrint, "
+                "puis scanne le carton suivant.",
+                type="positive",
+                icon="check",
+                timeout=5000,
+            )
+        except Exception as exc:
+            _log.exception("Erreur génération PDF étiquette palette")
+            ui.notify(f"Erreur génération PDF : {exc}", type="negative")
+        finally:
+            generate_btn.enable()
+            generate_btn.props(remove="loading")
 
     async def _on_generate():
         entry: LabelEntry | None = state["entry"]
         if not entry:
             ui.notify("Sélectionne marque, bouteille et goût.", type="warning")
             return
+        if state["full_pallet"] is None:
+            ui.notify(
+                "Choisis 'Palette pleine' ou 'Palette partielle' avant d'imprimer.",
+                type="warning",
+            )
+            return
         try:
             count = compute_case_count(
                 entry.fmt,
-                full_pallet=bool(full_pallet_toggle.value),
+                full_pallet=bool(state["full_pallet"]),
                 layers_full=int(layers_input.value or 0),
                 extras_top=int(extras_input.value or 0),
                 product_label=entry.product_label,
@@ -592,67 +782,70 @@ def _render_form(
             )
             return
 
-        generate_btn.disable()
-        generate_btn.props("loading")
-        try:
-            from common.etiquette_palette_pdf import build_etiquette_palette_pdf
+        # Modale de confirmation : dernier garde-fou humain avant impression.
+        # Pour une étiquette qui finit collée sur une palette livrée client,
+        # on veut une lecture explicite du chiffre principal et des metadatas.
+        _open_confirm_dialog(entry, count)
 
-            ctx = _ctx_from_entry(
-                entry, count,
-                full_pallet=bool(full_pallet_toggle.value),
-                n_copies=2 if double_copies_toggle.value else 1,
-                tenant_name=tenant_name,
+    def _open_confirm_dialog(entry: LabelEntry, count: int):
+        n_copies = 2 if double_copies_toggle.value else 1
+        full = bool(state["full_pallet"])
+        with ui.dialog() as confirm_dlg, ui.card().classes("q-pa-lg").style(
+            "min-width: 360px; max-width: 420px",
+        ):
+            ui.label("Vérifie avant d'imprimer").classes("text-h6").style(
+                f"color: {COLORS['ink']}; font-weight: 700",
             )
-            pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
-            fname = (
-                f"etiquette_{entry.marque}_{entry.fmt}_"
-                f"{entry.gout.replace(' ', '_')}_{entry.lot_str}_{count}c.pdf"
-            )
-            ui.download(pdf_bytes, fname)
-            # Audit + historique pour réimpression future (fire-and-forget)
-            await asyncio.to_thread(
-                save_label_history,
-                tenant_id,
-                user_email=user_email,
-                ean=entry.ean_colis,
-                lot=entry.lot_str,
-                ddm=entry.ddm_date,
-                fmt=entry.fmt,
-                marque=entry.marque,
-                designation=entry.designation,
-                gout=entry.gout,
-                case_count=count,
-                full_pallet=bool(full_pallet_toggle.value),
-                n_copies=ctx.n_copies,
-                pcb=entry.pcb,
-                gtin_uvc=entry.ean_uvc,
-                code_interne=entry.code_interne,
-                bio=True,
-            )
-            # Purge automatique : maintient la table à taille bornée
-            await asyncio.to_thread(purge_old_label_history, tenant_id)
-            _refresh_history()
-            next_scan_row.set_visibility(True)
-            ui.notify(
-                "✓ Étiquette générée — imprime via AirPrint, "
-                "puis scanne le carton suivant.",
-                type="positive",
-                icon="check",
-                timeout=5000,
-            )
-        except Exception as exc:
-            _log.exception("Erreur génération PDF étiquette palette")
-            ui.notify(f"Erreur génération PDF : {exc}", type="negative")
-        finally:
-            generate_btn.enable()
-            generate_btn.props(remove="loading")
+            ui.separator().classes("q-my-sm")
+
+            # Le chiffre clé : énorme, centré, vert
+            with ui.column().classes("w-full items-center gap-0 q-mb-sm"):
+                ui.label(str(count)).style(
+                    f"color: {COLORS['green']}; font-weight: 800; "
+                    "font-size: 72px; line-height: 1",
+                )
+                ui.label("CARTONS").classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; letter-spacing: 2px; font-weight: 600",
+                )
+                ui.label(
+                    "Palette pleine" if full else "Palette partielle",
+                ).classes("text-body2 q-mt-xs").style(
+                    f"color: {COLORS['green'] if full else COLORS['orange']}; "
+                    "font-weight: 600",
+                )
+
+            ui.separator().classes("q-my-sm")
+
+            # Détail produit
+            with ui.column().classes("w-full gap-1"):
+                ui.label(entry.designation).classes("text-body1").style(
+                    f"color: {COLORS['ink']}; font-weight: 600",
+                )
+                ui.label(
+                    f"Lot {entry.lot_str} — DDM {entry.ddm_date.strftime('%d/%m/%Y')}",
+                ).classes("text-body2").style(f"color: {COLORS['ink2']}")
+                ui.label(
+                    f"{n_copies} étiquette" + ("s (2 faces de palette)" if n_copies > 1 else ""),
+                ).classes("text-caption").style(f"color: {COLORS['ink2']}")
+
+            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                ui.button("Annuler", on_click=confirm_dlg.close).props(
+                    "flat color=grey-7",
+                )
+                async def _confirmed():
+                    confirm_dlg.close()
+                    await _do_generate(entry, count)
+                ui.button(
+                    "✓ Imprimer", icon="print", on_click=_confirmed,
+                ).props("color=green-8 unelevated size=lg")
+        confirm_dlg.open()
 
     generate_btn.on_click(_on_generate)
 
     def _reset_for_next_scan():
         """Reset le formulaire pour scanner un nouveau carton, en gardant les
-        préférences (palette pleine, 2 exemplaires) qui sont stables sur une
-        série de palettes du même produit."""
+        préférences (palette pleine/partielle, 2 exemplaires) qui sont stables
+        sur une série de palettes du même produit."""
         state["marque"] = None
         state["bottle"] = None
         state["gout"] = None
@@ -666,7 +859,11 @@ def _render_form(
         gout_select.disable()
         layers_input.value = 0
         extras_input.value = 0
-        partial_container.set_visibility(not bool(full_pallet_toggle.value))
+        # On préserve state["full_pallet"] : si l'opérateur étiquette une série
+        # de palettes pleines du même produit, il ne devrait pas avoir à
+        # rechoisir à chaque fois. Visuel des boutons cohérent.
+        partial_container.set_visibility(state["full_pallet"] is False)
+        _set_pallet_type_buttons(state["full_pallet"])
         next_scan_row.set_visibility(False)
         _refresh_recap()
         # Remonter en haut pour montrer le bouton "Scanner un carton"
@@ -712,19 +909,24 @@ def _open_manual_ean_dialog(handler) -> None:
     """Petit dialog pour saisie manuelle d'un EAN, avec callback handler(ean).
 
     Utilisé quand le scan ne donne rien ou que l'EAN n'est pas dans la sync.
+    Le ``handler`` peut être sync ou async — on await dans le second cas.
     """
+    import inspect
+
     with ui.dialog() as dlg, ui.card().classes("q-pa-md").style("min-width: 320px"):
         ui.label("Saisie manuelle EAN").classes("text-subtitle1")
         ean_input = ui.input(
             placeholder="ex: 3770014427250",
         ).classes("w-full").props("outlined dense autofocus")
 
-        def _submit():
+        async def _submit():
             val = (ean_input.value or "").strip()
             if not val:
                 return
             dlg.close()
-            handler(val)
+            res = handler(val)
+            if inspect.isawaitable(res):
+                await res
 
         with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
             ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
@@ -774,6 +976,35 @@ _SCAN_INPUT_LISTENER_JS = """
         });
     }
 
+    // Feedback perceptif scan réussi : vibration courte (iPhone/iPad) + bip
+    // 880 Hz 180 ms. Le clic photo précédent compte comme user gesture, donc
+    // l'AudioContext est autorisé. Échec silencieux si l'API manque.
+    function _fsScanFeedback(success) {
+        try {
+            if (navigator.vibrate) {
+                navigator.vibrate(success ? [60, 30, 60] : [200]);
+            }
+        } catch (e) { /* noop */ }
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            const ctx = new AC();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.frequency.value = success ? 880 : 220;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.18, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(
+                0.001, ctx.currentTime + 0.18,
+            );
+            osc.connect(gain).connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.2);
+            // Libère le contexte audio après la note pour ne pas accumuler.
+            setTimeout(() => { try { ctx.close(); } catch (e) {} }, 300);
+        } catch (e) { /* noop */ }
+    }
+
     const wait = () => {
         const input = document.getElementById('photo-capture-input');
         if (!input) { setTimeout(wait, 200); return; }
@@ -798,12 +1029,15 @@ _SCAN_INPUT_LISTENER_JS = """
                 });
                 const data = await resp.json();
                 if (data.ean) {
+                    _fsScanFeedback(true);
                     emitEvent('barcode_scanned', data);
                 } else {
+                    _fsScanFeedback(false);
                     emitEvent('barcode_error',
                         (data.error || 'Aucun code-barres détecté'));
                 }
             } catch (err) {
+                _fsScanFeedback(false);
                 emitEvent('barcode_error', String(err));
             }
             e.target.value = '';
@@ -929,6 +1163,17 @@ def _kv(label: str, value: str) -> None:
         )
         ui.label(value).classes("text-body2").style(
             f"color: {COLORS['ink']}; font-weight: 500",
+        )
+
+
+def _kv_red(label: str, value: str) -> None:
+    """Variante de _kv avec valeur en rouge gras (DDM dépassée, etc.)."""
+    with ui.row().classes("w-full gap-2"):
+        ui.label(f"{label} :").classes("text-body2").style(
+            f"color: {COLORS['ink2']}; min-width: 140px",
+        )
+        ui.label(value).classes("text-body2").style(
+            "color:#B91C1C; font-weight: 700",
         )
 
 

@@ -32,6 +32,7 @@ import datetime as _dt
 import json
 import logging
 import re
+import warnings
 from dataclasses import dataclass
 
 from common.easybeer import (
@@ -44,6 +45,18 @@ from common.ramasse import clean_product_label, extract_gout, get_palette_layout
 from db.conn import run_sql
 
 _log = logging.getLogger("ferment.services.etiquette_palette")
+
+# ─── Garde-fou décompression d'image ────────────────────────────────────────
+# Borne le nombre de pixels qu'une image peut atteindre après décompression
+# pour éviter qu'un PNG de 12 MB explose en plusieurs Go en RAM côté serveur
+# ("decompression bomb"). 25 Mpx = large pour iPhone 14 (12 Mpx natif) ou
+# iPad Pro (idem).
+_MAX_IMAGE_PIXELS = 25_000_000
+try:
+    from PIL import Image as _PILImage
+    _PILImage.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
+except ImportError:
+    pass
 
 
 # ─── Constantes typage ───────────────────────────────────────────────────────
@@ -166,7 +179,17 @@ def compute_case_count(
             f"(un étage complet → augmenter layers_full)",
         )
 
-    return layers_full * per_layer + extras_top
+    total = layers_full * per_layer + extras_top
+    # Sanity check : le total ne peut physiquement pas dépasser la capacité du
+    # format. Cas typique : layers_full = layers_max ET extras_top > 0
+    # (palette déclarée pleine + caisses sur un étage qui n'existe pas).
+    if total > layout["total"]:
+        raise ValueError(
+            f"Total {total} dépasse la capacité du format {fmt!r} "
+            f"({layout['total']} caisses max — {layers_max} étages × {per_layer}). "
+            f"Vérifie le nombre d'étages et de caisses du dessus.",
+        )
+    return total
 
 
 # ─── Construction du payload GS1-128 ────────────────────────────────────────
@@ -521,10 +544,21 @@ def extract_gs1_data_from_image(image_bytes: bytes) -> dict[str, str | _dt.date]
         return None
 
     try:
-        img = Image.open(_io.BytesIO(image_bytes))
-        if img.mode not in ("L", "RGB"):
-            img = img.convert("RGB")
-        results = zxingcpp.read_barcodes(img)
+        with warnings.catch_warnings():
+            # Convertir le DecompressionBombWarning de PIL en exception pour
+            # rejeter les images qui exploseraient en RAM (zip-bomb PNG).
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            img = Image.open(_io.BytesIO(image_bytes))
+            img.load()  # force le décodage pour déclencher le check Pillow
+            if img.mode not in ("L", "RGB"):
+                img = img.convert("RGB")
+            results = zxingcpp.read_barcodes(img)
+    except (Image.DecompressionBombWarning, Image.DecompressionBombError):
+        _log.warning(
+            "Decompression bomb détectée — image rejetée (limite %d Mpx)",
+            _MAX_IMAGE_PIXELS // 1_000_000,
+        )
+        return None
     except Exception:
         _log.exception("Erreur décodage image")
         return None
@@ -532,26 +566,37 @@ def extract_gs1_data_from_image(image_bytes: bytes) -> dict[str, str | _dt.date]
     if not results:
         return None
 
+    # Cherche d'abord un GS1-128 complet (AI 01 + AI 15 + AI 10) — c'est ce
+    # qu'imprime le Domino sur les cartons. Sinon on fallback sur le premier
+    # code lisible. Évite de matcher accidentellement un sticker EAN-13 client
+    # collé à côté de l'étiquette logistique.
+    best: dict | None = None
+    fallback: dict | None = None
     for r in results:
         text = (r.text or "").strip()
         if not text:
             continue
         ais = parse_gs1_string(text)
         ean = ais.get("01")
-        if not ean:
-            # Si c'est un EAN-13/UPC pur (pas de GS1), retourner tel quel
+        if ean:
+            ddm_str = ais.get("15") or ais.get("17") or ""
+            ddm_date = parse_gs1_ddm(ddm_str)
+            entry = {
+                "ean": ean,
+                "lot": ais.get("10", ""),
+                "ddm": ddm_date,
+            }
+            # GS1-128 complet (au moins AI 01 + AI 15) → on préfère
+            if ais.get("15"):
+                return entry
+            best = best or entry
+        else:
             digits = re.sub(r"\D+", "", text)
-            if 12 <= len(digits) <= 14:
-                return {"ean": digits, "lot": "", "ddm": None}  # type: ignore[dict-item]
-            continue
-        ddm_str = ais.get("15") or ais.get("17") or ""
-        ddm_date = parse_gs1_ddm(ddm_str)
-        return {
-            "ean": ean,
-            "lot": ais.get("10", ""),
-            "ddm": ddm_date,  # type: ignore[dict-item]
-        }
-    return None
+            if 12 <= len(digits) <= 14 and fallback is None:
+                fallback = {"ean": digits, "lot": "", "ddm": None}
+    if best is not None:
+        return best
+    return fallback  # type: ignore[return-value]
 
 
 def extract_ean_from_image(image_bytes: bytes) -> str | None:
@@ -579,11 +624,17 @@ def extract_ean_from_image(image_bytes: bytes) -> str | None:
         return None
 
     try:
-        img = Image.open(_io.BytesIO(image_bytes))
-        # Convertir en RGB si l'image est CMYK / RGBA / palette / etc.
-        if img.mode not in ("L", "RGB"):
-            img = img.convert("RGB")
-        results = zxingcpp.read_barcodes(img)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            img = Image.open(_io.BytesIO(image_bytes))
+            img.load()
+            # Convertir en RGB si l'image est CMYK / RGBA / palette / etc.
+            if img.mode not in ("L", "RGB"):
+                img = img.convert("RGB")
+            results = zxingcpp.read_barcodes(img)
+    except (Image.DecompressionBombWarning, Image.DecompressionBombError):
+        _log.warning("Decompression bomb détectée — image rejetée")
+        return None
     except Exception:
         _log.exception("Erreur décodage code-barres image")
         return None
