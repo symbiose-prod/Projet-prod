@@ -86,7 +86,7 @@ async def page_etiquettes_palette():
 
     tenant_id = user.get("tenant_id", "")
 
-    with page_layout("Étiquettes palette", "qr_code_2", "/etiquettes-palette") as sidebar:
+    with page_layout("Étiquettes palette", "qr_code_2", "/etiquettes-palette"):
         ui.label(
             "Édite une étiquette logistique GS1-128 pour palette filmée — "
             "imprime sur la Brother (par défaut) ou via AirPrint."
@@ -108,7 +108,6 @@ async def page_etiquettes_palette():
             tenant_name=user.get("tenant_name") or _resolve_tenant_name(),
             tenant_id=tenant_id,
             user_email=user.get("email", ""),
-            sidebar=sidebar,
         )
 
 
@@ -119,7 +118,6 @@ def _render_form(
     tenant_name: str = "",
     tenant_id: str = "",
     user_email: str = "",
-    sidebar: ui.column | None = None,
 ) -> None:
     """Rend le formulaire wizard 4 étapes : scan/EAN manuel → produit
     identifié → quantité (palette pleine/partielle + diagramme) → imprimer."""
@@ -1083,30 +1081,31 @@ def _render_form(
     _refresh_history()
 
     # ────────────────────────────────────────────────────────────────────
-    # Sidebar : mini-menu "À imprimer" + "3 dernières étiquettes"
+    # Mini-menu compact en bas de page : "À imprimer" + "3 dernières"
     # ────────────────────────────────────────────────────────────────────
-    sidebar_container: ui.column | None = None
-    if sidebar is not None:
-        with sidebar:
-            sidebar_container = ui.column().classes("w-full gap-1")
+    mini_menu_container = ui.column().classes("w-full q-mt-md").style(
+        f"border-top: 1px solid {COLORS['border']}; padding-top: 12px",
+    )
 
     def _refresh_sidebar():
-        """Reconstruit le mini-menu sidebar (À imprimer + 3 dernières)."""
-        if sidebar_container is None or not tenant_id:
+        """Reconstruit le mini-menu (À imprimer + 3 dernières). Le nom est
+        historique — la widget vit maintenant en bas de page, pas dans la
+        sidebar, mais l'API publique reste la même."""
+        if not tenant_id:
             return
-        sidebar_container.clear()
+        mini_menu_container.clear()
         try:
             pending = list_pending_jobs(tenant_id, limit=8)
         except Exception:
             pending = []
-            _log.warning("Sidebar : list_pending_jobs échec", exc_info=True)
+            _log.warning("Mini-menu : list_pending_jobs échec", exc_info=True)
         try:
             recent = list_recent_labels(tenant_id, limit=3)
         except Exception:
             recent = []
-            _log.warning("Sidebar : list_recent_labels échec", exc_info=True)
+            _log.warning("Mini-menu : list_recent_labels échec", exc_info=True)
 
-        with sidebar_container:
+        with mini_menu_container:
             _render_sidebar_widget(pending, recent, on_refresh=_refresh_sidebar)
 
     _refresh_sidebar()
