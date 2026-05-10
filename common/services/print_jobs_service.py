@@ -38,6 +38,16 @@ class PrintJob:
     created_at: _dt.datetime
 
 
+@dataclass(frozen=True)
+class PendingJobView:
+    """Vue allégée d'un job en attente — sans les bytes PDF, pour l'UI."""
+    id: int
+    filename: str
+    n_copies: int
+    status: str             # 'pending' | 'printing'
+    created_at: _dt.datetime
+
+
 def create_print_job(
     tenant_id: str,
     *,
@@ -130,6 +140,39 @@ def mark_job_error(tenant_id: str, job_id: int, error: str) -> bool:
         {"id": int(job_id), "t": tenant_id, "err": (error or "")[:500]},
     )
     return bool(rows)
+
+
+def list_pending_jobs(tenant_id: str, limit: int = 10) -> list[PendingJobView]:
+    """Liste les jobs encore non imprimés (pending + printing) pour ce tenant.
+
+    Utilisé par l'UI pour afficher dans la sidebar « À imprimer ».
+    Exclut le PDF binaire pour rester rapide (~5 KB par appel).
+    """
+    try:
+        rows = run_sql(
+            """SELECT id, filename, n_copies, status, created_at
+               FROM print_jobs
+               WHERE tenant_id = :t AND status IN ('pending', 'printing')
+               ORDER BY created_at
+               LIMIT :n""",
+            {"t": tenant_id, "n": int(limit)},
+        ) or []
+    except Exception:
+        _log.exception("Échec list_pending_jobs")
+        return []
+    out: list[PendingJobView] = []
+    for r in rows:
+        try:
+            out.append(PendingJobView(
+                id=int(r["id"]),
+                filename=str(r["filename"] or ""),
+                n_copies=int(r["n_copies"] or 1),
+                status=str(r["status"] or "pending"),
+                created_at=r["created_at"],
+            ))
+        except (KeyError, TypeError, ValueError):
+            _log.warning("Ligne print_jobs invalide ignorée : %r", r, exc_info=True)
+    return out
 
 
 def reset_stuck_jobs(tenant_id: str, stuck_after_minutes: int = 5) -> int:

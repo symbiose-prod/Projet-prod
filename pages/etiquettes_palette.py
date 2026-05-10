@@ -48,6 +48,10 @@ from common.services.etiquette_palette_service import (
     purge_old_label_history,
     save_label_history,
 )
+from common.services.print_jobs_service import (
+    PendingJobView,
+    list_pending_jobs,
+)
 from pages.auth import require_auth
 from pages.theme import COLORS, page_layout, section_title
 
@@ -82,10 +86,10 @@ async def page_etiquettes_palette():
 
     tenant_id = user.get("tenant_id", "")
 
-    with page_layout("Étiquettes palette", "qr_code_2", "/etiquettes-palette"):
+    with page_layout("Étiquettes palette", "qr_code_2", "/etiquettes-palette") as sidebar:
         ui.label(
             "Édite une étiquette logistique GS1-128 pour palette filmée — "
-            "imprime via AirPrint depuis l'iPad."
+            "imprime sur la Brother (par défaut) ou via AirPrint."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
 
         # Mode scan-first : le scan interroge directement la matrice codes-barres
@@ -104,6 +108,7 @@ async def page_etiquettes_palette():
             tenant_name=user.get("tenant_name") or _resolve_tenant_name(),
             tenant_id=tenant_id,
             user_email=user.get("email", ""),
+            sidebar=sidebar,
         )
 
 
@@ -114,6 +119,7 @@ def _render_form(
     tenant_name: str = "",
     tenant_id: str = "",
     user_email: str = "",
+    sidebar: ui.column | None = None,
 ) -> None:
     """Rend le formulaire wizard 4 étapes : scan/EAN manuel → produit
     identifié → quantité (palette pleine/partielle + diagramme) → imprimer."""
@@ -852,6 +858,10 @@ def _render_form(
             )
             await asyncio.to_thread(purge_old_label_history, tenant_id)
             _refresh_history()
+            # Rafraîchir le mini-menu sidebar (pending + récentes)
+            refresh_sidebar = state.get("_refresh_sidebar")
+            if refresh_sidebar:
+                refresh_sidebar()
             next_scan_row.set_visibility(True)
         except Exception as exc:
             _log.exception("Erreur génération étiquette palette (mode=%s)", mode)
@@ -1071,6 +1081,156 @@ def _render_form(
             _render_history_card(recent, on_reprint=_do_reprint)
 
     _refresh_history()
+
+    # ────────────────────────────────────────────────────────────────────
+    # Sidebar : mini-menu "À imprimer" + "3 dernières étiquettes"
+    # ────────────────────────────────────────────────────────────────────
+    sidebar_container: ui.column | None = None
+    if sidebar is not None:
+        with sidebar:
+            sidebar_container = ui.column().classes("w-full gap-1")
+
+    def _refresh_sidebar():
+        """Reconstruit le mini-menu sidebar (À imprimer + 3 dernières)."""
+        if sidebar_container is None or not tenant_id:
+            return
+        sidebar_container.clear()
+        try:
+            pending = list_pending_jobs(tenant_id, limit=8)
+        except Exception:
+            pending = []
+            _log.warning("Sidebar : list_pending_jobs échec", exc_info=True)
+        try:
+            recent = list_recent_labels(tenant_id, limit=3)
+        except Exception:
+            recent = []
+            _log.warning("Sidebar : list_recent_labels échec", exc_info=True)
+
+        with sidebar_container:
+            _render_sidebar_widget(pending, recent, on_refresh=_refresh_sidebar)
+
+    _refresh_sidebar()
+    # Mémorise dans l'état pour pouvoir le rafraîchir après chaque
+    # soumission de print job (capture par closure).
+    state["_refresh_sidebar"] = _refresh_sidebar
+
+
+# ─── Sidebar widget compact ─────────────────────────────────────────────────
+
+_FNAME_RE = re.compile(
+    r"^etiquette(?:_REIMPR)?_([^_]+)_([^_]+)_(.+?)_([^_]+)_(\d+)c\.pdf$",
+)
+
+
+def _parse_label_filename(fn: str) -> dict:
+    """Parse 'etiquette_NIKO_12x33_Mangue_Passion_08052027_126c.pdf' → dict.
+
+    Retourne {"marque", "fmt", "gout", "lot", "count"} ou {"raw": fn}
+    si le format est inconnu.
+    """
+    m = _FNAME_RE.match(fn or "")
+    if not m:
+        return {"raw": fn}
+    return {
+        "marque": m.group(1),
+        "fmt": m.group(2),
+        "gout": m.group(3).replace("_", " "),
+        "lot": m.group(4),
+        "count": int(m.group(5)),
+    }
+
+
+def _format_short_time(dt) -> str:
+    """Formate un datetime en HH:MM. Retourne '?' si parsing échoue."""
+    try:
+        return dt.strftime("%H:%M")
+    except Exception:
+        return "?"
+
+
+def _render_sidebar_widget(
+    pending: list[PendingJobView],
+    recent: list[HistoryEntry],
+    on_refresh,
+) -> None:
+    """Rend le mini-menu sidebar :
+      - Section "À imprimer" : jobs en queue (pending + printing)
+      - Section "Récentes" : 3 dernières étiquettes générées
+      - Bouton refresh discret en bas
+    Appelée dans un contexte UI (entre with sidebar:)."""
+
+    # ── Section : à imprimer ──
+    with ui.row().classes("w-full items-center gap-1 q-mt-sm"):
+        ui.icon("print", size="xs").style(f"color: {COLORS['orange']}")
+        ui.label(f"À IMPRIMER ({len(pending)})").classes("text-overline").style(
+            f"color: {COLORS['ink2']}; font-weight: 700; letter-spacing: 1px",
+        )
+
+    if not pending:
+        ui.label("Aucune en attente").classes("text-caption q-pl-xs").style(
+            f"color: {COLORS['ink2']}; font-style: italic",
+        )
+    else:
+        for j in pending:
+            parsed = _parse_label_filename(j.filename)
+            with ui.column().classes("w-full gap-0 q-pl-xs q-mb-xs"):
+                if "marque" in parsed:
+                    label = (
+                        f"{parsed['marque']} {parsed['fmt']} "
+                        f"{parsed['gout']} — {parsed['count']}c"
+                    )
+                else:
+                    label = parsed.get("raw", "?")
+                ui.label(label).classes("text-caption").style(
+                    f"color: {COLORS['ink']}; font-weight: 500; line-height: 1.2",
+                )
+                # Sous-titre : status + heure
+                status_color = (
+                    COLORS["orange"] if j.status == "printing"
+                    else COLORS["ink2"]
+                )
+                ui.label(
+                    f"{j.status} · {_format_short_time(j.created_at)}",
+                ).classes("text-caption").style(
+                    f"color: {status_color}; font-size: 10px; line-height: 1.2",
+                )
+
+    # ── Section : 3 dernières ──
+    ui.separator().classes("q-my-sm")
+    with ui.row().classes("w-full items-center gap-1"):
+        ui.icon("history", size="xs").style(f"color: {COLORS['green']}")
+        ui.label("RÉCENTES").classes("text-overline").style(
+            f"color: {COLORS['ink2']}; font-weight: 700; letter-spacing: 1px",
+        )
+
+    if not recent:
+        ui.label("Aucune encore").classes("text-caption q-pl-xs").style(
+            f"color: {COLORS['ink2']}; font-style: italic",
+        )
+    else:
+        for h in recent[:3]:
+            with ui.column().classes("w-full gap-0 q-pl-xs q-mb-xs"):
+                short = (
+                    f"{h.marque} {h.fmt} "
+                    f"{h.gout or '—'} — {h.case_count}c"
+                )
+                ui.label(short).classes("text-caption").style(
+                    f"color: {COLORS['ink']}; font-weight: 500; line-height: 1.2",
+                )
+                ui.label(
+                    _format_short_time(h.generated_at),
+                ).classes("text-caption").style(
+                    f"color: {COLORS['ink2']}; font-size: 10px; line-height: 1.2",
+                )
+
+    # ── Bouton refresh discret ──
+    with ui.row().classes("w-full justify-end q-mt-xs"):
+        ui.button(
+            icon="refresh",
+            on_click=lambda: on_refresh(),
+        ).props("flat dense color=grey-7 size=sm").style(
+            "min-width: 28px; min-height: 28px",
+        )
 
 
 # ─── Saisie manuelle EAN (fallback si scan échoue) ──────────────────────────
