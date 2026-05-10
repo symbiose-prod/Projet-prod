@@ -1,0 +1,4 @@
+.env
+print_agent.log
+tmp/
+__pycache__/

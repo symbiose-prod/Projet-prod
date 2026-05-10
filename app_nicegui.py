@@ -24,7 +24,7 @@ from nicegui import app, ui
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, RedirectResponse
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
 _env_file = Path(__file__).resolve().parent / ".env"
 load_dotenv(_env_file, override=False)
@@ -68,6 +68,10 @@ PUBLIC_PATHS = {
     "/login", "/_nicegui", "/favicon.ico", "/reset",
     "/health", "/metrics", "/static", "/assets",
     "/service-worker.js", "/api/sync",
+    # Endpoints de l'agent imprimante (auth via bearer token PRINT_AGENT_TOKEN,
+    # pas de session NiceGUI). Le slash trailing évite de matcher le POST
+    # utilisateur /api/print-jobs (qui reste protégé par session).
+    "/api/print-jobs/",
 }
 
 # Cookie remember-me : duree par defaut (30 jours)
@@ -812,6 +816,208 @@ async def _api_scan_barcode(request: Request):
         "ddm": ddm.isoformat() if ddm else None,
         "product": product,
     })
+
+
+# ─── Print jobs queue (Brother QL via agent local) ──────────────────────────
+
+# Token bearer partagé entre le VPS et l'agent Windows. À générer une fois
+# (ex: openssl rand -hex 32) et coller dans le .env du VPS et de l'agent.
+# Si non défini, l'API d'agent répond 503 (pas de queue active).
+_PRINT_AGENT_TOKEN = os.environ.get("PRINT_AGENT_TOKEN", "").strip()
+# Tenant unique côté agent : pour l'instant mono-tenant. ID du tenant
+# Symbiose Kéfir résolu au démarrage. Si on passe multi-tenant, un token
+# par agent + table de mapping fera le travail.
+_PRINT_AGENT_TENANT_ID = os.environ.get("PRINT_AGENT_TENANT_ID", "").strip()
+
+# File asyncio par tenant : push depuis create_print_job → wake-up des
+# long-polls en attente. maxsize=1 : on ne stocke qu'un signal pending,
+# c'est suffisant (l'agent re-vérifie la DB à chaque réveil).
+_print_pending_signals: dict[str, asyncio.Queue] = {}
+
+
+def _print_signal_queue(tenant_id: str) -> asyncio.Queue:
+    """Retourne (ou crée) la queue de signaux pour un tenant."""
+    q = _print_pending_signals.get(tenant_id)
+    if q is None:
+        q = asyncio.Queue(maxsize=1)
+        _print_pending_signals[tenant_id] = q
+    return q
+
+
+def _signal_new_print_job(tenant_id: str) -> None:
+    """Réveille les long-polls en attente. Coalesce les signaux."""
+    q = _print_signal_queue(tenant_id)
+    try:
+        q.put_nowait("new")
+    except asyncio.QueueFull:
+        # Un signal est déjà en attente — pas la peine d'en empiler un autre.
+        pass
+
+
+def _check_agent_auth(request: Request) -> str | None:
+    """Vérifie le bearer token agent. Retourne tenant_id si OK, None sinon."""
+    if not _PRINT_AGENT_TOKEN or not _PRINT_AGENT_TENANT_ID:
+        return None
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[len("Bearer "):].strip()
+    # Comparaison constant-time pour éviter un timing attack.
+    import hmac
+    if not hmac.compare_digest(token, _PRINT_AGENT_TOKEN):
+        return None
+    return _PRINT_AGENT_TENANT_ID
+
+
+@app.post("/api/print-jobs")
+async def _api_create_print_job(request: Request):
+    """Crée un job d'impression depuis la session opérateur (iPhone/iPad).
+
+    Auth : session NiceGUI + tenant_id. Body : multipart/form-data avec
+    'file' (PDF), 'filename' (str), 'n_copies' (int, optionnel).
+    """
+    user_store = app.storage.user
+    if not user_store.get("authenticated"):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    tenant_id = user_store.get("tenant_id")
+    if not tenant_id:
+        return JSONResponse({"error": "No tenant"}, status_code=403)
+
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"error": "Invalid form data"}, status_code=400)
+
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        return JSONResponse({"error": "Missing 'file' field"}, status_code=400)
+
+    content_type = (getattr(upload, "content_type", "") or "").lower()
+    if content_type and not content_type.startswith("application/pdf"):
+        return JSONResponse(
+            {"error": f"Type de fichier non supporté ({content_type}). PDF attendu."},
+            status_code=415,
+        )
+
+    try:
+        pdf_bytes = await upload.read()
+    except Exception:
+        _log.exception("Erreur lecture upload print-job")
+        return JSONResponse({"error": "Cannot read uploaded file"}, status_code=400)
+
+    # Borne de taille : un PDF étiquette palette fait ~50 KB. 5 MB de marge.
+    if not pdf_bytes or len(pdf_bytes) > 5 * 1024 * 1024:
+        return JSONResponse(
+            {"error": f"PDF size out of bounds ({len(pdf_bytes)} bytes)"},
+            status_code=413,
+        )
+
+    filename = str(form.get("filename") or "etiquette.pdf")
+    try:
+        n_copies = max(1, min(10, int(form.get("n_copies") or 1)))
+    except (TypeError, ValueError):
+        n_copies = 1
+
+    from common.services.print_jobs_service import create_print_job
+    job_id = await asyncio.to_thread(
+        create_print_job,
+        str(tenant_id),
+        user_email=str(user_store.get("email") or ""),
+        pdf_bytes=pdf_bytes,
+        filename=filename,
+        n_copies=n_copies,
+    )
+    if not job_id:
+        return JSONResponse({"error": "DB insert failed"}, status_code=500)
+
+    # Réveille les long-polls en attente côté agent.
+    _signal_new_print_job(str(tenant_id))
+    _log.info("Print job %d créé pour tenant %s (%d KB)", job_id, tenant_id, len(pdf_bytes) // 1024)
+    return JSONResponse({"id": job_id, "status": "pending"}, status_code=201)
+
+
+@app.get("/api/print-jobs/next")
+async def _api_next_print_job(request: Request):
+    """Long-polling : l'agent attend ici jusqu'à ce qu'un job soit dispo.
+
+    Auth : bearer token PRINT_AGENT_TOKEN.
+    Réponse :
+      - 200 + JSON {id, filename, n_copies, pdf_b64} si un job est dispo
+      - 204 No Content si aucun job pendant 25 sec (l'agent reconnecte)
+      - 401 si auth invalide
+      - 503 si la queue n'est pas configurée (env var manquante)
+    """
+    tenant_id = _check_agent_auth(request)
+    if tenant_id is None:
+        if not _PRINT_AGENT_TOKEN:
+            return JSONResponse({"error": "Print agent not configured"}, status_code=503)
+        return JSONResponse({"error": "Invalid token"}, status_code=401)
+
+    from common.services.print_jobs_service import (
+        reset_stuck_jobs,
+        take_next_pending_job,
+    )
+
+    # Watchdog opportuniste : remet en pending les jobs bloqués > 5 min en
+    # 'printing' (cas où l'agent crash mid-print). Coût négligeable.
+    await asyncio.to_thread(reset_stuck_jobs, tenant_id, 5)
+
+    # Premier check : si un job traîne déjà en pending, on le prend de suite
+    job = await asyncio.to_thread(take_next_pending_job, tenant_id)
+    if job is None:
+        # Long-poll : on attend jusqu'à 25 sec un signal de nouvelle job.
+        # 25 sec est sous le timeout par défaut Caddy (60s) et requests (30s)
+        # côté agent, donc on retourne avant que la connexion expire.
+        try:
+            await asyncio.wait_for(_print_signal_queue(tenant_id).get(), timeout=25.0)
+        except TimeoutError:
+            return Response(status_code=204)
+        # Réveillé : on tente de prendre un job
+        job = await asyncio.to_thread(take_next_pending_job, tenant_id)
+        if job is None:
+            return Response(status_code=204)
+
+    import base64
+    return JSONResponse({
+        "id": job.id,
+        "filename": job.filename,
+        "n_copies": job.n_copies,
+        "pdf_b64": base64.b64encode(job.pdf_bytes).decode("ascii"),
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+    })
+
+
+@app.post("/api/print-jobs/{job_id}/done")
+async def _api_print_job_done(job_id: int, request: Request):
+    """L'agent confirme l'impression réussie."""
+    tenant_id = _check_agent_auth(request)
+    if tenant_id is None:
+        return JSONResponse({"error": "Invalid token"}, status_code=401)
+    from common.services.print_jobs_service import mark_job_printed
+    ok = await asyncio.to_thread(mark_job_printed, tenant_id, int(job_id))
+    if not ok:
+        return JSONResponse({"error": "Job not found or wrong status"}, status_code=404)
+    _log.info("Print job %d imprimé (tenant %s)", job_id, tenant_id)
+    return JSONResponse({"status": "printed"})
+
+
+@app.post("/api/print-jobs/{job_id}/error")
+async def _api_print_job_error(job_id: int, request: Request):
+    """L'agent signale une erreur d'impression. Body : JSON {error: str}."""
+    tenant_id = _check_agent_auth(request)
+    if tenant_id is None:
+        return JSONResponse({"error": "Invalid token"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    error_msg = str((body or {}).get("error") or "unknown")[:500]
+    from common.services.print_jobs_service import mark_job_error
+    ok = await asyncio.to_thread(mark_job_error, tenant_id, int(job_id), error_msg)
+    if not ok:
+        return JSONResponse({"error": "Job not found"}, status_code=404)
+    _log.warning("Print job %d en erreur (tenant %s) : %s", job_id, tenant_id, error_msg)
+    return JSONResponse({"status": "error"})
 
 
 # ─── Nettoyage périodique (sessions / resets expirés) ────────────────────────

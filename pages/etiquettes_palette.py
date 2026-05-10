@@ -338,12 +338,25 @@ def _render_form(
                 value=True,
             )
 
-        with ui.row().classes("w-full gap-3"):
-            generate_btn = ui.button(
-                "Générer & télécharger le PDF",
-                icon="picture_as_pdf",
-            ).classes("flex-1").props(
+        with ui.column().classes("w-full gap-2"):
+            # Bouton primaire — impression directe via l'agent Brother
+            print_direct_btn = ui.button(
+                "Imprimer directement",
+                icon="print",
+            ).classes("w-full").props(
                 "color=green-8 unelevated size=lg",
+            ).style(
+                "touch-action: manipulation; min-height: 56px; "
+                "font-size: 16px; font-weight: 600",
+            )
+            print_direct_btn.disable()
+
+            # Bouton secondaire — fallback PDF (AirPrint, ou si l'agent est down)
+            generate_btn = ui.button(
+                "Télécharger le PDF",
+                icon="picture_as_pdf",
+            ).classes("w-full").props(
+                "color=grey-7 outline size=md",
             ).style("touch-action: manipulation")
             generate_btn.disable()
 
@@ -360,6 +373,25 @@ def _render_form(
     # ────────────────────────────────────────────────────────────────────
     # Logique réactive
     # ────────────────────────────────────────────────────────────────────
+
+    def _set_print_buttons(enabled: bool, loading: bool = False) -> None:
+        """Active/désactive les 2 boutons d'impression simultanément.
+
+        Évite que l'opérateur tape sur "Télécharger PDF" pendant qu'une
+        impression directe est en cours, et inversement.
+        """
+        if enabled:
+            print_direct_btn.enable()
+            generate_btn.enable()
+        else:
+            print_direct_btn.disable()
+            generate_btn.disable()
+        if loading:
+            print_direct_btn.props("loading")
+            generate_btn.props("loading")
+        else:
+            print_direct_btn.props(remove="loading")
+            generate_btn.props(remove="loading")
 
     def _refresh_layers_visual():
         """Met à jour la couleur des boutons-étages selon layers_input.value."""
@@ -510,7 +542,7 @@ def _render_form(
             total_display.text = "—"
             total_display.style(f"color: {COLORS['ink2']}")
             total_capacity_label.text = ""
-            generate_btn.disable()
+            _set_print_buttons(False)
             return
         layout = get_palette_layout(entry.fmt, entry.product_label)
         max_total = layout.get("total") or 0
@@ -518,7 +550,7 @@ def _render_form(
             total_display.text = "—"
             total_display.style(f"color: {COLORS['ink2']}")
             total_capacity_label.text = "Choisis 'palette pleine' ou 'palette partielle' ci-dessus"
-            generate_btn.disable()
+            _set_print_buttons(False)
             return
         try:
             count = compute_case_count(
@@ -532,7 +564,7 @@ def _render_form(
             total_display.text = "⚠"
             total_display.style(f"color: {COLORS['orange']}; font-weight: 700; font-size: 56px")
             total_capacity_label.text = str(exc)
-            generate_btn.disable()
+            _set_print_buttons(False)
             return
         total_display.text = str(count)
         # Couleur du total :
@@ -561,10 +593,7 @@ def _render_form(
         # DDM dépassée → on bloque la génération même si la quantité est valide.
         # Le bandeau d'avertissement dans la card récap explique pourquoi.
         ready = count > 0 and entry.ddm_date >= _dt.date.today()
-        if ready:
-            generate_btn.enable()
-        else:
-            generate_btn.disable()
+        _set_print_buttons(ready)
         # Wizard : révéler l'étape 4 (Imprimer) une fois la quantité valide.
         # Si c'est la première fois (passage de hidden → visible), on
         # scrolle vers le bouton pour montrer ce qu'il reste à faire.
@@ -760,11 +789,14 @@ def _render_form(
     layers_input.on_value_change(_on_layers_change)
     extras_input.on_value_change(_on_extras_change)
 
-    async def _do_generate(entry: LabelEntry, count: int):
-        """Effectue la génération PDF + sauvegarde historique. Appelé après
-        validation par la modale de confirmation."""
-        generate_btn.disable()
-        generate_btn.props("loading")
+    async def _do_generate(entry: LabelEntry, count: int, *, mode: str = "download"):
+        """Génère le PDF + audit + (téléchargement|envoi à l'imprimante).
+
+        ``mode`` :
+          - 'download' : ui.download(pdf) → AirPrint via iOS
+          - 'print_direct' : POST /api/print-jobs → agent Brother imprime
+        """
+        _set_print_buttons(False, loading=True)
         try:
             from common.etiquette_palette_pdf import build_etiquette_palette_pdf
 
@@ -780,8 +812,25 @@ def _render_form(
                 f"etiquette_{entry.marque}_{entry.fmt}_"
                 f"{safe_gout}_{entry.lot_str}_{count}c.pdf"
             )
-            ui.download(pdf_bytes, fname)
-            # Audit + historique pour réimpression future (fire-and-forget)
+
+            if mode == "print_direct":
+                # Soumet à la queue d'impression — l'agent Windows long-poll
+                # /api/print-jobs/next, récupère le PDF et imprime via le
+                # driver Brother (Windows ShellExecute).
+                await _submit_print_job(pdf_bytes, fname, ctx.n_copies)
+                ui.notify(
+                    f"✓ Envoyé à l'imprimante Brother — {count} caisses, "
+                    f"{ctx.n_copies} étiquette(s).",
+                    type="positive", icon="print", timeout=5000,
+                )
+            else:
+                ui.download(pdf_bytes, fname)
+                ui.notify(
+                    "✓ PDF téléchargé — imprime via AirPrint puis scanne le suivant.",
+                    type="positive", icon="check", timeout=5000,
+                )
+
+            # Audit historique (fire-and-forget) — identique pour les 2 modes
             await asyncio.to_thread(
                 save_label_history,
                 tenant_id,
@@ -804,31 +853,53 @@ def _render_form(
             await asyncio.to_thread(purge_old_label_history, tenant_id)
             _refresh_history()
             next_scan_row.set_visibility(True)
-            ui.notify(
-                "✓ Étiquette générée — imprime via AirPrint, "
-                "puis scanne le carton suivant.",
-                type="positive",
-                icon="check",
-                timeout=5000,
-            )
         except Exception as exc:
-            _log.exception("Erreur génération PDF étiquette palette")
-            ui.notify(f"Erreur génération PDF : {exc}", type="negative")
+            _log.exception("Erreur génération étiquette palette (mode=%s)", mode)
+            ui.notify(f"Erreur : {exc}", type="negative")
         finally:
-            generate_btn.enable()
-            generate_btn.props(remove="loading")
+            _set_print_buttons(True, loading=False)
 
-    async def _on_generate():
+    async def _submit_print_job(pdf_bytes: bytes, filename: str, n_copies: int) -> None:
+        """Crée un job d'impression en queue et signale l'agent.
+
+        On appelle le service domaine directement (pas via HTTP) puisque
+        nous sommes côté serveur — économise un round-trip et évite la
+        gymnastique d'auth session. Le signal in-process réveille
+        immédiatement le long-poll de l'agent.
+        """
+        from common.services.print_jobs_service import create_print_job
+        job_id = await asyncio.to_thread(
+            create_print_job,
+            tenant_id,
+            user_email=user_email,
+            pdf_bytes=pdf_bytes,
+            filename=filename,
+            n_copies=n_copies,
+        )
+        if not job_id:
+            raise RuntimeError("Impossible de créer le job d'impression")
+        # Réveil de l'agent en attente sur /api/print-jobs/next.
+        # Import lazy : app_nicegui importe pages.etiquettes_palette au
+        # démarrage, donc on doit éviter un import top-level circulaire.
+        try:
+            from app_nicegui import _signal_new_print_job
+            _signal_new_print_job(tenant_id)
+        except Exception:
+            _log.warning("Impossible de signaler la queue d'impression", exc_info=True)
+
+    def _validate_before_generate() -> tuple[LabelEntry, int] | None:
+        """Vérifie que tout est OK avant d'ouvrir la modale. Retourne
+        (entry, count) si OK, None sinon (notify déjà émis)."""
         entry: LabelEntry | None = state["entry"]
         if not entry:
-            ui.notify("Sélectionne marque, bouteille et goût.", type="warning")
-            return
+            ui.notify("Scanne ou saisis l'EAN d'abord.", type="warning")
+            return None
         if state["full_pallet"] is None:
             ui.notify(
                 "Choisis 'Palette pleine' ou 'Palette partielle' avant d'imprimer.",
                 type="warning",
             )
-            return
+            return None
         try:
             count = compute_case_count(
                 entry.fmt,
@@ -839,46 +910,53 @@ def _render_form(
             )
         except ValueError as exc:
             ui.notify(str(exc), type="negative")
-            return
-
-        # Validations métier
+            return None
         if count <= 0:
-            ui.notify(
-                "La quantité doit être > 0 pour générer une étiquette.",
-                type="warning",
-            )
-            return
+            ui.notify("La quantité doit être > 0.", type="warning")
+            return None
         if count > 999:
             ui.notify(
-                f"Quantité {count} > 999 (limite encodage GS1-128 AI 37). "
-                "Vérifie ta saisie.",
+                f"Quantité {count} > 999 (limite encodage GS1-128 AI 37).",
                 type="negative",
             )
-            return
+            return None
         if entry.ddm_date < _dt.date.today():
             ui.notify(
                 f"⚠ DDM dépassée ({entry.ddm_date.strftime('%d/%m/%Y')}) — "
-                "scan une étiquette plus récente ou saisis manuellement.",
-                type="warning",
-                timeout=6000,
+                "scanne un carton plus récent.",
+                type="warning", timeout=6000,
             )
+            return None
+        return entry, count
+
+    async def _on_print_direct():
+        """Bouton 'Imprimer directement' → modale → agent Brother."""
+        validated = _validate_before_generate()
+        if validated is None:
             return
+        entry, count = validated
+        _open_confirm_dialog(entry, count, mode="print_direct")
 
-        # Modale de confirmation : dernier garde-fou humain avant impression.
-        # Pour une étiquette qui finit collée sur une palette livrée client,
-        # on veut une lecture explicite du chiffre principal et des metadatas.
-        _open_confirm_dialog(entry, count)
+    async def _on_generate():
+        """Bouton 'Télécharger PDF' → modale → ui.download → AirPrint."""
+        validated = _validate_before_generate()
+        if validated is None:
+            return
+        entry, count = validated
+        _open_confirm_dialog(entry, count, mode="download")
 
-    def _open_confirm_dialog(entry: LabelEntry, count: int):
+    def _open_confirm_dialog(entry: LabelEntry, count: int, *, mode: str):
         n_copies = 2 if double_copies_toggle.value else 1
         full = bool(state["full_pallet"])
         layout = get_palette_layout(entry.fmt, entry.product_label)
         max_total = int(layout.get("total") or 0)
         is_overload = max_total > 0 and count > max_total
+        is_direct = mode == "print_direct"
         with ui.dialog() as confirm_dlg, ui.card().classes("q-pa-lg").style(
             "min-width: 360px; max-width: 420px",
         ):
-            ui.label("Vérifie avant d'imprimer").classes("text-h6").style(
+            title = "Imprimer sur la Brother ?" if is_direct else "Télécharger le PDF ?"
+            ui.label(title).classes("text-h6").style(
                 f"color: {COLORS['ink']}; font-weight: 700",
             )
             ui.separator().classes("q-my-sm")
@@ -907,7 +985,6 @@ def _render_form(
 
             ui.separator().classes("q-my-sm")
 
-            # Détail produit
             with ui.column().classes("w-full gap-1"):
                 ui.label(entry.designation).classes("text-body1").style(
                     f"color: {COLORS['ink']}; font-weight: 600",
@@ -925,13 +1002,16 @@ def _render_form(
                 )
                 async def _confirmed():
                     confirm_dlg.close()
-                    await _do_generate(entry, count)
+                    await _do_generate(entry, count, mode=mode)
+                action_label = "✓ Imprimer" if is_direct else "✓ Télécharger"
+                action_icon = "print" if is_direct else "download"
                 ui.button(
-                    "✓ Imprimer", icon="print", on_click=_confirmed,
+                    action_label, icon=action_icon, on_click=_confirmed,
                 ).props("color=green-8 unelevated size=lg")
         confirm_dlg.open()
 
     generate_btn.on_click(_on_generate)
+    print_direct_btn.on_click(_on_print_direct)
 
     def _reset_for_next_scan():
         """Reset le formulaire pour scanner un nouveau carton, en gardant les

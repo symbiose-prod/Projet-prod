@@ -36,9 +36,10 @@ from common.services.etiquette_palette_service import (
 _log = logging.getLogger("ferment.etiquette_palette_pdf")
 
 
-# Format Dymo LabelWriter 5XL Wireless (4"×6")
-_LABEL_WIDTH_MM = 102.0
-_LABEL_HEIGHT_MM = 152.0
+# Format Brother DK-11247 (4.06" × 6.46" — 103×164 mm) sur Brother
+# QL-1110NWBc. Compatible aussi Dymo 4"×6" avec une fine bande blanche.
+_LABEL_WIDTH_MM = 103.0
+_LABEL_HEIGHT_MM = 164.0
 _LABEL_MARGIN_MM = 5.0
 
 

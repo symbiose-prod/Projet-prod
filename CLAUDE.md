@@ -160,6 +160,12 @@ EASYBEER_ID_BRASSERIE       # default 2013
 
 # Production security
 ALLOWED_TENANTS             # obligatoire en production (ex: "Symbiose Kéfir")
+
+# Agent imprimante Brother QL-1110NWBc (étiquettes palette)
+# Si non défini, l'API d'agent répond 503. Le même token doit être posé
+# dans le .env de l'agent Windows (scripts/windows_print_agent/.env).
+PRINT_AGENT_TOKEN           # bearer token (openssl rand -hex 32)
+PRINT_AGENT_TENANT_ID       # UUID tenant Symbiose (table tenants)
 ```
 
 ---

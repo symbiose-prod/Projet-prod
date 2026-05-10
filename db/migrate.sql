@@ -484,6 +484,34 @@ ALTER TABLE etiquette_palette_history
   ADD COLUMN IF NOT EXISTS bio BOOLEAN NOT NULL DEFAULT true;
 
 -- =========================
+-- Print jobs (queue d'impression Brother QL via agent local Windows)
+-- =========================
+-- Quand l'opérateur tape "Imprimer directement" sur l'iPhone, le PDF est
+-- stocké ici en attente. L'agent Python Windows (toujours allumé dans
+-- l'entrepôt) long-poll /api/print-jobs/next, récupère le PDF, l'imprime
+-- via le driver Brother (Windows ShellExecute), puis marque comme imprimé.
+CREATE TABLE IF NOT EXISTS print_jobs (
+  id            BIGSERIAL PRIMARY KEY,
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_email    TEXT,
+  pdf_bytes     BYTEA NOT NULL,
+  filename      TEXT NOT NULL,
+  n_copies      INTEGER NOT NULL DEFAULT 1,
+  status        TEXT NOT NULL DEFAULT 'pending',
+                -- 'pending' | 'printing' | 'printed' | 'error'
+  error_message TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  taken_at      TIMESTAMPTZ,
+  printed_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_print_jobs_pending
+  ON print_jobs(tenant_id, created_at)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_print_jobs_status
+  ON print_jobs(tenant_id, status, created_at DESC);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -497,7 +525,8 @@ BEGIN
                        client_cache, client_tags_cache,
                        eb_cache, eb_sync_meta,
                        email_queue, monthly_sales,
-                       etiquette_palette_history TO shark;
+                       etiquette_palette_history,
+                       print_jobs TO shark;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;
