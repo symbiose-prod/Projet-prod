@@ -187,7 +187,7 @@ def reset_stuck_jobs(tenant_id: str, stuck_after_minutes: int = 5) -> int:
               taken_at = NULL
            WHERE tenant_id = :t
              AND status = 'printing'
-             AND taken_at < now() - (:m::text || ' minutes')::interval
+             AND taken_at < now() - (:m * INTERVAL '1 minute')
            RETURNING id""",
         {"t": tenant_id, "m": int(stuck_after_minutes)},
     )
@@ -210,7 +210,7 @@ def purge_old_jobs(tenant_id: str, keep_days: int = 7) -> int:
         """DELETE FROM print_jobs
            WHERE tenant_id = :t
              AND status IN ('printed', 'error')
-             AND created_at < now() - (:d::text || ' days')::interval
+             AND created_at < now() - (:d * INTERVAL '1 day')
            RETURNING id""",
         {"t": tenant_id, "d": int(keep_days)},
     ) or []
