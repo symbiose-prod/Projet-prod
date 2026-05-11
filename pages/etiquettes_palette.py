@@ -728,7 +728,7 @@ def _render_form(
                 fmt=product.get("fmt") or "",
                 pcb=int(product.get("pcb") or 0),
                 ean_colis=product.get("ean_colis") or ean,
-                ean_uvc="",
+                ean_uvc=product.get("ean_uvc") or "",
                 code_interne="",
                 lot_str=lot,
                 ddm_date=ddm,

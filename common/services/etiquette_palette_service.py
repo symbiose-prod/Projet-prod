@@ -680,6 +680,43 @@ def extract_ean_from_image(image_bytes: bytes) -> str | None:
     return None
 
 
+def _find_uvc_for_product(
+    raw_matrice: dict, id_produit: int, contenance_l: float,
+) -> str:
+    """Trouve le GTIN UVC (bouteille seule) pour un id_produit donné.
+
+    Le matrice EB contient plusieurs codesBarres par produit (UVC +
+    colis × N formats). On identifie l'UVC par :
+      - même idProduit
+      - même contenance (ex: 0.33 L pour 33cl)
+      - libellé du lot sans nombre > 1 (ex: "Unité", "Bouteille")
+        ou avec pkg=1 ("Carton de 1")
+
+    Retourne le GTIN en digits (sans chiffres de contrôle ajoutés), ou
+    "" si aucun UVC trouvé.
+    """
+    target_cont = round(float(contenance_l or 0), 2)
+    for prod in (raw_matrice or {}).get("produits", []):
+        for cb in prod.get("codesBarres", []):
+            mp = cb.get("modeleProduit") or {}
+            if int(mp.get("idProduit") or 0) != int(id_produit):
+                continue
+            mc = cb.get("modeleContenant") or {}
+            cont = round(float(mc.get("contenance") or 0), 2)
+            if abs(cont - target_cont) > 0.01:
+                continue
+            ml = cb.get("modeleLot") or {}
+            libelle = (ml.get("libelle") or "").strip().lower()
+            m = re.search(r"\d+", libelle)
+            pkg = int(m.group(0)) if m else 0
+            # UVC : libellé sans nombre, ou "Carton de 1"
+            if pkg <= 1:
+                code = re.sub(r"\D+", "", str(cb.get("code") or ""))
+                if code:
+                    return code
+    return ""
+
+
 def lookup_product_by_ean(ean: str) -> dict | None:
     """Cherche un produit dans la matrice codes-barres EasyBeer (cache 24 h).
 
@@ -689,7 +726,8 @@ def lookup_product_by_ean(ean: str) -> dict | None:
 
     Returns:
         Dict avec les clés : ``id_produit``, ``designation``, ``marque``,
-        ``fmt``, ``pcb``, ``bottle_type``, ``gout``, ``ean_colis``.
+        ``fmt``, ``pcb``, ``bottle_type``, ``gout``, ``ean_colis``,
+        ``ean_uvc`` (peut être vide si pas trouvé dans la matrice).
         ``None`` si pas trouvé ou EasyBeer indisponible.
     """
     digits = re.sub(r"\D+", "", ean or "")
@@ -731,6 +769,11 @@ def lookup_product_by_ean(ean: str) -> dict | None:
             marque = determine_brand_from_label(raw_label)
             bottle_type = classify_bottle_type(designation, marque, pcb, fmt=fmt)
             gout = extract_label_gout(designation, marque, designation)
+            # Calcul de la contenance pour retrouver l'UVC du même produit
+            # (33cl → 0.33 L, 75cl → 0.75 L) depuis le format
+            vol_m = re.search(r"x(\d+)", fmt)
+            contenance_l = int(vol_m.group(1)) / 100.0 if vol_m else 0.0
+            ean_uvc = _find_uvc_for_product(raw_matrice, id_produit, contenance_l)
             return {
                 "id_produit": id_produit,
                 "designation": designation,
@@ -740,6 +783,7 @@ def lookup_product_by_ean(ean: str) -> dict | None:
                 "bottle_type": bottle_type,
                 "gout": gout,
                 "ean_colis": full_code,
+                "ean_uvc": ean_uvc,
             }
     return None
 

@@ -186,6 +186,17 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
             pdf.cell(value_w, line_h, _txt(value), border=0, align="L",
                      new_x="LMARGIN", new_y="NEXT")
 
+        # GTIN-128 readable string sous GTIN COLIS — pour que l'opérateur
+        # puisse vérifier visuellement le contenu du code-barres sans douchette.
+        pdf.set_x(_LABEL_MARGIN_MM)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(label_w, line_h, _txt("GTIN-128 :"), border=0, align="L")
+        pdf.set_font("Courier", "", 7)
+        pdf.multi_cell(
+            value_w, line_h - 0.6, _txt(payload.data_with_parens),
+            border=0, align="L", new_x="LMARGIN", new_y="NEXT",
+        )
+
         pdf.ln(1)
         _hline(pdf, inner_width)
 
