@@ -22,6 +22,7 @@ from common.auth import (
     validate_email,
     validate_password,
 )
+from common.permissions import home_page_for_role
 from pages.theme import COLORS, apply_quasar_theme, logo_svg, password_strength_bar
 
 _log = logging.getLogger("ferment.auth")
@@ -33,9 +34,9 @@ _log = logging.getLogger("ferment.auth")
 def page_login():
     apply_quasar_theme()
 
-    # Si déjà connecté → redirect
+    # Si déjà connecté → redirect vers la home propre au rôle
     if app.storage.user.get("authenticated"):
-        ui.navigate.to("/accueil")
+        ui.navigate.to(home_page_for_role(app.storage.user.get("role")))
         return
 
     # Centrage vertical + horizontal
@@ -117,7 +118,7 @@ def page_login():
                                     app.storage.user["_pending_remember_token"] = token
                                 except Exception:
                                     _log.warning("Impossible de creer le token remember-me", exc_info=True)
-                            ui.navigate.to("/accueil")
+                            ui.navigate.to(home_page_for_role(user.get("role")))
                         finally:
                             login_btn.enable()
                             login_btn.props(remove="loading")
@@ -208,7 +209,7 @@ def page_login():
                                 "email": user["email"],
                                 "role": user.get("role", "user"),
                             })
-                            ui.navigate.to("/accueil")
+                            ui.navigate.to(home_page_for_role(user.get("role")))
                         except ValueError as ve:
                             # Erreurs de validation (email, mot de passe, etc.)
                             signup_msg.text = str(ve)

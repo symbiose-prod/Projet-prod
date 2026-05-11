@@ -162,6 +162,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return RedirectResponse(url="/login")
         request.state.tenant_id = str(_tid)
 
+        # ── RBAC : vérifie l'accès basé sur le rôle ──
+        # L'opérateur n'a accès qu'aux pages listées dans common/permissions.py
+        # OPERATEUR_ALLOWED_PATHS. Toute autre URL le redirige vers sa page
+        # d'accueil. Admin et user passent partout (admin.py fait son propre
+        # check pour les pages strictement admin).
+        from common.permissions import can_access_path, home_page_for_role
+        _role = (user_store.get("role") or "user").strip().lower()
+        if not can_access_path(_role, path):
+            _log.warning(
+                "Accès refusé : %s (role=%s) → %s — redirect vers home",
+                user_store.get("email") or "?", _role, path,
+            )
+            return RedirectResponse(url=home_page_for_role(_role))
+
         # ── Process request ──
         response = await call_next(request)
 

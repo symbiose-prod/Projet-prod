@@ -577,11 +577,23 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
             if is_active:
                 btn.classes("nav-active")
 
+        # RBAC : on filtre les items de menu selon le rôle de l'utilisateur.
+        # L'opérateur ne voit que les pages qui lui sont autorisées.
+        from common.permissions import is_nav_visible
+        _user_role = (app.storage.user.get("role") or "user").strip().lower()
+
         for item in NAV_ITEMS:
             if len(item) == 4:
                 # Groupe dépliable (icon, label, None, children)
                 grp_icon, grp_label, _, children = item
-                child_paths = [c[2] for c in children]
+                # Filtrer les enfants par rôle ; si tous sont invisibles,
+                # on cache le groupe entier
+                visible_children = [
+                    c for c in children if is_nav_visible(_user_role, c[2])
+                ]
+                if not visible_children:
+                    continue
+                child_paths = [c[2] for c in visible_children]
                 grp_active = current_path in child_paths
                 with ui.expansion(
                     text=grp_label,
@@ -592,11 +604,13 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
                         "text-green-8" if grp_active else "text-grey-8"
                     )
                 ).style("font-size: 13px"):
-                    for child_icon, child_label, child_path in children:
+                    for child_icon, child_label, child_path in visible_children:
                         _render_nav_btn(child_icon, child_label, child_path, indent=True)
             else:
                 # Lien simple (icon, label, path)
                 nav_icon, nav_label, nav_path = item
+                if not is_nav_visible(_user_role, nav_path):
+                    continue
                 _render_nav_btn(nav_icon, nav_label, nav_path)
 
         ui.separator().classes("q-my-md")
