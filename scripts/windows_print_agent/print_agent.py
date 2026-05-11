@@ -67,12 +67,14 @@ log = logging.getLogger("print_agent")
 def _print_pdf_windows(pdf_path: Path, n_copies: int = 1) -> None:
     """Imprime un PDF via Windows ShellExecute (driver Brother).
 
-    ShellExecute("print", file) déclenche l'action "Imprimer" associée
-    au fichier dans Windows — pour un PDF, c'est le visualiseur PDF par
-    défaut (Edge ou Acrobat) qui envoie sur l'imprimante par défaut.
+    Le PDF contient déjà ``n_copies`` pages (générées côté serveur dans
+    build_etiquette_palette_pdf via la recommandation GS1 « 2 faces de
+    palette »), donc on l'imprime **une seule fois** — le driver Brother
+    se charge d'envoyer toutes les pages. L'argument ``n_copies`` est
+    gardé pour le log mais n'est plus utilisé pour boucler.
 
-    Pour cibler une imprimante spécifique : on peut utiliser la verbe
-    "printto" avec le nom de l'imprimante en paramètre.
+    "printto" = verbe Windows standard pour imprimer sur une imprimante
+    nommée. Fallback sur "print" (imprimante par défaut) si ça échoue.
     """
     try:
         import win32api  # type: ignore
@@ -82,28 +84,23 @@ def _print_pdf_windows(pdf_path: Path, n_copies: int = 1) -> None:
         raise
 
     printer = PRINTER_NAME or win32print.GetDefaultPrinter()
-    log.info("Impression de %s sur %r (×%d)", pdf_path.name, printer, n_copies)
+    log.info(
+        "Impression de %s sur %r (%d page%s incluses dans le PDF)",
+        pdf_path.name, printer, n_copies, "s" if n_copies > 1 else "",
+    )
 
-    # On boucle pour les n_copies (Windows print queue gère ça mais
-    # certaines imprimantes Brother se contentent d'une page si on dit
-    # n_copies via la spool — plus fiable d'envoyer N fois).
-    for i in range(max(1, n_copies)):
-        try:
-            # printto = imprime sur une imprimante nommée. Verbe Windows standard.
-            win32api.ShellExecute(
-                0,
-                "printto",
-                str(pdf_path),
-                f'"{printer}"',
-                ".",
-                0,  # SW_HIDE
-            )
-        except Exception:
-            log.exception("ShellExecute échoué — fallback sur 'print' (par défaut)")
-            win32api.ShellExecute(0, "print", str(pdf_path), None, ".", 0)
-        # Petit délai entre les copies pour éviter de surcharger le spool
-        if i < n_copies - 1:
-            time.sleep(0.3)
+    try:
+        win32api.ShellExecute(
+            0,
+            "printto",
+            str(pdf_path),
+            f'"{printer}"',
+            ".",
+            0,  # SW_HIDE
+        )
+    except Exception:
+        log.exception("ShellExecute échoué — fallback sur 'print' (par défaut)")
+        win32api.ShellExecute(0, "print", str(pdf_path), None, ".", 0)
 
 
 # ─── HTTP client ────────────────────────────────────────────────────────
