@@ -78,6 +78,7 @@ def prepare_grid_rows(
         grid_rows.append({
             "ref": r["Référence"],
             "produit": label,
+            "sofripa_label": r.get("sofripa_label"),
             "_gout": gout,
             "ddm": ddm_str,
             "cartons": None,

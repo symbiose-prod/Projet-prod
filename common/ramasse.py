@@ -33,6 +33,23 @@ from common.easybeer import (
 # DDM (Date de Durabilité Minimale) — loaded from config.yaml business.ddm_days
 _DDM_DAYS: int = _get_biz().get("ddm_days", 365)
 
+# Mapping ref6 → désignation officielle SOFRIPA (data/sofripa_designations.json)
+_SOFRIPA_DESIGNATIONS_PATH = Path(__file__).resolve().parent.parent / "data" / "sofripa_designations.json"
+_sofripa_designations: dict[str, str] | None = None
+
+
+def get_sofripa_label(ref6: str) -> str | None:
+    """Retourne la désignation SOFRIPA officielle pour une référence article, ou None."""
+    global _sofripa_designations
+    if _sofripa_designations is None:
+        try:
+            with open(_SOFRIPA_DESIGNATIONS_PATH, encoding="utf-8") as f:
+                _sofripa_designations = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            _log.warning("Impossible de charger sofripa_designations.json")
+            _sofripa_designations = {}
+    return _sofripa_designations.get(str(ref6))
+
 
 def _build_palette_capacity_from_config() -> tuple[dict[str, int], dict[str, dict[str, int]]]:
     """Calcule (PALETTE_CAPACITY, PALETTE_CAPACITY_OVERRIDES) depuis la config.
@@ -440,6 +457,7 @@ def build_ramasse_lines(
                 rows.append({
                     "Référence": ref,
                     "Produit (goût + format)": label,
+                    "sofripa_label": get_sofripa_label(ref),
                     "DDM": ddm_date,
                     "Quantité cartons": qty,
                     "Quantité palettes": 0,
