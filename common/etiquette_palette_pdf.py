@@ -32,6 +32,7 @@ from common.services.etiquette_palette_service import (
     _ean_to_gtin14,
     build_gs1_128_payload,
 )
+from common.services.sscc_service import format_sscc_pretty as _format_sscc_pretty
 
 _log = logging.getLogger("ferment.etiquette_palette_pdf")
 
@@ -80,6 +81,8 @@ class EtiquetteContext:
     gtin_uvc: str = ""       # GTIN unité-consommateur (bouteille) — 13 digits
     pcb: int = 0             # nb bouteilles par carton
     bio: bool = True         # affiche "*FR_BIO_01" sous le titre si vrai
+    sscc: str = ""           # SSCC 18 digits — identifiant unique palette GS1.
+                             # Si vide, la section SSCC est omise (rétro-compat).
 
 
 def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
@@ -200,7 +203,7 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
         pdf.ln(1)
         _hline(pdf, inner_width)
 
-        # ── Code-barres GS1-128 ─────────────────────────────────────
+        # ── Code-barres GS1-128 produit ──────────────────────────────
         barcode_y = pdf.get_y() + 2
         barcode_height_mm = 22.0
         pdf.image(io.BytesIO(barcode_png), x=_LABEL_MARGIN_MM, y=barcode_y,
@@ -209,6 +212,41 @@ def build_etiquette_palette_pdf(ctx: EtiquetteContext) -> bytes:
 
         pdf.set_font("Courier", "", 6.5)
         pdf.multi_cell(inner_width, 3.0, _txt(payload.hri), border=0, align="C")
+
+        # ── Section SSCC (identifiant unique de palette GS1) ─────────
+        # Séparé visuellement du code-barres produit. Hauteur du
+        # barcode SSCC ≥ 31.75 mm (recommandation GS1 pour la
+        # lisibilité par les douchettes de quai).
+        if ctx.sscc:
+            pdf.ln(1.5)
+            _hline(pdf, inner_width)
+            pdf.ln(1.5)
+
+            # Libellé SSCC + valeur formatée par groupes (lisible humain)
+            pdf.set_x(_LABEL_MARGIN_MM)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(18, 5, _txt("SSCC :"), border=0, align="L")
+            pdf.set_font("Courier", "B", 10)
+            pdf.cell(
+                inner_width - 18, 5, _txt(_format_sscc_pretty(ctx.sscc)),
+                border=0, align="L", new_x="LMARGIN", new_y="NEXT",
+            )
+
+            # Code-barres GS1-128 SSCC (AI 00)
+            sscc_barcode_png = _generate_barcode_png(f"(00){ctx.sscc}")
+            sscc_barcode_y = pdf.get_y() + 1
+            sscc_barcode_h = 28.0  # ≥ 25 mm — proche reco GS1 (31.75 idéal)
+            pdf.image(
+                io.BytesIO(sscc_barcode_png),
+                x=_LABEL_MARGIN_MM, y=sscc_barcode_y,
+                w=inner_width, h=sscc_barcode_h,
+            )
+            pdf.set_y(sscc_barcode_y + sscc_barcode_h + 0.3)
+
+            # HRI sous le code SSCC
+            pdf.set_font("Courier", "", 7)
+            sscc_hri = f"(00) {ctx.sscc[0]} {ctx.sscc[1:6]} {ctx.sscc[6:11]} {ctx.sscc[11:16]} {ctx.sscc[16:18]}"
+            pdf.multi_cell(inner_width, 3.0, _txt(sscc_hri), border=0, align="C")
 
     out = pdf.output()
     if isinstance(out, str):
@@ -272,6 +310,7 @@ if __name__ == "__main__":
         pcb=6,
         bio=True,
         n_copies=1,
+        sscc="337700144200000054",  # SSCC sample serial=5 (test smoke uniquement)
     )
     pdf_bytes = build_etiquette_palette_pdf(sample)
     out = Path("/tmp/etiquette_palette_sample.pdf")

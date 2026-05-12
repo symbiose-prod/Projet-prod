@@ -803,12 +803,33 @@ def _render_form(
         _set_print_buttons(False, loading=True)
         try:
             from common.etiquette_palette_pdf import build_etiquette_palette_pdf
+            from common.services.sscc_service import generate_sscc
+
+            # Génération du SSCC palette (NEW). Atomic via PG sequence,
+            # jamais réutilisé, audité dans sscc_log. Si la DB échoue on
+            # log mais on continue : la palette aura un SSCC vide plutôt
+            # qu'aucune étiquette.
+            try:
+                sscc_result = await asyncio.to_thread(
+                    generate_sscc,
+                    tenant_id,
+                    user_email=user_email,
+                    gtin_palette=entry.ean_colis,
+                    lot=entry.lot_str,
+                    ddm=entry.ddm_date,
+                    case_count=count,
+                )
+                sscc_str = sscc_result.sscc
+            except Exception:
+                _log.exception("Échec génération SSCC — étiquette imprimée sans SSCC")
+                sscc_str = ""
 
             ctx = _ctx_from_entry(
                 entry, count,
                 full_pallet=bool(state["full_pallet"]),
                 n_copies=2 if double_copies_toggle.value else 1,
                 tenant_name=tenant_name,
+                sscc=sscc_str,
             )
             pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
             safe_gout = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.gout or "")
@@ -834,7 +855,9 @@ def _render_form(
                     type="positive", icon="check", timeout=5000,
                 )
 
-            # Audit historique (fire-and-forget) — identique pour les 2 modes
+            # Audit historique (fire-and-forget) — identique pour les 2 modes.
+            # On stocke le SSCC pour qu'une réimpression future utilise le
+            # même (même palette physique).
             await asyncio.to_thread(
                 save_label_history,
                 tenant_id,
@@ -853,6 +876,7 @@ def _render_form(
                 gtin_uvc=entry.ean_uvc,
                 code_interne=entry.code_interne,
                 bio=True,
+                sscc=sscc_str,
             )
             await asyncio.to_thread(purge_old_label_history, tenant_id)
             _refresh_history()
@@ -1441,7 +1465,7 @@ def _install_scan_input_listener() -> None:
 
 def _ctx_from_entry(
     entry: LabelEntry, count: int,
-    *, full_pallet: bool, n_copies: int, tenant_name: str,
+    *, full_pallet: bool, n_copies: int, tenant_name: str, sscc: str = "",
 ):
     """Construit un EtiquetteContext depuis une LabelEntry + saisie quantité."""
     from common.etiquette_palette_pdf import EtiquetteContext
@@ -1460,11 +1484,17 @@ def _ctx_from_entry(
         gtin_uvc=entry.ean_uvc,
         pcb=entry.pcb,
         bio=True,
+        sscc=sscc,
     )
 
 
 def _ctx_from_history(h: HistoryEntry, *, tenant_name: str):
-    """Construit un EtiquetteContext depuis une HistoryEntry (réimpression)."""
+    """Construit un EtiquetteContext depuis une HistoryEntry (réimpression).
+
+    Le SSCC stocké est réutilisé tel quel : une réimpression vise la
+    MÊME palette physique (cas où l'opérateur a perdu l'étiquette
+    originale), pas une nouvelle.
+    """
     from common.etiquette_palette_pdf import EtiquetteContext
     return EtiquetteContext(
         product_label=h.designation or f"GTIN {h.ean}",
@@ -1481,6 +1511,7 @@ def _ctx_from_history(h: HistoryEntry, *, tenant_name: str):
         gtin_uvc=h.gtin_uvc,
         pcb=h.pcb,
         bio=h.bio,
+        sscc=h.sscc,
     )
 
 

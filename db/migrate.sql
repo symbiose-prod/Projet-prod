@@ -481,7 +481,39 @@ CREATE INDEX IF NOT EXISTS idx_etiq_pal_tenant_date
 ALTER TABLE etiquette_palette_history
   ADD COLUMN IF NOT EXISTS gtin_uvc TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS code_interne TEXT NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS bio BOOLEAN NOT NULL DEFAULT true;
+  ADD COLUMN IF NOT EXISTS bio BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS sscc TEXT NOT NULL DEFAULT '';
+
+-- =========================
+-- SSCC (Serial Shipping Container Code) — identifiant unique de palette
+-- =========================
+-- Compteur séquentiel pour la portion sérielle (8 digits) du SSCC.
+-- Persistant entre redémarrages serveur. Atomic via SEQUENCE PostgreSQL.
+-- NO CYCLE : on ne réutilise JAMAIS un numéro (contrainte GS1 = pas de
+-- réutilisation avant 1 an, en pratique on n'en réutilise jamais).
+-- Max 99_999_999 = ~100 millions de palettes avant épuisement.
+CREATE SEQUENCE IF NOT EXISTS sscc_serial_seq
+  MINVALUE 1
+  MAXVALUE 99999999
+  START 1
+  INCREMENT BY 1
+  NO CYCLE;
+
+-- Audit log de tous les SSCC générés — traçabilité réglementaire.
+-- L'unicité du SSCC est garantie par la séquence + la contrainte UNIQUE.
+CREATE TABLE IF NOT EXISTS sscc_log (
+  id            BIGSERIAL PRIMARY KEY,
+  sscc          TEXT NOT NULL UNIQUE,
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_email    TEXT,
+  gtin_palette  TEXT,                     -- GTIN-14 du carton (AI 02)
+  lot           TEXT,
+  ddm           DATE,
+  case_count    INTEGER,                  -- nb cartons sur la palette
+  generated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sscc_log_tenant_date
+  ON sscc_log(tenant_id, generated_at DESC);
 
 -- =========================
 -- Print jobs (queue d'impression Brother QL via agent local Windows)
@@ -526,7 +558,7 @@ BEGIN
                        eb_cache, eb_sync_meta,
                        email_queue, monthly_sales,
                        etiquette_palette_history,
-                       print_jobs TO shark;
-    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO shark;
+                       print_jobs, sscc_log TO shark;
+    GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

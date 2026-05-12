@@ -127,6 +127,7 @@ class HistoryEntry:
     bio: bool
     user_email: str
     generated_at: _dt.datetime
+    sscc: str = ""              # SSCC 18 digits (vide pour entrées pré-SSCC)
 
 
 @dataclass(frozen=True)
@@ -840,6 +841,7 @@ def save_label_history(
     gtin_uvc: str = "",
     code_interne: str = "",
     bio: bool = True,
+    sscc: str = "",
 ) -> int | None:
     """Persiste une étiquette palette dans l'historique pour réimpression future.
 
@@ -850,9 +852,9 @@ def save_label_history(
             """INSERT INTO etiquette_palette_history
                (tenant_id, user_email, ean, lot, ddm, fmt, marque, designation,
                 gout, case_count, full_pallet, n_copies, pcb,
-                gtin_uvc, code_interne, bio)
+                gtin_uvc, code_interne, bio, sscc)
                VALUES (:t, :u, :ean, :lot, :ddm, :fmt, :m, :des, :g,
-                       :cc, :fp, :n, :pcb, :uvc, :ci, :bio)
+                       :cc, :fp, :n, :pcb, :uvc, :ci, :bio, :sscc)
                RETURNING id""",
             {
                 "t": tenant_id, "u": user_email, "ean": ean, "lot": lot,
@@ -860,7 +862,7 @@ def save_label_history(
                 "g": gout, "cc": int(case_count), "fp": bool(full_pallet),
                 "n": int(n_copies), "pcb": int(pcb),
                 "uvc": gtin_uvc or "", "ci": code_interne or "",
-                "bio": bool(bio),
+                "bio": bool(bio), "sscc": sscc or "",
             },
         )
         return int(rows[0]["id"]) if rows else None
@@ -875,7 +877,7 @@ def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
         rows = run_sql(
             """SELECT id, ean, lot, ddm, fmt, marque, designation, gout,
                       case_count, full_pallet, n_copies, pcb,
-                      gtin_uvc, code_interne, bio,
+                      gtin_uvc, code_interne, bio, sscc,
                       user_email, generated_at
                FROM etiquette_palette_history
                WHERE tenant_id = :t
@@ -908,6 +910,7 @@ def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
                 bio=bool(r.get("bio", True)),
                 user_email=str(r["user_email"] or ""),
                 generated_at=r["generated_at"],
+                sscc=str(r.get("sscc") or ""),
             ))
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne historique invalide ignorée : %r", r, exc_info=True)
