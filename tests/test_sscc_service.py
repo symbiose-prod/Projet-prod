@@ -9,7 +9,9 @@ import pytest
 
 from common.services.sscc_service import (
     SSCC_COMPANY_PREFIX,
+    SSCC_EXTENSION_CARTON,
     SSCC_EXTENSION_DIGIT,
+    SSCC_EXTENSION_PALETTE,
     _build_sscc_from_serial,
     format_sscc_pretty,
     gs1_check_digit,
@@ -105,6 +107,33 @@ class TestBuildSscc:
     def test_different_serials_different_ssccs(self):
         assert _build_sscc_from_serial(1) != _build_sscc_from_serial(2)
         assert _build_sscc_from_serial(100) != _build_sscc_from_serial(101)
+
+    def test_extension_palette_default(self):
+        """Le default doit être le préfixe palette '3'."""
+        sscc = _build_sscc_from_serial(1)
+        assert sscc.startswith(SSCC_EXTENSION_PALETTE)
+        assert SSCC_EXTENSION_PALETTE == "3"
+
+    def test_extension_carton_distinct(self):
+        """Avec l'extension carton '1', le SSCC commence par '1' au lieu de '3'."""
+        sscc_pal = _build_sscc_from_serial(42, extension=SSCC_EXTENSION_PALETTE)
+        sscc_car = _build_sscc_from_serial(42, extension=SSCC_EXTENSION_CARTON)
+        assert sscc_pal.startswith("3")
+        assert sscc_car.startswith("1")
+        assert SSCC_EXTENSION_CARTON == "1"
+        # Les deux SSCC sont distincts même avec le même serial
+        assert sscc_pal != sscc_car
+
+    def test_alias_extension_digit_points_to_palette(self):
+        """SSCC_EXTENSION_DIGIT (alias rétro-compat) doit pointer sur PALETTE."""
+        assert SSCC_EXTENSION_DIGIT == SSCC_EXTENSION_PALETTE
+
+    def test_invalid_extension_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="extension doit"):
+            _build_sscc_from_serial(1, extension="AB")
+        with pytest.raises(ValueError, match="extension doit"):
+            _build_sscc_from_serial(1, extension="")
 
 
 # ─── format_sscc_pretty ─────────────────────────────────────────────────────

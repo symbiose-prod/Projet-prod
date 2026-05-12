@@ -10,7 +10,12 @@ Structure du SSCC (18 chiffres strict, norme GS1) :
      1            9               7        1
      ext   préfixe entreprise   séquentiel   clé
 
-  - E : chiffre d'extension (1 chiffre, libre — ici 3)
+  - E : chiffre d'extension (1 chiffre, libre).
+        ⚠ CONVENTION INTERNE FERMENT STATION (pas une règle GS1) :
+          - 1 = carton (unité logistique secondaire) — futur
+          - 3 = palette (unité logistique principale)  — implémenté ici
+        Le chiffre d'extension distingue visuellement le type d'unité
+        sans avoir à interpréter la structure du code.
   - P : préfixe entreprise GS1 (9 chiffres — Ferment Station = 377001442)
   - S : compteur séquentiel persistant (7 chiffres = 10M valeurs, atomic
         via PostgreSQL SEQUENCE, NO CYCLE — jamais réutilisé)
@@ -43,8 +48,20 @@ _log = logging.getLogger("ferment.services.sscc")
 
 # ─── Constantes métier ──────────────────────────────────────────────────────
 
-SSCC_EXTENSION_DIGIT = "3"        # 1 chiffre, libre
-SSCC_COMPANY_PREFIX = "377001442"  # 9 chiffres, attribué par GS1 France
+# Convention interne Ferment Station (PAS une règle GS1 officielle) :
+# le chiffre d'extension permet de distinguer visuellement le type d'unité
+# logistique sans avoir à interpréter la structure du code.
+SSCC_EXTENSION_PALETTE = "3"      # palette filmée (unité logistique principale)
+SSCC_EXTENSION_CARTON = "1"       # carton individuel (futur — pas encore implémenté)
+
+# Préfixe entreprise GS1 attribué à Ferment Station / Symbiose Kéfir.
+# Inscrit auprès de GS1 France — ne JAMAIS le changer sans coordination.
+SSCC_COMPANY_PREFIX = "377001442"  # 9 chiffres
+
+# Alias rétro-compat (anciennes versions du code/tests) — pointe sur PALETTE
+# par défaut car c'est le seul cas d'usage actuel.
+SSCC_EXTENSION_DIGIT = SSCC_EXTENSION_PALETTE
+
 _SSCC_SERIAL_LEN = 7              # 7 chiffres → ext + prefix + serial = 17 → +1 check = 18
 
 
@@ -95,21 +112,28 @@ def format_sscc_pretty(sscc18: str) -> str:
     return f"{s[0:4]} {s[4:8]} {s[8:12]} {s[12:16]} {s[16:18]}"
 
 
-def _build_sscc_from_serial(serial: int) -> str:
+def _build_sscc_from_serial(serial: int, extension: str = SSCC_EXTENSION_PALETTE) -> str:
     """Construit un SSCC 18 digits complet à partir d'un numéro séquentiel.
 
     Pure function : ne touche pas à la DB. Exposée pour les tests.
+
+    Args:
+        serial: numéro séquentiel (≥ 0, ≤ 9 999 999).
+        extension: chiffre d'extension (1 char digit). Default = palette.
+            Pour les cartons (futur), passer ``SSCC_EXTENSION_CARTON``.
     """
     if not (0 <= serial < 10**_SSCC_SERIAL_LEN):
         raise ValueError(
             f"SSCC serial hors bornes [0, {10**_SSCC_SERIAL_LEN - 1}] : {serial}",
         )
+    if len(extension) != 1 or not extension.isdigit():
+        raise ValueError(f"extension doit être 1 chiffre, reçu {extension!r}")
     serial_str = str(serial).zfill(_SSCC_SERIAL_LEN)
-    body17 = f"{SSCC_EXTENSION_DIGIT}{SSCC_COMPANY_PREFIX}{serial_str}"
+    body17 = f"{extension}{SSCC_COMPANY_PREFIX}{serial_str}"
     if len(body17) != 17:
         raise RuntimeError(
             f"SSCC body invalide ({len(body17)} digits, attendu 17) — "
-            "vérifier SSCC_EXTENSION_DIGIT + SSCC_COMPANY_PREFIX + _SSCC_SERIAL_LEN",
+            "vérifier extension + SSCC_COMPANY_PREFIX + _SSCC_SERIAL_LEN",
         )
     return f"{body17}{gs1_check_digit(body17)}"
 
