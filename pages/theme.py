@@ -76,6 +76,9 @@ NAV_ITEMS: list[tuple] = [
         ("account_tree",   "Nomenclatures",        "/nomenclatures"),
         ("sell",           "Tags clients",          "/tags"),
         ("label",          "Étiquettes",           "/sync"),
+        # admin only — masqué automatiquement pour user/operateur via
+        # ADMIN_ONLY_PATHS dans common/permissions.py
+        ("history",        "Journal SSCC",         "/sscc-log"),
     ]),
 ]
 

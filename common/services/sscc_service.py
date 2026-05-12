@@ -76,6 +76,19 @@ class SsccGenResult:
     hri: str                 # ex: "(00) 3 37700 14420 00000 05" (lisible humain)
 
 
+@dataclass(frozen=True)
+class SsccLogEntry:
+    """Une ligne du journal SSCC pour affichage / export audit."""
+    id: int
+    sscc: str
+    user_email: str
+    gtin_palette: str
+    lot: str
+    ddm: _dt.date | None
+    case_count: int
+    generated_at: _dt.datetime
+
+
 # ─── Algorithme clé de contrôle GS1 (pure) ──────────────────────────────────
 
 def gs1_check_digit(digits: str) -> int:
@@ -203,6 +216,93 @@ def generate_sscc(
         gs1_data=f"(00){sscc}",
         hri=f"(00) {sscc[0]} {sscc[1:6]} {sscc[6:11]} {sscc[11:16]} {sscc[16:18]}",
     )
+
+
+def list_sscc_log(
+    tenant_id: str,
+    *,
+    date_from: _dt.date | None = None,
+    date_to: _dt.date | None = None,
+    lot_filter: str = "",
+    limit: int = 500,
+) -> list[SsccLogEntry]:
+    """Liste les SSCC générés selon les filtres demandés.
+
+    Args:
+        tenant_id: scope tenant
+        date_from: inclus (>=)
+        date_to: inclus (<= fin de journée)
+        lot_filter: ILIKE %motif% sur la colonne lot
+        limit: hard cap pour éviter de tout charger en mémoire
+
+    Returns:
+        Liste triée par date desc (le plus récent en haut).
+    """
+    where = ["tenant_id = :t"]
+    params: dict = {"t": tenant_id, "lim": int(limit)}
+    if date_from:
+        where.append("generated_at >= :df")
+        params["df"] = date_from
+    if date_to:
+        where.append("generated_at < (:dt::date + INTERVAL '1 day')")
+        params["dt"] = date_to
+    if lot_filter:
+        where.append("lot ILIKE :lot")
+        params["lot"] = f"%{lot_filter.strip()}%"
+    sql = f"""
+        SELECT id, sscc, user_email, gtin_palette, lot, ddm,
+               case_count, generated_at
+        FROM sscc_log
+        WHERE {" AND ".join(where)}
+        ORDER BY generated_at DESC
+        LIMIT :lim
+    """
+    try:
+        rows = run_sql(sql, params) or []
+    except Exception:
+        _log.exception("Échec list_sscc_log")
+        return []
+    out: list[SsccLogEntry] = []
+    for r in rows:
+        try:
+            ddm = r.get("ddm")
+            out.append(SsccLogEntry(
+                id=int(r["id"]),
+                sscc=str(r["sscc"] or ""),
+                user_email=str(r.get("user_email") or ""),
+                gtin_palette=str(r.get("gtin_palette") or ""),
+                lot=str(r.get("lot") or ""),
+                ddm=ddm if isinstance(ddm, _dt.date) or ddm is None
+                    else _dt.date.fromisoformat(str(ddm)[:10]),
+                case_count=int(r.get("case_count") or 0),
+                generated_at=r["generated_at"],
+            ))
+        except (KeyError, TypeError, ValueError):
+            _log.warning("Ligne sscc_log invalide ignorée : %r", r, exc_info=True)
+    return out
+
+
+def get_sscc_stats(tenant_id: str) -> dict:
+    """Compteurs rapides pour le dashboard : aujourd'hui / ce mois / total."""
+    try:
+        rows = run_sql(
+            """SELECT
+                  COUNT(*) FILTER (WHERE generated_at >= CURRENT_DATE) AS today,
+                  COUNT(*) FILTER (WHERE generated_at >= date_trunc('month', CURRENT_DATE)) AS this_month,
+                  COUNT(*) AS total
+               FROM sscc_log
+               WHERE tenant_id = :t""",
+            {"t": tenant_id},
+        )
+    except Exception:
+        _log.exception("Échec get_sscc_stats")
+        return {"today": 0, "this_month": 0, "total": 0}
+    r = (rows or [{}])[0]
+    return {
+        "today": int(r.get("today") or 0),
+        "this_month": int(r.get("this_month") or 0),
+        "total": int(r.get("total") or 0),
+    }
 
 
 def reconstruct_sscc_payload(sscc18: str) -> SsccGenResult:

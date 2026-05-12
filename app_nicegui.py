@@ -326,6 +326,7 @@ import pages.previsions  # noqa: F401 — /previsions
 import pages.production  # noqa: F401 — /production
 import pages.ramasse  # noqa: F401 — /ramasse
 import pages.ressources  # noqa: F401 — /ressources
+import pages.sscc_log  # noqa: F401 — /sscc-log (admin only)
 import pages.stocks  # noqa: F401 — /stocks
 import pages.sync  # noqa: F401 — /sync
 import pages.tags  # noqa: F401 — /tags

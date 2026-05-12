@@ -26,6 +26,14 @@ OPERATEUR_ALLOWED_PATHS: tuple[str, ...] = (
     "/api/logout",   # idem
 )
 
+# Chemins strictement réservés aux admins (refus pour user et operateur).
+# Le middleware refuse l'accès AVANT d'atteindre la page — défense en
+# profondeur en plus du _require_admin() interne à certaines pages.
+ADMIN_ONLY_PATHS: tuple[str, ...] = (
+    "/admin",
+    "/sscc-log",
+)
+
 # Page d'accueil par défaut selon le rôle, utilisée :
 #   - après login réussi
 #   - quand un opérateur tape une URL hors de sa zone
@@ -43,6 +51,14 @@ def home_page_for_role(role: str | None) -> str:
     return ROLE_HOME_PAGE.get((role or "user").strip().lower(), _DEFAULT_HOME)
 
 
+def _matches_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
+    """True si path est exactement l'un des prefixes ou une sous-route."""
+    return any(
+        path == p or path.startswith(p + "/") or path.startswith(p + "?")
+        for p in prefixes
+    )
+
+
 def can_access_path(role: str | None, path: str) -> bool:
     """Retourne True si le rôle a le droit d'accéder à ce path.
 
@@ -50,17 +66,18 @@ def can_access_path(role: str | None, path: str) -> bool:
       - ``admin`` accède à tout
       - ``operateur`` accède uniquement aux paths listés dans
         OPERATEUR_ALLOWED_PATHS (ou leurs sous-routes)
-      - ``user`` accède à tout sauf les pages admin (handled par admin.py
-        qui appelle son propre _require_admin)
+      - ``user`` accède à tout sauf les ADMIN_ONLY_PATHS
       - tout autre rôle inconnu : accès comme ``user``
     """
     role_norm = (role or "user").strip().lower()
     if role_norm == "admin":
         return True
+    # Pages strictement admin : refusées pour tous les autres rôles
+    if _matches_prefix(path, ADMIN_ONLY_PATHS):
+        return False
     if role_norm == "operateur":
-        return any(path == p or path.startswith(p + "/") or path.startswith(p + "?")
-                   for p in OPERATEUR_ALLOWED_PATHS)
-    # user et autres : on laisse passer (admin.py fait son propre check)
+        return _matches_prefix(path, OPERATEUR_ALLOWED_PATHS)
+    # user et autres : tout passe sauf admin-only (déjà filtré au-dessus)
     return True
 
 
