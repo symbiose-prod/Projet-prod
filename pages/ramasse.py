@@ -879,7 +879,7 @@ async def page_ramasse():
                         import pandas as pd
                         df_export = pd.DataFrame([{
                             "Référence": r["ref"],
-                            "Produit (goût + format)": r["produit"],
+                            "Produit (goût + format)": r.get("sofripa_label") or r["produit"],
                             "DDM": r["ddm"],
                             "Date ramasse souhaitée": d.strftime("%d/%m/%Y"),
                             "Quantité cartons": int(r["cartons"]),
