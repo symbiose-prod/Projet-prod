@@ -53,7 +53,7 @@ from common.services.print_jobs_service import (
     list_pending_jobs,
 )
 from pages.auth import require_auth
-from pages.theme import COLORS, page_layout, section_title
+from pages.theme import COLORS, page_layout
 
 _log = logging.getLogger("ferment.etiquettes_palette")
 
@@ -1094,13 +1094,18 @@ def _render_form(
             ui.notify(f"Erreur réimpression : {exc}", type="negative")
 
     def _refresh_history():
-        """Recharge la section historique (appelée après chaque génération)."""
+        """Recharge la section historique (appelée après chaque génération).
+
+        Format : expansion repliable contenant un tableau condensé des
+        20 dernières étiquettes générées. L'opérateur peut l'ouvrir pour
+        retrouver une étiquette à réimprimer.
+        """
         history_section.clear()
         if not tenant_id:
             return
-        recent = list_recent_labels(tenant_id, limit=10)
+        recent = list_recent_labels(tenant_id, limit=20)
         with history_section:
-            _render_history_card(recent, on_reprint=_do_reprint)
+            _render_history_table(recent, on_reprint=_do_reprint)
 
     _refresh_history()
 
@@ -1402,56 +1407,95 @@ _SCAN_INPUT_LISTENER_JS = """
 """
 
 
-def _render_history_card(
+def _render_history_table(
     entries: list[HistoryEntry],
     *,
     on_reprint,
 ) -> None:
-    """Rend la card « Étiquettes récentes » à partir d'une liste d'entries.
+    """Rend les étiquettes récentes sous forme d'un tableau Quasar
+    encapsulé dans une ``ui.expansion`` repliable.
 
-    Doit être appelé dans un contexte UI (entre ``with section:`` du caller).
-    Si ``entries`` est vide, ne rend rien (silencieux).
+    Pourquoi un tableau plutôt que des cards : plus dense, scannable
+    rapidement, et l'opérateur peut trier par n'importe quelle colonne.
+    L'expansion est fermée par défaut — l'historique est rarement
+    consulté pendant le flow normal (scan → impression), seulement
+    quand on veut réimprimer.
+
+    Doit être appelé dans un contexte UI (between ``with section:``).
+    Si ``entries`` est vide, on garde l'expansion (avec un message)
+    pour la cohérence visuelle.
     """
-    if not entries:
-        return
-    section_title("Étiquettes récentes", "history")
-    with ui.card().classes("w-full q-pa-none").props("flat bordered"):
-        for i, h in enumerate(entries):
-            if i > 0:
-                ui.separator()
-            with ui.card_section().classes("q-pa-sm"):
-                with ui.row().classes("w-full items-center gap-3 no-wrap"):
-                    img_url = get_product_image_url(h.gout)
-                    if img_url:
-                        ui.image(img_url).classes("rounded").style(
-                            "width:48px; height:48px; object-fit:cover; "
-                            "background:#f3f4f6",
-                        )
-                    with ui.column().classes("gap-0 flex-1"):
-                        title = h.designation or f"GTIN {h.ean}"
-                        ui.label(f"{title} — {h.fmt}").classes(
-                            "text-body2",
-                        ).style(f"color: {COLORS['ink']}; font-weight: 500")
-                        meta = (
-                            f"Lot {h.lot} · DDM {h.ddm.strftime('%d/%m/%Y')} · "
-                            f"{h.case_count} caisses"
-                        )
-                        if h.n_copies > 1:
-                            meta += f" · {h.n_copies} ex."
-                        ui.label(meta).classes("text-caption").style(
-                            f"color: {COLORS['ink2']}",
-                        )
-                        when = h.generated_at.strftime("%d/%m/%Y %H:%M") if hasattr(
-                            h.generated_at, "strftime",
-                        ) else str(h.generated_at)
-                        who = f" par {h.user_email}" if h.user_email else ""
-                        ui.label(f"Imprimée le {when}{who}").classes(
-                            "text-caption",
-                        ).style(f"color: {COLORS['ink2']}")
-                    ui.button(
-                        "Réimprimer", icon="print",
-                        on_click=lambda _e, hh=h: on_reprint(hh),
-                    ).props("flat color=green-8 dense")
+    label_text = (
+        f"Étiquettes récentes ({len(entries)})"
+        if entries else "Étiquettes récentes"
+    )
+    with ui.expansion(
+        text=label_text, icon="history",
+    ).classes("w-full").props("dense"):
+        if not entries:
+            ui.label("Aucune étiquette générée pour l'instant.").classes(
+                "text-body2 q-pa-md",
+            ).style(f"color: {COLORS['ink2']}; font-style: italic")
+            return
+
+        # Map id → HistoryEntry pour le callback de réimpression
+        by_id: dict[int, HistoryEntry] = {h.id: h for h in entries}
+
+        rows = []
+        for h in entries:
+            when = h.generated_at.strftime("%d/%m %H:%M") if hasattr(
+                h.generated_at, "strftime",
+            ) else str(h.generated_at)
+            rows.append({
+                "id": h.id,
+                "produit": f"{h.designation or 'GTIN ' + h.ean} — {h.fmt}",
+                "lot": h.lot,
+                "ddm": h.ddm.strftime("%d/%m/%Y"),
+                "cartons": h.case_count,
+                "when": when,
+            })
+
+        cols = [
+            {"name": "produit", "label": "Produit", "field": "produit",
+             "align": "left", "sortable": True},
+            {"name": "lot", "label": "Lot", "field": "lot",
+             "align": "left", "sortable": True},
+            {"name": "ddm", "label": "DDM", "field": "ddm",
+             "align": "left", "sortable": True},
+            {"name": "cartons", "label": "Cartons", "field": "cartons",
+             "align": "right", "sortable": True},
+            {"name": "when", "label": "Imprimée", "field": "when",
+             "align": "left", "sortable": True},
+            {"name": "id", "label": "", "field": "id", "align": "center"},
+        ]
+
+        table = ui.table(
+            columns=cols, rows=rows, row_key="id",
+            pagination={"rowsPerPage": 10},
+        ).classes("w-full").props("flat bordered dense")
+
+        # Slot custom pour la colonne 'id' → bouton Réimprimer.
+        # Le bouton émet un event 'reprint' avec l'id de la ligne ; côté
+        # Python on retrouve le HistoryEntry via by_id et on appelle
+        # on_reprint (handler async géré par NiceGUI).
+        table.add_slot("body-cell-id", """
+            <q-td :props="props" style="width: 90px">
+                <q-btn flat dense color="green-8" icon="print"
+                       label="Réimprimer"
+                       @click="$parent.$emit('reprint', props.row.id)" />
+            </q-td>
+        """)
+
+        def _on_reprint_event(e):
+            try:
+                row_id = int(e.args)
+            except (TypeError, ValueError):
+                return
+            h = by_id.get(row_id)
+            if h is not None:
+                on_reprint(h)
+
+        table.on("reprint", _on_reprint_event)
 
 
 def _install_scan_input_listener() -> None:
