@@ -22,6 +22,7 @@ from __future__ import annotations
 OPERATEUR_ALLOWED_PATHS: tuple[str, ...] = (
     "/etiquettes-palette",
     "/ramasse",
+    "/chargement-camion",
     "/logout",       # toujours possible de se déconnecter
     "/api/logout",   # idem
 )

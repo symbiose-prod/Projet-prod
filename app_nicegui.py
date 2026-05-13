@@ -319,6 +319,7 @@ app.add_middleware(RequestLoggingMiddleware)
 import pages.accueil  # noqa: F401 — /accueil
 import pages.admin  # noqa: F401 — /admin (admin only)
 import pages.auth  # noqa: F401 — /login, /reset/{token}
+import pages.chargement_camion  # noqa: F401 — /chargement-camion
 import pages.commercial  # noqa: F401 — /commercial
 import pages.etiquettes_palette  # noqa: F401 — /etiquettes-palette
 import pages.nomenclatures  # noqa: F401 — /nomenclatures
@@ -830,6 +831,151 @@ async def _api_scan_barcode(request: Request):
         "lot": scan.get("lot") or "",
         "ddm": ddm.isoformat() if ddm else None,
         "product": product,
+    })
+
+
+# ─── Scan SSCC palette (chargement camion) ─────────────────────────────────
+
+@app.post("/api/scan-sscc")
+async def _api_scan_sscc(request: Request):
+    """Décode une image (caméra iPhone/iPad), extrait l'AI 00 (SSCC) et
+    vérifie l'état de la palette (libre, déjà chargée, inconnue…).
+
+    Auth : session NiceGUI + tenant_id obligatoire.
+    Body : multipart/form-data avec un champ ``file`` (image JPG/PNG/HEIC).
+    Retour JSON :
+      ``{"status": "ok|unknown|already_loaded|inconsistent",
+         "palette": {...} | null,
+         "existing_ramasse_id": "..." | null,
+         "error": "..." | ""}``
+    """
+    user_store = app.storage.user
+    if not user_store.get("authenticated"):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    tenant_id = user_store.get("tenant_id")
+    if not tenant_id:
+        return JSONResponse({"error": "No tenant"}, status_code=403)
+
+    # Rate limit partagé avec /api/scan-barcode (même opérateur peut faire
+    # les deux mais ce sont des actions distinctes — clé séparée).
+    user_key = f"sscc:{user_store.get('email') or tenant_id}"
+    if not _scan_rate_limit_check(user_key):
+        return JSONResponse(
+            {"error": f"Trop de scans (limite {_SCAN_RATE_LIMIT_MAX}/min)"},
+            status_code=429,
+        )
+
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"error": "Invalid form data"}, status_code=400)
+
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        return JSONResponse({"error": "Missing 'file' field"}, status_code=400)
+
+    content_type = (getattr(upload, "content_type", "") or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        return JSONResponse(
+            {"error": f"Type de fichier non supporté ({content_type})"},
+            status_code=415,
+        )
+
+    try:
+        image_bytes = await upload.read()
+    except Exception:
+        _log.exception("Erreur lecture upload scan-sscc")
+        return JSONResponse({"error": "Cannot read uploaded file"}, status_code=400)
+
+    if not image_bytes:
+        return JSONResponse({"error": "Empty file"}, status_code=400)
+    if len(image_bytes) > _MAX_BARCODE_IMAGE_BYTES:
+        return JSONResponse(
+            {"error": f"File too large ({len(image_bytes) // 1024} KB)"},
+            status_code=413,
+        )
+
+    from common.services.loading_service import lookup_sscc_from_image
+    result = await asyncio.to_thread(
+        lookup_sscc_from_image, image_bytes, str(tenant_id),
+    )
+
+    # Sérialisation du résultat
+    palette_dict = None
+    if result.palette:
+        p = result.palette
+        palette_dict = {
+            "sscc": p.sscc,
+            "gtin_palette": p.gtin_palette,
+            "lot": p.lot,
+            "ddm": p.ddm.isoformat() if p.ddm else None,
+            "case_count": p.case_count,
+            "designation": p.designation,
+            "fmt": p.fmt,
+            "marque": p.marque,
+            "gout": p.gout,
+            "pcb": p.pcb,
+            "gtin_uvc": p.gtin_uvc,
+            "generated_at": p.generated_at.isoformat() if p.generated_at else None,
+        }
+    _log.info(
+        "Scan SSCC : status=%s sscc=%s", result.status,
+        (palette_dict or {}).get("sscc", "?"),
+    )
+    return JSONResponse({
+        "status": result.status,
+        "palette": palette_dict,
+        "existing_ramasse_id": result.existing_ramasse_id,
+        "error": result.error_message,
+    })
+
+
+@app.post("/api/lookup-sscc")
+async def _api_lookup_sscc(request: Request):
+    """Version "saisie manuelle" du scan SSCC : prend un SSCC en JSON
+    (déjà tapé par l'opérateur) et retourne le même format de réponse
+    que /api/scan-sscc. Pas de décodage image.
+    """
+    user_store = app.storage.user
+    if not user_store.get("authenticated"):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    tenant_id = user_store.get("tenant_id")
+    if not tenant_id:
+        return JSONResponse({"error": "No tenant"}, status_code=403)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    sscc_raw = str((body or {}).get("sscc") or "").strip()
+    if not sscc_raw:
+        return JSONResponse({"error": "Missing 'sscc' field"}, status_code=400)
+
+    from common.services.loading_service import lookup_sscc
+    result = await asyncio.to_thread(lookup_sscc, sscc_raw, str(tenant_id))
+
+    palette_dict = None
+    if result.palette:
+        p = result.palette
+        palette_dict = {
+            "sscc": p.sscc,
+            "gtin_palette": p.gtin_palette,
+            "lot": p.lot,
+            "ddm": p.ddm.isoformat() if p.ddm else None,
+            "case_count": p.case_count,
+            "designation": p.designation,
+            "fmt": p.fmt,
+            "marque": p.marque,
+            "gout": p.gout,
+            "pcb": p.pcb,
+            "gtin_uvc": p.gtin_uvc,
+            "generated_at": p.generated_at.isoformat() if p.generated_at else None,
+        }
+    return JSONResponse({
+        "status": result.status,
+        "palette": palette_dict,
+        "existing_ramasse_id": result.existing_ramasse_id,
+        "error": result.error_message,
     })
 
 
