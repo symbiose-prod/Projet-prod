@@ -578,9 +578,15 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     "text-caption q-pa-sm",
                 ).style(f"color: {COLORS['ink2']}; font-style: italic")
                 return
-            ui.label(f"{len(recent)} palette(s) étiquetée(s) ces 7 derniers jours :").classes(
-                "text-caption",
-            ).style(f"color: {COLORS['ink2']}")
+            # Bandeau résumé + bouton bulk "Tout ajouter au panier"
+            with ui.row().classes("w-full items-center justify-between no-wrap q-pa-xs"):
+                ui.label(
+                    f"{len(recent)} palette(s) étiquetée(s) ces 7 derniers jours :",
+                ).classes("text-caption").style(f"color: {COLORS['ink2']}")
+                ui.button(
+                    "Tout ajouter au panier", icon="playlist_add_check",
+                    on_click=lambda: _add_all_unscanned_to_basket(recent),
+                ).props("outline dense color=blue-7 size=sm")
             for p in recent:
                 with ui.row().classes("w-full items-center q-py-xs no-wrap"):
                     ui.label(_fmt_sscc_pretty(p.sscc)).classes("text-caption").style(
@@ -598,6 +604,13 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     ).classes("text-caption").style(
                         f"flex: 0.8; color: {COLORS['ink2']}",
                     )
+                    # Bouton "Ajouter au panier" → ajoute juste cette palette
+                    ui.button(
+                        icon="add_shopping_cart",
+                        on_click=lambda _e, palette=p: _add_unscanned_to_basket(palette),
+                    ).props("flat dense color=blue-7 size=sm").tooltip(
+                        "Ajouter au panier (sans scanner)",
+                    )
                     # Bouton "Erreur d'impression" → ouvre dialog d'annulation
                     ui.button(
                         icon="block",
@@ -605,6 +618,46 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     ).props("flat dense color=red-7 size=sm").tooltip(
                         "Erreur d'impression — annuler cette palette fantôme",
                     )
+
+    def _add_unscanned_to_basket(palette: PaletteInfo):
+        """Ajoute une palette (déjà connue côté DB) au panier sans scanner.
+
+        Utile pour le rattrapage : les palettes sont parties physiquement
+        mais on a besoin de les marquer comme chargées rétroactivement.
+        """
+        basket: list[PaletteInfo] = state["basket"]
+        if any(p.sscc == palette.sscc for p in basket):
+            ui.notify("Déjà dans le panier.", type="info", timeout=1500)
+            return
+        basket.append(palette)
+        _persist_basket()
+        _refresh_basket()
+        ui.notify(
+            f"+ {palette.designation} {palette.fmt}",
+            type="positive", timeout=1500,
+        )
+
+    def _add_all_unscanned_to_basket(palettes: list[PaletteInfo]):
+        """Ajoute toutes les palettes non chargées au panier (rattrapage en masse)."""
+        basket: list[PaletteInfo] = state["basket"]
+        existing_ssccs = {p.sscc for p in basket}
+        added = 0
+        for palette in palettes:
+            if palette.sscc in existing_ssccs:
+                continue
+            basket.append(palette)
+            existing_ssccs.add(palette.sscc)
+            added += 1
+        if added > 0:
+            _persist_basket()
+            _refresh_basket()
+            ui.notify(
+                f"✓ {added} palette(s) ajoutée(s) au panier. "
+                "Sélectionne la ramasse puis clique 'Rattrapage'.",
+                type="positive", icon="playlist_add_check", timeout=5000,
+            )
+        else:
+            ui.notify("Toutes ces palettes sont déjà dans le panier.", type="info")
 
     def _open_void_palette_dialog(palette: PaletteInfo):
         """Ouvre un dialog pour annuler une palette qui apparait dans les
