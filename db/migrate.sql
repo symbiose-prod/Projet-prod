@@ -516,6 +516,32 @@ CREATE INDEX IF NOT EXISTS idx_sscc_log_tenant_date
   ON sscc_log(tenant_id, generated_at DESC);
 
 -- =========================
+-- Chargements de palettes (scan SSCC au chargement camion)
+-- =========================
+-- Une ligne = une palette physique scannée et chargée sur un camion.
+-- UNIQUE(sscc) garantit qu'aucune palette ne peut être chargée 2× sans
+-- détacher d'abord son chargement précédent — protection cas 4.3
+-- (palette déjà partie sur une autre ramasse).
+--
+-- ramasse_id peut être NULL transitoirement entre le scan et la
+-- validation finale (panier en cours), puis lié à la ramasse créée /
+-- mise à jour au moment du commit.
+CREATE TABLE IF NOT EXISTS palette_loadings (
+  id            BIGSERIAL PRIMARY KEY,
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  sscc          TEXT NOT NULL UNIQUE,
+  ramasse_id    UUID REFERENCES ramasse_history(id) ON DELETE SET NULL,
+  scanned_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  scanned_by    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_palette_loadings_tenant_date
+  ON palette_loadings(tenant_id, scanned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_palette_loadings_ramasse
+  ON palette_loadings(ramasse_id)
+  WHERE ramasse_id IS NOT NULL;
+
+-- =========================
 -- Print jobs (queue d'impression Brother QL via agent local Windows)
 -- =========================
 -- Quand l'opérateur tape "Imprimer directement" sur l'iPhone, le PDF est
@@ -558,7 +584,7 @@ BEGIN
                        eb_cache, eb_sync_meta,
                        email_queue, monthly_sales,
                        etiquette_palette_history,
-                       print_jobs, sscc_log TO shark;
+                       print_jobs, sscc_log, palette_loadings TO shark;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;
