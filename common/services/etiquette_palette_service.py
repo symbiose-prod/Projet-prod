@@ -534,6 +534,54 @@ def parse_gs1_string(text: str) -> dict[str, str]:
     return out
 
 
+def parse_gs1_digits(data: str) -> dict[str, str]:
+    """Parse un payload GS1-128 en pure-digits (sans parenthèses, sans FNC1).
+
+    Utile quand l'opérateur copie-colle ou tape la chaîne complète du
+    code-barres sans formatage. Le parser sait que :
+      - AI 00, 01, 02 → longueur fixe (18, 14, 14)
+      - AI 11, 15, 17 → longueur fixe (6 = YYMMDD)
+      - AI 10, 21, 30, 37 → longueur variable, terminée par FNC1 ou fin
+        de chaîne (ici on prend tout ce qui reste — convient quand l'AI
+        variable est la dernière).
+
+    Returns:
+        ``{"01": "23770014427049", "15": "270508", "10": "080527"}``
+        Si la chaîne ne commence pas par un AI connu, retourne ``{}``.
+    """
+    digits = re.sub(r"\D+", "", data or "")
+    if not digits:
+        return {}
+    # AI fixed-length (length AFTER the 2-digit AI prefix)
+    fixed = {
+        "00": 18, "01": 14, "02": 14,
+        "11": 6, "13": 6, "15": 6, "17": 6,
+    }
+    variable = {"10", "21", "30", "37", "240", "241"}
+    out: dict[str, str] = {}
+    i = 0
+    while i < len(digits):
+        if i + 2 > len(digits):
+            break
+        ai = digits[i:i + 2]
+        i += 2
+        if ai in fixed:
+            length = fixed[ai]
+            if i + length > len(digits):
+                break
+            out[ai] = digits[i:i + length]
+            i += length
+        elif ai in variable:
+            # Pas de FNC1 dans une chaîne pure-digit → on prend le reste.
+            # Convient si l'AI variable est la dernière (cas le plus fréquent).
+            out[ai] = digits[i:]
+            i = len(digits)
+        else:
+            # AI inconnu → abandon (ne pas deviner)
+            break
+    return out
+
+
 def parse_gs1_ddm(yymmdd: str) -> _dt.date | None:
     """Parse une date GS1 au format YYMMDD → date Python.
 

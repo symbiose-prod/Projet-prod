@@ -143,23 +143,63 @@ def _render_form(
     # ════════════════════════════════════════════════════════════════════
 
     async def _handle_manual_ean(ean: str):
-        """Saisie manuelle EAN : interroge d'abord la matrice EasyBeer (source
-        fraîche, cache 24 h) avant de tomber dans le fallback sync étiquettes.
+        """Saisie manuelle EAN — supporte 3 formats d'entrée :
 
-        Sans cette étape, un produit ajouté récemment côté EasyBeer mais pas
-        encore syncé serait introuvable malgré l'API qui le connaît.
+        1. ``23770014427049`` (14 digits) : GTIN seul. Lot/DDM resteront
+           vides (le système met des fallbacks).
+        2. ``01237700144270491527050810080527`` (digits) : payload GS1-128
+           complet. On extrait GTIN (AI 01), DDM (AI 15) et Lot (AI 10).
+        3. ``(01)23770014427049(15)270508(10)080527`` : format avec
+           parenthèses (HRI lisible humain).
         """
+        from common.services.etiquette_palette_service import (
+            parse_gs1_ddm,
+            parse_gs1_digits,
+            parse_gs1_string,
+        )
+
         cleaned = (ean or "").strip()
         if not cleaned:
             return
+
+        # Détection du format et extraction des AIs
+        extracted_gtin = cleaned
+        extracted_lot = ""
+        extracted_ddm: _dt.date | None = None
+
+        if "(" in cleaned:
+            # Format avec parenthèses (HRI)
+            ais = parse_gs1_string(cleaned)
+        else:
+            # Format digits — n'essayer le parser GS1 que si la chaîne fait
+            # plus de 16 digits et commence par un AI connu (01 ou 02).
+            # Sinon (14 digits par ex), on garde tel quel comme GTIN.
+            digits = re.sub(r"\D+", "", cleaned)
+            if len(digits) > 16 and digits.startswith(("01", "02")):
+                ais = parse_gs1_digits(digits)
+            else:
+                ais = {}
+
+        if ais:
+            gtin = ais.get("01") or ais.get("02")
+            if gtin:
+                extracted_gtin = gtin
+                extracted_lot = ais.get("10", "")
+                ddm_str = ais.get("15") or ais.get("17") or ""
+                if ddm_str:
+                    extracted_ddm = parse_gs1_ddm(ddm_str)
+
         ui.notify("🔍 Recherche du produit…", type="info", timeout=2000)
         try:
-            product = await asyncio.to_thread(lookup_product_by_ean, cleaned)
+            product = await asyncio.to_thread(lookup_product_by_ean, extracted_gtin)
         except Exception:
             _log.exception("Erreur lookup matrice EasyBeer (saisie manuelle)")
             product = None
         _handle_scanned_data({
-            "ean": cleaned, "lot": "", "ddm": None, "product": product,
+            "ean": extracted_gtin,
+            "lot": extracted_lot,
+            "ddm": extracted_ddm.isoformat() if extracted_ddm else None,
+            "product": product,
         })
 
     # ────────────────────────────────────────────────────────────────────
