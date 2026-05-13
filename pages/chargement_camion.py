@@ -25,7 +25,7 @@ import logging
 import os
 import re
 
-from nicegui import ui
+from nicegui import app, ui
 
 from common.audit import ACTION_RAMASSE_SAVED
 from common.email import send_html_with_pdf
@@ -99,15 +99,89 @@ async def page_chargement_camion():
 
 # ─── UI principale ──────────────────────────────────────────────────────────
 
+_BASKET_STORAGE_KEY = "chargement_camion_basket"
+
+
+def _serialize_palette(p: PaletteInfo) -> dict:
+    """Sérialise une PaletteInfo pour app.storage.user (JSON-safe)."""
+    return {
+        "sscc": p.sscc, "gtin_palette": p.gtin_palette, "lot": p.lot,
+        "ddm": p.ddm.isoformat() if p.ddm else None,
+        "case_count": p.case_count, "designation": p.designation,
+        "fmt": p.fmt, "marque": p.marque, "gout": p.gout,
+        "pcb": p.pcb, "gtin_uvc": p.gtin_uvc,
+        "generated_at": p.generated_at.isoformat() if p.generated_at else None,
+    }
+
+
+def _deserialize_palette(d: dict) -> PaletteInfo | None:
+    """Reconstruit une PaletteInfo depuis le dict stocké. None si invalide."""
+    try:
+        ddm_str = d.get("ddm")
+        ddm = _dt.date.fromisoformat(ddm_str) if ddm_str else None
+        gen_str = d.get("generated_at")
+        gen = _dt.datetime.fromisoformat(gen_str) if gen_str else _dt.datetime.now()
+        return PaletteInfo(
+            sscc=str(d.get("sscc") or ""),
+            gtin_palette=str(d.get("gtin_palette") or ""),
+            lot=str(d.get("lot") or ""),
+            ddm=ddm,
+            case_count=int(d.get("case_count") or 0),
+            designation=str(d.get("designation") or ""),
+            fmt=str(d.get("fmt") or ""),
+            marque=str(d.get("marque") or ""),
+            gout=str(d.get("gout") or ""),
+            pcb=int(d.get("pcb") or 0),
+            gtin_uvc=str(d.get("gtin_uvc") or ""),
+            generated_at=gen,
+        )
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
 def _render_form(*, tenant_id: str, user_email: str) -> None:
     """Rend le wizard 3 étapes."""
+
+    # Restore le panier depuis app.storage.user si on revient après un reload.
+    # Permet à l'opérateur de scanner 20 palettes, perdre la page (iOS swap,
+    # crash réseau, reload accidentel) et retrouver son travail intact.
+    persisted_basket = app.storage.user.get(_BASKET_STORAGE_KEY) or []
+    restored_basket: list[PaletteInfo] = []
+    if isinstance(persisted_basket, list):
+        for d in persisted_basket:
+            p = _deserialize_palette(d) if isinstance(d, dict) else None
+            if p is not None:
+                restored_basket.append(p)
 
     state: dict = {
         "date_ramasse": today_paris(),
         "destinataire": None,
         "ramasse_to_update_id": None,  # None = créer nouvelle ; sinon UUID
-        "basket": [],                  # list[PaletteInfo]
+        "basket": restored_basket,     # list[PaletteInfo] — restauré si reload
     }
+
+    if restored_basket:
+        ui.notify(
+            f"✓ Session restaurée — {len(restored_basket)} palette(s) "
+            "déjà dans le panier.",
+            type="info", icon="restore", timeout=4500,
+        )
+
+    def _persist_basket():
+        """Sauvegarde le panier dans app.storage.user après chaque modif."""
+        try:
+            app.storage.user[_BASKET_STORAGE_KEY] = [
+                _serialize_palette(p) for p in state["basket"]
+            ]
+        except Exception:
+            _log.warning("Persistance panier échouée", exc_info=True)
+
+    def _clear_persisted_basket():
+        """Vide le panier persisté (après validation ou bouton clear)."""
+        try:
+            app.storage.user[_BASKET_STORAGE_KEY] = []
+        except Exception:
+            pass
 
     destinataires_list = load_destinataires()
 
@@ -201,9 +275,16 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     basket_card = ui.card().classes("w-full q-pa-none q-mt-sm").props("flat bordered")
     with basket_card:
         with ui.card_section().classes("q-pa-sm"):
-            basket_header = ui.label("Panier vide").classes("text-subtitle2").style(
-                f"color: {COLORS['ink2']}",
-            )
+            with ui.row().classes("w-full items-center justify-between no-wrap"):
+                basket_header = ui.label("Panier vide").classes("text-subtitle2").style(
+                    f"color: {COLORS['ink2']}",
+                )
+                # Bouton "vider le panier" — utile si la session restaurée
+                # n'est plus à jour (palettes déjà validées ailleurs, etc.)
+                clear_basket_btn = ui.button(
+                    "Vider", icon="delete_sweep",
+                ).props("flat dense color=grey-7 size=sm")
+                clear_basket_btn.set_visibility(False)
         basket_list_container = ui.column().classes("w-full gap-0")
 
     # Palettes non scannées (rappel visuel)
@@ -261,9 +342,11 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         if not basket:
             basket_header.text = "Panier vide — scanne un SSCC pour commencer"
             basket_header.style(f"color: {COLORS['ink2']}")
+            clear_basket_btn.set_visibility(False)
         else:
             basket_header.text = f"Panier : {len(basket)} palette(s)"
             basket_header.style(f"color: {COLORS['ink']}; font-weight: 600")
+            clear_basket_btn.set_visibility(True)
             with basket_list_container:
                 for i, p in enumerate(basket):
                     if i > 0:
@@ -349,11 +432,13 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             f"✓ {palette.designation} {palette.fmt} — {palette.case_count} cartons",
             type="positive", icon="check", timeout=2000,
         )
+        _persist_basket()
         _refresh_basket()
 
     def _remove_from_basket(sscc: str):
         state["basket"] = [p for p in state["basket"] if p.sscc != sscc]
         ui.notify("Palette retirée du panier.", type="info", timeout=1500)
+        _persist_basket()
         _refresh_basket()
 
     def _handle_scan_result(data):
@@ -719,8 +804,9 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 type="positive", icon="check_circle", timeout=6000,
             )
 
-            # Reset
+            # Reset (panier + persistance)
             state["basket"] = []
+            _clear_persisted_basket()
             _refresh_basket()
             _refresh_unscanned()
             _refresh_existing_ramasses()
@@ -733,7 +819,16 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     validate_btn.on_click(_on_validate)
 
-    # Initial render
+    def _on_clear_basket():
+        """Bouton manuel : vide le panier persisté + l'état courant."""
+        state["basket"] = []
+        _clear_persisted_basket()
+        ui.notify("Panier vidé.", type="info", timeout=1500)
+        _refresh_basket()
+
+    clear_basket_btn.on_click(_on_clear_basket)
+
+    # Initial render — affichera les palettes restaurées si présentes
     _refresh_basket()
 
 
