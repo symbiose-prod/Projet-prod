@@ -29,7 +29,7 @@ from nicegui import app, ui
 
 from common.audit import ACTION_RAMASSE_SAVED
 from common.email import send_html_with_pdf
-from common.ramasse import load_destinataires, today_paris
+from common.ramasse import fmt_paris, load_destinataires, today_paris
 from common.ramasse_history import (
     get_ramasse,
     list_ramasses,
@@ -599,8 +599,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                         f"flex: 2; color: {COLORS['ink']}",
                     )
                     ui.label(
-                        p.generated_at.strftime("%d/%m %H:%M")
-                        if hasattr(p.generated_at, "strftime") else "",
+                        fmt_paris(p.generated_at, "%d/%m %H:%M"),
                     ).classes("text-caption").style(
                         f"flex: 0.8; color: {COLORS['ink2']}",
                     )

@@ -26,6 +26,7 @@ import logging
 
 from nicegui import ui
 
+from common.ramasse import fmt_paris
 from common.services.sscc_service import (
     SsccLogEntry,
     get_sscc_stats,
@@ -68,9 +69,8 @@ def _build_csv(entries: list[SsccLogEntry]) -> bytes:
         "Statut", "Ramasse date", "Ramasse destinataire",
     ])
     for e in entries:
-        when = e.generated_at
-        date_str = when.strftime("%Y-%m-%d") if hasattr(when, "strftime") else str(when)
-        time_str = when.strftime("%H:%M:%S") if hasattr(when, "strftime") else ""
+        date_str = fmt_paris(e.generated_at, "%Y-%m-%d")
+        time_str = fmt_paris(e.generated_at, "%H:%M:%S")
         ddm_str = e.ddm.strftime("%Y-%m-%d") if e.ddm else ""
         if e.voided_at:
             statut = f"Annulé ({e.voided_reason or '?'})"
@@ -242,8 +242,7 @@ def page_sscc_log():
                 else:
                     ramasse_str = "— en stock —"
                 rows.append({
-                    "datetime": e.generated_at.strftime("%d/%m/%Y %H:%M:%S")
-                        if hasattr(e.generated_at, "strftime") else str(e.generated_at),
+                    "datetime": fmt_paris(e.generated_at, "%d/%m/%Y %H:%M:%S"),
                     "sscc": _fmt_sscc(e.sscc),
                     "sscc_raw": e.sscc,  # pour le callback
                     "gtin": e.gtin_palette or "—",

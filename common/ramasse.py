@@ -212,6 +212,37 @@ def today_paris() -> dt.date:
     return dt.datetime.now(gettz("Europe/Paris")).date()
 
 
+def fmt_paris(value, fmt: str = "%d/%m/%Y %H:%M:%S") -> str:
+    """Formate un datetime en timezone Europe/Paris.
+
+    PostgreSQL stocke les TIMESTAMPTZ en UTC. Quand psycopg2 les renvoie,
+    on obtient un datetime tz-aware (UTC). Sans conversion, strftime
+    affiche l'heure UTC → 2h de décalage avec l'heure locale française
+    en été (CEST) ou 1h en hiver (CET).
+
+    Cette fonction force la conversion en Europe/Paris avant strftime.
+    Accepte aussi les datetime naïfs (assumés UTC, ce qu'ils sont en
+    pratique côté DB) et les ``None`` / strings (retournés tels quels).
+
+    Args:
+        value: datetime (tz-aware ou naïf), ou str / None.
+        fmt: format strftime, par défaut "%d/%m/%Y %H:%M:%S".
+
+    Returns:
+        str formatée en heure Paris, ou "" si ``value`` est None.
+    """
+    if value is None:
+        return ""
+    # Si on reçoit autre chose qu'un datetime (string déjà formatée par ex.),
+    # on retourne tel quel sans casser.
+    if not hasattr(value, "strftime"):
+        return str(value)
+    # Naïf : assumer UTC (cas DB qui ne renvoie pas tzinfo)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=gettz("UTC"))
+    return value.astimezone(gettz("Europe/Paris")).strftime(fmt)
+
+
 def _strip_accents(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     return "".join(ch for ch in s if not unicodedata.combining(ch))

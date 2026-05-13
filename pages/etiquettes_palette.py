@@ -1252,11 +1252,14 @@ def _parse_label_filename(fn: str) -> dict:
 
 
 def _format_short_time(dt) -> str:
-    """Formate un datetime en HH:MM. Retourne '?' si parsing échoue."""
-    try:
-        return dt.strftime("%H:%M")
-    except Exception:
-        return "?"
+    """Formate un datetime en HH:MM heure de Paris.
+
+    Les DB renvoient des datetimes en UTC ; sans conversion on aurait 2h
+    de décalage en été (CEST). fmt_paris() force la conversion.
+    """
+    from common.ramasse import fmt_paris
+    s = fmt_paris(dt, "%H:%M")
+    return s or "?"
 
 
 def _render_sidebar_widget(
@@ -1523,9 +1526,8 @@ def _render_history_table(
 
         rows = []
         for h in entries:
-            when = h.generated_at.strftime("%d/%m %H:%M") if hasattr(
-                h.generated_at, "strftime",
-            ) else str(h.generated_at)
+            from common.ramasse import fmt_paris as _fmt_paris
+            when = _fmt_paris(h.generated_at, "%d/%m %H:%M")
             is_voided = bool(h.voided_at)
             produit_str = f"{h.designation or 'GTIN ' + h.ean} — {h.fmt}"
             if is_voided:
