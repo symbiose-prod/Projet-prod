@@ -90,6 +90,11 @@ class SsccLogEntry:
     voided_at: _dt.datetime | None = None
     voided_reason: str = ""
     voided_by: str = ""
+    # Lien vers la ramasse si la palette a été chargée (via palette_loadings)
+    ramasse_id: str = ""
+    ramasse_date: _dt.date | None = None
+    ramasse_destinataire: str = ""
+    loaded_at: _dt.datetime | None = None
 
 
 # ─── Algorithme clé de contrôle GS1 (pure) ──────────────────────────────────
@@ -241,23 +246,34 @@ def list_sscc_log(
     Returns:
         Liste triée par date desc (le plus récent en haut).
     """
-    where = ["tenant_id = :t"]
+    where = ["sl.tenant_id = :t"]
     params: dict = {"t": tenant_id, "lim": int(limit)}
     if date_from:
-        where.append("generated_at >= :df")
+        where.append("sl.generated_at >= :df")
         params["df"] = date_from
     if date_to:
-        where.append("generated_at < (:dt::date + INTERVAL '1 day')")
+        where.append("sl.generated_at < (:dt::date + INTERVAL '1 day')")
         params["dt"] = date_to
     if lot_filter:
-        where.append("lot ILIKE :lot")
+        where.append("sl.lot ILIKE :lot")
         params["lot"] = f"%{lot_filter.strip()}%"
+    # JOIN palette_loadings + ramasse_history pour récupérer le lien
+    # SSCC → ramasse (None si pas encore chargé).
     sql = f"""
-        SELECT id, sscc, user_email, gtin_palette, lot, ddm,
-               case_count, generated_at, voided_at, voided_reason, voided_by
-        FROM sscc_log
+        SELECT sl.id, sl.sscc, sl.user_email, sl.gtin_palette, sl.lot, sl.ddm,
+               sl.case_count, sl.generated_at,
+               sl.voided_at, sl.voided_reason, sl.voided_by,
+               pl.ramasse_id AS pl_ramasse_id,
+               pl.scanned_at AS pl_loaded_at,
+               rh.date_ramasse AS rh_date,
+               rh.destinataire AS rh_destinataire
+        FROM sscc_log sl
+        LEFT JOIN palette_loadings pl
+               ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
+        LEFT JOIN ramasse_history rh
+               ON rh.id = pl.ramasse_id
         WHERE {" AND ".join(where)}
-        ORDER BY generated_at DESC
+        ORDER BY sl.generated_at DESC
         LIMIT :lim
     """
     try:
@@ -269,6 +285,7 @@ def list_sscc_log(
     for r in rows:
         try:
             ddm = r.get("ddm")
+            rh_date = r.get("rh_date")
             out.append(SsccLogEntry(
                 id=int(r["id"]),
                 sscc=str(r["sscc"] or ""),
@@ -282,6 +299,11 @@ def list_sscc_log(
                 voided_at=r.get("voided_at"),
                 voided_reason=str(r.get("voided_reason") or ""),
                 voided_by=str(r.get("voided_by") or ""),
+                ramasse_id=str(r.get("pl_ramasse_id") or ""),
+                ramasse_date=rh_date if isinstance(rh_date, _dt.date) or rh_date is None
+                    else _dt.date.fromisoformat(str(rh_date)[:10]),
+                ramasse_destinataire=str(r.get("rh_destinataire") or ""),
+                loaded_at=r.get("pl_loaded_at"),
             ))
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne sscc_log invalide ignorée : %r", r, exc_info=True)

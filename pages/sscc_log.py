@@ -65,15 +65,24 @@ def _build_csv(entries: list[SsccLogEntry]) -> bytes:
     w.writerow([
         "Date", "Heure", "SSCC", "GTIN palette", "Lot", "DDM",
         "Nb cartons", "Utilisateur",
+        "Statut", "Ramasse date", "Ramasse destinataire",
     ])
     for e in entries:
         when = e.generated_at
         date_str = when.strftime("%Y-%m-%d") if hasattr(when, "strftime") else str(when)
         time_str = when.strftime("%H:%M:%S") if hasattr(when, "strftime") else ""
         ddm_str = e.ddm.strftime("%Y-%m-%d") if e.ddm else ""
+        if e.voided_at:
+            statut = f"Annulé ({e.voided_reason or '?'})"
+        elif e.ramasse_id:
+            statut = "Chargée"
+        else:
+            statut = "En stock"
+        ramasse_date_str = e.ramasse_date.strftime("%Y-%m-%d") if e.ramasse_date else ""
         w.writerow([
             date_str, time_str, e.sscc, e.gtin_palette,
             e.lot, ddm_str, str(e.case_count), e.user_email,
+            statut, ramasse_date_str, e.ramasse_destinataire,
         ])
     # BOM UTF-8 pour qu'Excel détecte l'encodage correctement
     return b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
@@ -223,6 +232,15 @@ def page_sscc_log():
             rows = []
             for e in entries:
                 is_voided = bool(e.voided_at)
+                is_loaded = bool(e.ramasse_id)
+                # Colonne "Ramasse" : date + destinataire si lié, sinon "—"
+                if is_loaded and e.ramasse_date:
+                    ramasse_str = (
+                        f"{e.ramasse_date.strftime('%d/%m/%Y')} · "
+                        f"{e.ramasse_destinataire or '?'}"
+                    )
+                else:
+                    ramasse_str = "— en stock —"
                 rows.append({
                     "datetime": e.generated_at.strftime("%d/%m/%Y %H:%M:%S")
                         if hasattr(e.generated_at, "strftime") else str(e.generated_at),
@@ -232,9 +250,11 @@ def page_sscc_log():
                     "lot": e.lot or "—",
                     "ddm": e.ddm.strftime("%d/%m/%Y") if e.ddm else "—",
                     "cartons": e.case_count,
+                    "ramasse": ramasse_str,
                     "user": e.user_email or "—",
                     "voided": is_voided,
                     "voided_reason": e.voided_reason or "",
+                    "loaded": is_loaded,
                 })
             cols = [
                 {"name": "datetime", "label": "Date / Heure", "field": "datetime",
@@ -249,6 +269,8 @@ def page_sscc_log():
                  "sortable": True},
                 {"name": "cartons", "label": "Cartons", "field": "cartons",
                  "align": "right", "sortable": True},
+                {"name": "ramasse", "label": "Ramasse", "field": "ramasse",
+                 "align": "left", "sortable": True},
                 {"name": "user", "label": "Utilisateur", "field": "user",
                  "align": "left", "sortable": True},
                 {"name": "action", "label": "", "field": "sscc_raw",
@@ -260,8 +282,8 @@ def page_sscc_log():
                     pagination={"rowsPerPage": 25},
                 ).classes("w-full").props("flat bordered dense")
 
-                # Slot custom : ligne grisée + bouton Annuler par ligne.
-                # Si déjà voided, on affiche la raison en cellule action.
+                # Slot custom : ligne grisée si annulée, cellule ramasse
+                # colorée selon chargée (vert) / en stock (gris).
                 table.add_slot("body", """
                     <q-tr :props="props" :style="props.row.voided ?
                         'opacity: 0.5; text-decoration: line-through' : ''">
@@ -273,6 +295,12 @@ def page_sscc_log():
                                        @click="$parent.$emit('void_sscc', props.row.sscc_raw)" />
                                 <span v-else style="font-size: 10px; color: #888">
                                     {{ props.row.voided_reason || 'annulée' }}
+                                </span>
+                            </template>
+                            <template v-else-if="col.name === 'ramasse'">
+                                <span :style="props.row.loaded ?
+                                    'color: #15803D; font-weight: 500' : 'color: #999; font-style: italic'">
+                                    {{ col.value }}
                                 </span>
                             </template>
                             <template v-else>
