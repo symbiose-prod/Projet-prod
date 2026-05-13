@@ -321,7 +321,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         )
         details_container = ui.column().classes("w-full q-mt-xs")
 
-    # Bouton validation
+    # Bouton validation principal — flow standard (création/MAJ + email + PDF)
     with ui.row().classes("w-full q-mt-md gap-2"):
         validate_btn = ui.button(
             "✓ Valider — créer ramasse + envoyer email + télécharger BL",
@@ -330,6 +330,22 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             "color=green-8 unelevated size=lg",
         ).style("touch-action: manipulation; min-height: 56px")
         validate_btn.disable()
+
+    # Bouton rattrapage — secondaire, visible UNIQUEMENT quand une ramasse
+    # existante est sélectionnée pour MAJ. Sert au cas où le BL a déjà été
+    # envoyé via /ramasse (la page manuelle) mais qu'on veut lier les
+    # palettes scannées pour qu'elles n'apparaissent plus en "non chargées".
+    # Aucun email, aucun PDF, aucune nouvelle version : juste l'INSERT
+    # palette_loadings.
+    with ui.row().classes("w-full q-mt-xs gap-2"):
+        link_only_btn = ui.button(
+            "🔗 Rattrapage : lier seulement les palettes (sans email/BL)",
+            icon="link",
+        ).classes("flex-1").props(
+            "color=grey-7 outline size=md",
+        ).style("touch-action: manipulation; min-height: 44px; font-size: 13px")
+        link_only_btn.set_visibility(False)
+        link_only_btn.disable()
 
     # ────────────────────────────────────────────────────────────────────
     # Logique réactive
@@ -379,6 +395,18 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                         )
         _refresh_summary()
 
+    def _refresh_link_only_visibility():
+        """Affiche le bouton rattrapage uniquement si on a une ramasse
+        existante sélectionnée ET au moins une palette dans le panier."""
+        ramasse_val = ramasse_to_update_select.value
+        has_ramasse = bool(ramasse_val) and ramasse_val != ""
+        has_basket = bool(state["basket"])
+        link_only_btn.set_visibility(has_ramasse and has_basket)
+        if has_ramasse and has_basket:
+            link_only_btn.enable()
+        else:
+            link_only_btn.disable()
+
     def _refresh_summary():
         """Recalcule totaux + détail produit. Active/désactive le bouton."""
         basket: list[PaletteInfo] = state["basket"]
@@ -388,6 +416,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             totals_display.style(f"color: {COLORS['ink2']}; font-size: 28px")
             weight_display.text = ""
             validate_btn.disable()
+            _refresh_link_only_visibility()
             return
         lines = aggregate_palettes_to_lines(basket)
         total_cartons = sum(line["cartons"] for line in lines)
@@ -417,6 +446,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                         "text-body2",
                     ).style(f"flex: 0.8; text-align: right; color: {COLORS['ink2']}")
         validate_btn.enable()
+        _refresh_link_only_visibility()
 
     def _add_to_basket(palette: PaletteInfo):
         # Dédoublonnage : si le SSCC est déjà dans le panier, notify et ignore
@@ -818,6 +848,69 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             validate_btn.props(remove="loading")
 
     validate_btn.on_click(_on_validate)
+
+    async def _on_link_only():
+        """Mode rattrapage : lie le panier à la ramasse sélectionnée sans
+        envoyer d'email ni regénérer le PDF.
+
+        Use case : le BL a déjà été envoyé via /ramasse (page manuelle),
+        on veut juste enregistrer la traçabilité physique des palettes
+        scannées pour qu'elles disparaissent de la liste "non chargées".
+        """
+        basket: list[PaletteInfo] = state["basket"]
+        if not basket:
+            ui.notify("Panier vide.", type="warning")
+            return
+        ramasse_id = ramasse_to_update_select.value
+        if not ramasse_id or ramasse_id == "":
+            ui.notify(
+                "Sélectionne une ramasse existante (le rattrapage la met "
+                "à jour sans toucher au BL).",
+                type="warning",
+            )
+            return
+
+        link_only_btn.disable()
+        link_only_btn.props("loading")
+        try:
+            sscc_list = [p.sscc for p in basket]
+            inserted, conflicts = await asyncio.to_thread(
+                link_palettes_to_ramasse,
+                tenant_id,
+                sscc_list=sscc_list,
+                ramasse_id=str(ramasse_id),
+                user_email=user_email,
+            )
+            if conflicts:
+                _log.warning(
+                    "Rattrapage : %d conflits (palettes déjà liées) : %s",
+                    len(conflicts), conflicts[:5],
+                )
+                ui.notify(
+                    f"⚠ {len(conflicts)} palette(s) déjà liée(s) ailleurs — ignorée(s).",
+                    type="warning", timeout=5000,
+                )
+            ui.notify(
+                f"✓ Rattrapage : {inserted} palette(s) liée(s) à la ramasse. "
+                "Aucun email envoyé.",
+                type="positive", icon="link", timeout=5000,
+            )
+            # Reset panier
+            state["basket"] = []
+            _clear_persisted_basket()
+            _refresh_basket()
+            _refresh_unscanned()
+        except Exception as exc:
+            _log.exception("Erreur rattrapage link")
+            ui.notify(f"Erreur : {exc}", type="negative")
+        finally:
+            link_only_btn.enable()
+            link_only_btn.props(remove="loading")
+
+    link_only_btn.on_click(_on_link_only)
+
+    # Quand le select ramasse change → re-évaluer la visibilité du bouton rattrapage
+    ramasse_to_update_select.on_value_change(lambda _e: _refresh_link_only_visibility())
 
     def _on_clear_basket():
         """Bouton manuel : vide le panier persisté + l'état courant."""
