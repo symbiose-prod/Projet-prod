@@ -122,7 +122,10 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 value=today_paris().strftime("%Y-%m-%d"),
             ).classes("flex-1").props("outlined dense type=date")
 
-            dest_opts = [d["title"] for d in destinataires_list]
+            # Les destinataires utilisent la clé "name" (pas "title").
+            # Format réel : {"name", "address_lines", "email_recipients",
+            #                "packaging_items"} — voir data/destinataires.json.
+            dest_opts = [d["name"] for d in destinataires_list]
             default_dest = dest_opts[0] if dest_opts else None
             dest_select = ui.select(
                 options=dest_opts, label="Destinataire",
@@ -505,13 +508,13 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
         # Trouve l'objet destinataire complet pour le PDF (adresse + emails)
         dest_obj = next(
-            (x for x in destinataires_list if x.get("title") == dest_title), None,
+            (x for x in destinataires_list if x.get("name") == dest_title), None,
         )
         if not dest_obj:
             ui.notify(f"Destinataire inconnu : {dest_title}", type="negative")
             return
         dest_addr_lines = dest_obj.get("address_lines", []) or []
-        dest_emails = dest_obj.get("emails", []) or []
+        dest_emails = dest_obj.get("email_recipients", []) or []
         if not dest_emails:
             ui.notify(
                 "Le destinataire n'a pas d'email configuré — impossible d'envoyer.",
