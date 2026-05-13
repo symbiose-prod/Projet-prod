@@ -87,6 +87,9 @@ class SsccLogEntry:
     ddm: _dt.date | None
     case_count: int
     generated_at: _dt.datetime
+    voided_at: _dt.datetime | None = None
+    voided_reason: str = ""
+    voided_by: str = ""
 
 
 # ─── Algorithme clé de contrôle GS1 (pure) ──────────────────────────────────
@@ -251,7 +254,7 @@ def list_sscc_log(
         params["lot"] = f"%{lot_filter.strip()}%"
     sql = f"""
         SELECT id, sscc, user_email, gtin_palette, lot, ddm,
-               case_count, generated_at
+               case_count, generated_at, voided_at, voided_reason, voided_by
         FROM sscc_log
         WHERE {" AND ".join(where)}
         ORDER BY generated_at DESC
@@ -276,10 +279,86 @@ def list_sscc_log(
                     else _dt.date.fromisoformat(str(ddm)[:10]),
                 case_count=int(r.get("case_count") or 0),
                 generated_at=r["generated_at"],
+                voided_at=r.get("voided_at"),
+                voided_reason=str(r.get("voided_reason") or ""),
+                voided_by=str(r.get("voided_by") or ""),
             ))
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne sscc_log invalide ignorée : %r", r, exc_info=True)
     return out
+
+
+def void_sscc(
+    tenant_id: str, sscc: str, *, reason: str, user_email: str = "",
+) -> bool:
+    """Marque un SSCC comme annulé (palette fantôme — étiquette pas
+    imprimée, doublon, etc.).
+
+    Le séquentiel reste consommé pour rester conforme GS1 (jamais de
+    réutilisation < 1 an). L'enregistrement est gardé pour audit ; il
+    sera juste filtré des lookups normaux (scan chargement, panier,
+    palettes non chargées récentes).
+
+    Args:
+        tenant_id: scope
+        sscc: 18 digits du SSCC à annuler
+        reason: raison saisie par l'opérateur (obligatoire, ≤ 500 chars)
+        user_email: qui annule (audit)
+
+    Returns:
+        True si annulation effective, False si SSCC introuvable ou
+        déjà annulé.
+    """
+    s = re.sub(r"\D+", "", sscc or "")
+    if len(s) != 18:
+        return False
+    reason_clean = (reason or "").strip()[:500]
+    if not reason_clean:
+        reason_clean = "Sans raison précisée"
+    try:
+        rows = run_sql(
+            """UPDATE sscc_log SET
+                  voided_at = now(),
+                  voided_reason = :r,
+                  voided_by = :u
+               WHERE sscc = :s AND tenant_id = :t
+                 AND voided_at IS NULL
+               RETURNING id""",
+            {"s": s, "t": tenant_id, "r": reason_clean, "u": user_email or ""},
+        )
+        if rows:
+            _log.warning(
+                "SSCC voided : sscc=%s tenant=%s by=%s reason=%s",
+                s, tenant_id, user_email or "?", reason_clean,
+            )
+            return True
+        return False
+    except Exception:
+        _log.exception("Échec void_sscc sscc=%s", s)
+        return False
+
+
+def restore_sscc(tenant_id: str, sscc: str) -> bool:
+    """Annule une annulation — pour les cas où on s'est trompé.
+
+    Réservé aux admins (UI à connecter plus tard si besoin).
+    """
+    s = re.sub(r"\D+", "", sscc or "")
+    if len(s) != 18:
+        return False
+    try:
+        rows = run_sql(
+            """UPDATE sscc_log SET
+                  voided_at = NULL, voided_reason = NULL, voided_by = NULL
+               WHERE sscc = :s AND tenant_id = :t
+                 AND voided_at IS NOT NULL
+               RETURNING id""",
+            {"s": s, "t": tenant_id},
+        )
+        return bool(rows)
+    except Exception:
+        _log.exception("Échec restore_sscc sscc=%s", s)
+        return False
 
 
 def get_sscc_stats(tenant_id: str) -> dict:

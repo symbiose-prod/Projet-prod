@@ -18,6 +18,7 @@ UI :
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import datetime as _dt
 import io
@@ -216,19 +217,25 @@ def page_sscc_log():
                 state["_entries"] = []
                 return
 
-            rows = [
-                {
+            # Map sscc → entry pour le callback de void
+            by_sscc = {e.sscc: e for e in entries}
+
+            rows = []
+            for e in entries:
+                is_voided = bool(e.voided_at)
+                rows.append({
                     "datetime": e.generated_at.strftime("%d/%m/%Y %H:%M:%S")
                         if hasattr(e.generated_at, "strftime") else str(e.generated_at),
                     "sscc": _fmt_sscc(e.sscc),
+                    "sscc_raw": e.sscc,  # pour le callback
                     "gtin": e.gtin_palette or "—",
                     "lot": e.lot or "—",
                     "ddm": e.ddm.strftime("%d/%m/%Y") if e.ddm else "—",
                     "cartons": e.case_count,
                     "user": e.user_email or "—",
-                }
-                for e in entries
-            ]
+                    "voided": is_voided,
+                    "voided_reason": e.voided_reason or "",
+                })
             cols = [
                 {"name": "datetime", "label": "Date / Heure", "field": "datetime",
                  "align": "left", "sortable": True},
@@ -244,18 +251,104 @@ def page_sscc_log():
                  "align": "right", "sortable": True},
                 {"name": "user", "label": "Utilisateur", "field": "user",
                  "align": "left", "sortable": True},
+                {"name": "action", "label": "", "field": "sscc_raw",
+                 "align": "center"},
             ]
             with table_container:
-                ui.table(
-                    columns=cols, rows=rows, row_key="datetime",
+                table = ui.table(
+                    columns=cols, rows=rows, row_key="sscc_raw",
                     pagination={"rowsPerPage": 25},
                 ).classes("w-full").props("flat bordered dense")
+
+                # Slot custom : ligne grisée + bouton Annuler par ligne.
+                # Si déjà voided, on affiche la raison en cellule action.
+                table.add_slot("body", """
+                    <q-tr :props="props" :style="props.row.voided ?
+                        'opacity: 0.5; text-decoration: line-through' : ''">
+                        <q-td v-for="col in props.cols" :key="col.name" :props="props">
+                            <template v-if="col.name === 'action'">
+                                <q-btn v-if="!props.row.voided"
+                                       flat dense color="red-7" icon="block"
+                                       label="Annuler"
+                                       @click="$parent.$emit('void_sscc', props.row.sscc_raw)" />
+                                <span v-else style="font-size: 10px; color: #888">
+                                    {{ props.row.voided_reason || 'annulée' }}
+                                </span>
+                            </template>
+                            <template v-else>
+                                {{ col.value }}
+                            </template>
+                        </q-td>
+                    </q-tr>
+                """)
+
+                def _on_void_sscc(e):
+                    sscc = str(e.args) if e.args else ""
+                    entry = by_sscc.get(sscc)
+                    if entry is None:
+                        return
+                    _open_void_dialog_admin(entry)
+
+                table.on("void_sscc", _on_void_sscc)
+
             n = len(entries)
             cap = f"{n} résultat" + ("s" if n > 1 else "")
             if n >= 500:
                 cap += " (limite atteinte — affine les filtres)"
             table_caption.text = cap
             state["_entries"] = entries
+
+        def _open_void_dialog_admin(entry):
+            """Dialog d'annulation côté admin — même UX que la page
+            étiquettes-palette mais réutilisable ici."""
+            with ui.dialog() as dlg, ui.card().classes("q-pa-md").style("min-width: 380px"):
+                ui.label("Annuler ce SSCC ?").classes("text-h6").style(
+                    f"color: {COLORS['ink']}; font-weight: 700",
+                )
+                ui.label(f"SSCC : {_fmt_sscc(entry.sscc)}").classes(
+                    "text-caption q-mb-xs",
+                ).style(f"font-family: monospace; color: {COLORS['ink']}")
+                ui.label(
+                    f"GTIN {entry.gtin_palette} · Lot {entry.lot} · {entry.case_count}c",
+                ).classes("text-caption q-mb-md").style(f"color: {COLORS['ink2']}")
+                ui.label(
+                    "Le séquentiel reste consommé (norme GS1). La palette "
+                    "ne sera plus proposée au chargement.",
+                ).classes("text-caption q-mb-md").style(f"color: {COLORS['ink2']}")
+                reason_input = ui.input(
+                    label="Raison",
+                    placeholder="ex: étiquette pas imprimée, doublon",
+                ).classes("w-full").props("outlined dense autofocus")
+
+                async def _submit():
+                    reason = (reason_input.value or "").strip()
+                    if not reason:
+                        ui.notify("Saisis une raison.", type="warning")
+                        return
+                    dlg.close()
+                    from common.services.sscc_service import void_sscc
+                    ok = await asyncio.to_thread(
+                        void_sscc, tenant_id, entry.sscc,
+                        reason=reason, user_email=user.get("email", ""),
+                    )
+                    if ok:
+                        ui.notify(
+                            f"✓ SSCC {_fmt_sscc(entry.sscc)} annulé.",
+                            type="positive", icon="block",
+                        )
+                        _refresh_table()
+                        _refresh_stats()
+                    else:
+                        ui.notify(
+                            "Annulation impossible.", type="warning",
+                        )
+
+                with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                    ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
+                    ui.button(
+                        "Confirmer", icon="block", on_click=_submit,
+                    ).props("color=red-7 unelevated")
+            dlg.open()
 
         def _apply_filters():
             state["date_from"] = _parse_date(date_from_input.value or "")

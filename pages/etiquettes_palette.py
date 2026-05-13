@@ -1077,6 +1077,12 @@ def _render_form(
     history_section = ui.column().classes("w-full q-mt-lg")
 
     async def _do_reprint(h: HistoryEntry):
+        if h.voided_at:
+            ui.notify(
+                "Étiquette annulée — réimpression refusée.",
+                type="warning", icon="block",
+            )
+            return
         try:
             from common.etiquette_palette_pdf import build_etiquette_palette_pdf
             ctx = _ctx_from_history(h, tenant_name=tenant_name)
@@ -1093,19 +1099,56 @@ def _render_form(
             _log.exception("Erreur réimpression étiquette palette")
             ui.notify(f"Erreur réimpression : {exc}", type="negative")
 
+    def _do_void(h: HistoryEntry):
+        """Ouvre un dialog pour annuler un SSCC (étiquette fantôme)."""
+        if not h.sscc:
+            ui.notify(
+                "Cette ancienne entrée n'a pas de SSCC — rien à annuler.",
+                type="warning",
+            )
+            return
+        if h.voided_at:
+            ui.notify("Déjà annulée.", type="info")
+            return
+        _open_void_dialog(
+            sscc=h.sscc, designation=f"{h.designation} {h.fmt}",
+            on_confirmed=lambda reason: _confirm_void(h.sscc, reason),
+        )
+
+    async def _confirm_void(sscc: str, reason: str):
+        from common.services.sscc_service import void_sscc
+        ok = await asyncio.to_thread(
+            void_sscc, tenant_id, sscc, reason=reason, user_email=user_email,
+        )
+        if ok:
+            ui.notify(
+                f"✓ Palette {_fmt_sscc_short(sscc)} annulée — "
+                "elle n'apparaîtra plus dans le chargement.",
+                type="positive", icon="block", timeout=4000,
+            )
+            _refresh_history()
+            refresh_sidebar = state.get("_refresh_sidebar")
+            if refresh_sidebar:
+                refresh_sidebar()
+        else:
+            ui.notify(
+                "Annulation impossible (SSCC déjà annulé ou introuvable).",
+                type="warning",
+            )
+
     def _refresh_history():
         """Recharge la section historique (appelée après chaque génération).
 
         Format : expansion repliable contenant un tableau condensé des
         20 dernières étiquettes générées. L'opérateur peut l'ouvrir pour
-        retrouver une étiquette à réimprimer.
+        retrouver une étiquette à réimprimer ou annuler une fantôme.
         """
         history_section.clear()
         if not tenant_id:
             return
         recent = list_recent_labels(tenant_id, limit=20)
         with history_section:
-            _render_history_table(recent, on_reprint=_do_reprint)
+            _render_history_table(recent, on_reprint=_do_reprint, on_void=_do_void)
 
     _refresh_history()
 
@@ -1411,19 +1454,16 @@ def _render_history_table(
     entries: list[HistoryEntry],
     *,
     on_reprint,
+    on_void=None,
 ) -> None:
     """Rend les étiquettes récentes sous forme d'un tableau Quasar
     encapsulé dans une ``ui.expansion`` repliable.
 
-    Pourquoi un tableau plutôt que des cards : plus dense, scannable
-    rapidement, et l'opérateur peut trier par n'importe quelle colonne.
-    L'expansion est fermée par défaut — l'historique est rarement
-    consulté pendant le flow normal (scan → impression), seulement
-    quand on veut réimprimer.
-
-    Doit être appelé dans un contexte UI (between ``with section:``).
-    Si ``entries`` est vide, on garde l'expansion (avec un message)
-    pour la cohérence visuelle.
+    Chaque ligne propose 2 actions :
+      - Réimprimer : regénère le PDF avec le SSCC d'origine
+      - Annuler : marque le SSCC comme fantôme (étiquette pas imprimée
+        ou doublon). Les lignes annulées apparaissent grisées et leur
+        bouton Réimprimer est désactivé.
     """
     label_text = (
         f"Étiquettes récentes ({len(entries)})"
@@ -1438,7 +1478,7 @@ def _render_history_table(
             ).style(f"color: {COLORS['ink2']}; font-style: italic")
             return
 
-        # Map id → HistoryEntry pour le callback de réimpression
+        # Map id → HistoryEntry pour les callbacks d'action
         by_id: dict[int, HistoryEntry] = {h.id: h for h in entries}
 
         rows = []
@@ -1446,13 +1486,19 @@ def _render_history_table(
             when = h.generated_at.strftime("%d/%m %H:%M") if hasattr(
                 h.generated_at, "strftime",
             ) else str(h.generated_at)
+            is_voided = bool(h.voided_at)
+            produit_str = f"{h.designation or 'GTIN ' + h.ean} — {h.fmt}"
+            if is_voided:
+                # Marqueur visuel devant le produit annulé
+                produit_str = f"⊘ {produit_str}"
             rows.append({
                 "id": h.id,
-                "produit": f"{h.designation or 'GTIN ' + h.ean} — {h.fmt}",
+                "produit": produit_str,
                 "lot": h.lot,
                 "ddm": h.ddm.strftime("%d/%m/%Y"),
                 "cartons": h.case_count,
                 "when": when,
+                "voided": is_voided,
             })
 
         cols = [
@@ -1474,16 +1520,24 @@ def _render_history_table(
             pagination={"rowsPerPage": 10},
         ).classes("w-full").props("flat bordered dense")
 
-        # Slot custom pour la colonne 'id' → bouton Réimprimer.
-        # Le bouton émet un event 'reprint' avec l'id de la ligne ; côté
-        # Python on retrouve le HistoryEntry via by_id et on appelle
-        # on_reprint (handler async géré par NiceGUI).
-        table.add_slot("body-cell-id", """
-            <q-td :props="props" style="width: 90px">
-                <q-btn flat dense color="green-8" icon="print"
-                       label="Réimprimer"
-                       @click="$parent.$emit('reprint', props.row.id)" />
-            </q-td>
+        # Slot row : grise les lignes annulées
+        table.add_slot("body", """
+            <q-tr :props="props" :style="props.row.voided ?
+                'opacity: 0.5; text-decoration: line-through' : ''">
+                <q-td v-for="col in props.cols" :key="col.name" :props="props">
+                    <template v-if="col.name === 'id'">
+                        <q-btn flat dense color="green-8" icon="print"
+                               :disable="props.row.voided"
+                               @click="$parent.$emit('reprint', props.row.id)" />
+                        <q-btn flat dense color="red-7" icon="block"
+                               :disable="props.row.voided"
+                               @click="$parent.$emit('void', props.row.id)" />
+                    </template>
+                    <template v-else>
+                        {{ col.value }}
+                    </template>
+                </q-td>
+            </q-tr>
         """)
 
         def _on_reprint_event(e):
@@ -1495,7 +1549,73 @@ def _render_history_table(
             if h is not None:
                 on_reprint(h)
 
+        def _on_void_event(e):
+            try:
+                row_id = int(e.args)
+            except (TypeError, ValueError):
+                return
+            h = by_id.get(row_id)
+            if h is not None and on_void is not None:
+                on_void(h)
+
         table.on("reprint", _on_reprint_event)
+        table.on("void", _on_void_event)
+
+
+# ─── Dialog d'annulation SSCC (utilisé par _do_void) ────────────────────────
+
+def _fmt_sscc_short(sscc: str) -> str:
+    """Affichage compact d'un SSCC pour les notifications."""
+    s = re.sub(r"\D+", "", sscc or "")
+    if len(s) != 18:
+        return s
+    return f"{s[0:4]} {s[4:8]} {s[8:12]} {s[12:16]} {s[16:18]}"
+
+
+def _open_void_dialog(*, sscc: str, designation: str, on_confirmed) -> None:
+    """Petit dialog : demande une raison + confirme l'annulation.
+
+    Le ``on_confirmed`` est appelé avec la raison (str non-vide).
+    """
+    import inspect
+
+    with ui.dialog() as dlg, ui.card().classes("q-pa-md").style("min-width: 380px"):
+        ui.label("Annuler cette étiquette ?").classes("text-h6").style(
+            f"color: {COLORS['ink']}; font-weight: 700",
+        )
+        ui.label(designation).classes("text-body2 q-mb-xs").style(
+            f"color: {COLORS['ink']}",
+        )
+        ui.label(f"SSCC : {_fmt_sscc_short(sscc)}").classes("text-caption q-mb-md").style(
+            f"font-family: monospace; color: {COLORS['ink2']}",
+        )
+        ui.label(
+            "La palette ne sera plus proposée au chargement et le SSCC "
+            "ne pourra plus servir. Le séquentiel reste consommé "
+            "(non-réutilisable, norme GS1).",
+        ).classes("text-caption q-mb-md").style(f"color: {COLORS['ink2']}")
+        reason_input = ui.input(
+            label="Raison",
+            placeholder="ex: pas imprimée — doublon",
+        ).classes("w-full").props("outlined dense autofocus")
+
+        async def _submit():
+            reason = (reason_input.value or "").strip()
+            if not reason:
+                ui.notify("Saisis une raison.", type="warning")
+                return
+            dlg.close()
+            res = on_confirmed(reason)
+            if inspect.isawaitable(res):
+                await res
+
+        with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+            ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
+            ui.button(
+                "Confirmer l'annulation", icon="block", on_click=_submit,
+            ).props("color=red-7 unelevated")
+        reason_input.on("keydown.enter", _submit)
+    dlg.open()
 
 
 def _install_scan_input_listener() -> None:

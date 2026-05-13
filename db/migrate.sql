@@ -515,6 +515,20 @@ CREATE TABLE IF NOT EXISTS sscc_log (
 CREATE INDEX IF NOT EXISTS idx_sscc_log_tenant_date
   ON sscc_log(tenant_id, generated_at DESC);
 
+-- Annulation (palette fantôme — étiquette générée mais pas imprimée, ou
+-- doublon volontaire). Le séquentiel reste consommé (conforme GS1) et
+-- l'enregistrement est gardé pour audit ; il est juste filtré des lookups
+-- normaux (scan, panier, palettes non chargées).
+ALTER TABLE sscc_log
+  ADD COLUMN IF NOT EXISTS voided_at     TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS voided_reason TEXT,
+  ADD COLUMN IF NOT EXISTS voided_by     TEXT;
+-- Index partiel : seules les lignes actives (non voided) sont indexées
+-- car c'est ce qu'on scanne 99% du temps.
+CREATE INDEX IF NOT EXISTS idx_sscc_log_active
+  ON sscc_log(tenant_id, generated_at DESC)
+  WHERE voided_at IS NULL;
+
 -- =========================
 -- Chargements de palettes (scan SSCC au chargement camion)
 -- =========================

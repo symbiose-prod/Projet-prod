@@ -100,7 +100,7 @@ def lookup_sscc(sscc_raw: str, tenant_id: str) -> LookupResult:
     rows = run_sql(
         """SELECT
               sl.sscc, sl.gtin_palette, sl.lot, sl.ddm,
-              sl.case_count, sl.generated_at,
+              sl.case_count, sl.generated_at, sl.voided_at,
               eph.designation, eph.fmt, eph.marque, eph.gout,
               eph.pcb, eph.gtin_uvc,
               pl.ramasse_id AS pl_ramasse_id,
@@ -122,6 +122,17 @@ def lookup_sscc(sscc_raw: str, tenant_id: str) -> LookupResult:
         )
 
     r = rows[0]
+
+    # Si la palette a été annulée (fantôme), on traite comme inconnu pour
+    # éviter de l'inclure dans le chargement.
+    if r.get("voided_at"):
+        return LookupResult(
+            status="unknown",
+            error_message=(
+                "Cette palette a été annulée (étiquette fantôme) — "
+                "ne pas la charger."
+            ),
+        )
 
     # Cas 4.3 — palette déjà chargée
     if r.get("pl_ramasse_id"):
@@ -338,6 +349,7 @@ def list_unscanned_recent_palettes(
                   ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
            WHERE sl.tenant_id = :t
              AND sl.generated_at > now() - (:d * INTERVAL '1 day')
+             AND sl.voided_at IS NULL
              AND pl.id IS NULL
              AND eph.designation IS NOT NULL
            ORDER BY sl.generated_at DESC

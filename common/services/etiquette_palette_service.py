@@ -128,6 +128,8 @@ class HistoryEntry:
     user_email: str
     generated_at: _dt.datetime
     sscc: str = ""              # SSCC 18 digits (vide pour entrées pré-SSCC)
+    voided_at: _dt.datetime | None = None
+    voided_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -872,16 +874,25 @@ def save_label_history(
 
 
 def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
-    """Retourne les ``limit`` dernières étiquettes générées pour le tenant."""
+    """Retourne les ``limit`` dernières étiquettes générées pour le tenant.
+
+    Inclut le statut d'annulation (voided_at / voided_reason) via JOIN
+    sur sscc_log — la source de vérité pour l'état "fantôme" est dans
+    sscc_log (un seul endroit où on annule).
+    """
     try:
         rows = run_sql(
-            """SELECT id, ean, lot, ddm, fmt, marque, designation, gout,
-                      case_count, full_pallet, n_copies, pcb,
-                      gtin_uvc, code_interne, bio, sscc,
-                      user_email, generated_at
-               FROM etiquette_palette_history
-               WHERE tenant_id = :t
-               ORDER BY generated_at DESC
+            """SELECT eph.id, eph.ean, eph.lot, eph.ddm, eph.fmt, eph.marque,
+                      eph.designation, eph.gout, eph.case_count,
+                      eph.full_pallet, eph.n_copies, eph.pcb,
+                      eph.gtin_uvc, eph.code_interne, eph.bio, eph.sscc,
+                      eph.user_email, eph.generated_at,
+                      sl.voided_at, sl.voided_reason
+               FROM etiquette_palette_history eph
+               LEFT JOIN sscc_log sl
+                      ON sl.sscc = eph.sscc AND sl.tenant_id = eph.tenant_id
+               WHERE eph.tenant_id = :t
+               ORDER BY eph.generated_at DESC
                LIMIT :n""",
             {"t": tenant_id, "n": int(limit)},
         ) or []
@@ -911,6 +922,8 @@ def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
                 user_email=str(r["user_email"] or ""),
                 generated_at=r["generated_at"],
                 sscc=str(r.get("sscc") or ""),
+                voided_at=r.get("voided_at"),
+                voided_reason=str(r.get("voided_reason") or ""),
             ))
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne historique invalide ignorée : %r", r, exc_info=True)

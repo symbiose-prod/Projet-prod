@@ -483,6 +483,64 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     ).classes("text-caption").style(
                         f"flex: 0.8; color: {COLORS['ink2']}",
                     )
+                    # Bouton "Erreur d'impression" → ouvre dialog d'annulation
+                    ui.button(
+                        icon="block",
+                        on_click=lambda _e, palette=p: _open_void_palette_dialog(palette),
+                    ).props("flat dense color=red-7 size=sm").tooltip(
+                        "Erreur d'impression — annuler cette palette fantôme",
+                    )
+
+    def _open_void_palette_dialog(palette: PaletteInfo):
+        """Ouvre un dialog pour annuler une palette qui apparait dans les
+        non-chargées alors qu'elle n'existe pas physiquement (étiquette
+        pas imprimée, doublon…)."""
+        with ui.dialog() as dlg, ui.card().classes("q-pa-md").style("min-width: 380px"):
+            ui.label("Erreur d'impression ?").classes("text-h6").style(
+                f"color: {COLORS['ink']}; font-weight: 700",
+            )
+            ui.label(
+                f"{palette.designation} {palette.fmt} · {palette.case_count} cartons",
+            ).classes("text-body2 q-mb-xs").style(f"color: {COLORS['ink']}")
+            ui.label(f"SSCC : {_fmt_sscc_pretty(palette.sscc)}").classes(
+                "text-caption q-mb-md",
+            ).style(f"font-family: monospace; color: {COLORS['ink2']}")
+            ui.label(
+                "La palette ne sera plus proposée au chargement. "
+                "Le SSCC reste consommé (norme GS1).",
+            ).classes("text-caption q-mb-md").style(f"color: {COLORS['ink2']}")
+            reason_input = ui.input(
+                label="Raison",
+                value="Étiquette pas imprimée",
+                placeholder="ex: étiquette pas imprimée, doublon…",
+            ).classes("w-full").props("outlined dense autofocus")
+
+            async def _confirm():
+                reason = (reason_input.value or "").strip() or "Erreur d'impression"
+                dlg.close()
+                from common.services.sscc_service import void_sscc
+                ok = await asyncio.to_thread(
+                    void_sscc, tenant_id, palette.sscc,
+                    reason=reason, user_email=user_email,
+                )
+                if ok:
+                    ui.notify(
+                        f"✓ Palette {_fmt_sscc_pretty(palette.sscc)} annulée.",
+                        type="positive", icon="block", timeout=3500,
+                    )
+                    _refresh_unscanned()
+                else:
+                    ui.notify(
+                        "Annulation impossible (déjà annulée ?).",
+                        type="warning",
+                    )
+
+            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
+                ui.button(
+                    "Confirmer l'annulation", icon="block", on_click=_confirm,
+                ).props("color=red-7 unelevated")
+        dlg.open()
 
     _refresh_unscanned()
 
