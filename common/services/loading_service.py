@@ -109,7 +109,9 @@ def lookup_sscc(sscc_raw: str, tenant_id: str) -> LookupResult:
            LEFT JOIN etiquette_palette_history eph
                   ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
            LEFT JOIN palette_loadings pl
-                  ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
+                  ON pl.sscc = sl.sscc
+                 AND pl.tenant_id = sl.tenant_id
+                 AND pl.unlinked_at IS NULL
            WHERE sl.sscc = :sscc AND sl.tenant_id = :t
            LIMIT 1""",
         {"sscc": sscc, "t": tenant_id},
@@ -305,11 +307,13 @@ def link_palettes_to_ramasse(
     conflicts: list[str] = []
     for sscc in sscc_list:
         try:
+            # ON CONFLICT cible l'index unique partiel `unlinked_at IS NULL` :
+            # une palette unlinkée pourra être ré-INSÉRÉE pour un nouveau lien.
             rows = run_sql(
                 """INSERT INTO palette_loadings
                        (tenant_id, sscc, ramasse_id, scanned_by)
                    VALUES (:t, :sscc, :rid, :u)
-                   ON CONFLICT (sscc) DO NOTHING
+                   ON CONFLICT (sscc) WHERE unlinked_at IS NULL DO NOTHING
                    RETURNING id""",
                 {
                     "t": tenant_id, "sscc": sscc,
@@ -346,7 +350,9 @@ def list_unscanned_recent_palettes(
            LEFT JOIN etiquette_palette_history eph
                   ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
            LEFT JOIN palette_loadings pl
-                  ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
+                  ON pl.sscc = sl.sscc
+                 AND pl.tenant_id = sl.tenant_id
+                 AND pl.unlinked_at IS NULL
            WHERE sl.tenant_id = :t
              AND sl.generated_at > now() - (:d * INTERVAL '1 day')
              AND sl.voided_at IS NULL
@@ -469,3 +475,174 @@ def create_palette_manually(
         sscc_clean, user_email, gtin_palette, lot, case_count,
     )
     return True
+
+
+# ─── Source de vérité : reconstruction des lignes depuis palette_loadings ───
+
+def list_linked_palettes(
+    ramasse_id: str,
+    tenant_id: str,
+) -> list[PaletteInfo]:
+    """Liste les palettes actuellement liées à une ramasse.
+
+    Filtre :
+    - ``palette_loadings.unlinked_at IS NULL`` (les liaisons annulées
+      ne comptent pas pour le BL).
+    - ``sscc_log.voided_at IS NULL`` (les SSCC annulés ne comptent pas
+      non plus, même s'ils ont une liaison historique).
+    - ``etiquette_palette_history.designation IS NOT NULL`` (anomalie
+      DB : on n'inclut pas une palette dont le libellé est manquant).
+
+    Tri par ``scanned_at`` croissant — affichage UI stable.
+    Sert à la fois à reconstruire les lignes (agrégation) et à proposer
+    le déliage palette par palette dans l'UI.
+    """
+    rows = run_sql(
+        """SELECT
+              sl.sscc, sl.gtin_palette, sl.lot, sl.ddm,
+              sl.case_count, sl.generated_at,
+              eph.designation, eph.fmt, eph.marque, eph.gout,
+              eph.pcb, eph.gtin_uvc
+           FROM palette_loadings pl
+           JOIN sscc_log sl
+                ON sl.sscc = pl.sscc AND sl.tenant_id = pl.tenant_id
+           LEFT JOIN etiquette_palette_history eph
+                ON eph.sscc = pl.sscc AND eph.tenant_id = pl.tenant_id
+           WHERE pl.ramasse_id    = :rid
+             AND pl.tenant_id     = :t
+             AND pl.unlinked_at  IS NULL
+             AND sl.voided_at    IS NULL
+             AND eph.designation IS NOT NULL
+           ORDER BY pl.scanned_at""",
+        {"rid": ramasse_id, "t": tenant_id},
+    ) or []
+
+    palettes: list[PaletteInfo] = []
+    for r in rows:
+        try:
+            ddm = r.get("ddm")
+            ddm_date = ddm if isinstance(ddm, _dt.date) or ddm is None \
+                else _dt.date.fromisoformat(str(ddm)[:10])
+            palettes.append(PaletteInfo(
+                sscc=str(r["sscc"]),
+                gtin_palette=str(r.get("gtin_palette") or ""),
+                lot=str(r.get("lot") or ""),
+                ddm=ddm_date,
+                case_count=int(r.get("case_count") or 0),
+                designation=str(r.get("designation") or ""),
+                fmt=str(r.get("fmt") or ""),
+                marque=str(r.get("marque") or ""),
+                gout=str(r.get("gout") or ""),
+                pcb=int(r.get("pcb") or 0),
+                gtin_uvc=str(r.get("gtin_uvc") or ""),
+                generated_at=r["generated_at"],
+            ))
+        except (KeyError, TypeError, ValueError):
+            _log.warning(
+                "Palette liée ignorée (données invalides) ramasse=%s : %r",
+                ramasse_id, r, exc_info=True,
+            )
+    return palettes
+
+
+def rebuild_lines_from_palettes(
+    ramasse_id: str,
+    tenant_id: str,
+    *,
+    carton_weight_fn=None,
+) -> tuple[list[dict], int, int, int]:
+    """Reconstruit les lignes d'une ramasse depuis ses palettes actives.
+
+    C'est la source de vérité unique : le BL d'une ramasse = l'agrégation
+    des palettes encore liées (``unlinked_at IS NULL``). Aucun merge JSON,
+    aucune addition applicative — l'état physique du camion (les SSCC
+    réellement liés) dicte le BL.
+
+    Args:
+        ramasse_id: UUID de la ramasse cible.
+        tenant_id:  scope tenant.
+        carton_weight_fn: injectable pour les tests
+            (signature ``(fmt, designation) -> float``).
+
+    Returns:
+        ``(lines, total_cartons, total_palettes, total_poids_kg)`` —
+        prêt à être persisté dans ``ramasse_history`` via
+        ``save_ramasse`` / ``update_ramasse``.
+    """
+    palettes = list_linked_palettes(ramasse_id, tenant_id)
+    lines = aggregate_palettes_to_lines(palettes, carton_weight_fn=carton_weight_fn)
+    total_cartons  = sum(int(line["cartons"])  for line in lines)
+    total_palettes = sum(int(line["palettes"]) for line in lines)
+    total_poids    = sum(int(line["poids"])    for line in lines)
+    return (lines, total_cartons, total_palettes, total_poids)
+
+
+def unlink_palette(
+    tenant_id: str,
+    *,
+    sscc: str,
+    ramasse_id: str,
+    reason: str,
+    user_email: str = "",
+) -> bool:
+    """Délie une palette d'une ramasse (soft-unlink).
+
+    La ligne ``palette_loadings`` n'est jamais hard-deletée : on patche
+    ``unlinked_at``, ``unlinked_by``, ``unlinked_reason``. La palette
+    redevient « non chargée » (réapparaît dans
+    :func:`list_unscanned_recent_palettes`), peut être ré-liée à une
+    autre ramasse (l'index unique partiel ne contraint que les rows
+    actives), et son SSCC reste valide (pas d'annulation).
+
+    Distinct de :func:`common.services.sscc_service.void_sscc` : un void
+    annule la palette physique elle-même (étiquette pas imprimée,
+    doublon). Un unlink dit juste « cette palette ne fait plus partie
+    de cette ramasse » — typiquement palette pas prête à temps,
+    palette cassée au chargement, ou erreur de scan.
+
+    Args:
+        sscc: SSCC normalisé (18 digits).
+        ramasse_id: UUID de la ramasse — sert de garde-fou (on n'unlink
+            pas une palette qui serait liée à une autre ramasse).
+        reason: justification métier saisie par l'opérateur (≤ 500 chars).
+        user_email: pour audit.
+
+    Returns:
+        ``True`` si une liaison active a été marquée unlinked, ``False``
+        si la palette n'était pas liée à cette ramasse (ou déjà unlinked).
+    """
+    sscc_clean = _normalize_sscc(sscc)
+    if len(sscc_clean) != 18:
+        _log.warning("unlink_palette: SSCC invalide %r", sscc)
+        return False
+    reason_clean = (reason or "").strip()[:500] or "Sans raison précisée"
+    try:
+        rows = run_sql(
+            """UPDATE palette_loadings
+                  SET unlinked_at     = now(),
+                      unlinked_by     = :u,
+                      unlinked_reason = :r
+                WHERE sscc        = :sscc
+                  AND tenant_id   = :t
+                  AND ramasse_id  = :rid
+                  AND unlinked_at IS NULL
+               RETURNING id""",
+            {
+                "sscc": sscc_clean, "t": tenant_id,
+                "rid": ramasse_id, "u": user_email or "",
+                "r": reason_clean,
+            },
+        )
+    except Exception:
+        _log.exception(
+            "Échec unlink palette_loadings sscc=%s ramasse=%s",
+            sscc_clean, ramasse_id,
+        )
+        return False
+    if rows:
+        _log.info(
+            "Palette %s déliée de ramasse %s par %s — raison: %s",
+            sscc_clean, ramasse_id, user_email or "?", reason_clean,
+        )
+        return True
+    return False

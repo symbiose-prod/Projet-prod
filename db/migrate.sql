@@ -555,6 +555,33 @@ CREATE INDEX IF NOT EXISTS idx_palette_loadings_ramasse
   ON palette_loadings(ramasse_id)
   WHERE ramasse_id IS NOT NULL;
 
+-- Soft-unlink (ajout 2026-05) — permet de retirer une palette d'une ramasse
+-- sans annuler le SSCC. La palette redevient "non chargée" et peut être
+-- liée à une autre ramasse. Le row n'est jamais hard-deleted (audit).
+ALTER TABLE palette_loadings
+  ADD COLUMN IF NOT EXISTS unlinked_at     TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS unlinked_by     TEXT,
+  ADD COLUMN IF NOT EXISTS unlinked_reason TEXT;
+
+-- L'unicité du SSCC ne doit plus tenir que pour les liaisons actives :
+-- après un unlink, la palette doit pouvoir être re-liée ailleurs.
+-- 1) DROP de la contrainte UNIQUE pleine (générée auto, nom standard).
+-- 2) CREATE d'un index unique partiel sur les rows actives uniquement.
+ALTER TABLE palette_loadings
+  DROP CONSTRAINT IF EXISTS palette_loadings_sscc_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_palette_loadings_sscc_active
+  ON palette_loadings(sscc)
+  WHERE unlinked_at IS NULL;
+
+-- Bascule du statut des ramasses : on introduit l'enum applicatif
+-- 'legacy' / 'previsionnel' / 'definitif'. Toutes les ramasses créées avant
+-- la refonte (status historique 'sent') sont marquées 'legacy' — elles
+-- gardent leur PDF et leur historique mais n'utilisent pas le nouveau
+-- workflow prévisionnel → définitif (cf. /chargement-camion).
+UPDATE ramasse_history
+   SET status = 'legacy'
+ WHERE status NOT IN ('previsionnel', 'definitif', 'legacy');
+
 -- =========================
 -- Print jobs (queue d'impression Brother QL via agent local Windows)
 -- =========================

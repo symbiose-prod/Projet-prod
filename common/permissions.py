@@ -21,8 +21,8 @@ from __future__ import annotations
 # pour couvrir les sous-routes (ex: /etiquettes-palette/quelque-chose).
 OPERATEUR_ALLOWED_PATHS: tuple[str, ...] = (
     "/etiquettes-palette",
-    "/ramasse",
     "/chargement-camion",
+    "/historique-ramasses",
     "/logout",       # toujours possible de se déconnecter
     "/api/logout",   # idem
 )

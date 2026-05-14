@@ -146,6 +146,65 @@ def save_ramasse(
     return rid
 
 
+def finalize_ramasse_lines(
+    ramasse_id: str,
+    *,
+    lines: list[dict[str, Any]],
+    total_cartons: int,
+    total_palettes: int,
+    total_poids_kg: int,
+    pdf_bytes: bytes | None = None,
+    packaging: list[dict[str, Any]] | None = None,
+    tenant_id: str | None = None,
+) -> bool:
+    """Patch les lignes d'une ramasse fraîchement créée en placeholder.
+
+    Contrairement à :func:`update_ramasse`, NE touche PAS à
+    ``version`` / ``version_log`` / ``previous_lines``. Sémantique :
+    « finalisation atomique du create initial ».
+
+    Use case : ``_on_validate`` du flow scan-driven crée d'abord une
+    ramasse vide pour récupérer son id (FK obligatoire pour
+    ``palette_loadings.ramasse_id``), insère les liens palette, puis
+    appelle ``rebuild_lines_from_palettes`` pour obtenir les vraies
+    lignes — qu'on persiste ici en une seule UPDATE atomique.
+
+    Retourne ``True`` si la ramasse existait et a été patchée, ``False``
+    sinon (introuvable ou hors tenant).
+    """
+    tid = tenant_id or current_tenant_id()
+    params: dict[str, Any] = {
+        "rid": ramasse_id,
+        "tid": tid,
+        "lc": len(lines),
+        "tc": total_cartons,
+        "tp": total_palettes,
+        "tpk": total_poids_kg,
+        "lines": json.dumps(lines, default=str, ensure_ascii=False),
+        "pdf": pdf_bytes,
+    }
+    pkg_sql = ""
+    if packaging is not None:
+        pkg_sql = ", packaging = CAST(:pkg AS jsonb)"
+        params["pkg"] = json.dumps(packaging, default=str, ensure_ascii=False)
+    rows = run_sql(
+        f"""
+        UPDATE ramasse_history
+        SET line_count     = :lc,
+            total_cartons  = :tc,
+            total_palettes = :tp,
+            total_poids_kg = :tpk,
+            lines          = CAST(:lines AS jsonb),
+            pdf_bytes      = COALESCE(:pdf, pdf_bytes){pkg_sql},
+            updated_at     = now()
+        WHERE id = :rid AND tenant_id = :tid
+        RETURNING id
+        """,
+        params,
+    )
+    return bool(rows)
+
+
 def list_ramasses(
     tenant_id: str | None = None,
     *,
@@ -206,6 +265,15 @@ def get_ramasse(
     return rows[0] if rows else None
 
 
+_VALID_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    # source → set of valid targets
+    "previsionnel": {"previsionnel", "definitif"},
+    "definitif":    {"definitif"},  # une fois definitif, on ne revient pas
+    "legacy":       {"legacy"},     # legacy reste legacy
+    "sent":         {"sent", "previsionnel", "definitif"},  # ancien défaut, transition autorisée
+}
+
+
 def update_ramasse(
     ramasse_id: str,
     *,
@@ -220,6 +288,7 @@ def update_ramasse(
     pdf_bytes: bytes | None = None,
     brassin_ids: list[str] | None = None,
     tenant_id: str | None = None,
+    target_status: str | None = None,
 ) -> dict[str, Any] | None:
     """Met à jour une ramasse existante en créant une nouvelle version.
 
@@ -227,10 +296,16 @@ def update_ramasse(
     1. Charge la ramasse courante pour récupérer ``lines`` (devient ``previous_lines``)
        et ``version`` (incrémenté).
     2. Refuse la mise à jour si ``driver_passed = TRUE``.
-    3. Remplace ``lines``, totaux, PDF, packaging, brassin_ids avec les nouvelles valeurs.
-    4. Incrémente ``version`` et append une entrée dans ``version_log`` pour traçabilité.
+    3. Si ``target_status`` est fourni, valide la transition via
+       :data:`_VALID_STATUS_TRANSITIONS` puis met à jour la colonne
+       ``status``. Garde-fou anti-régression : un BL ``definitif`` ne
+       peut pas redevenir ``previsionnel`` (le chauffeur s'est basé
+       dessus).
+    4. Remplace ``lines``, totaux, PDF, packaging, brassin_ids avec les nouvelles valeurs.
+    5. Incrémente ``version`` et append une entrée dans ``version_log`` pour traçabilité.
 
-    Retourne le record mis à jour ou ``None`` si introuvable / verrouillé.
+    Retourne le record mis à jour ou ``None`` si introuvable / verrouillé /
+    transition de statut refusée.
     """
     tid = tenant_id or current_tenant_id()
 
@@ -241,6 +316,18 @@ def update_ramasse(
     if current.get("driver_passed"):
         _log.warning("update_ramasse: ramasse verrouillée (chauffeur passé) id=%s", ramasse_id)
         return None
+
+    current_status = str(current.get("status") or "sent")
+    new_status: str | None = None
+    if target_status is not None:
+        allowed = _VALID_STATUS_TRANSITIONS.get(current_status, set())
+        if target_status not in allowed:
+            _log.warning(
+                "update_ramasse: transition de statut refusée id=%s %s→%s",
+                ramasse_id, current_status, target_status,
+            )
+            return None
+        new_status = target_status
 
     old_lines = current.get("lines") or []
     old_version = int(current.get("version") or 1)
@@ -260,8 +347,29 @@ def update_ramasse(
     }
     new_version_log = [*existing_log, new_log_entry]
 
+    status_sql = ", status = :status" if new_status is not None else ""
+    params: dict[str, Any] = {
+        "rid": ramasse_id,
+        "tid": tid,
+        "dr": date_ramasse,
+        "dest": destinataire,
+        "recip": recipients,
+        "lc": len(lines),
+        "tc": total_cartons,
+        "tp": total_palettes,
+        "tpk": total_poids_kg,
+        "lines": json.dumps(lines, default=str, ensure_ascii=False),
+        "pkg": json.dumps(packaging or [], default=str, ensure_ascii=False),
+        "pdf": pdf_bytes,
+        "bids": brassin_ids or [],
+        "nv": new_version,
+        "vlog": json.dumps(new_version_log, default=str, ensure_ascii=False),
+        "prev": json.dumps(old_lines, default=str, ensure_ascii=False),
+    }
+    if new_status is not None:
+        params["status"] = new_status
     rows = run_sql(
-        """
+        f"""
         UPDATE ramasse_history
         SET date_ramasse    = :dr,
             destinataire    = :dest,
@@ -276,29 +384,12 @@ def update_ramasse(
             brassin_ids     = :bids,
             version         = :nv,
             version_log     = CAST(:vlog AS jsonb),
-            previous_lines  = CAST(:prev AS jsonb),
+            previous_lines  = CAST(:prev AS jsonb){status_sql},
             updated_at      = now()
         WHERE id = :rid AND tenant_id = :tid AND driver_passed = FALSE
         RETURNING id, version, updated_at
         """,
-        {
-            "rid": ramasse_id,
-            "tid": tid,
-            "dr": date_ramasse,
-            "dest": destinataire,
-            "recip": recipients,
-            "lc": len(lines),
-            "tc": total_cartons,
-            "tp": total_palettes,
-            "tpk": total_poids_kg,
-            "lines": json.dumps(lines, default=str, ensure_ascii=False),
-            "pkg": json.dumps(packaging or [], default=str, ensure_ascii=False),
-            "pdf": pdf_bytes,
-            "bids": brassin_ids or [],
-            "nv": new_version,
-            "vlog": json.dumps(new_version_log, default=str, ensure_ascii=False),
-            "prev": json.dumps(old_lines, default=str, ensure_ascii=False),
-        },
+        params,
     )
     if not rows:
         _log.warning("update_ramasse: UPDATE n'a retourné aucune ligne id=%s", ramasse_id)
@@ -488,6 +579,43 @@ def purge_expired_ramasses(
     if purged:
         _log.info("Ramasses purgées (hard-delete, >%dj): %d", retention_days, purged)
     return purged
+
+
+def find_active_previsionnel_for_dest(
+    destinataire: str,
+    tenant_id: str | None = None,
+) -> str | None:
+    """Retourne l'``id`` du prévisionnel en cours pour ce destinataire.
+
+    Critères :
+    - ``status = 'previsionnel'``
+    - ``driver_passed = FALSE`` (sinon il est figé, on ne le rouvre pas)
+    - ``deleted_at IS NULL`` (corbeille exclue)
+
+    Pas de filtre temporel : un prévisionnel envoyé il y a 3 jours et
+    jamais converti en définitif reste candidat. Tri ``created_at
+    DESC`` → on prend le plus récent, au cas où il y en aurait
+    plusieurs (option 1 : autant de prévisionnels qu'on veut).
+
+    Sert à pré-sélectionner automatiquement la ramasse à mettre à jour
+    dans /chargement-camion — évite à l'opérateur de scroller pour
+    retrouver « celle d'hier ».
+
+    Retourne ``None`` si aucun prévisionnel ouvert pour ce destinataire.
+    """
+    tid = tenant_id or current_tenant_id()
+    rows = run_sql(
+        """SELECT id FROM ramasse_history
+           WHERE tenant_id    = :tid
+             AND destinataire = :dest
+             AND status       = 'previsionnel'
+             AND driver_passed = FALSE
+             AND deleted_at  IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        {"tid": tid, "dest": destinataire},
+    )
+    return str(rows[0]["id"]) if rows else None
 
 
 def get_last_packaging_for_dest(

@@ -52,8 +52,9 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `pages/auth.py` | `/login`, `/reset/{token}` | Login, signup, password reset |
 | `pages/accueil.py` | `/accueil` | Home — file upload, EasyBeer sync |
 | `pages/production.py` | `/production` | Production planning + EasyBeer brassin creation |
-| `pages/ramasse.py` | `/ramasse` | Harvest/collection sheet + BL PDF/Excel export |
 | `pages/etiquettes_palette.py` | `/etiquettes-palette` | Scan carton iPhone/iPad → PDF étiquette palette (GS1-128) — voir [docs/ETIQUETTES_PALETTE.md](docs/ETIQUETTES_PALETTE.md) |
+| `pages/chargement_camion.py` | `/chargement-camion` | Scan SSCC palette → BL prévisionnel / définitif (workflow ramasse unique) |
+| `pages/historique_ramasses.py` | `/historique-ramasses` | Historique complet + corbeille + export CSV |
 | `pages/stocks.py` | `/stocks` | Stock autonomy by supplier, order suggestions |
 | `pages/ressources.py` | `/ressources` | Supplier ordering constraints editor (lead time, min pallets) |
 | `pages/theme.py` | — | Design system, page layout, custom components |

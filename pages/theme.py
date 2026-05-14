@@ -66,9 +66,9 @@ NAV_ITEMS: list[tuple] = [
     ("home",           "Accueil",              "/accueil"),
     ("factory",        "Production",           "/production"),
     ("insights",       "Prévisions",           "/previsions"),
-    ("local_shipping", "Fiche de ramasse",     "/ramasse"),
     ("qr_code_2",      "Étiquettes palette",   "/etiquettes-palette"),
     ("departure_board", "Chargement camion",   "/chargement-camion"),
+    ("history",        "Historique ramasses",  "/historique-ramasses"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("bar_chart",      "Commercial",            "/commercial"),
     # Groupe dépliable — 4 éléments : (icon, label, None, children)
@@ -524,9 +524,9 @@ def page_layout(title: str, icon: str = "", current_path: str = "/"):
     Context manager pour le layout partagé de toutes les pages.
 
     Usage :
-        @ui.page('/ramasse')
-        def page_ramasse():
-            with page_layout("Fiche de ramasse", "local_shipping", "/ramasse"):
+        @ui.page('/chargement-camion')
+        def page_chargement():
+            with page_layout("Chargement camion", "departure_board", "/chargement-camion"):
                 ui.label("Contenu ici")
     """
     apply_quasar_theme()

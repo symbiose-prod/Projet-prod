@@ -60,7 +60,7 @@ Ces règles sont vérifiées par `scripts/check_layers.py` (lancé en CI).
 | Un appel HTTP EasyBeer | `common/easybeer/<tag>.py` | `common/easybeer/brassins.py` |
 | Un modèle typé d'une réponse API | `common/easybeer/models.py` | `AutonomieProduit` |
 | Une fonction métier qui orchestre plusieurs appels | `common/services/<domaine>_service.py` | `stocks_service.fetch_and_compute_bom` |
-| Une page ou un composant UI | `pages/` | `pages/ramasse.py` |
+| Une page ou un composant UI | `pages/` | `pages/chargement_camion.py` |
 | Un composant UI réutilisable | `pages/theme.py` | `confirm_dialog`, `error_banner` |
 | Une requête SQL | Module dédié dans `common/` | `common/ramasse_history.py` |
 | Un audit trail | Via `common/audit.log_event` | Voir `common/ramasse_history._audit()` |
@@ -259,7 +259,7 @@ import pages.my_page  # noqa: F401 — /my-page
 
 ## Points d'évolution connus
 
-- [ ] `pages/ramasse.py` (1662 LOC), `pages/stocks.py` (1527 LOC), `pages/production.py` (1129 LOC) restent denses. Extraction progressive via services à chaque PR qui les touche.
+- [ ] `pages/chargement_camion.py` (~1700 LOC), `pages/stocks.py` (1527 LOC), `pages/production.py` (1129 LOC) restent denses. Extraction progressive via services à chaque PR qui les touche.
 - [ ] `_render_easybeer_section` dans `pages/_production_easybeer.py` mélange encore UI et logique — candidat pour un futur `production_brassins_service`.
 - [ ] RLS Postgres est en mode permissif (compatible owner `shark`). Full-enforcement nécessite un rôle applicatif dédié non-owner — étape planifiée.
 - [ ] Migration vers Pydantic / modèles typés en cours (voir `common/easybeer/models.py`). Certaines fonctions retournent encore `dict[str, Any]`.

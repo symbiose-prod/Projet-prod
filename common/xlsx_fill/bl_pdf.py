@@ -27,6 +27,7 @@ def build_bl_enlevements_pdf(
     issuer_footer: str | None = "Produits issus de l'Agriculture Biologique certifi\u00e9 par FR-BIO-01",
     previous_lines: list[dict] | None = None,
     version: int = 1,
+    kind: str = "",
 ) -> bytes:
     """PDF BL au look Excel : encadre, tableau gris, totaux. (Helvetica/latin-1).
 
@@ -65,8 +66,14 @@ def build_bl_enlevements_pdf(
         except (ValueError, TypeError):
             return 0
 
-    # ---------- Lookup des anciennes lignes (mode mise à jour) ----------
-    is_update = bool(previous_lines) and version > 1
+    # ---------- Lookup des anciennes lignes (diff vs prévisionnel ou v1) ----------
+    # Le diff JAUNE/BLEU s'applique dans 2 cas :
+    #   - kind='definitif' avec previous_lines = snapshot du prévisionnel
+    #   - legacy (kind vide) avec version > 1 (anciennes ramasses /ramasse)
+    is_definitif = (kind == "definitif")
+    is_previsionnel = (kind == "previsionnel")
+    is_legacy_update = (not kind) and bool(previous_lines) and version > 1
+    is_update = (is_definitif and bool(previous_lines)) or is_legacy_update
     old_cartons_by_ref: dict[str, int] = {}
     if is_update:
         for prev in previous_lines or []:
@@ -96,6 +103,10 @@ def build_bl_enlevements_pdf(
     FILL_HEADER = (230, 230, 230)    # gris (en-tête, totaux)
     FILL_UPDATE_BANNER = (240, 240, 240)  # gris clair neutre (pour ne pas confondre avec jaune=ajout)
     BORDER_UPDATE_BANNER = (200, 40, 40)  # bordure rouge (attention)
+    FILL_PREV_BANNER = (217, 234, 254)    # bleu très clair
+    BORDER_PREV_BANNER = (37, 99, 235)    # bordure bleue
+    FILL_DEF_BANNER = (220, 252, 231)     # vert très clair
+    BORDER_DEF_BANNER = (21, 128, 61)     # bordure verte (validation)
 
     # ---------- PDF ----------
     pdf = FPDF("P", "mm", "A4")
@@ -137,39 +148,60 @@ def build_bl_enlevements_pdf(
         pdf.cell(0, 4, _txt(issuer_footer), ln=1)
     pdf.ln(2)
 
-    # ---- Bandeau MISE À JOUR (uniquement si version > 1) ----
-    if is_update:
-        pdf.set_fill_color(*FILL_UPDATE_BANNER)
-        pdf.set_draw_color(*BORDER_UPDATE_BANNER)
+    # ---- Bandeau d'état (prévisionnel / définitif / legacy mise à jour) ----
+    def _draw_banner(title: str, subtitle: str, fill_rgb, border_rgb,
+                     subtitle_height: int = 6):
+        """Trace un bandeau encadré avec titre gras + sous-titre."""
+        pdf.set_fill_color(*fill_rgb)
+        pdf.set_draw_color(*border_rgb)
         pdf.set_line_width(0.5)
         pdf.set_x(left)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(
-            width,
-            9,
-            _txt(f"  /!\\  MISE A JOUR - Version {version}"),
-            border=1,
-            ln=1,
-            align="L",
-            fill=True,
+        pdf.cell(width, 9, _txt(title), border=1, ln=1, align="L", fill=True)
+        if subtitle:
+            pdf.set_x(left)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.cell(width, subtitle_height, _txt(subtitle),
+                     border=1, ln=1, align="L", fill=True)
+        pdf.set_line_width(0.2)
+        pdf.set_draw_color(0, 0, 0)
+        pdf.ln(2)
+
+    if is_previsionnel:
+        _draw_banner(
+            title="  PREVISIONNEL - pour dimensionnement camion",
+            subtitle=(
+                "Estimation indicative. Un BL definitif (rectificatif) "
+                "sera envoye au moment du chargement."
+            ),
+            fill_rgb=FILL_PREV_BANNER,
+            border_rgb=BORDER_PREV_BANNER,
         )
-        pdf.set_x(left)
-        pdf.set_font("Helvetica", "", 9)
-        pdf.cell(
-            width,
-            6,
-            _txt(
+    elif is_definitif:
+        subtitle = (
+            "Reflete exactement ce qui part dans le camion."
+        )
+        if bool(previous_lines):
+            subtitle += (
+                " Ecart vs previsionnel : nouvelles lignes en JAUNE, "
+                "modifiees en BLEU (ancien nb cartons indique)."
+            )
+        _draw_banner(
+            title="  BL DEFINITIF - Rectificatif",
+            subtitle=subtitle,
+            fill_rgb=FILL_DEF_BANNER,
+            border_rgb=BORDER_DEF_BANNER,
+        )
+    elif is_legacy_update:
+        _draw_banner(
+            title=f"  /!\\  MISE A JOUR - Version {version}",
+            subtitle=(
                 "Nouvelles lignes surlignees en JAUNE "
                 "- Lignes modifiees surlignees en BLEU (ancien nb cartons indique)"
             ),
-            border=1,
-            ln=1,
-            align="L",
-            fill=True,
+            fill_rgb=FILL_UPDATE_BANNER,
+            border_rgb=BORDER_UPDATE_BANNER,
         )
-        pdf.set_line_width(0.2)  # reset
-        pdf.set_draw_color(0, 0, 0)
-        pdf.ln(2)
 
     # ---- Encadre "BON DE LIVRAISON"
     x_box, w_box = left, width * 0.70
