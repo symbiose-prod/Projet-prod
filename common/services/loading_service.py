@@ -109,7 +109,9 @@ def lookup_sscc(sscc_raw: str, tenant_id: str) -> LookupResult:
            LEFT JOIN etiquette_palette_history eph
                   ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
            LEFT JOIN palette_loadings pl
-                  ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
+                  ON pl.sscc = sl.sscc
+                 AND pl.tenant_id = sl.tenant_id
+                 AND pl.unlinked_at IS NULL
            WHERE sl.sscc = :sscc AND sl.tenant_id = :t
            LIMIT 1""",
         {"sscc": sscc, "t": tenant_id},
@@ -305,11 +307,13 @@ def link_palettes_to_ramasse(
     conflicts: list[str] = []
     for sscc in sscc_list:
         try:
+            # ON CONFLICT cible l'index unique partiel `unlinked_at IS NULL` :
+            # une palette unlinkée pourra être ré-INSÉRÉE pour un nouveau lien.
             rows = run_sql(
                 """INSERT INTO palette_loadings
                        (tenant_id, sscc, ramasse_id, scanned_by)
                    VALUES (:t, :sscc, :rid, :u)
-                   ON CONFLICT (sscc) DO NOTHING
+                   ON CONFLICT (sscc) WHERE unlinked_at IS NULL DO NOTHING
                    RETURNING id""",
                 {
                     "t": tenant_id, "sscc": sscc,
@@ -346,7 +350,9 @@ def list_unscanned_recent_palettes(
            LEFT JOIN etiquette_palette_history eph
                   ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
            LEFT JOIN palette_loadings pl
-                  ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
+                  ON pl.sscc = sl.sscc
+                 AND pl.tenant_id = sl.tenant_id
+                 AND pl.unlinked_at IS NULL
            WHERE sl.tenant_id = :t
              AND sl.generated_at > now() - (:d * INTERVAL '1 day')
              AND sl.voided_at IS NULL
@@ -469,3 +475,87 @@ def create_palette_manually(
         sscc_clean, user_email, gtin_palette, lot, case_count,
     )
     return True
+
+
+# ─── Source de vérité : reconstruction des lignes depuis palette_loadings ───
+
+def rebuild_lines_from_palettes(
+    ramasse_id: str,
+    tenant_id: str,
+    *,
+    carton_weight_fn=None,
+) -> tuple[list[dict], int, int, int]:
+    """Reconstruit les lignes d'une ramasse depuis ses palettes actives.
+
+    C'est la source de vérité unique : le BL d'une ramasse = l'agrégation
+    des palettes encore liées (``unlinked_at IS NULL``). Aucun merge JSON,
+    aucune addition applicative — l'état physique du camion (les SSCC
+    réellement liés) dicte le BL.
+
+    Les SSCC annulés (``voided_at IS NOT NULL``) sont automatiquement
+    exclus, de même que les palettes sans entrée dans
+    ``etiquette_palette_history`` (anomalie DB — on log mais on n'inclut
+    pas la palette pour éviter de générer un BL avec un libellé vide).
+
+    Args:
+        ramasse_id: UUID de la ramasse cible.
+        tenant_id:  scope tenant.
+        carton_weight_fn: injectable pour les tests
+            (signature ``(fmt, designation) -> float``).
+
+    Returns:
+        ``(lines, total_cartons, total_palettes, total_poids_kg)`` —
+        prêt à être persisté dans ``ramasse_history`` via
+        ``save_ramasse`` / ``update_ramasse``.
+    """
+    rows = run_sql(
+        """SELECT
+              sl.sscc, sl.gtin_palette, sl.lot, sl.ddm,
+              sl.case_count, sl.generated_at,
+              eph.designation, eph.fmt, eph.marque, eph.gout,
+              eph.pcb, eph.gtin_uvc
+           FROM palette_loadings pl
+           JOIN sscc_log sl
+                ON sl.sscc = pl.sscc AND sl.tenant_id = pl.tenant_id
+           LEFT JOIN etiquette_palette_history eph
+                ON eph.sscc = pl.sscc AND eph.tenant_id = pl.tenant_id
+           WHERE pl.ramasse_id    = :rid
+             AND pl.tenant_id     = :t
+             AND pl.unlinked_at  IS NULL
+             AND sl.voided_at    IS NULL
+             AND eph.designation IS NOT NULL
+           ORDER BY pl.scanned_at""",
+        {"rid": ramasse_id, "t": tenant_id},
+    ) or []
+
+    palettes: list[PaletteInfo] = []
+    for r in rows:
+        try:
+            ddm = r.get("ddm")
+            ddm_date = ddm if isinstance(ddm, _dt.date) or ddm is None \
+                else _dt.date.fromisoformat(str(ddm)[:10])
+            palettes.append(PaletteInfo(
+                sscc=str(r["sscc"]),
+                gtin_palette=str(r.get("gtin_palette") or ""),
+                lot=str(r.get("lot") or ""),
+                ddm=ddm_date,
+                case_count=int(r.get("case_count") or 0),
+                designation=str(r.get("designation") or ""),
+                fmt=str(r.get("fmt") or ""),
+                marque=str(r.get("marque") or ""),
+                gout=str(r.get("gout") or ""),
+                pcb=int(r.get("pcb") or 0),
+                gtin_uvc=str(r.get("gtin_uvc") or ""),
+                generated_at=r["generated_at"],
+            ))
+        except (KeyError, TypeError, ValueError):
+            _log.warning(
+                "Palette liée ignorée (données invalides) ramasse=%s : %r",
+                ramasse_id, r, exc_info=True,
+            )
+
+    lines = aggregate_palettes_to_lines(palettes, carton_weight_fn=carton_weight_fn)
+    total_cartons  = sum(int(line["cartons"])  for line in lines)
+    total_palettes = sum(int(line["palettes"]) for line in lines)
+    total_poids    = sum(int(line["poids"])    for line in lines)
+    return (lines, total_cartons, total_palettes, total_poids)

@@ -6,13 +6,16 @@ SSCC et d'agrégation des palettes en lignes ramasse.
 from __future__ import annotations
 
 import datetime as _dt
+from unittest import mock
 
 import pytest
 
+from common.services import loading_service
 from common.services.loading_service import (
     PaletteInfo,
     _normalize_sscc,
     aggregate_palettes_to_lines,
+    rebuild_lines_from_palettes,
 )
 
 # ─── _normalize_sscc ────────────────────────────────────────────────────────
@@ -138,3 +141,104 @@ class TestAggregate:
             def boom(fmt, d):
                 raise ValueError("fmt inconnu")
             aggregate_palettes_to_lines([_palette()], carton_weight_fn=boom)
+
+
+# ─── rebuild_lines_from_palettes ────────────────────────────────────────────
+
+def _db_row(
+    sscc="3" + "3" * 17, fmt="12x33", designation="Kéfir Test", case_count=126,
+    lot="L001", gtin_palette="03770014427250",
+    ddm=_dt.date(2027, 5, 1),
+):
+    """Forge une row telle que run_sql() la retourne — keys alignés sur
+    le SELECT de rebuild_lines_from_palettes."""
+    return {
+        "sscc": sscc, "gtin_palette": gtin_palette, "lot": lot, "ddm": ddm,
+        "case_count": case_count, "generated_at": _dt.datetime(2026, 5, 13, 14, 0),
+        "designation": designation, "fmt": fmt, "marque": "SYM", "gout": "Test",
+        "pcb": 12, "gtin_uvc": "",
+    }
+
+
+class TestRebuildLinesFromPalettes:
+
+    def test_no_palettes_returns_empty(self):
+        with mock.patch.object(loading_service, "run_sql", return_value=[]):
+            lines, tc, tp, tw = rebuild_lines_from_palettes(
+                "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
+            )
+        assert lines == []
+        assert (tc, tp, tw) == (0, 0, 0)
+
+    def test_single_palette_aggregated(self):
+        with mock.patch.object(loading_service, "run_sql", return_value=[_db_row()]):
+            lines, tc, tp, tw = rebuild_lines_from_palettes(
+                "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
+            )
+        assert len(lines) == 1
+        assert tc == 126
+        assert tp == 1
+        # 126 × 6.741 + 1 × 25 = 849.4 + 25 ≈ 874
+        assert tw == round(126 * 6.741 + 25)
+
+    def test_two_palettes_same_product_sum(self):
+        # Deux palettes du même produit → une seule ligne avec totaux cumulés
+        rows = [_db_row(), _db_row(sscc="3" + "4" * 17)]
+        with mock.patch.object(loading_service, "run_sql", return_value=rows):
+            lines, tc, tp, tw = rebuild_lines_from_palettes(
+                "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
+            )
+        assert len(lines) == 1
+        assert tc == 252
+        assert tp == 2
+
+    def test_two_different_products_two_lines(self):
+        rows = [
+            _db_row(designation="Kéfir Pêche", fmt="6x75", case_count=84),
+            _db_row(
+                designation="Kéfir Gingembre", fmt="6x33", case_count=216,
+                sscc="3" + "4" * 17,
+            ),
+        ]
+        with mock.patch.object(loading_service, "run_sql", return_value=rows):
+            lines, tc, tp, tw = rebuild_lines_from_palettes(
+                "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
+            )
+        assert len(lines) == 2
+        assert tc == 300  # 84 + 216
+        assert tp == 2
+
+    def test_invalid_row_skipped_without_raising(self):
+        # Row avec ddm en string mal formé → ignorée, on continue avec les bonnes
+        good = _db_row()
+        bad = _db_row(sscc="3" + "5" * 17)
+        bad["ddm"] = "not-a-date"  # ValueError dans fromisoformat
+        with mock.patch.object(loading_service, "run_sql", return_value=[good, bad]):
+            lines, tc, tp, tw = rebuild_lines_from_palettes(
+                "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
+            )
+        # Seule la bonne row a été agrégée
+        assert tp == 1
+        assert tc == 126
+
+    def test_sql_filters_active_only(self):
+        # Vérifie que la query filtre bien sur unlinked_at IS NULL et voided_at IS NULL
+        # (test de régression contre l'ancienne logique additive).
+        captured = {}
+
+        def fake_run_sql(sql, params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        with mock.patch.object(loading_service, "run_sql", side_effect=fake_run_sql):
+            rebuild_lines_from_palettes(
+                "rid-42", "tid-7", carton_weight_fn=_fake_carton_weight,
+            )
+
+        sql = captured["sql"]
+        # Garde-fous : si quelqu'un retire un de ces filtres, ces assertions sautent
+        assert "pl.unlinked_at  IS NULL" in sql or "pl.unlinked_at IS NULL" in sql
+        assert "sl.voided_at    IS NULL" in sql or "sl.voided_at IS NULL" in sql
+        assert "eph.designation IS NOT NULL" in sql
+        assert captured["params"] == {"rid": "rid-42", "t": "tid-7"}
