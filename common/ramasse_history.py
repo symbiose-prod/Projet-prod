@@ -581,6 +581,43 @@ def purge_expired_ramasses(
     return purged
 
 
+def find_active_previsionnel_for_dest(
+    destinataire: str,
+    tenant_id: str | None = None,
+) -> str | None:
+    """Retourne l'``id`` du prévisionnel en cours pour ce destinataire.
+
+    Critères :
+    - ``status = 'previsionnel'``
+    - ``driver_passed = FALSE`` (sinon il est figé, on ne le rouvre pas)
+    - ``deleted_at IS NULL`` (corbeille exclue)
+
+    Pas de filtre temporel : un prévisionnel envoyé il y a 3 jours et
+    jamais converti en définitif reste candidat. Tri ``created_at
+    DESC`` → on prend le plus récent, au cas où il y en aurait
+    plusieurs (option 1 : autant de prévisionnels qu'on veut).
+
+    Sert à pré-sélectionner automatiquement la ramasse à mettre à jour
+    dans /chargement-camion — évite à l'opérateur de scroller pour
+    retrouver « celle d'hier ».
+
+    Retourne ``None`` si aucun prévisionnel ouvert pour ce destinataire.
+    """
+    tid = tenant_id or current_tenant_id()
+    rows = run_sql(
+        """SELECT id FROM ramasse_history
+           WHERE tenant_id    = :tid
+             AND destinataire = :dest
+             AND status       = 'previsionnel'
+             AND driver_passed = FALSE
+             AND deleted_at  IS NULL
+           ORDER BY created_at DESC
+           LIMIT 1""",
+        {"tid": tid, "dest": destinataire},
+    )
+    return str(rows[0]["id"]) if rows else None
+
+
 def get_last_packaging_for_dest(
     destinataire: str,
     tenant_id: str | None = None,

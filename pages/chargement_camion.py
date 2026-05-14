@@ -39,6 +39,7 @@ from common.ramasse import (
 from common.ramasse_history import (
     delete_ramasse,
     finalize_ramasse_lines,
+    find_active_previsionnel_for_dest,
     get_last_packaging_for_dest,
     get_ramasse,
     list_ramasses,
@@ -273,6 +274,14 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             ramasse_to_update_select.update()
 
         _refresh_existing_ramasses()
+
+        # Bandeau d'auto-sélection — affiché quand on a trouvé un
+        # prévisionnel ouvert pour le destinataire courant et qu'on l'a
+        # pré-sélectionné pour update. Laisse à l'opérateur la
+        # possibilité visuelle de comprendre « pourquoi cette ramasse
+        # est déjà cochée » et de la désélectionner s'il veut créer une
+        # nouvelle ramasse à la place.
+        auto_select_banner = ui.row().classes("w-full")
 
         # Liste des palettes déjà liées à la ramasse sélectionnée — pour
         # permettre de retirer du BL une palette pas prête / cassée /
@@ -574,6 +583,14 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             return None
         return ramasse_status_by_id.get(str(rid))
 
+    # Cache des palettes liées à la ramasse pré-sélectionnée — populé par
+    # _refresh_linked_palettes et lu par _refresh_summary pour distinguer
+    # « déjà liées » vs « panier scanné maintenant ». Pas une source de
+    # vérité (le BL est rebuild depuis la DB au moment du send) — juste
+    # un cache d'affichage qu'on rafraîchit aux mêmes moments que la
+    # liste UI.
+    linked_cache: dict[str, list[PaletteInfo]] = {"items": []}
+
     def _refresh_linked_palettes():
         """Recharge la liste des palettes déjà liées à la ramasse sélectionnée.
 
@@ -584,12 +601,15 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         linked_palettes_container.clear()
         rid = ramasse_to_update_select.value
         if not rid or rid == "":
+            linked_cache["items"] = []
+            _refresh_summary()  # nettoie le récap « déjà liées »
             return
         try:
             linked = list_linked_palettes(str(rid), tenant_id)
         except Exception:
             _log.warning("Échec list_linked_palettes", exc_info=True)
             linked = []
+        linked_cache["items"] = linked
 
         with linked_palettes_container:
             if not linked:
@@ -717,16 +737,19 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         Règles :
         - create (pas de ramasse sélectionnée) : les 2 boutons visibles,
           prévisionnel en parcours nominal, définitif si on veut sauter
-          l'étape prévisionnelle.
+          l'étape prévisionnelle. Actifs uniquement si panier non-vide.
         - update d'une ``previsionnel`` : prev_btn → "Renvoyer
           prévisionnel" (option 1 : autant de fois qu'on veut), def_btn
-          → "Envoyer BL définitif" (transition canonique).
+          → "Envoyer BL définitif" (transition canonique). Actifs dès
+          qu'on a quelque chose à envoyer — soit du panier scanné, soit
+          des palettes déjà liées (cas « envoi définitif sans ajout »).
         - update d'une ``definitif`` : prev_btn caché (régression
           interdite), def_btn → "Corriger BL définitif" (rare).
         - link_only_btn : visible uniquement si une ramasse est
           sélectionnée ET le panier n'est pas vide (rattrapage).
         """
         has_basket = bool(state["basket"])
+        has_linked = bool(linked_cache.get("items"))
         current_status = _current_target_status()
         rid = ramasse_to_update_select.value
         has_ramasse = bool(rid) and rid != ""
@@ -743,7 +766,12 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             prev_btn.set_visibility(True)
             prev_btn.text = "Envoyer prévisionnel"
             def_btn.text = "Envoyer BL définitif"
-        if has_basket:
+
+        # En update, on peut envoyer même sans nouvelles palettes scannées
+        # (par ex. après avoir retiré une palette du BL et voulant
+        # renvoyer la version corrigée). En create, panier obligatoire.
+        can_send = has_basket if not has_ramasse else (has_basket or has_linked)
+        if can_send:
             prev_btn.enable()
             def_btn.enable()
         else:
@@ -758,27 +786,87 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             link_only_btn.disable()
 
     def _refresh_summary():
-        """Recalcule totaux + détail produit. Met à jour les boutons d'action."""
+        """Recalcule totaux + détail produit. Distingue ce qui est déjà
+        au BL (palettes liées en DB) de ce qu'on s'apprête à ajouter
+        (panier scanné maintenant).
+
+        En mode create (pas de ramasse à updater) : récap classique du
+        panier uniquement.
+        En mode update : 3 lignes — « déjà au BL », « + à ajouter »,
+        « Total après envoi ». Le détail par produit est calculé sur la
+        somme (linked ∪ basket) pour refléter le BL final.
+        """
         basket: list[PaletteInfo] = state["basket"]
+        linked: list[PaletteInfo] = linked_cache.get("items") or []
         details_container.clear()
-        if not basket:
+        is_update_mode = bool(linked) or bool(
+            ramasse_to_update_select.value
+            and ramasse_to_update_select.value != "",
+        )
+
+        # ── Pas de panier ET pas de ramasse → vraiment vide ──
+        if not basket and not linked:
             totals_display.text = "0 palettes · 0 cartons"
             totals_display.style(f"color: {COLORS['ink2']}; font-size: 28px")
             weight_display.text = ""
             _refresh_action_buttons()
             return
-        lines = aggregate_palettes_to_lines(basket)
-        total_cartons = sum(line["cartons"] for line in lines)
-        total_palettes = sum(line["palettes"] for line in lines)
-        total_poids = sum(line["poids"] for line in lines)
-        totals_display.text = f"{total_palettes} palettes · {total_cartons} cartons"
-        totals_display.style(
-            f"color: {COLORS['green']}; font-weight: 700; "
-            "font-size: 32px; text-align: center; line-height: 1.2",
-        )
-        weight_display.text = f"≈ {total_poids:,} kg".replace(",", " ")
+
+        # Totaux par bucket
+        basket_lines = aggregate_palettes_to_lines(basket) if basket else []
+        linked_lines = aggregate_palettes_to_lines(linked) if linked else []
+        # Combinés pour le détail par produit (BL final après envoi)
+        combined_lines = aggregate_palettes_to_lines(list(linked) + list(basket))
+
+        b_palettes = sum(line["palettes"] for line in basket_lines)
+        b_cartons = sum(line["cartons"] for line in basket_lines)
+        l_palettes = sum(line["palettes"] for line in linked_lines)
+        l_cartons = sum(line["cartons"] for line in linked_lines)
+        c_palettes = sum(line["palettes"] for line in combined_lines)
+        c_cartons = sum(line["cartons"] for line in combined_lines)
+        c_poids = sum(line["poids"] for line in combined_lines)
+
+        # ── Mode update : récap composite ──
+        if is_update_mode:
+            totals_display.text = (
+                f"{c_palettes} palettes · {c_cartons} cartons"
+            )
+            totals_display.style(
+                f"color: {COLORS['green']}; font-weight: 700; "
+                "font-size: 32px; text-align: center; line-height: 1.2",
+            )
+            breakdown_lines = []
+            if l_palettes:
+                breakdown_lines.append(
+                    f"{l_palettes} déjà liée(s) au BL ({l_cartons} cartons)",
+                )
+            if b_palettes:
+                breakdown_lines.append(
+                    f"+ {b_palettes} scannée(s) à ajouter ({b_cartons} cartons)",
+                )
+            weight_display.text = (
+                "  ·  ".join(breakdown_lines) + f"  ≈  {c_poids:,} kg"
+            ).replace(",", " ")
+        else:
+            # ── Mode create : panier seul ──
+            totals_display.text = (
+                f"{b_palettes} palettes · {b_cartons} cartons"
+            )
+            totals_display.style(
+                f"color: {COLORS['green']}; font-weight: 700; "
+                "font-size: 32px; text-align: center; line-height: 1.2",
+            )
+            b_poids = sum(line["poids"] for line in basket_lines)
+            weight_display.text = f"≈ {b_poids:,} kg".replace(",", " ")
+
+        # Détail par produit (combiné — c'est le BL final après envoi).
+        # En mode update, on indique « (BL après envoi) » pour clarifier.
         with details_container:
-            for line in lines:
+            if is_update_mode and basket:
+                ui.label("Détail combiné (BL après envoi)").classes(
+                    "text-caption q-pa-xs",
+                ).style(f"color: {COLORS['ink2']}; font-style: italic")
+            for line in combined_lines:
                 with ui.row().classes(
                     "w-full items-center q-pa-xs",
                 ).style(f"border-top: 1px solid {COLORS['border']}"):
@@ -1079,8 +1167,20 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         En cas d'échec mid-flow sur un create, soft-delete du placeholder.
         """
         basket: list[PaletteInfo] = state["basket"]
-        if not basket:
-            ui.notify("Panier vide.", type="warning")
+        rid_for_update = (
+            ramasse_to_update_select.value
+            if ramasse_to_update_select.value else None
+        )
+        has_linked = bool(linked_cache.get("items"))
+        # En create : panier obligatoire. En update : on autorise un panier
+        # vide si la ramasse a déjà des palettes liées (cas typique : on a
+        # retiré une palette et on renvoie le BL corrigé sans rien ajouter).
+        if not basket and not (rid_for_update and has_linked):
+            ui.notify(
+                "Rien à envoyer — scanne au moins une palette "
+                "ou sélectionne une ramasse contenant déjà des palettes.",
+                type="warning",
+            )
             return
 
         # Récupère le state UI
@@ -1410,8 +1510,103 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     clear_basket_btn.on_click(_on_clear_basket)
 
+    def _render_auto_select_banner(rid: str, dest: str):
+        """Bandeau d'info affiché quand on auto-sélectionne un prévisionnel.
+
+        Explicite l'auto-sélection (sinon l'opérateur peut se demander
+        pourquoi la ramasse est déjà cochée) et offre un bouton « Créer
+        une nouvelle ramasse à la place » pour sortir de l'auto-update.
+        """
+        auto_select_banner.clear()
+        with auto_select_banner:
+            with ui.row().classes(
+                "w-full items-center gap-3 q-pa-sm",
+            ).style(
+                "background: #ECFDF5; border: 1px solid #6EE7B7; "
+                "border-radius: 8px",
+            ):
+                ui.icon("auto_awesome", color="green-7", size="md")
+                with ui.column().classes("flex-1 gap-0"):
+                    ui.label("Prévisionnel ouvert détecté").classes(
+                        "text-subtitle2",
+                    ).style("color: #065F46; font-weight: 600")
+                    ui.label(
+                        f"Une ramasse prévisionnelle pour {dest} est en cours — "
+                        "elle a été pré-sélectionnée pour mise à jour. "
+                        "Scanne pour ajouter des palettes, ou crée-en une "
+                        "nouvelle si tu préfères.",
+                    ).classes("text-caption").style("color: #047857")
+
+                def _switch_to_create():
+                    ramasse_to_update_select.value = ""
+                    auto_select_banner.clear()
+                    _on_ramasse_select_changed()
+
+                ui.button(
+                    "Créer une nouvelle ramasse",
+                    icon="add",
+                    on_click=_switch_to_create,
+                ).props("flat dense color=green-8")
+
+    def _try_auto_select_previsionnel():
+        """Cherche un prévisionnel ouvert pour le destinataire courant et
+        pré-sélectionne le select s'il y en a un.
+
+        Conditions de déclenchement (toutes nécessaires) :
+        - panier vide (sinon on respecte le travail en cours),
+        - select ramasse vide (sinon l'opérateur a fait un choix conscient),
+        - destinataire sélectionné.
+
+        Si un prévisionnel est trouvé, on positionne le select + on
+        affiche le bandeau d'info. Sinon, no-op silencieux.
+        """
+        if state["basket"]:
+            return
+        if ramasse_to_update_select.value:
+            return
+        dest = (dest_select.value or "").strip()
+        if not dest:
+            return
+        try:
+            rid = find_active_previsionnel_for_dest(dest, tenant_id=tenant_id)
+        except Exception:
+            _log.warning("Échec find_active_previsionnel_for_dest", exc_info=True)
+            return
+        if not rid:
+            auto_select_banner.clear()
+            return
+        # Vérifie que la ramasse fait bien partie des options actuelles
+        # (refresh peut ne pas l'avoir incluse si lim=15 dépassée).
+        if rid not in ramasse_status_by_id:
+            _refresh_existing_ramasses()
+        if rid not in ramasse_status_by_id:
+            _log.info(
+                "Prévisionnel trouvé %s mais hors liste limit=15, skip auto-select",
+                rid,
+            )
+            return
+        ramasse_to_update_select.value = rid
+        _render_auto_select_banner(rid, dest)
+        _on_ramasse_select_changed()
+
+    # Au changement de destinataire : réessayer l'auto-sélection
+    # (un dest différent peut avoir son propre prévisionnel ouvert,
+    # ou aucun → on désélectionne pour éviter l'incohérence).
+    def _on_dest_changed_for_autoselect(_e=None):
+        # Si une ramasse était sélectionnée pour un autre destinataire,
+        # on libère la sélection (l'opérateur ne voudra pas updater une
+        # ramasse pour Sofripa s'il a changé de dest).
+        current_rid = ramasse_to_update_select.value
+        if current_rid and current_rid in ramasse_status_by_id:
+            ramasse_to_update_select.value = ""
+            auto_select_banner.clear()
+        _try_auto_select_previsionnel()
+
+    dest_select.on_value_change(_on_dest_changed_for_autoselect)
+
     # Initial render — affichera les palettes restaurées si présentes
     _refresh_basket()
+    _try_auto_select_previsionnel()
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
