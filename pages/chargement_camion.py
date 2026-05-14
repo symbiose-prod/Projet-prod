@@ -31,6 +31,8 @@ from common.audit import ACTION_RAMASSE_SAVED
 from common.email import send_html_with_pdf
 from common.ramasse import fmt_paris, load_destinataires, today_paris
 from common.ramasse_history import (
+    delete_ramasse,
+    finalize_ramasse_lines,
     get_ramasse,
     list_ramasses,
     save_ramasse,
@@ -42,6 +44,7 @@ from common.services.loading_service import (
     link_palettes_to_ramasse,
     list_unscanned_recent_palettes,
     lookup_sscc,
+    rebuild_lines_from_palettes,
 )
 from common.services.ramasse_service import (
     build_email_body,
@@ -750,105 +753,81 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         validate_btn.disable()
         validate_btn.props("loading")
 
+        # Nouveau flow (PR 2) — palette_loadings est la source de vérité.
+        # Ordre obligatoire (la FK palette_loadings.ramasse_id l'impose) :
+        #   1. INSERT ramasse_history (placeholder vide en cas de create).
+        #   2. INSERT palette_loadings (panier → ramasse_id).
+        #   3. rebuild_lines_from_palettes(ramasse_id) — agrège la vérité DB.
+        #   4. Build PDF avec les vraies lignes.
+        #   5. finalize (create) ou update_ramasse (incrémente version, diff).
+        #   6. Email.
+        # Si une étape ultérieure échoue en mode create, on soft-delete le
+        # placeholder pour ne pas laisser de ramasse fantôme à 0 carton.
+
+        ramasse_id_to_update = (
+            state["ramasse_to_update_id"]
+            or (ramasse_to_update_select.value if ramasse_to_update_select.value else None)
+        )
+        is_update = bool(ramasse_id_to_update)
+        previous_lines: list[dict] | None = None
+        next_version = 1
+
+        if is_update:
+            existing = await asyncio.to_thread(
+                get_ramasse, ramasse_id_to_update, tenant_id=tenant_id,
+            )
+            if not existing:
+                ui.notify(
+                    "Ramasse à mettre à jour introuvable. Annule et recommence.",
+                    type="negative",
+                )
+                validate_btn.enable()
+                validate_btn.props(remove="loading")
+                return
+            if existing.get("driver_passed"):
+                ui.notify(
+                    "Ramasse verrouillée (chauffeur déjà passé). "
+                    "Crée une nouvelle ramasse.",
+                    type="negative",
+                )
+                validate_btn.enable()
+                validate_btn.props(remove="loading")
+                return
+            next_version = int(existing.get("version") or 1) + 1
+            previous_lines = existing.get("lines") or []
+
+        sender_email = os.environ.get("EMAIL_SENDER") or ""
+        recipients = list(dest_emails)
+        if sender_email and sender_email not in recipients:
+            recipients.append(sender_email)
+
+        ramasse_id_final: str | None = None
+        cleanup_placeholder = False  # True si on a créé un placeholder à nettoyer en cas d'erreur
+
         try:
-            # ── 1. Agrège les lignes au format ramasse ──
-            lines = aggregate_palettes_to_lines(basket)
-            total_cartons = sum(line["cartons"] for line in lines)
-            total_palettes = sum(line["palettes"] for line in lines)
-            total_poids = sum(line["poids"] for line in lines)
-
-            # ── 2. Détermine mode (create vs update) ──
-            ramasse_id_to_update = (
-                state["ramasse_to_update_id"]
-                or (ramasse_to_update_select.value if ramasse_to_update_select.value else None)
-            )
-            is_update = bool(ramasse_id_to_update)
-            next_version = 1
-            previous_lines = None
+            # ── 1. INSERT ramasse_history (placeholder si create) ──
             if is_update:
-                existing = await asyncio.to_thread(
-                    get_ramasse, ramasse_id_to_update, tenant_id=tenant_id,
-                )
-                if not existing:
-                    ui.notify(
-                        "Ramasse à mettre à jour introuvable. Annule et recommence.",
-                        type="negative",
-                    )
-                    return
-                if existing.get("driver_passed"):
-                    ui.notify(
-                        "Ramasse verrouillée (chauffeur déjà passé). "
-                        "Crée une nouvelle ramasse.",
-                        type="negative",
-                    )
-                    return
-                next_version = int(existing.get("version") or 1) + 1
-                previous_lines = existing.get("lines") or []
-                # Fusionne avec les lignes existantes : un update v2+ ajoute
-                # AUX lignes existantes (pas remplacement) — cohérent avec le
-                # cas métier "ramasse créée J1 soir, complétée J2 matin".
-                # On agrège par produit pour fusionner les colonnes (ref/produit).
-                merged = _merge_lines(previous_lines, lines)
-                lines = merged
-                total_cartons = sum(line["cartons"] for line in lines)
-                total_palettes = sum(line["palettes"] for line in lines)
-                total_poids = sum(line["poids"] for line in lines)
-
-            # ── 3. Build le PDF BL ──
-            df_lines = _build_df_for_pdf(lines)
-            pdf_bytes = await asyncio.to_thread(
-                build_bl_enlevements_pdf,
-                date_creation=today_paris(),
-                date_ramasse=d,
-                destinataire_title=dest_title,
-                destinataire_lines=dest_addr_lines,
-                df_lines=df_lines,
-                previous_lines=previous_lines,
-                version=next_version,
-            )
-
-            # ── 4. Sauvegarde ramasse (create ou update) ──
-            sender_email = os.environ.get("EMAIL_SENDER") or ""
-            recipients = list(dest_emails)
-            if sender_email and sender_email not in recipients:
-                recipients.append(sender_email)
-
-            if is_update:
-                await asyncio.to_thread(
-                    update_ramasse,
-                    ramasse_id_to_update,
-                    date_ramasse=d,
-                    destinataire=dest_title,
-                    recipients=recipients,
-                    lines=lines,
-                    total_cartons=total_cartons,
-                    total_palettes=total_palettes,
-                    total_poids_kg=total_poids,
-                    pdf_bytes=pdf_bytes,
-                    tenant_id=tenant_id,
-                )
-                ramasse_id_final = ramasse_id_to_update
+                ramasse_id_final = str(ramasse_id_to_update)
             else:
                 ramasse_id_final = await asyncio.to_thread(
                     save_ramasse,
                     date_ramasse=d,
                     destinataire=dest_title,
                     recipients=recipients,
-                    lines=lines,
-                    total_cartons=total_cartons,
-                    total_palettes=total_palettes,
-                    total_poids_kg=total_poids,
-                    pdf_bytes=pdf_bytes,
+                    lines=[], total_cartons=0,
+                    total_palettes=0, total_poids_kg=0,
+                    pdf_bytes=None,
                     tenant_id=tenant_id,
                 )
+                cleanup_placeholder = True
 
-            # ── 5. Lie les palettes à la ramasse ──
+            # ── 2. Lie les palettes du panier à la ramasse ──
             sscc_list = [p.sscc for p in basket]
             inserted, conflicts = await asyncio.to_thread(
                 link_palettes_to_ramasse,
                 tenant_id,
                 sscc_list=sscc_list,
-                ramasse_id=str(ramasse_id_final),
+                ramasse_id=ramasse_id_final,
                 user_email=user_email,
             )
             if conflicts:
@@ -861,6 +840,56 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     "vérifier le journal admin.",
                     type="warning", timeout=6000,
                 )
+
+            # ── 3. Rebuild les lignes depuis palette_loadings (vérité) ──
+            lines, total_cartons, total_palettes, total_poids = await asyncio.to_thread(
+                rebuild_lines_from_palettes, ramasse_id_final, tenant_id,
+            )
+
+            # ── 4. Build le PDF BL avec les vraies lignes ──
+            df_lines = _build_df_for_pdf(lines)
+            pdf_bytes = await asyncio.to_thread(
+                build_bl_enlevements_pdf,
+                date_creation=today_paris(),
+                date_ramasse=d,
+                destinataire_title=dest_title,
+                destinataire_lines=dest_addr_lines,
+                df_lines=df_lines,
+                previous_lines=previous_lines,
+                version=next_version,
+            )
+
+            # ── 5. Persiste les lignes finales + PDF ──
+            if is_update:
+                # update_ramasse incrémente version et snapshot previous_lines
+                # automatiquement (pour le diff PDF lors d'une future mise à jour).
+                await asyncio.to_thread(
+                    update_ramasse,
+                    ramasse_id_final,
+                    date_ramasse=d,
+                    destinataire=dest_title,
+                    recipients=recipients,
+                    lines=lines,
+                    total_cartons=total_cartons,
+                    total_palettes=total_palettes,
+                    total_poids_kg=total_poids,
+                    pdf_bytes=pdf_bytes,
+                    tenant_id=tenant_id,
+                )
+            else:
+                # Patch atomique du placeholder — ne touche pas à version.
+                await asyncio.to_thread(
+                    finalize_ramasse_lines,
+                    ramasse_id_final,
+                    lines=lines,
+                    total_cartons=total_cartons,
+                    total_palettes=total_palettes,
+                    total_poids_kg=total_poids,
+                    pdf_bytes=pdf_bytes,
+                    tenant_id=tenant_id,
+                )
+
+            cleanup_placeholder = False  # success path — pas de rollback
 
             # ── 6. Envoie l'email ──
             subject = build_email_subject(
@@ -895,6 +924,23 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         except Exception as exc:
             _log.exception("Erreur validation chargement camion")
             ui.notify(f"Erreur : {exc}", type="negative", timeout=8000)
+            # Rollback : si on a créé un placeholder mais que la finalisation
+            # n'est pas allée au bout, on évite de laisser une ramasse fantôme
+            # vide dans l'historique. Soft-delete → corbeille (récupérable 7j).
+            if cleanup_placeholder and ramasse_id_final:
+                try:
+                    await asyncio.to_thread(
+                        delete_ramasse, ramasse_id_final, tenant_id=tenant_id,
+                    )
+                    _log.info(
+                        "Placeholder ramasse %s soft-deleted suite à échec validation",
+                        ramasse_id_final,
+                    )
+                except Exception:
+                    _log.warning(
+                        "Cleanup placeholder ramasse %s a échoué",
+                        ramasse_id_final, exc_info=True,
+                    )
         finally:
             validate_btn.enable()
             validate_btn.props(remove="loading")
@@ -978,33 +1024,6 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
-
-def _merge_lines(previous: list[dict], new: list[dict]) -> list[dict]:
-    """Fusionne 2 listes de lignes ramasse par (produit, ref).
-
-    Utilisé en mode v2+ pour ajouter les palettes scannées du matin J2
-    AUX lignes saisies / scannées en J1 soir.
-    """
-    by_key: dict[tuple[str, str], dict] = {}
-    for line in previous:
-        key = (str(line.get("produit") or ""), str(line.get("ref") or ""))
-        by_key[key] = dict(line)
-    for line in new:
-        key = (str(line.get("produit") or ""), str(line.get("ref") or ""))
-        if key in by_key:
-            existing = by_key[key]
-            existing["cartons"] = int(existing.get("cartons") or 0) + int(line.get("cartons") or 0)
-            existing["palettes"] = int(existing.get("palettes") or 0) + int(line.get("palettes") or 0)
-            existing["poids"] = int(existing.get("poids") or 0) + int(line.get("poids") or 0)
-            # On garde la DDM la plus proche
-            if line.get("ddm") and (
-                not existing.get("ddm") or line["ddm"] < existing["ddm"]
-            ):
-                existing["ddm"] = line["ddm"]
-        else:
-            by_key[key] = dict(line)
-    return sorted(by_key.values(), key=lambda r: r.get("produit", ""))
-
 
 def _build_df_for_pdf(lines: list[dict]):
     """Construit le DataFrame attendu par build_bl_enlevements_pdf."""

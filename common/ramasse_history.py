@@ -146,6 +146,65 @@ def save_ramasse(
     return rid
 
 
+def finalize_ramasse_lines(
+    ramasse_id: str,
+    *,
+    lines: list[dict[str, Any]],
+    total_cartons: int,
+    total_palettes: int,
+    total_poids_kg: int,
+    pdf_bytes: bytes | None = None,
+    packaging: list[dict[str, Any]] | None = None,
+    tenant_id: str | None = None,
+) -> bool:
+    """Patch les lignes d'une ramasse fraîchement créée en placeholder.
+
+    Contrairement à :func:`update_ramasse`, NE touche PAS à
+    ``version`` / ``version_log`` / ``previous_lines``. Sémantique :
+    « finalisation atomique du create initial ».
+
+    Use case : ``_on_validate`` du flow scan-driven crée d'abord une
+    ramasse vide pour récupérer son id (FK obligatoire pour
+    ``palette_loadings.ramasse_id``), insère les liens palette, puis
+    appelle ``rebuild_lines_from_palettes`` pour obtenir les vraies
+    lignes — qu'on persiste ici en une seule UPDATE atomique.
+
+    Retourne ``True`` si la ramasse existait et a été patchée, ``False``
+    sinon (introuvable ou hors tenant).
+    """
+    tid = tenant_id or current_tenant_id()
+    params: dict[str, Any] = {
+        "rid": ramasse_id,
+        "tid": tid,
+        "lc": len(lines),
+        "tc": total_cartons,
+        "tp": total_palettes,
+        "tpk": total_poids_kg,
+        "lines": json.dumps(lines, default=str, ensure_ascii=False),
+        "pdf": pdf_bytes,
+    }
+    pkg_sql = ""
+    if packaging is not None:
+        pkg_sql = ", packaging = CAST(:pkg AS jsonb)"
+        params["pkg"] = json.dumps(packaging, default=str, ensure_ascii=False)
+    rows = run_sql(
+        f"""
+        UPDATE ramasse_history
+        SET line_count     = :lc,
+            total_cartons  = :tc,
+            total_palettes = :tp,
+            total_poids_kg = :tpk,
+            lines          = CAST(:lines AS jsonb),
+            pdf_bytes      = COALESCE(:pdf, pdf_bytes){pkg_sql},
+            updated_at     = now()
+        WHERE id = :rid AND tenant_id = :tid
+        RETURNING id
+        """,
+        params,
+    )
+    return bool(rows)
+
+
 def list_ramasses(
     tenant_id: str | None = None,
     *,
