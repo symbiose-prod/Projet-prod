@@ -103,7 +103,7 @@ async def page_chargement_camion():
     tenant_id = user.get("tenant_id", "")
     user_email = user.get("email", "")
 
-    with page_layout("Chargement camion", "local_shipping", "/chargement-camion"):
+    with page_layout("Ramasse / Chargement camion", "local_shipping", "/chargement-camion"):
         ui.label(
             "Scanne les SSCC des palettes au moment du chargement. "
             "À la validation : email logisticien + BL téléchargeable."
