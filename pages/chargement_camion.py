@@ -1604,9 +1604,83 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     dest_select.on_value_change(_on_dest_changed_for_autoselect)
 
+    # ── Historique court (5 dernières ramasses, sans corbeille) ──
+    # Pour les actions complètes (corbeille, marquage chauffeur passé,
+    # export CSV, etc.), un lien renvoie vers /historique-ramasses.
+    _render_recent_history(tenant_id)
+
     # Initial render — affichera les palettes restaurées si présentes
     _refresh_basket()
     _try_auto_select_previsionnel()
+
+
+def _render_recent_history(tenant_id: str) -> None:
+    """Petit bloc en bas de /chargement-camion : 5 dernières ramasses
+    + lien vers la page d'historique complète. Lecture seule (pas
+    d'actions inline — on évite la duplication avec /historique-ramasses).
+    """
+    try:
+        items = list_ramasses(tenant_id=tenant_id, limit=5)
+    except Exception:
+        _log.warning("Échec recent history", exc_info=True)
+        items = []
+
+    with ui.expansion(
+        text="Historique récent",
+        icon="history",
+        value=False,
+    ).classes("w-full q-mt-lg").props(
+        "dense header-class='text-subtitle2'",
+    ).style(
+        f"border: 1px solid {COLORS['border']}; border-radius: 8px",
+    ):
+        with ui.row().classes("w-full items-center justify-between q-pa-sm"):
+            ui.label("5 dernières ramasses").classes("text-caption").style(
+                f"color: {COLORS['ink2']}",
+            )
+            ui.button(
+                "Voir tout l'historique",
+                icon="open_in_new",
+                on_click=lambda: ui.navigate.to("/historique-ramasses"),
+            ).props("flat dense color=blue-7 size=sm")
+
+        if not items:
+            ui.label("Aucune ramasse pour l'instant.").classes(
+                "text-grey-6 q-pa-sm",
+            )
+            return
+
+        for r in items:
+            dr = r.get("date_ramasse")
+            date_str = dr.strftime("%d/%m/%Y") if hasattr(dr, "strftime") else str(dr)
+            status = str(r.get("status") or "")
+            badge_text = {
+                "previsionnel": "PRÉV",
+                "definitif": "DÉF",
+                "legacy": "LEGACY",
+                "sent": "LEGACY",
+            }.get(status, status[:5].upper() if status else "?")
+            badge_color = {
+                "previsionnel": "blue-7",
+                "definitif": "green-8",
+            }.get(status, "grey-6")
+            with ui.row().classes(
+                "w-full items-center gap-3 q-px-sm q-py-xs",
+            ).style(f"border-top: 1px solid {COLORS['border']}"):
+                ui.badge(badge_text, color=badge_color).props("outline").style(
+                    "font-size: 10px; min-width: 56px; text-align: center",
+                )
+                with ui.column().classes("flex-1 gap-0"):
+                    ui.label(
+                        f"{date_str} — {r.get('destinataire', '?')}",
+                    ).classes("text-body2").style(
+                        f"color: {COLORS['ink']}; font-weight: 500",
+                    )
+                    livre_str = " · livrée" if r.get("driver_passed") else ""
+                    ui.label(
+                        f"{r.get('total_palettes', 0)} pal · "
+                        f"{r.get('total_cartons', 0)} cartons{livre_str}",
+                    ).classes("text-caption").style(f"color: {COLORS['ink2']}")
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────

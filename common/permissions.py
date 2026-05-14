@@ -23,6 +23,7 @@ OPERATEUR_ALLOWED_PATHS: tuple[str, ...] = (
     "/etiquettes-palette",
     "/ramasse",
     "/chargement-camion",
+    "/historique-ramasses",
     "/logout",       # toujours possible de se déconnecter
     "/api/logout",   # idem
 )

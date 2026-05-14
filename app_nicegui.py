@@ -322,6 +322,7 @@ import pages.auth  # noqa: F401 — /login, /reset/{token}
 import pages.chargement_camion  # noqa: F401 — /chargement-camion
 import pages.commercial  # noqa: F401 — /commercial
 import pages.etiquettes_palette  # noqa: F401 — /etiquettes-palette
+import pages.historique_ramasses  # noqa: F401 — /historique-ramasses
 import pages.nomenclatures  # noqa: F401 — /nomenclatures
 import pages.previsions  # noqa: F401 — /previsions
 import pages.production  # noqa: F401 — /production
