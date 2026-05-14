@@ -479,34 +479,23 @@ def create_palette_manually(
 
 # ─── Source de vérité : reconstruction des lignes depuis palette_loadings ───
 
-def rebuild_lines_from_palettes(
+def list_linked_palettes(
     ramasse_id: str,
     tenant_id: str,
-    *,
-    carton_weight_fn=None,
-) -> tuple[list[dict], int, int, int]:
-    """Reconstruit les lignes d'une ramasse depuis ses palettes actives.
+) -> list[PaletteInfo]:
+    """Liste les palettes actuellement liées à une ramasse.
 
-    C'est la source de vérité unique : le BL d'une ramasse = l'agrégation
-    des palettes encore liées (``unlinked_at IS NULL``). Aucun merge JSON,
-    aucune addition applicative — l'état physique du camion (les SSCC
-    réellement liés) dicte le BL.
+    Filtre :
+    - ``palette_loadings.unlinked_at IS NULL`` (les liaisons annulées
+      ne comptent pas pour le BL).
+    - ``sscc_log.voided_at IS NULL`` (les SSCC annulés ne comptent pas
+      non plus, même s'ils ont une liaison historique).
+    - ``etiquette_palette_history.designation IS NOT NULL`` (anomalie
+      DB : on n'inclut pas une palette dont le libellé est manquant).
 
-    Les SSCC annulés (``voided_at IS NOT NULL``) sont automatiquement
-    exclus, de même que les palettes sans entrée dans
-    ``etiquette_palette_history`` (anomalie DB — on log mais on n'inclut
-    pas la palette pour éviter de générer un BL avec un libellé vide).
-
-    Args:
-        ramasse_id: UUID de la ramasse cible.
-        tenant_id:  scope tenant.
-        carton_weight_fn: injectable pour les tests
-            (signature ``(fmt, designation) -> float``).
-
-    Returns:
-        ``(lines, total_cartons, total_palettes, total_poids_kg)`` —
-        prêt à être persisté dans ``ramasse_history`` via
-        ``save_ramasse`` / ``update_ramasse``.
+    Tri par ``scanned_at`` croissant — affichage UI stable.
+    Sert à la fois à reconstruire les lignes (agrégation) et à proposer
+    le déliage palette par palette dans l'UI.
     """
     rows = run_sql(
         """SELECT
@@ -553,9 +542,107 @@ def rebuild_lines_from_palettes(
                 "Palette liée ignorée (données invalides) ramasse=%s : %r",
                 ramasse_id, r, exc_info=True,
             )
+    return palettes
 
+
+def rebuild_lines_from_palettes(
+    ramasse_id: str,
+    tenant_id: str,
+    *,
+    carton_weight_fn=None,
+) -> tuple[list[dict], int, int, int]:
+    """Reconstruit les lignes d'une ramasse depuis ses palettes actives.
+
+    C'est la source de vérité unique : le BL d'une ramasse = l'agrégation
+    des palettes encore liées (``unlinked_at IS NULL``). Aucun merge JSON,
+    aucune addition applicative — l'état physique du camion (les SSCC
+    réellement liés) dicte le BL.
+
+    Args:
+        ramasse_id: UUID de la ramasse cible.
+        tenant_id:  scope tenant.
+        carton_weight_fn: injectable pour les tests
+            (signature ``(fmt, designation) -> float``).
+
+    Returns:
+        ``(lines, total_cartons, total_palettes, total_poids_kg)`` —
+        prêt à être persisté dans ``ramasse_history`` via
+        ``save_ramasse`` / ``update_ramasse``.
+    """
+    palettes = list_linked_palettes(ramasse_id, tenant_id)
     lines = aggregate_palettes_to_lines(palettes, carton_weight_fn=carton_weight_fn)
     total_cartons  = sum(int(line["cartons"])  for line in lines)
     total_palettes = sum(int(line["palettes"]) for line in lines)
     total_poids    = sum(int(line["poids"])    for line in lines)
     return (lines, total_cartons, total_palettes, total_poids)
+
+
+def unlink_palette(
+    tenant_id: str,
+    *,
+    sscc: str,
+    ramasse_id: str,
+    reason: str,
+    user_email: str = "",
+) -> bool:
+    """Délie une palette d'une ramasse (soft-unlink).
+
+    La ligne ``palette_loadings`` n'est jamais hard-deletée : on patche
+    ``unlinked_at``, ``unlinked_by``, ``unlinked_reason``. La palette
+    redevient « non chargée » (réapparaît dans
+    :func:`list_unscanned_recent_palettes`), peut être ré-liée à une
+    autre ramasse (l'index unique partiel ne contraint que les rows
+    actives), et son SSCC reste valide (pas d'annulation).
+
+    Distinct de :func:`common.services.sscc_service.void_sscc` : un void
+    annule la palette physique elle-même (étiquette pas imprimée,
+    doublon). Un unlink dit juste « cette palette ne fait plus partie
+    de cette ramasse » — typiquement palette pas prête à temps,
+    palette cassée au chargement, ou erreur de scan.
+
+    Args:
+        sscc: SSCC normalisé (18 digits).
+        ramasse_id: UUID de la ramasse — sert de garde-fou (on n'unlink
+            pas une palette qui serait liée à une autre ramasse).
+        reason: justification métier saisie par l'opérateur (≤ 500 chars).
+        user_email: pour audit.
+
+    Returns:
+        ``True`` si une liaison active a été marquée unlinked, ``False``
+        si la palette n'était pas liée à cette ramasse (ou déjà unlinked).
+    """
+    sscc_clean = _normalize_sscc(sscc)
+    if len(sscc_clean) != 18:
+        _log.warning("unlink_palette: SSCC invalide %r", sscc)
+        return False
+    reason_clean = (reason or "").strip()[:500] or "Sans raison précisée"
+    try:
+        rows = run_sql(
+            """UPDATE palette_loadings
+                  SET unlinked_at     = now(),
+                      unlinked_by     = :u,
+                      unlinked_reason = :r
+                WHERE sscc        = :sscc
+                  AND tenant_id   = :t
+                  AND ramasse_id  = :rid
+                  AND unlinked_at IS NULL
+               RETURNING id""",
+            {
+                "sscc": sscc_clean, "t": tenant_id,
+                "rid": ramasse_id, "u": user_email or "",
+                "r": reason_clean,
+            },
+        )
+    except Exception:
+        _log.exception(
+            "Échec unlink palette_loadings sscc=%s ramasse=%s",
+            sscc_clean, ramasse_id,
+        )
+        return False
+    if rows:
+        _log.info(
+            "Palette %s déliée de ramasse %s par %s — raison: %s",
+            sscc_clean, ramasse_id, user_email or "?", reason_clean,
+        )
+        return True
+    return False

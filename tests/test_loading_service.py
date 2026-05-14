@@ -15,7 +15,9 @@ from common.services.loading_service import (
     PaletteInfo,
     _normalize_sscc,
     aggregate_palettes_to_lines,
+    list_linked_palettes,
     rebuild_lines_from_palettes,
+    unlink_palette,
 )
 
 # ─── _normalize_sscc ────────────────────────────────────────────────────────
@@ -242,3 +244,131 @@ class TestRebuildLinesFromPalettes:
         assert "sl.voided_at    IS NULL" in sql or "sl.voided_at IS NULL" in sql
         assert "eph.designation IS NOT NULL" in sql
         assert captured["params"] == {"rid": "rid-42", "t": "tid-7"}
+
+
+# ─── list_linked_palettes ───────────────────────────────────────────────────
+
+class TestListLinkedPalettes:
+    """Le helper qui sert à la fois à rebuild et à l'UI de déliage."""
+
+    def test_empty_when_no_rows(self):
+        with mock.patch.object(loading_service, "run_sql", return_value=[]):
+            out = list_linked_palettes("rid-1", "tid-1")
+        assert out == []
+
+    def test_single_row_typed(self):
+        with mock.patch.object(loading_service, "run_sql", return_value=[_db_row()]):
+            out = list_linked_palettes("rid-1", "tid-1")
+        assert len(out) == 1
+        # PaletteInfo bien construit
+        assert out[0].sscc == "3" + "3" * 17
+        assert out[0].case_count == 126
+        assert out[0].fmt == "12x33"
+
+    def test_invalid_row_skipped(self):
+        good = _db_row()
+        bad = _db_row(sscc="3" + "5" * 17)
+        bad["ddm"] = "not-a-date"
+        with mock.patch.object(loading_service, "run_sql", return_value=[good, bad]):
+            out = list_linked_palettes("rid-1", "tid-1")
+        assert len(out) == 1  # bad ignorée
+
+
+# ─── unlink_palette ─────────────────────────────────────────────────────────
+
+class TestUnlinkPalette:
+
+    def test_returns_true_when_link_unlinked(self):
+        with mock.patch.object(loading_service, "run_sql", return_value=[{"id": 42}]):
+            ok = unlink_palette(
+                "tid-1",
+                sscc="3" + "3" * 17,
+                ramasse_id="rid-1",
+                reason="Palette cassée au chargement",
+                user_email="op@example.com",
+            )
+        assert ok is True
+
+    def test_returns_false_when_no_active_link(self):
+        # Pas de row matchée : palette pas liée à cette ramasse, ou déjà unlinked
+        with mock.patch.object(loading_service, "run_sql", return_value=[]):
+            ok = unlink_palette(
+                "tid-1",
+                sscc="3" + "3" * 17,
+                ramasse_id="rid-1",
+                reason="Test",
+            )
+        assert ok is False
+
+    def test_invalid_sscc_returns_false_without_query(self):
+        with mock.patch.object(
+            loading_service, "run_sql", return_value=[{"id": 1}],
+        ) as mock_run:
+            ok = unlink_palette(
+                "tid-1", sscc="not-a-sscc",
+                ramasse_id="rid-1", reason="Test",
+            )
+        assert ok is False
+        mock_run.assert_not_called()
+
+    def test_sql_targets_active_link_only(self):
+        # Garde-fou : la query DOIT inclure unlinked_at IS NULL pour ne pas
+        # réécrire la raison d'un unlink antérieur.
+        captured = {}
+
+        def fake(sql, params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return [{"id": 1}]
+
+        with mock.patch.object(loading_service, "run_sql", side_effect=fake):
+            unlink_palette(
+                "tenant-99",
+                sscc="3" + "7" * 17,
+                ramasse_id="rid-999",
+                reason="Erreur scan",
+                user_email="alice@ferment.test",
+            )
+
+        sql = captured["sql"]
+        params = captured["params"]
+        assert "UPDATE palette_loadings" in sql
+        assert "unlinked_at     = now()" in sql
+        assert "unlinked_at IS NULL" in sql  # WHERE actif
+        assert "ramasse_id  = :rid" in sql  # garde-fou ramasse
+        assert "tenant_id   = :t" in sql    # tenant scoping
+        assert params["sscc"] == "3" + "7" * 17
+        assert params["t"] == "tenant-99"
+        assert params["rid"] == "rid-999"
+        assert params["u"] == "alice@ferment.test"
+        assert params["r"] == "Erreur scan"
+
+    def test_empty_reason_falls_back_to_default(self):
+        captured = {}
+
+        def fake(sql, params):
+            captured["params"] = params
+            return [{"id": 1}]
+
+        with mock.patch.object(loading_service, "run_sql", side_effect=fake):
+            unlink_palette(
+                "tid-1", sscc="3" + "3" * 17, ramasse_id="rid-1", reason="   ",
+            )
+        # Une raison vide est remplacée par un fallback pour garder une
+        # trace audit non vide.
+        assert captured["params"]["r"] == "Sans raison précisée"
+
+    def test_reason_capped_at_500_chars(self):
+        captured = {}
+
+        def fake(sql, params):
+            captured["params"] = params
+            return [{"id": 1}]
+
+        long_reason = "X" * 1000
+        with mock.patch.object(loading_service, "run_sql", side_effect=fake):
+            unlink_palette(
+                "tid-1", sscc="3" + "3" * 17, ramasse_id="rid-1",
+                reason=long_reason,
+            )
+        assert len(captured["params"]["r"]) == 500

@@ -49,9 +49,11 @@ from common.services.loading_service import (
     PaletteInfo,
     aggregate_palettes_to_lines,
     link_palettes_to_ramasse,
+    list_linked_palettes,
     list_unscanned_recent_palettes,
     lookup_sscc,
     rebuild_lines_from_palettes,
+    unlink_palette,
 )
 from common.services.ramasse_service import (
     build_email_body,
@@ -271,6 +273,13 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             ramasse_to_update_select.update()
 
         _refresh_existing_ramasses()
+
+        # Liste des palettes déjà liées à la ramasse sélectionnée — pour
+        # permettre de retirer du BL une palette pas prête / cassée /
+        # erronée sans annuler le SSCC. La section est visible uniquement
+        # en mode update (ramasse non vide sélectionnée). Le refresh est
+        # piloté par _refresh_linked_palettes (au changement du select).
+        linked_palettes_container = ui.column().classes("w-full q-mt-sm")
 
     # ────────────────────────────────────────────────────────────────────
     # ÉTAPE 2 — Scan des palettes
@@ -564,6 +573,142 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         if not rid or rid == "":
             return None
         return ramasse_status_by_id.get(str(rid))
+
+    def _refresh_linked_palettes():
+        """Recharge la liste des palettes déjà liées à la ramasse sélectionnée.
+
+        Vide si pas de ramasse sélectionnée (mode create). Sinon affiche
+        une expansion repliable avec une ligne par palette + bouton
+        « Retirer du BL » → dialog raison → unlink + refresh.
+        """
+        linked_palettes_container.clear()
+        rid = ramasse_to_update_select.value
+        if not rid or rid == "":
+            return
+        try:
+            linked = list_linked_palettes(str(rid), tenant_id)
+        except Exception:
+            _log.warning("Échec list_linked_palettes", exc_info=True)
+            linked = []
+
+        with linked_palettes_container:
+            if not linked:
+                ui.label("Aucune palette liée à cette ramasse pour l'instant.").classes(
+                    "text-caption q-pa-sm",
+                ).style(f"color: {COLORS['ink2']}; font-style: italic")
+                return
+
+            with ui.expansion(
+                text=f"Palettes déjà liées au BL ({len(linked)})",
+                icon="link",
+                value=False,
+            ).classes("w-full").props("dense header-class='text-subtitle2'"):
+                ui.label(
+                    "Tu peux retirer une palette du BL si elle n'est finalement "
+                    "pas chargée (palette pas prête, cassée, erreur de scan…). "
+                    "Le SSCC reste valide et la palette redevient disponible "
+                    "pour une autre ramasse.",
+                ).classes("text-caption q-pa-sm").style(
+                    f"color: {COLORS['ink2']}",
+                )
+                for p in linked:
+                    with ui.row().classes(
+                        "w-full items-center q-pa-sm gap-3 no-wrap",
+                    ).style(
+                        f"border-top: 1px solid {COLORS['border']}",
+                    ):
+                        with ui.column().classes("flex-1 gap-0"):
+                            ui.label(_fmt_sscc_pretty(p.sscc)).classes(
+                                "text-caption",
+                            ).style(
+                                "font-family: monospace; color: " + COLORS["ink2"],
+                            )
+                            ui.label(
+                                f"{p.designation} {p.fmt}",
+                            ).classes("text-body2").style(
+                                f"color: {COLORS['ink']}; font-weight: 500",
+                            )
+                            ddm_str = p.ddm.strftime("%d/%m/%Y") if p.ddm else "—"
+                            ui.label(
+                                f"Lot {p.lot} · {p.case_count} cartons · DDM {ddm_str}",
+                            ).classes("text-caption").style(
+                                f"color: {COLORS['ink2']}",
+                            )
+                        ui.button(
+                            "Retirer du BL", icon="link_off",
+                            on_click=(
+                                lambda _e, palette=p, rid=str(rid):
+                                _open_unlink_dialog(palette, rid)
+                            ),
+                        ).props("flat dense color=orange-8").style(
+                            "touch-action: manipulation",
+                        )
+
+    def _open_unlink_dialog(palette: PaletteInfo, ramasse_id: str):
+        """Dialog de confirmation + raison pour délier une palette du BL."""
+        with ui.dialog() as dlg, ui.card().classes("q-pa-md").style("min-width: 380px"):
+            ui.label("Retirer cette palette du BL ?").classes("text-h6").style(
+                f"color: {COLORS['ink']}; font-weight: 700",
+            )
+            ui.label(
+                f"{palette.designation} {palette.fmt} · "
+                f"{palette.case_count} cartons",
+            ).classes("text-body2 q-mb-xs").style(f"color: {COLORS['ink']}")
+            ui.label(f"SSCC : {_fmt_sscc_pretty(palette.sscc)}").classes(
+                "text-caption q-mb-md",
+            ).style(f"font-family: monospace; color: {COLORS['ink2']}")
+            ui.label(
+                "La palette ne fera plus partie de cette ramasse. Son SSCC "
+                "reste valide — elle réapparaîtra dans la liste « non "
+                "chargées » et pourra être liée à une autre ramasse.",
+            ).classes("text-caption q-mb-md").style(f"color: {COLORS['ink2']}")
+            reason_input = ui.input(
+                label="Raison",
+                placeholder="ex: palette pas prête, cassée, erreur scan…",
+            ).classes("w-full").props("outlined dense autofocus")
+
+            async def _confirm():
+                reason = (reason_input.value or "").strip()
+                if not reason:
+                    ui.notify("Saisis une raison.", type="warning")
+                    return
+                dlg.close()
+                try:
+                    ok = await asyncio.to_thread(
+                        unlink_palette,
+                        tenant_id,
+                        sscc=palette.sscc,
+                        ramasse_id=ramasse_id,
+                        reason=reason,
+                        user_email=user_email,
+                    )
+                except Exception as exc:
+                    _log.exception("Erreur unlink_palette")
+                    ui.notify(f"Erreur : {exc}", type="negative")
+                    return
+                if not ok:
+                    ui.notify(
+                        "Palette déjà retirée ou liée à une autre ramasse.",
+                        type="warning",
+                    )
+                    return
+                ui.notify(
+                    f"✓ Palette {palette.designation} {palette.fmt} retirée du BL.",
+                    type="positive", icon="link_off", timeout=4000,
+                )
+                # Refresh : la palette disparaît de la liste « liées »,
+                # réapparaît dans « non chargées ».
+                _refresh_linked_palettes()
+                _refresh_unscanned()
+                _refresh_existing_ramasses()
+
+            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
+                ui.button(
+                    "Retirer du BL", icon="link_off", on_click=_confirm,
+                ).props("color=orange-8 unelevated")
+            reason_input.on("keydown.enter", _confirm)
+        dlg.open()
 
     def _refresh_action_buttons():
         """Affichage / label / état des 3 boutons (prev / def / rattrapage)
@@ -1159,6 +1304,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _refresh_basket()
             _refresh_unscanned()
             _refresh_existing_ramasses()
+            _refresh_linked_palettes()
         except Exception as exc:
             _log.exception("Erreur validation chargement camion (kind=%s)", target_status)
             ui.notify(f"Erreur : {exc}", type="negative", timeout=8000)
@@ -1238,6 +1384,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _clear_persisted_basket()
             _refresh_basket()
             _refresh_unscanned()
+            _refresh_linked_palettes()
         except Exception as exc:
             _log.exception("Erreur rattrapage link")
             ui.notify(f"Erreur : {exc}", type="negative")
@@ -1248,7 +1395,11 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     link_only_btn.on_click(_on_link_only)
 
     # Quand le select ramasse change → re-évaluer la visibilité du bouton rattrapage
-    ramasse_to_update_select.on_value_change(lambda _e: _refresh_action_buttons())
+    def _on_ramasse_select_changed(_e=None):
+        _refresh_action_buttons()
+        _refresh_linked_palettes()
+
+    ramasse_to_update_select.on_value_change(_on_ramasse_select_changed)
 
     def _on_clear_basket():
         """Bouton manuel : vide le panier persisté + l'état courant."""
