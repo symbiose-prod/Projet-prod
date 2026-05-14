@@ -29,10 +29,17 @@ from nicegui import app, ui
 
 from common.audit import ACTION_RAMASSE_SAVED
 from common.email import send_html_with_pdf
-from common.ramasse import fmt_paris, load_destinataires, today_paris
+from common.ramasse import (
+    build_packaging_summary,
+    fmt_paris,
+    load_destinataires,
+    load_packaging_items,
+    today_paris,
+)
 from common.ramasse_history import (
     delete_ramasse,
     finalize_ramasse_lines,
+    get_last_packaging_for_dest,
     get_ramasse,
     list_ramasses,
     save_ramasse,
@@ -219,24 +226,47 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 value="",
             ).classes("w-full").props("outlined dense")
 
+        # Cache du statut des ramasses listées — sert à piloter la
+        # visibilité / le label des boutons d'envoi.
+        ramasse_status_by_id: dict[str, str] = {}
+
         def _refresh_existing_ramasses():
-            """Recharge la liste des ramasses ouvertes (driver_passed=False)."""
+            """Recharge la liste des ramasses non-livrées éligibles à update.
+
+            Exclut les ramasses ``legacy`` (créées avant la refonte) et
+            celles déjà livrées ou supprimées. Le statut courant
+            (``previsionnel`` / ``definitif``) est annoté dans le label
+            pour que l'opérateur sache où en est chaque ramasse.
+            """
             try:
                 ramasses = list_ramasses(tenant_id=tenant_id, limit=15)
             except Exception:
                 _log.warning("Échec list_ramasses", exc_info=True)
                 ramasses = []
             opts = {"": "— Créer une nouvelle ramasse —"}
+            ramasse_status_by_id.clear()
             for r in ramasses:
                 if r.get("driver_passed"):
                     continue
                 if r.get("deleted_at"):
                     continue
+                status = str(r.get("status") or "")
+                if status == "legacy":
+                    # Anciennes ramasses /ramasse : ne participent pas au
+                    # workflow prévisionnel/définitif scan-driven.
+                    continue
                 dr = r.get("date_ramasse")
                 dest = r.get("destinataire", "?")
-                version = r.get("version", 1)
-                label = f"{dr} · {dest} (v{version}, {r.get('total_palettes', 0)} pal)"
-                opts[str(r["id"])] = label
+                status_label = {
+                    "previsionnel": "PRÉV",
+                    "definitif": "DÉF",
+                }.get(status, status[:5].upper() if status else "?")
+                rid = str(r["id"])
+                ramasse_status_by_id[rid] = status
+                opts[rid] = (
+                    f"{dr} · {dest} [{status_label}] · "
+                    f"{r.get('total_palettes', 0)} pal"
+                )
             ramasse_to_update_select.options = opts
             ramasse_to_update_select.update()
 
@@ -298,9 +328,127 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         unscanned_container = ui.column().classes("w-full gap-1 q-pa-sm")
 
     # ────────────────────────────────────────────────────────────────────
-    # ÉTAPE 3 — Récap & validation
+    # ÉTAPE 3 — Emballages à demander au logisticien
     # ────────────────────────────────────────────────────────────────────
-    _step_title(3, "Récap & validation", "summarize")
+    # Bouteilles vides etc. stockées chez le logisticien : on les demande
+    # généralement au prévisionnel pour qu'il les prépare et les amène
+    # avec le camion lors du chargement. Conservé aussi sur le définitif.
+    _step_title(3, "Emballages à ramener", "move_to_inbox")
+    packaging_state: dict = {"items": []}
+    packaging_container = ui.column().classes("w-full")
+
+    def _get_packaging_lines() -> list[dict] | None:
+        """Retourne les emballages saisis (qty > 0) ou None."""
+        summary = build_packaging_summary(packaging_state["items"])
+        return summary if summary else None
+
+    def _build_packaging_section():
+        """Construit la section emballages pour le destinataire courant.
+
+        Réutilisée à chaque changement de destinataire — l'état des qty
+        déjà saisies est préservé tant que les labels matchent. La
+        première saisie peut être pré-remplie avec les « quantités
+        habituelles » (dernière ramasse pour ce dest).
+        """
+        saved_pkg_qty: dict[str, int] = {
+            str(it.get("label") or ""): int(it.get("qty") or 0)
+            for it in packaging_state["items"]
+            if int(it.get("qty") or 0) > 0
+        }
+        packaging_state["items"] = []
+        dest_name = dest_select.value or ""
+        pkg_items = load_packaging_items(dest_name)
+        if not pkg_items:
+            ui.label("Pas d'emballages configurés pour ce destinataire.").classes(
+                "text-caption q-pa-sm",
+            ).style(f"color: {COLORS['ink2']}; font-style: italic")
+            return
+
+        usual_pkg_qty: dict[str, int] = {}
+        if not saved_pkg_qty:
+            try:
+                last_pkg = get_last_packaging_for_dest(dest_name)
+                usual_pkg_qty = {
+                    str(p.get("label") or ""): int(p.get("qty") or 0)
+                    for p in last_pkg
+                    if p.get("label") and int(p.get("qty") or 0) > 0
+                }
+            except Exception:
+                _log.warning("Échec chargement emballages habituels", exc_info=True)
+
+        qty_inputs_by_label: dict = {}
+
+        if usual_pkg_qty:
+            usual_summary = ", ".join(
+                f"{q} {label}" for label, q in usual_pkg_qty.items()
+            )
+            with ui.row().classes(
+                "w-full items-center gap-2 q-pa-sm q-mb-sm",
+            ).style(
+                "background: #EFF6FF; border: 1px dashed #93C5FD; border-radius: 6px",
+            ):
+                ui.icon("history", color="blue-7", size="sm")
+                with ui.column().classes("flex-1 gap-0"):
+                    ui.label("Quantités habituelles (dernière ramasse)").classes(
+                        "text-caption",
+                    ).style("color: #1E3A8A; font-weight: 600")
+                    ui.label(usual_summary).classes("text-caption").style(
+                        "color: #1E40AF",
+                    )
+
+                def _apply_usual():
+                    for label, qty in usual_pkg_qty.items():
+                        inp = qty_inputs_by_label.get(label)
+                        if inp is not None:
+                            inp.value = qty
+                            for it in packaging_state["items"]:
+                                if it["label"] == label:
+                                    it["qty"] = qty
+                                    break
+                    ui.notify("Quantités habituelles appliquées.",
+                              type="info", icon="check")
+
+                ui.button("Appliquer", icon="check",
+                          on_click=_apply_usual).props("flat dense color=blue-7")
+
+        for item in pkg_items:
+            initial_qty = saved_pkg_qty.get(item["label"], 0)
+            item_state = {
+                "id": item["id"],
+                "label": item["label"],
+                "unit": item.get("unit", "palette"),
+                "qty": initial_qty,
+            }
+            packaging_state["items"].append(item_state)
+            with ui.row().classes("w-full items-center gap-3 q-py-xs"):
+                ui.label(item["label"]).classes("flex-1 text-body2")
+                qty_input = ui.number(
+                    value=initial_qty, min=0, step=1,
+                ).props("outlined dense").style("max-width: 100px")
+                qty_inputs_by_label[item["label"]] = qty_input
+                ui.label(item.get("unit", "palette")).classes(
+                    "text-caption text-grey-6",
+                )
+
+                def _on_qty(_e, st=item_state, inp=qty_input):
+                    st["qty"] = int(inp.value or 0)
+
+                qty_input.on("update:model-value", _on_qty)
+
+    with packaging_container:
+        _build_packaging_section()
+
+    def _refresh_packaging(_e=None):
+        packaging_container.clear()
+        with packaging_container:
+            _build_packaging_section()
+
+    dest_select.on_value_change(_refresh_packaging)
+
+    # ────────────────────────────────────────────────────────────────────
+    # ÉTAPE 4 — Récap & validation
+    # ────────────────────────────────────────────────────────────────────
+    _step_title(4, "Récap & validation", "summarize")
     summary_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
     with summary_card:
         # Totaux gros
@@ -324,15 +472,27 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         )
         details_container = ui.column().classes("w-full q-mt-xs")
 
-    # Bouton validation principal — flow standard (création/MAJ + email + PDF)
+    # ── Boutons d'envoi : prévisionnel + définitif ──
+    # Le prévisionnel sert au logisticien à dimensionner son camion
+    # (estimation indicative). Le définitif est le BL rectificatif envoyé
+    # au moment du chargement, qui reflète exactement ce qui part. La
+    # transition definitif → previsionnel est interdite (régression).
     with ui.row().classes("w-full q-mt-md gap-2"):
-        validate_btn = ui.button(
-            "✓ Valider — créer ramasse + envoyer email + télécharger BL",
+        prev_btn = ui.button(
+            "Envoyer prévisionnel",
+            icon="schedule_send",
+        ).classes("flex-1").props(
+            "color=blue-7 outline size=lg",
+        ).style("touch-action: manipulation; min-height: 56px")
+        prev_btn.disable()
+
+        def_btn = ui.button(
+            "Envoyer BL définitif",
             icon="check_circle",
         ).classes("flex-1").props(
             "color=green-8 unelevated size=lg",
         ).style("touch-action: manipulation; min-height: 56px")
-        validate_btn.disable()
+        def_btn.disable()
 
     # Bouton rattrapage — secondaire, visible UNIQUEMENT quand une ramasse
     # existante est sélectionnée pour MAJ. Sert au cas où le BL a déjà été
@@ -398,12 +558,54 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                         )
         _refresh_summary()
 
-    def _refresh_link_only_visibility():
-        """Affiche le bouton rattrapage uniquement si on a une ramasse
-        existante sélectionnée ET au moins une palette dans le panier."""
-        ramasse_val = ramasse_to_update_select.value
-        has_ramasse = bool(ramasse_val) and ramasse_val != ""
+    def _current_target_status() -> str | None:
+        """Statut de la ramasse pré-sélectionnée (None si create)."""
+        rid = ramasse_to_update_select.value
+        if not rid or rid == "":
+            return None
+        return ramasse_status_by_id.get(str(rid))
+
+    def _refresh_action_buttons():
+        """Affichage / label / état des 3 boutons (prev / def / rattrapage)
+        selon le statut de la ramasse à mettre à jour et le panier.
+
+        Règles :
+        - create (pas de ramasse sélectionnée) : les 2 boutons visibles,
+          prévisionnel en parcours nominal, définitif si on veut sauter
+          l'étape prévisionnelle.
+        - update d'une ``previsionnel`` : prev_btn → "Renvoyer
+          prévisionnel" (option 1 : autant de fois qu'on veut), def_btn
+          → "Envoyer BL définitif" (transition canonique).
+        - update d'une ``definitif`` : prev_btn caché (régression
+          interdite), def_btn → "Corriger BL définitif" (rare).
+        - link_only_btn : visible uniquement si une ramasse est
+          sélectionnée ET le panier n'est pas vide (rattrapage).
+        """
         has_basket = bool(state["basket"])
+        current_status = _current_target_status()
+        rid = ramasse_to_update_select.value
+        has_ramasse = bool(rid) and rid != ""
+
+        # Boutons d'envoi
+        if current_status == "definitif":
+            prev_btn.set_visibility(False)
+            def_btn.text = "Corriger BL définitif"
+        elif current_status == "previsionnel":
+            prev_btn.set_visibility(True)
+            prev_btn.text = "Renvoyer prévisionnel"
+            def_btn.text = "Envoyer BL définitif"
+        else:
+            prev_btn.set_visibility(True)
+            prev_btn.text = "Envoyer prévisionnel"
+            def_btn.text = "Envoyer BL définitif"
+        if has_basket:
+            prev_btn.enable()
+            def_btn.enable()
+        else:
+            prev_btn.disable()
+            def_btn.disable()
+
+        # Rattrapage : visible uniquement update + panier non-vide
         link_only_btn.set_visibility(has_ramasse and has_basket)
         if has_ramasse and has_basket:
             link_only_btn.enable()
@@ -411,15 +613,14 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             link_only_btn.disable()
 
     def _refresh_summary():
-        """Recalcule totaux + détail produit. Active/désactive le bouton."""
+        """Recalcule totaux + détail produit. Met à jour les boutons d'action."""
         basket: list[PaletteInfo] = state["basket"]
         details_container.clear()
         if not basket:
             totals_display.text = "0 palettes · 0 cartons"
             totals_display.style(f"color: {COLORS['ink2']}; font-size: 28px")
             weight_display.text = ""
-            validate_btn.disable()
-            _refresh_link_only_visibility()
+            _refresh_action_buttons()
             return
         lines = aggregate_palettes_to_lines(basket)
         total_cartons = sum(line["cartons"] for line in lines)
@@ -448,8 +649,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     ui.label(f"{line['poids']:,} kg".replace(",", " ")).classes(
                         "text-body2",
                     ).style(f"flex: 0.8; text-align: right; color: {COLORS['ink2']}")
-        validate_btn.enable()
-        _refresh_link_only_visibility()
+        _refresh_action_buttons()
 
     def _add_to_basket(palette: PaletteInfo):
         # Dédoublonnage : si le SSCC est déjà dans le panier, notify et ignore
@@ -715,7 +915,24 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     _refresh_unscanned()
 
     # ── Validation finale ──
-    async def _on_validate():
+    async def _on_validate(target_status: str):
+        """Orchestre l'envoi d'un prévisionnel ou d'un définitif.
+
+        ``target_status`` ∈ {``'previsionnel'``, ``'definitif'``} — pilote
+        le statut persisté en DB, le ton de l'email, le bandeau PDF et
+        la transition autorisée (le service refuse definitif→previsionnel).
+
+        Flow (cf. PR 2 — palette_loadings = source de vérité) :
+            1. INSERT ramasse_history (placeholder en create).
+            2. INSERT palette_loadings (panier → ramasse_id).
+            3. rebuild_lines_from_palettes.
+            4. Build PDF avec les vraies lignes + diff vs previous_lines
+               (snapshot du prévisionnel en cas de définitif).
+            5. finalize (create) ou update_ramasse (versionne + snapshot).
+            6. Email + download.
+
+        En cas d'échec mid-flow sur un create, soft-delete du placeholder.
+        """
         basket: list[PaletteInfo] = state["basket"]
         if not basket:
             ui.notify("Panier vide.", type="warning")
@@ -750,19 +967,11 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             )
             return
 
-        validate_btn.disable()
-        validate_btn.props("loading")
-
-        # Nouveau flow (PR 2) — palette_loadings est la source de vérité.
-        # Ordre obligatoire (la FK palette_loadings.ramasse_id l'impose) :
-        #   1. INSERT ramasse_history (placeholder vide en cas de create).
-        #   2. INSERT palette_loadings (panier → ramasse_id).
-        #   3. rebuild_lines_from_palettes(ramasse_id) — agrège la vérité DB.
-        #   4. Build PDF avec les vraies lignes.
-        #   5. finalize (create) ou update_ramasse (incrémente version, diff).
-        #   6. Email.
-        # Si une étape ultérieure échoue en mode create, on soft-delete le
-        # placeholder pour ne pas laisser de ramasse fantôme à 0 carton.
+        # Sécurité UI : on désactive les boutons d'envoi pendant le flow
+        prev_btn.disable()
+        prev_btn.props("loading")
+        def_btn.disable()
+        def_btn.props("loading")
 
         ramasse_id_to_update = (
             state["ramasse_to_update_id"]
@@ -781,8 +990,9 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     "Ramasse à mettre à jour introuvable. Annule et recommence.",
                     type="negative",
                 )
-                validate_btn.enable()
-                validate_btn.props(remove="loading")
+                _refresh_action_buttons()
+                prev_btn.props(remove="loading")
+                def_btn.props(remove="loading")
                 return
             if existing.get("driver_passed"):
                 ui.notify(
@@ -790,8 +1000,9 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     "Crée une nouvelle ramasse.",
                     type="negative",
                 )
-                validate_btn.enable()
-                validate_btn.props(remove="loading")
+                _refresh_action_buttons()
+                prev_btn.props(remove="loading")
+                def_btn.props(remove="loading")
                 return
             next_version = int(existing.get("version") or 1) + 1
             previous_lines = existing.get("lines") or []
@@ -806,6 +1017,8 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
         try:
             # ── 1. INSERT ramasse_history (placeholder si create) ──
+            # Le statut applicatif est posé dès le placeholder pour rester
+            # cohérent même si la finalisation est interrompue.
             if is_update:
                 ramasse_id_final = str(ramasse_id_to_update)
             else:
@@ -817,6 +1030,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     lines=[], total_cartons=0,
                     total_palettes=0, total_poids_kg=0,
                     pdf_bytes=None,
+                    status=target_status,
                     tenant_id=tenant_id,
                 )
                 cleanup_placeholder = True
@@ -847,6 +1061,9 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             )
 
             # ── 4. Build le PDF BL avec les vraies lignes ──
+            # Pour un définitif faisant suite à un prévisionnel, on passe
+            # le snapshot du prévisionnel comme previous_lines pour
+            # afficher le diff JAUNE/BLEU dans le PDF.
             df_lines = _build_df_for_pdf(lines)
             pdf_bytes = await asyncio.to_thread(
                 build_bl_enlevements_pdf,
@@ -855,15 +1072,19 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 destinataire_title=dest_title,
                 destinataire_lines=dest_addr_lines,
                 df_lines=df_lines,
-                previous_lines=previous_lines,
+                previous_lines=previous_lines if target_status == "definitif" else None,
                 version=next_version,
+                kind=target_status,
             )
+
+            # Snapshot du packaging UI (envoyé avec l'email + persisté)
+            packaging_lines_ui = _get_packaging_lines()
 
             # ── 5. Persiste les lignes finales + PDF ──
             if is_update:
-                # update_ramasse incrémente version et snapshot previous_lines
-                # automatiquement (pour le diff PDF lors d'une future mise à jour).
-                await asyncio.to_thread(
+                # update_ramasse versionne automatiquement + valide la
+                # transition de statut (refus definitif→previsionnel).
+                result = await asyncio.to_thread(
                     update_ramasse,
                     ramasse_id_final,
                     date_ramasse=d,
@@ -873,9 +1094,22 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     total_cartons=total_cartons,
                     total_palettes=total_palettes,
                     total_poids_kg=total_poids,
+                    packaging=packaging_lines_ui,
                     pdf_bytes=pdf_bytes,
+                    target_status=target_status,
                     tenant_id=tenant_id,
                 )
+                if result is None:
+                    ui.notify(
+                        "Transition de statut refusée (un BL définitif "
+                        "ne peut pas redevenir prévisionnel). Crée une "
+                        "nouvelle ramasse si besoin.",
+                        type="negative", timeout=8000,
+                    )
+                    _refresh_action_buttons()
+                    prev_btn.props(remove="loading")
+                    def_btn.props(remove="loading")
+                    return
             else:
                 # Patch atomique du placeholder — ne touche pas à version.
                 await asyncio.to_thread(
@@ -885,33 +1119,37 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     total_cartons=total_cartons,
                     total_palettes=total_palettes,
                     total_poids_kg=total_poids,
+                    packaging=packaging_lines_ui,
                     pdf_bytes=pdf_bytes,
                     tenant_id=tenant_id,
                 )
 
             cleanup_placeholder = False  # success path — pas de rollback
 
-            # ── 6. Envoie l'email ──
-            subject = build_email_subject(
-                d, is_update=is_update, version=next_version,
-            )
+            # ── 6. Envoie l'email (ton adapté au statut) ──
+            subject = build_email_subject(d, kind=target_status)
             body = build_email_body(
                 d, total_palettes=total_palettes, total_cartons=total_cartons,
-                packaging_lines=None,
-                is_update=is_update, version=next_version,
+                packaging_lines=packaging_lines_ui,
+                kind=target_status,
             )
-            fname = f"BL_Chargement_{d:%Y%m%d}.pdf"
+            kind_short = "Previsionnel" if target_status == "previsionnel" else "Definitif"
+            fname = f"BL_{kind_short}_{d:%Y%m%d}.pdf"
             await asyncio.to_thread(
                 send_html_with_pdf,
                 to_email=recipients, subject=subject,
                 html_body=body, attachments=[(fname, pdf_bytes)],
             )
 
-            # ── 7. Télécharge le PDF pour le chauffeur ──
-            ui.download(pdf_bytes, fname)
+            # ── 7. Télécharge le PDF (utile au chauffeur pour le définitif) ──
+            if target_status == "definitif":
+                ui.download(pdf_bytes, fname)
+            kind_label = (
+                "Prévisionnel envoyé" if target_status == "previsionnel"
+                else "BL définitif envoyé"
+            )
             ui.notify(
-                f"✓ Ramasse {'mise à jour (v' + str(next_version) + ')' if is_update else 'créée'} — "
-                f"{inserted} palette(s) liée(s), email envoyé.",
+                f"✓ {kind_label} — {inserted} palette(s) liée(s).",
                 type="positive", icon="check_circle", timeout=6000,
             )
 
@@ -922,7 +1160,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _refresh_unscanned()
             _refresh_existing_ramasses()
         except Exception as exc:
-            _log.exception("Erreur validation chargement camion")
+            _log.exception("Erreur validation chargement camion (kind=%s)", target_status)
             ui.notify(f"Erreur : {exc}", type="negative", timeout=8000)
             # Rollback : si on a créé un placeholder mais que la finalisation
             # n'est pas allée au bout, on évite de laisser une ramasse fantôme
@@ -942,10 +1180,12 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                         ramasse_id_final, exc_info=True,
                     )
         finally:
-            validate_btn.enable()
-            validate_btn.props(remove="loading")
+            prev_btn.props(remove="loading")
+            def_btn.props(remove="loading")
+            _refresh_action_buttons()
 
-    validate_btn.on_click(_on_validate)
+    prev_btn.on_click(lambda _e: _on_validate("previsionnel"))
+    def_btn.on_click(lambda _e: _on_validate("definitif"))
 
     async def _on_link_only():
         """Mode rattrapage : lie le panier à la ramasse sélectionnée sans
@@ -1008,7 +1248,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     link_only_btn.on_click(_on_link_only)
 
     # Quand le select ramasse change → re-évaluer la visibilité du bouton rattrapage
-    ramasse_to_update_select.on_value_change(lambda _e: _refresh_link_only_visibility())
+    ramasse_to_update_select.on_value_change(lambda _e: _refresh_action_buttons())
 
     def _on_clear_basket():
         """Bouton manuel : vide le panier persisté + l'état courant."""

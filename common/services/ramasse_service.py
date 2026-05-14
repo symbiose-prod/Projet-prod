@@ -222,8 +222,24 @@ def build_email_subject(
     *,
     is_update: bool = False,
     version: int = 1,
+    kind: str = "",
 ) -> str:
-    """Construit le sujet de l'email ramasse (v1 ou mise à jour v2+)."""
+    """Construit le sujet de l'email ramasse.
+
+    ``kind`` (préféré) : ``'previsionnel'`` | ``'definitif'``. Si vide,
+    on retombe sur l'ancien comportement (legacy v1 / v2+) — utilisé par
+    /ramasse en attendant sa suppression.
+    """
+    if kind == "previsionnel":
+        return (
+            f"Prévisionnel ramasse — {date_ramasse:%d/%m/%Y} "
+            "— Ferment Station"
+        )
+    if kind == "definitif":
+        return (
+            f"BL définitif ramasse — {date_ramasse:%d/%m/%Y} "
+            "— Ferment Station"
+        )
     if is_update:
         return (
             f"Mise à jour de la ramasse du {date_ramasse:%d/%m/%Y} "
@@ -259,20 +275,59 @@ def build_email_body(
     packaging_lines: list[dict] | None = None,
     is_update: bool = False,
     version: int = 1,
+    kind: str = "",
 ) -> str:
     """Corps HTML de l'email de ramasse.
 
-    Deux modes :
-    - v1 (création) : message court demandant la ramasse.
-    - v2+ (mise à jour) : mention explicite du remplacement, pointe vers le
-      PDF différentiel (jaune = ajouts, bleu = modifications).
+    Trois modes selon ``kind`` :
+
+    - ``'previsionnel'`` : annonce d'une ramasse à venir, sert au
+      logisticien à dimensionner le camion. La quantité n'est PAS
+      contractuelle ; les emballages à ramener (bouteilles vides, etc.)
+      sont listés ici car le logisticien a besoin du préavis pour les
+      préparer.
+    - ``'definitif'`` : BL rectificatif envoyé au moment du chargement —
+      ce que le chauffeur trouvera réellement dans le camion. Le PDF
+      joint affiche le diff vs le dernier prévisionnel.
+    - vide (legacy) : ancien comportement v1 / v2+ — utilisé par /ramasse
+      en attendant sa suppression.
 
     La signature et l'adresse sont toujours ajoutées en pied de mail.
     """
     pkg_html = _render_packaging_block(packaging_lines)
     plural_pal = "s" if total_palettes != 1 else ""
 
-    if is_update:
+    if kind == "previsionnel":
+        body = f"""
+        <p>Bonjour,</p>
+        <p>Nous prévoyons une ramasse pour le
+        <strong>{date_ramasse:%d/%m/%Y}</strong>.</p>
+        <p>Estimation actuelle : <strong>{total_palettes}</strong>
+        palette{plural_pal} ({total_cartons} cartons).</p>
+        <p>Ce message est une <strong>prévision</strong> destinée à
+        dimensionner le camion. Un BL définitif (rectificatif) vous sera
+        envoyé au moment du chargement.</p>
+        {pkg_html}
+        <p>Merci,<br>Bonne journée.</p>
+        {_SIGNATURE_HTML}
+        """
+    elif kind == "definitif":
+        body = f"""
+        <p>Bonjour,</p>
+        <p>Voici le <strong>BL définitif</strong> de la ramasse du
+        <strong>{date_ramasse:%d/%m/%Y}</strong>.</p>
+        <p>Total réel chargé : <strong>{total_palettes}</strong>
+        palette{plural_pal} ({total_cartons} cartons).</p>
+        <p>Ce BL <strong>remplace</strong> le prévisionnel précédent et
+        reflète exactement ce qui part dans le camion. Le PDF ci-joint
+        fait apparaître les écarts par rapport au prévisionnel :
+        <strong>nouvelles lignes en jaune</strong>,
+        <strong>lignes modifiées en bleu</strong>.</p>
+        {pkg_html}
+        <p>Merci,<br>Bonne journée.</p>
+        {_SIGNATURE_HTML}
+        """
+    elif is_update:
         body = f"""
         <p>Bonjour,</p>
         <p>Nous vous envoyons une <strong>mise à jour</strong> de la ramasse

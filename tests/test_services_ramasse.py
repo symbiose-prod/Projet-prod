@@ -332,6 +332,25 @@ class TestBuildEmailSubject:
         assert "v2" in s
         assert "19/04/2026" in s
 
+    def test_kind_previsionnel(self):
+        s = build_email_subject(date(2026, 4, 19), kind="previsionnel")
+        assert "Prévisionnel" in s
+        assert "19/04/2026" in s
+        assert "v2" not in s  # pas de notion de version pour le prévisionnel
+
+    def test_kind_definitif(self):
+        s = build_email_subject(date(2026, 4, 19), kind="definitif")
+        assert "définitif" in s
+        assert "19/04/2026" in s
+
+    def test_kind_overrides_legacy_is_update(self):
+        # Si kind est fourni, on ignore le legacy is_update / version
+        s = build_email_subject(
+            date(2026, 4, 19), is_update=True, version=5, kind="previsionnel",
+        )
+        assert "Prévisionnel" in s
+        assert "Mise à jour" not in s
+
 
 # ─── build_email_body ──────────────────────────────────────────────────────
 
@@ -402,3 +421,53 @@ class TestBuildEmailBody:
             packaging_lines=[],
         )
         assert "Emballages à ramener" not in body
+
+    def test_kind_previsionnel_marks_estimation(self):
+        body = build_email_body(
+            date(2026, 4, 19),
+            total_palettes=8, total_cartons=80,
+            kind="previsionnel",
+        )
+        # Estimation indicative, mention du BL définitif à venir
+        assert "prévision" in body.lower()
+        assert "dimensionner" in body.lower()
+        assert "définitif" in body.lower()
+        # Pas de mention "remplace" (c'est le sens d'un définitif)
+        assert "remplace" not in body
+
+    def test_kind_definitif_mentions_rectificatif_and_diff(self):
+        body = build_email_body(
+            date(2026, 4, 19),
+            total_palettes=8, total_cartons=80,
+            kind="definitif",
+        )
+        assert "définitif" in body.lower()
+        assert "remplace" in body
+        assert "exactement" in body  # le « ce qui part » est explicite
+        assert "jaune" in body
+        assert "bleu" in body
+
+    def test_kind_overrides_legacy_in_body(self):
+        body = build_email_body(
+            date(2026, 4, 19),
+            total_palettes=8, total_cartons=80,
+            is_update=True, version=5,
+            kind="previsionnel",
+        )
+        # kind l'emporte : on a le ton prévisionnel, pas le ton mise-à-jour v5
+        assert "prévision" in body.lower()
+        assert "version 5" not in body.lower()
+
+    def test_kind_previsionnel_includes_packaging(self):
+        # Cas métier : bouteilles vides demandées dès le prévisionnel pour
+        # que le logisticien ait le temps de les préparer.
+        body = build_email_body(
+            date(2026, 4, 19),
+            total_palettes=8, total_cartons=80,
+            packaging_lines=[
+                {"qty": 3, "unit": "palette", "label": "Bouteilles vides 33cl"},
+            ],
+            kind="previsionnel",
+        )
+        assert "Emballages à ramener" in body
+        assert "Bouteilles vides 33cl" in body
