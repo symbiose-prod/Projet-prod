@@ -326,7 +326,6 @@ import pages.historique_ramasses  # noqa: F401 — /historique-ramasses
 import pages.nomenclatures  # noqa: F401 — /nomenclatures
 import pages.previsions  # noqa: F401 — /previsions
 import pages.production  # noqa: F401 — /production
-import pages.ramasse  # noqa: F401 — /ramasse
 import pages.ressources  # noqa: F401 — /ressources
 import pages.sscc_log  # noqa: F401 — /sscc-log (admin only)
 import pages.stocks  # noqa: F401 — /stocks

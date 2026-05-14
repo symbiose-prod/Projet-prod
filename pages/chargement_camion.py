@@ -15,7 +15,9 @@ Workflow opérateur :
   5. Une fois le camion plein, valide → save/update ramasse + email +
      PDF BL téléchargé pour le chauffeur.
 
-Cette page vit en PARALLÈLE de /ramasse (qui reste manuelle).
+Seul flow de ramasse depuis la refonte 2026-05 (l'ancienne saisie
+manuelle /ramasse a été retirée — toutes les palettes sont étiquetées
+dès leur fabrication et scannées au chargement).
 """
 from __future__ import annotations
 
@@ -514,10 +516,10 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     # Bouton rattrapage — secondaire, visible UNIQUEMENT quand une ramasse
     # existante est sélectionnée pour MAJ. Sert au cas où le BL a déjà été
-    # envoyé via /ramasse (la page manuelle) mais qu'on veut lier les
-    # palettes scannées pour qu'elles n'apparaissent plus en "non chargées".
-    # Aucun email, aucun PDF, aucune nouvelle version : juste l'INSERT
-    # palette_loadings.
+    # envoyé manuellement (ou pour les ramasses legacy d'avant la refonte)
+    # mais qu'on veut lier les palettes scannées pour qu'elles
+    # n'apparaissent plus en "non chargées". Aucun email, aucun PDF,
+    # aucune nouvelle version : juste l'INSERT palette_loadings.
     with ui.row().classes("w-full q-mt-xs gap-2"):
         link_only_btn = ui.button(
             "🔗 Rattrapage : lier seulement les palettes (sans email/BL)",
@@ -1437,9 +1439,10 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         """Mode rattrapage : lie le panier à la ramasse sélectionnée sans
         envoyer d'email ni regénérer le PDF.
 
-        Use case : le BL a déjà été envoyé via /ramasse (page manuelle),
-        on veut juste enregistrer la traçabilité physique des palettes
-        scannées pour qu'elles disparaissent de la liste "non chargées".
+        Use case : le BL a déjà été envoyé via un autre canal (manuellement
+        ou pour une ramasse legacy d'avant la refonte), on veut juste
+        enregistrer la traçabilité physique des palettes scannées pour
+        qu'elles disparaissent de la liste "non chargées".
         """
         basket: list[PaletteInfo] = state["basket"]
         if not basket:
