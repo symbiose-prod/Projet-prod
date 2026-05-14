@@ -67,7 +67,7 @@ NAV_ITEMS: list[tuple] = [
     ("factory",        "Production",           "/production"),
     ("insights",       "Prévisions",           "/previsions"),
     ("qr_code_2",      "Étiquettes palette",   "/etiquettes-palette"),
-    ("departure_board", "Chargement camion",   "/chargement-camion"),
+    ("departure_board", "Ramasse / Chargement camion", "/chargement-camion"),
     ("history",        "Historique ramasses",  "/historique-ramasses"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("bar_chart",      "Commercial",            "/commercial"),
