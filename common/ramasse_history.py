@@ -99,9 +99,28 @@ def save_ramasse(
     tenant_id: str | None = None,
     user_id: str | None = None,
 ) -> str:
-    """Persiste une ramasse envoyée. Retourne l'UUID de l'enregistrement."""
+    """Persiste une ramasse envoyée. Retourne l'UUID de l'enregistrement.
+
+    Verrou métier : pour les status ``previsionnel`` et ``definitif``,
+    refuse l'INSERT si une autre ramasse non-livrée existe déjà pour ce
+    destinataire (cf. :func:`has_active_ramasse_for_dest`). Évite le
+    scénario doublon où Max envoie un prévisionnel J3 alors que celui
+    de J1 n'est pas encore livré.
+
+    Raises:
+        ValueError: si une ramasse active existe déjà pour ce
+            destinataire (status previsionnel ou definitif).
+    """
     tid = tenant_id or current_tenant_id()
     uid = user_id or current_user_id()
+
+    if status in ("previsionnel", "definitif"):
+        if has_active_ramasse_for_dest(destinataire, tenant_id=tid):
+            raise ValueError(
+                f"Une ramasse est déjà en cours pour {destinataire}. "
+                "Finalise-la (envoyer définitif + marquer chauffeur passé) "
+                "ou supprime-la avant d'en créer une nouvelle.",
+            )
 
     rows = run_sql(
         """
@@ -581,41 +600,71 @@ def purge_expired_ramasses(
     return purged
 
 
-def find_active_previsionnel_for_dest(
+def has_active_ramasse_for_dest(
     destinataire: str,
     tenant_id: str | None = None,
-) -> str | None:
-    """Retourne l'``id`` du prévisionnel en cours pour ce destinataire.
+) -> bool:
+    """Vrai s'il existe déjà une ramasse non-livrée pour ce destinataire.
 
-    Critères :
-    - ``status = 'previsionnel'``
-    - ``driver_passed = FALSE`` (sinon il est figé, on ne le rouvre pas)
-    - ``deleted_at IS NULL`` (corbeille exclue)
+    « Non-livrée » = status ∈ {``previsionnel``, ``definitif``} ET
+    ``driver_passed = FALSE`` ET ``deleted_at IS NULL``.
 
-    Pas de filtre temporel : un prévisionnel envoyé il y a 3 jours et
-    jamais converti en définitif reste candidat. Tri ``created_at
-    DESC`` → on prend le plus récent, au cas où il y en aurait
-    plusieurs (option 1 : autant de prévisionnels qu'on veut).
-
-    Sert à pré-sélectionner automatiquement la ramasse à mettre à jour
-    dans /chargement-camion — évite à l'opérateur de scroller pour
-    retrouver « celle d'hier ».
-
-    Retourne ``None`` si aucun prévisionnel ouvert pour ce destinataire.
+    Sert au verrou métier « 1 ramasse à la fois par destinataire » :
+    Max ne doit pas pouvoir créer un nouveau prévisionnel J3 alors
+    qu'il en a déjà un J1 non encore converti en définitif ni livré.
+    Ça évite le scénario doublon où Sofripa reçoit 2 BL en parallèle
+    pour la même semaine.
     """
     tid = tenant_id or current_tenant_id()
     rows = run_sql(
-        """SELECT id FROM ramasse_history
-           WHERE tenant_id    = :tid
+        """SELECT 1 FROM ramasse_history
+           WHERE tenant_id = :tid
              AND destinataire = :dest
-             AND status       = 'previsionnel'
+             AND status IN ('previsionnel', 'definitif')
              AND driver_passed = FALSE
-             AND deleted_at  IS NULL
-           ORDER BY created_at DESC
+             AND deleted_at IS NULL
            LIMIT 1""",
         {"tid": tid, "dest": destinataire},
     )
-    return str(rows[0]["id"]) if rows else None
+    return bool(rows)
+
+
+def get_active_ramasse_for_dest(
+    destinataire: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Retourne la ramasse non-livrée en cours pour ce destinataire,
+    enrichie avec l'email du créateur (LEFT JOIN users).
+
+    Avec le verrou ``has_active_ramasse_for_dest``, il y a forcément 0
+    ou 1 ramasse active. Si on en trouve plus d'une (cas anormal
+    post-migration legacy par exemple), on retourne la plus récente.
+
+    Retourne ``None`` si aucune ramasse active — l'opérateur peut donc
+    en créer une nouvelle.
+
+    Champs supplémentaires vs ``get_ramasse`` :
+    - ``created_by_email`` : email du créateur (NULL si user supprimé).
+    """
+    tid = tenant_id or current_tenant_id()
+    rows = run_sql(
+        """SELECT rh.id, rh.date_ramasse, rh.destinataire, rh.status,
+                  rh.total_palettes, rh.total_cartons, rh.total_poids_kg,
+                  rh.version, rh.driver_passed,
+                  rh.created_at, rh.updated_at,
+                  u.email AS created_by_email
+             FROM ramasse_history rh
+             LEFT JOIN users u ON u.id = rh.created_by
+            WHERE rh.tenant_id = :tid
+              AND rh.destinataire = :dest
+              AND rh.status IN ('previsionnel', 'definitif')
+              AND rh.driver_passed = FALSE
+              AND rh.deleted_at IS NULL
+         ORDER BY rh.created_at DESC
+            LIMIT 1""",
+        {"tid": tid, "dest": destinataire},
+    )
+    return rows[0] if rows else None
 
 
 def get_last_packaging_for_dest(
