@@ -600,35 +600,111 @@ def parse_gs1_ddm(yymmdd: str) -> _dt.date | None:
         return None
 
 
+# Tables de référence GS1 pour parser un GS1-128 brut (sans parenthèses).
+# Utilisées par `parse_gs1_raw` (input typique : iOS AVFoundation).
+_GS1_FIXED_LEN_AI = {
+    "00": 18, "01": 14, "02": 14,
+    "11": 6, "13": 6, "15": 6, "17": 6,
+    "20": 2,
+}
+# AI à longueur variable (terminés par FNC1 ou fin de chaîne). Liste non
+# exhaustive — on couvre ceux qu'on rencontre sur les étiquettes cartons.
+_GS1_VARIABLE_AIS = {"10", "21", "22", "30", "37", "240", "241", "250", "251", "253", "254"}
+# FNC1 = ASCII 29 (Group Separator). iOS AVFoundation l'inclut dans la chaîne
+# décodée pour séparer les AIs variables.
+_GS1_FNC1 = "\x1d"
+
+
+def parse_gs1_raw(data: str) -> dict[str, str]:
+    """Parse un GS1-128 dans son format brut (sans parenthèses).
+
+    Gère le format produit par iOS AVFoundation après décodage d'un Code 128 :
+    - préfixe AIM optionnel ``"]C1"`` (symbology identifier)
+    - séparateur FNC1 (ASCII 29) entre AIs variables
+    - valeurs alphanumériques pour les AIs variables (lot, batch…)
+
+    Args:
+        data: chaîne brute, ex: ``"]C1010377001442725015270511\\x1d10TESTLOT01"``
+              ou ``"010377001442725015270511\\x1d10TESTLOT01"``
+
+    Returns:
+        ``{"01": "...", "15": "...", "10": "..."}`` — dict des AIs trouvés.
+        Retourne ``{}`` si la chaîne ne contient pas d'AI reconnaissable.
+    """
+    s = data or ""
+    if not s:
+        return {}
+    # Strip AIM Code Identifier si présent (iOS peut le préfixer)
+    if s.startswith("]C1"):
+        s = s[3:]
+
+    out: dict[str, str] = {}
+    i = 0
+    n = len(s)
+    while i < n:
+        # Identifier l'AI : essai 2 chars, puis 3, puis 4
+        ai = None
+        for length in (2, 3, 4):
+            if i + length > n:
+                break
+            candidate = s[i:i + length]
+            if candidate in _GS1_FIXED_LEN_AI or candidate in _GS1_VARIABLE_AIS:
+                ai = candidate
+                i += length
+                break
+        if ai is None:
+            break  # AI inconnu → on s'arrête sans deviner
+
+        if ai in _GS1_FIXED_LEN_AI:
+            length = _GS1_FIXED_LEN_AI[ai]
+            if i + length > n:
+                break
+            out[ai] = s[i:i + length]
+            i += length
+            # FNC1 optionnel après AI fixe (tolérance — certains encodeurs en
+            # ajoutent toujours, même si la spec ne l'exige pas).
+            if i < n and s[i] == _GS1_FNC1:
+                i += 1
+        else:
+            # AI variable : lire jusqu'à FNC1 ou fin de chaîne
+            j = s.find(_GS1_FNC1, i)
+            if j == -1:
+                out[ai] = s[i:]
+                i = n
+            else:
+                out[ai] = s[i:j]
+                i = j + 1  # skip FNC1
+
+    return out
+
+
 def parse_gs1_to_entry(text: str) -> dict[str, str] | None:
-    """Parse une string GS1-128 (avec parenthèses ou digits FNC1-less) en entrée
+    """Parse une string GS1-128 (parenthèses ou brut iOS) en entrée
     ergonomique pour l'API mobile.
 
     Utilisé par l'endpoint ``POST /api/v1/decode-gs1`` : l'app iOS décode le
     code-barres en natif (AVFoundation) puis envoie la string brute au backend.
-    Le backend la convertit en ``{ean, lot, ddm}`` puis enrichit via la matrice
-    EasyBeer (lookup_product_by_ean).
 
     Args:
         text: chaîne brute scannée — formats supportés :
-            - ``"(01)037...(15)270511(10)110527"`` (avec parenthèses)
-            - ``"01037...15270511 10110527"`` (digits, FNC1 absent)
+            - ``"(01)037...(15)270511(10)110527"`` (avec parenthèses, ex: treepoem)
+            - ``"]C1010377...152705111\\x1d10TESTLOT01"`` (iOS AVFoundation)
+            - ``"010377...15270511 10110527"`` (digits, fallback ancien)
 
     Returns:
-        ``{"ean": "037...", "lot": "110527", "ddm": "2027-05-11"}`` si l'AI 01
-        est présent (les autres champs sont des strings vides si absents,
-        sauf ddm qui est ``""`` si non présent ou invalide).
-        ``None`` si aucun AI 01 lisible (sans EAN, pas d'enrichissement
-        possible côté backend).
+        ``{"ean": ..., "lot": ..., "ddm": "YYYY-MM-DD" | ""}`` si AI 01 trouvé.
+        ``None`` si aucun EAN lisible.
     """
     text = (text or "").strip()
     if not text:
         return None
 
-    # Essai 1 : format avec parenthèses (output `treepoem` ou string déjà
-    # formattée). Essai 2 : digits bruts (cas iOS AVFoundation qui rend le
-    # GS1-128 décodé sans le FNC1 visible).
-    ais = parse_gs1_string(text)
+    # Format 1 : avec parenthèses (treepoem, copier-coller humain).
+    ais = parse_gs1_string(text) if "(" in text else {}
+    # Format 2 : format brut iOS (AIM + FNC1 + alphanumérique).
+    if not ais.get("01"):
+        ais = parse_gs1_raw(text)
+    # Format 3 : ancien fallback "pure digits" (utile si lot purement numérique).
     if not ais.get("01"):
         ais = parse_gs1_digits(text)
     ean = ais.get("01")
