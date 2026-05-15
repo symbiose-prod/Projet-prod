@@ -72,6 +72,10 @@ PUBLIC_PATHS = {
     # pas de session NiceGUI). Le slash trailing évite de matcher le POST
     # utilisateur /api/print-jobs (qui reste protégé par session).
     "/api/print-jobs/",
+    # API v1 mobile : auth via Bearer token (table mobile_api_tokens),
+    # gérée explicitement dans chaque endpoint via _resolve_mobile_user.
+    # Le middleware d'auth NiceGUI (cookies session) doit laisser passer.
+    "/api/v1/",
 }
 
 # Cookie remember-me : duree par defaut (30 jours)
