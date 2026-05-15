@@ -39,8 +39,6 @@ from common.ramasse import (
     today_paris,
 )
 from common.ramasse_history import (
-    delete_ramasse,
-    finalize_ramasse_lines,
     get_active_ramasse_for_dest,
     get_last_packaging_for_dest,
     get_ramasse,
@@ -53,6 +51,7 @@ from common.services.loading_service import (
     aggregate_palettes_to_lines,
     link_palettes_to_ramasse,
     list_linked_palettes,
+    list_palettes_in_cold_room,
     list_unscanned_recent_palettes,
     lookup_sscc,
     rebuild_lines_from_palettes,
@@ -294,67 +293,83 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         linked_palettes_container = ui.column().classes("w-full q-mt-sm")
 
     # ────────────────────────────────────────────────────────────────────
-    # ÉTAPE 2 — Scan des palettes
+    # ÉTAPE 2 — Palettes en chambre froide (toujours visible)
     # ────────────────────────────────────────────────────────────────────
-    _step_title(2, "Scanner les palettes", "qr_code_scanner")
-    with ui.row().classes("w-full justify-center q-mt-sm q-mb-sm"):
-        ui.html(
-            '<label '
-            'style="display:inline-flex; align-items:center; gap:12px; '
-            'padding:22px 36px; background:#15803D; color:white; '
-            'border-radius:12px; cursor:pointer; font-size:20px; '
-            'font-weight:600; user-select:none; position:relative; '
-            'overflow:hidden; box-shadow:0 4px 12px rgba(21,128,61,0.3); '
-            '-webkit-tap-highlight-color: rgba(255,255,255,0.2); '
-            'touch-action: manipulation;">'
-            '<span class="material-icons" style="font-size:32px;">qr_code_scanner</span>'
-            'Scanner un SSCC'
-            '<input type="file" id="sscc-capture-input" '
-            'accept="image/*" capture="environment" '
-            'style="position:absolute; inset:0; opacity:0; cursor:pointer; '
-            'width:100%; height:100%;">'
-            '</label>',
+    # Snapshot du stock : palettes étiquetées non chargées sur la
+    # ramasse en cours. Sert de base à la demande provisoire (toutes
+    # incluses automatiquement) ET au chargement (l'opérateur voit ce
+    # qui reste à scanner).
+    _step_title(2, "Palettes en chambre froide", "ac_unit")
+    cold_room_container = ui.column().classes("w-full q-mt-sm")
+
+    # ────────────────────────────────────────────────────────────────────
+    # ÉTAPE 3 — Scanner les palettes chargées dans le camion
+    # ────────────────────────────────────────────────────────────────────
+    # Visible UNIQUEMENT quand une ramasse provisoire est en cours
+    # (i.e. status='previsionnel' ou 'definitif' non livré). Le scan
+    # bascule la palette de "en chambre froide" vers "dans le camion"
+    # via palette_loadings. La saisie est physique : chaque palette
+    # scannée = chargée pour de bon.
+    scan_section = ui.column().classes("w-full")
+    with scan_section:
+        _step_title(3, "Scanner les palettes chargées", "qr_code_scanner")
+        with ui.row().classes("w-full justify-center q-mt-sm q-mb-sm"):
+            ui.html(
+                '<label '
+                'style="display:inline-flex; align-items:center; gap:12px; '
+                'padding:22px 36px; background:#15803D; color:white; '
+                'border-radius:12px; cursor:pointer; font-size:20px; '
+                'font-weight:600; user-select:none; position:relative; '
+                'overflow:hidden; box-shadow:0 4px 12px rgba(21,128,61,0.3); '
+                '-webkit-tap-highlight-color: rgba(255,255,255,0.2); '
+                'touch-action: manipulation;">'
+                '<span class="material-icons" style="font-size:32px;">qr_code_scanner</span>'
+                'Scanner un SSCC'
+                '<input type="file" id="sscc-capture-input" '
+                'accept="image/*" capture="environment" '
+                'style="position:absolute; inset:0; opacity:0; cursor:pointer; '
+                'width:100%; height:100%;">'
+                '</label>',
+            )
+
+        with ui.row().classes("w-full justify-center q-mb-md"):
+            ui.button(
+                "Saisir le SSCC à la main",
+                icon="keyboard",
+                on_click=lambda: _open_manual_sscc_dialog(_handle_manual_sscc),
+            ).props("outline color=grey-8")
+
+        _install_sscc_scan_listener()
+
+        # Panier de palettes scannées
+        basket_card = ui.card().classes("w-full q-pa-none q-mt-sm").props(
+            "flat bordered",
         )
+        with basket_card:
+            with ui.card_section().classes("q-pa-sm"):
+                with ui.row().classes("w-full items-center justify-between no-wrap"):
+                    basket_header = ui.label("Panier vide").classes(
+                        "text-subtitle2",
+                    ).style(f"color: {COLORS['ink2']}")
+                    clear_basket_btn = ui.button(
+                        "Vider", icon="delete_sweep",
+                    ).props("flat dense color=grey-7 size=sm")
+                    clear_basket_btn.set_visibility(False)
+            basket_list_container = ui.column().classes("w-full gap-0")
 
-    with ui.row().classes("w-full justify-center q-mb-md"):
-        ui.button(
-            "Saisir le SSCC à la main",
-            icon="keyboard",
-            on_click=lambda: _open_manual_sscc_dialog(_handle_manual_sscc),
-        ).props("outline color=grey-8")
-
-    _install_sscc_scan_listener()
-
-    # Panier de palettes scannées
-    basket_card = ui.card().classes("w-full q-pa-none q-mt-sm").props("flat bordered")
-    with basket_card:
-        with ui.card_section().classes("q-pa-sm"):
-            with ui.row().classes("w-full items-center justify-between no-wrap"):
-                basket_header = ui.label("Panier vide").classes("text-subtitle2").style(
-                    f"color: {COLORS['ink2']}",
-                )
-                # Bouton "vider le panier" — utile si la session restaurée
-                # n'est plus à jour (palettes déjà validées ailleurs, etc.)
-                clear_basket_btn = ui.button(
-                    "Vider", icon="delete_sweep",
-                ).props("flat dense color=grey-7 size=sm")
-                clear_basket_btn.set_visibility(False)
-        basket_list_container = ui.column().classes("w-full gap-0")
-
-    # Palettes non scannées (rappel visuel)
-    with ui.expansion(
-        text="Palettes étiquetées récemment mais pas encore chargées",
-        icon="visibility",
-    ).classes("w-full q-mt-sm").props("dense"):
-        unscanned_container = ui.column().classes("w-full gap-1 q-pa-sm")
+    # Section "Palettes étiquetées récemment mais pas encore chargées"
+    # (legacy / rattrapage) — gardée mais cachée par défaut, car
+    # remplacée par la section CF principale en mode opérationnel.
+    unscanned_container = ui.column().classes("w-full gap-1 q-pa-sm")
+    unscanned_container.set_visibility(False)
 
     # ────────────────────────────────────────────────────────────────────
-    # ÉTAPE 3 — Emballages à demander au logisticien
+    # ÉTAPE 4 — Emballages à demander au logisticien
     # ────────────────────────────────────────────────────────────────────
     # Bouteilles vides etc. stockées chez le logisticien : on les demande
     # généralement au prévisionnel pour qu'il les prépare et les amène
     # avec le camion lors du chargement. Conservé aussi sur le définitif.
-    _step_title(3, "Emballages à ramener", "move_to_inbox")
+    _step_title(4, "Emballages à ramener", "move_to_inbox")
     packaging_state: dict = {"items": []}
     packaging_container = ui.column().classes("w-full")
 
@@ -467,9 +482,9 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     dest_select.on_value_change(_refresh_packaging)
 
     # ────────────────────────────────────────────────────────────────────
-    # ÉTAPE 4 — Récap & validation
+    # ÉTAPE 5 — Récap & validation
     # ────────────────────────────────────────────────────────────────────
-    _step_title(4, "Récap & validation", "summarize")
+    _step_title(5, "Récap & validation", "summarize")
     summary_card = ui.card().classes("w-full q-pa-md").props("flat bordered")
     with summary_card:
         # Totaux gros
@@ -720,12 +735,14 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     type="positive", icon="link_off", timeout=4000,
                 )
                 # Refresh : la palette disparaît de la liste « liées »,
-                # réapparaît dans « non chargées ». Le bandeau d'état
-                # se met à jour aussi (total_palettes a changé).
+                # réapparaît en CF (un unlink rebascule la palette
+                # « dans le camion » → « en chambre froide »). Le bandeau
+                # d'état se met à jour aussi (total_palettes a changé).
                 _refresh_linked_palettes()
                 _refresh_unscanned()
                 _refresh_existing_ramasses()
                 _refresh_state_banner()
+                _refresh_cold_room()
 
             with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
                 ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
@@ -736,22 +753,26 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         dlg.open()
 
     def _refresh_action_buttons():
-        """Affichage / label / état des 3 boutons (prev / def / rattrapage)
-        selon le statut de la ramasse à mettre à jour et le panier.
+        """Adapte les boutons et la visibilité du scan selon le mode.
 
-        Règles :
-        - create (pas de ramasse sélectionnée) : les 2 boutons visibles,
-          prévisionnel en parcours nominal, définitif si on veut sauter
-          l'étape prévisionnelle. Actifs uniquement si panier non-vide.
-        - update d'une ``previsionnel`` : prev_btn → "Renvoyer
-          prévisionnel" (option 1 : autant de fois qu'on veut), def_btn
-          → "Envoyer BL définitif" (transition canonique). Actifs dès
-          qu'on a quelque chose à envoyer — soit du panier scanné, soit
-          des palettes déjà liées (cas « envoi définitif sans ajout »).
-        - update d'une ``definitif`` : prev_btn caché (régression
-          interdite), def_btn → "Corriger BL définitif" (rare).
-        - link_only_btn : visible uniquement si une ramasse est
-          sélectionnée ET le panier n'est pas vide (rattrapage).
+        3 modes, déterminés par le statut de la ramasse pré-sélectionnée :
+
+        - **A. Aucune ramasse active** (mode « Demande provisoire ») :
+          - scan_section CACHÉE — on ne scanne rien pour un prévisionnel.
+          - prev_btn « Envoyer demande provisoire » (gros vert primaire).
+          - def_btn caché (le définitif n'a de sens qu'après un provisoire).
+          - link_only_btn caché.
+
+        - **B. Provisoire en cours** (mode « Chargement ») :
+          - scan_section VISIBLE — chaque scan = palette dans le camion.
+          - def_btn « Envoyer BL définitif » (gros vert primaire).
+          - prev_btn « Renvoyer la demande provisoire » (outline, rare).
+          - link_only_btn si panier non vide.
+
+        - **C. Définitif envoyé** (en attente chauffeur) :
+          - scan_section VISIBLE pour corrections.
+          - def_btn « Corriger BL définitif » (orange).
+          - prev_btn caché (régression interdite).
         """
         has_basket = bool(state["basket"])
         has_linked = bool(linked_cache.get("items"))
@@ -759,23 +780,36 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         rid = ramasse_to_update_select.value
         has_ramasse = bool(rid) and rid != ""
 
-        # Boutons d'envoi
         if current_status == "definitif":
+            # Mode C : correction d'un définitif
+            scan_section.set_visibility(True)
             prev_btn.set_visibility(False)
+            def_btn.set_visibility(True)
             def_btn.text = "Corriger BL définitif"
+            can_send = has_basket or has_linked
+            link_only_btn.set_visibility(has_ramasse and has_basket)
         elif current_status == "previsionnel":
+            # Mode B : provisoire en cours, on charge le camion
+            scan_section.set_visibility(True)
             prev_btn.set_visibility(True)
-            prev_btn.text = "Renvoyer prévisionnel"
+            prev_btn.text = "Renvoyer demande provisoire"
+            def_btn.set_visibility(True)
             def_btn.text = "Envoyer BL définitif"
+            # Pour un définitif on a besoin de palettes scannées ou liées
+            # Pour un renvoi prévisionnel : toujours OK (snapshot CF auto)
+            can_send = True  # le prévisionnel ne dépend pas du panier
         else:
+            # Mode A : pas de ramasse → demande provisoire
+            scan_section.set_visibility(False)
             prev_btn.set_visibility(True)
-            prev_btn.text = "Envoyer prévisionnel"
-            def_btn.text = "Envoyer BL définitif"
+            prev_btn.text = "Envoyer demande provisoire"
+            def_btn.set_visibility(False)
+            # Le prévisionnel inclut auto toutes les palettes en CF —
+            # le bouton est toujours actif (la liste CF peut être vide,
+            # auquel cas l'envoi sera refusé avec un message clair).
+            can_send = True
+            link_only_btn.set_visibility(False)
 
-        # En update, on peut envoyer même sans nouvelles palettes scannées
-        # (par ex. après avoir retiré une palette du BL et voulant
-        # renvoyer la version corrigée). En create, panier obligatoire.
-        can_send = has_basket if not has_ramasse else (has_basket or has_linked)
         if can_send:
             prev_btn.enable()
             def_btn.enable()
@@ -783,12 +817,14 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             prev_btn.disable()
             def_btn.disable()
 
-        # Rattrapage : visible uniquement update + panier non-vide
-        link_only_btn.set_visibility(has_ramasse and has_basket)
-        if has_ramasse and has_basket:
-            link_only_btn.enable()
-        else:
-            link_only_btn.disable()
+        # Rattrapage : reste piloté par dest + panier (mode B/C uniquement)
+        if current_status in (None, ""):
+            link_only_btn.set_visibility(False)
+        if link_only_btn.visible:
+            if has_ramasse and has_basket:
+                link_only_btn.enable()
+            else:
+                link_only_btn.disable()
 
     def _refresh_summary():
         """Recalcule totaux + détail produit. Distingue ce qui est déjà
@@ -905,12 +941,14 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         )
         _persist_basket()
         _refresh_basket()
+        _refresh_cold_room()
 
     def _remove_from_basket(sscc: str):
         state["basket"] = [p for p in state["basket"] if p.sscc != sscc]
         ui.notify("Palette retirée du panier.", type="info", timeout=1500)
         _persist_basket()
         _refresh_basket()
+        _refresh_cold_room()
 
     def _handle_scan_result(data):
         """Reçoit le résultat d'un scan SSCC (caméra ou EAN manuel) et
@@ -1006,6 +1044,126 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     )
 
     # ── Palettes non scannées (rappel) ──
+    def _refresh_cold_room():
+        """Rebuild la section « Palettes en chambre froide ».
+
+        Affiche le stock physique actuel (palettes étiquetées non
+        chargées sur une ramasse active). Sert :
+        - en mode A (aucune ramasse) : à montrer ce qui sera inclus
+          automatiquement dans la prochaine demande provisoire,
+        - en mode B (provisoire en cours) : à montrer ce qui reste à
+          scanner au chargement. Les palettes déjà dans le panier sont
+          marquées « ✓ Scannée pour le camion ».
+
+        Grouped par produit + format pour lisibilité (un compteur par
+        groupe), avec un récap total en haut. La PR de polish visuel
+        (mini-cartes par produit, photo, couleur DDM) viendra dessus.
+        """
+        cold_room_container.clear()
+        try:
+            palettes = list_palettes_in_cold_room(tenant_id)
+        except Exception:
+            _log.warning("Échec list_palettes_in_cold_room", exc_info=True)
+            palettes = []
+
+        basket_ssccs = {p.sscc for p in state["basket"]}
+
+        with cold_room_container:
+            if not palettes:
+                with ui.row().classes("w-full items-center gap-2 q-pa-md").style(
+                    f"background: #F9FAFB; border: 1px dashed {COLORS['border']}; "
+                    "border-radius: 8px",
+                ):
+                    ui.icon("inbox", size="md").style(f"color: {COLORS['ink2']}")
+                    ui.label(
+                        "Chambre froide vide — aucune palette étiquetée "
+                        "disponible. Étiquette des palettes depuis "
+                        "/etiquettes-palette pour les ajouter au stock.",
+                    ).classes("text-body2").style(
+                        f"color: {COLORS['ink2']}; font-style: italic",
+                    )
+                return
+
+            total_palettes = len(palettes)
+            total_cartons = sum(int(p.case_count or 0) for p in palettes)
+
+            # Bandeau récap global
+            with ui.row().classes(
+                "w-full items-center justify-between q-pa-sm",
+            ).style(
+                "background: #ECFDF5; border: 1px solid #6EE7B7; "
+                "border-radius: 8px",
+            ):
+                with ui.column().classes("gap-0"):
+                    ui.label("STOCK CHAMBRE FROIDE").classes("text-caption").style(
+                        "color: #065F46; letter-spacing: 1px; font-weight: 700",
+                    )
+                    ui.label(
+                        f"{total_palettes} palette(s) · {total_cartons} cartons",
+                    ).classes("text-h6").style(
+                        "color: #047857; font-weight: 700",
+                    )
+                if basket_ssccs:
+                    nb_in_basket = sum(
+                        1 for p in palettes if p.sscc in basket_ssccs
+                    )
+                    ui.label(
+                        f"dont {nb_in_basket} dans le panier",
+                    ).classes("text-caption").style(
+                        "color: #047857; font-weight: 600",
+                    )
+
+            # Détail groupé par produit + format
+            groups: dict[tuple[str, str], list[PaletteInfo]] = {}
+            for p in palettes:
+                key = (p.designation, p.fmt)
+                groups.setdefault(key, []).append(p)
+
+            for (designation, fmt), group_palettes in sorted(
+                groups.items(), key=lambda kv: kv[0][0],
+            ):
+                nb = len(group_palettes)
+                cartons = sum(int(p.case_count or 0) for p in group_palettes)
+                # Compter combien de cette ligne sont scannées dans le panier
+                nb_scanned = sum(
+                    1 for p in group_palettes if p.sscc in basket_ssccs
+                )
+                with ui.row().classes(
+                    "w-full items-center gap-3 q-pa-sm q-mt-xs",
+                ).style(
+                    f"border-top: 1px solid {COLORS['border']}",
+                ):
+                    with ui.column().classes("flex-1 gap-0"):
+                        ui.label(f"{designation} {fmt}").classes(
+                            "text-body2",
+                        ).style(f"color: {COLORS['ink']}; font-weight: 500")
+                        ddms = sorted(
+                            [p.ddm for p in group_palettes if p.ddm],
+                        )
+                        if ddms:
+                            first_ddm = ddms[0]
+                            ddm_str = first_ddm.strftime("%d/%m/%Y") if hasattr(first_ddm, "strftime") else str(first_ddm)
+                            ui.label(
+                                f"DDM la plus proche : {ddm_str}",
+                            ).classes("text-caption").style(
+                                f"color: {COLORS['ink2']}",
+                            )
+                    ui.label(f"{nb} pal").classes("text-body2").style(
+                        f"color: {COLORS['ink']}; font-weight: 600; "
+                        "min-width: 60px; text-align: right",
+                    )
+                    ui.label(f"{cartons} c").classes("text-body2").style(
+                        f"color: {COLORS['ink2']}; "
+                        "min-width: 60px; text-align: right",
+                    )
+                    if nb_scanned > 0:
+                        ui.label(
+                            f"✓ {nb_scanned} scannée(s)",
+                        ).classes("text-caption").style(
+                            "color: #047857; font-weight: 600; "
+                            "min-width: 100px; text-align: right",
+                        )
+
     def _refresh_unscanned():
         unscanned_container.clear()
         try:
@@ -1156,39 +1314,25 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     async def _on_validate(target_status: str):
         """Orchestre l'envoi d'un prévisionnel ou d'un définitif.
 
-        ``target_status`` ∈ {``'previsionnel'``, ``'definitif'``} — pilote
-        le statut persisté en DB, le ton de l'email, le bandeau PDF et
-        la transition autorisée (le service refuse definitif→previsionnel).
+        Les 2 flux ont des sémantiques très différentes :
 
-        Flow (cf. PR 2 — palette_loadings = source de vérité) :
-            1. INSERT ramasse_history (placeholder en create).
-            2. INSERT palette_loadings (panier → ramasse_id).
-            3. rebuild_lines_from_palettes.
-            4. Build PDF avec les vraies lignes + diff vs previous_lines
-               (snapshot du prévisionnel en cas de définitif).
-            5. finalize (create) ou update_ramasse (versionne + snapshot).
-            6. Email + download.
+        - ``previsionnel`` : snapshot automatique de la chambre froide
+          (toutes les palettes étiquetées non chargées). Pas de scan,
+          pas de lien ``palette_loadings`` — c'est une prévision pour
+          dimensionner le camion. Le snapshot est stocké dans
+          ``ramasse_history.lines``.
 
-        En cas d'échec mid-flow sur un create, soft-delete du placeholder.
+        - ``definitif`` : palettes physiquement chargées dans le camion,
+          identifiées par le scan SSCC pendant le chargement. Le BL
+          reflète exactement ``palette_loadings``. Doit faire suite à
+          un prévisionnel (mode update obligatoire).
+
+        Verrou « 1 ramasse active par dest » (cf. has_active_ramasse) :
+        si Max essaie de créer un 2e prévisionnel alors qu'un BL n'est
+        pas encore livré, on refuse et on rafraîchit l'UI.
         """
+        # ── State commun aux 2 modes ──
         basket: list[PaletteInfo] = state["basket"]
-        rid_for_update = (
-            ramasse_to_update_select.value
-            if ramasse_to_update_select.value else None
-        )
-        has_linked = bool(linked_cache.get("items"))
-        # En create : panier obligatoire. En update : on autorise un panier
-        # vide si la ramasse a déjà des palettes liées (cas typique : on a
-        # retiré une palette et on renvoie le BL corrigé sans rien ajouter).
-        if not basket and not (rid_for_update and has_linked):
-            ui.notify(
-                "Rien à envoyer — scanne au moins une palette "
-                "ou sélectionne une ramasse contenant déjà des palettes.",
-                type="warning",
-            )
-            return
-
-        # Récupère le state UI
         d_str = (date_input.value or "").strip()
         try:
             d = _dt.date.fromisoformat(d_str) if d_str else today_paris()
@@ -1201,7 +1345,6 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             ui.notify("Sélectionne un destinataire.", type="warning")
             return
 
-        # Trouve l'objet destinataire complet pour le PDF (adresse + emails)
         dest_obj = next(
             (x for x in destinataires_list if x.get("name") == dest_title), None,
         )
@@ -1217,139 +1360,204 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             )
             return
 
-        # Sécurité UI : on désactive les boutons d'envoi pendant le flow
-        prev_btn.disable()
-        prev_btn.props("loading")
-        def_btn.disable()
-        def_btn.props("loading")
-
         ramasse_id_to_update = (
             state["ramasse_to_update_id"]
             or (ramasse_to_update_select.value if ramasse_to_update_select.value else None)
         )
         is_update = bool(ramasse_id_to_update)
-        previous_lines: list[dict] | None = None
+        previous_lines_for_diff: list[dict] | None = None
         next_version = 1
 
+        # Validation préalable du mode update
         if is_update:
             existing = await asyncio.to_thread(
                 get_ramasse, ramasse_id_to_update, tenant_id=tenant_id,
             )
             if not existing:
                 ui.notify(
-                    "Ramasse à mettre à jour introuvable. Annule et recommence.",
+                    "Ramasse à mettre à jour introuvable. Recharge la page.",
                     type="negative",
                 )
-                _refresh_action_buttons()
-                prev_btn.props(remove="loading")
-                def_btn.props(remove="loading")
                 return
             if existing.get("driver_passed"):
                 ui.notify(
                     "Ramasse verrouillée (chauffeur déjà passé). "
-                    "Crée une nouvelle ramasse.",
+                    "Marque-la comme non livrée pour la modifier.",
                     type="negative",
                 )
-                _refresh_action_buttons()
-                prev_btn.props(remove="loading")
-                def_btn.props(remove="loading")
                 return
             next_version = int(existing.get("version") or 1) + 1
-            previous_lines = existing.get("lines") or []
+            previous_lines_for_diff = existing.get("lines") or []
+
+        # ── Validation spécifique au mode ──
+        if target_status == "definitif":
+            if not is_update:
+                ui.notify(
+                    "Envoie d'abord la demande provisoire (palettes en chambre froide), "
+                    "puis fais le BL définitif au moment du chargement.",
+                    type="negative", timeout=10000,
+                )
+                return
+            # Définitif : panier doit être non vide OU des palettes
+            # doivent déjà être liées (cas correction sans nouveau scan).
+            has_linked = bool(linked_cache.get("items"))
+            if not basket and not has_linked:
+                ui.notify(
+                    "Scanne au moins une palette du camion avant d'envoyer "
+                    "le BL définitif.",
+                    type="warning",
+                )
+                return
 
         sender_email = os.environ.get("EMAIL_SENDER") or ""
         recipients = list(dest_emails)
         if sender_email and sender_email not in recipients:
             recipients.append(sender_email)
 
+        prev_btn.disable()
+        prev_btn.props("loading")
+        def_btn.disable()
+        def_btn.props("loading")
+
         ramasse_id_final: str | None = None
-        cleanup_placeholder = False  # True si on a créé un placeholder à nettoyer en cas d'erreur
 
         try:
-            # ── 1. INSERT ramasse_history (placeholder si create) ──
-            # Le statut applicatif est posé dès le placeholder pour rester
-            # cohérent même si la finalisation est interrompue.
-            if is_update:
-                ramasse_id_final = str(ramasse_id_to_update)
-            else:
-                try:
-                    ramasse_id_final = await asyncio.to_thread(
-                        save_ramasse,
+            if target_status == "previsionnel":
+                # ─── Mode PROVISOIRE — snapshot automatique de la CF ────
+                palettes_cf = await asyncio.to_thread(
+                    list_palettes_in_cold_room, tenant_id,
+                )
+                if not palettes_cf:
+                    ui.notify(
+                        "Aucune palette en chambre froide à inclure dans la demande.",
+                        type="warning", timeout=6000,
+                    )
+                    return
+                lines = aggregate_palettes_to_lines(palettes_cf)
+                total_cartons = sum(int(line["cartons"]) for line in lines)
+                total_palettes = sum(int(line["palettes"]) for line in lines)
+                total_poids = sum(int(line["poids"]) for line in lines)
+
+                packaging_lines_ui = _get_packaging_lines()
+
+                df_lines = _build_df_for_pdf(lines)
+                pdf_bytes = await asyncio.to_thread(
+                    build_bl_enlevements_pdf,
+                    date_creation=today_paris(),
+                    date_ramasse=d,
+                    destinataire_title=dest_title,
+                    destinataire_lines=dest_addr_lines,
+                    df_lines=df_lines,
+                    packaging_lines=packaging_lines_ui,
+                    previous_lines=None,  # pas de diff sur un prévisionnel
+                    version=next_version,
+                    kind="previsionnel",
+                )
+
+                if is_update:
+                    # Renvoyer un prévisionnel mis à jour (option 1)
+                    result = await asyncio.to_thread(
+                        update_ramasse,
+                        ramasse_id_to_update,
                         date_ramasse=d,
                         destinataire=dest_title,
                         recipients=recipients,
-                        lines=[], total_cartons=0,
-                        total_palettes=0, total_poids_kg=0,
-                        pdf_bytes=None,
-                        status=target_status,
+                        lines=lines,
+                        total_cartons=total_cartons,
+                        total_palettes=total_palettes,
+                        total_poids_kg=total_poids,
+                        packaging=packaging_lines_ui,
+                        pdf_bytes=pdf_bytes,
+                        target_status="previsionnel",
                         tenant_id=tenant_id,
                     )
-                    cleanup_placeholder = True
-                except ValueError as exc:
-                    # Verrou « 1 ramasse active à la fois par dest » — Max
-                    # a essayé de créer un nouveau prévisionnel alors qu'une
-                    # ramasse non-livrée existe déjà. On rafraîchit la liste
-                    # + le bandeau d'état pour qu'il voie celle qui existe.
-                    ui.notify(
-                        str(exc), type="negative", icon="lock",
-                        timeout=10000, position="top",
+                    if result is None:
+                        ui.notify(
+                            "Transition refusée (un BL définitif ne peut pas "
+                            "redevenir prévisionnel).",
+                            type="negative", timeout=8000,
+                        )
+                        return
+                    ramasse_id_final = str(ramasse_id_to_update)
+                else:
+                    # Création directe — pas de placeholder + finalize,
+                    # on a déjà toutes les lignes (depuis la CF).
+                    try:
+                        ramasse_id_final = await asyncio.to_thread(
+                            save_ramasse,
+                            date_ramasse=d,
+                            destinataire=dest_title,
+                            recipients=recipients,
+                            lines=lines,
+                            total_cartons=total_cartons,
+                            total_palettes=total_palettes,
+                            total_poids_kg=total_poids,
+                            packaging=packaging_lines_ui,
+                            pdf_bytes=pdf_bytes,
+                            status="previsionnel",
+                            tenant_id=tenant_id,
+                        )
+                    except ValueError as exc:
+                        # Verrou « 1 ramasse active par dest »
+                        ui.notify(
+                            str(exc), type="negative", icon="lock",
+                            timeout=10000, position="top",
+                        )
+                        _refresh_existing_ramasses()
+                        _refresh_state_banner()
+                        return
+
+                inserted = total_palettes  # pour le message final
+
+            else:  # target_status == "definitif"
+                # ─── Mode CHARGEMENT — palette_loadings = vérité ────
+                ramasse_id_final = str(ramasse_id_to_update)
+
+                # Lien palette_loadings pour les palettes scannées au
+                # chargement (= palettes qui partent dans le camion).
+                sscc_list = [p.sscc for p in basket]
+                inserted = 0
+                if sscc_list:
+                    inserted, conflicts = await asyncio.to_thread(
+                        link_palettes_to_ramasse,
+                        tenant_id,
+                        sscc_list=sscc_list,
+                        ramasse_id=ramasse_id_final,
+                        user_email=user_email,
                     )
-                    _refresh_existing_ramasses()
-                    _refresh_state_banner()
-                    prev_btn.props(remove="loading")
-                    def_btn.props(remove="loading")
-                    _refresh_action_buttons()
-                    return
+                    if conflicts:
+                        _log.warning(
+                            "Définitif : %d palettes en conflict UNIQUE : %s",
+                            len(conflicts), conflicts[:5],
+                        )
+                        ui.notify(
+                            f"⚠ {len(conflicts)} palette(s) déjà liée(s) "
+                            "ailleurs — vérifier le journal admin.",
+                            type="warning", timeout=6000,
+                        )
 
-            # ── 2. Lie les palettes du panier à la ramasse ──
-            sscc_list = [p.sscc for p in basket]
-            inserted, conflicts = await asyncio.to_thread(
-                link_palettes_to_ramasse,
-                tenant_id,
-                sscc_list=sscc_list,
-                ramasse_id=ramasse_id_final,
-                user_email=user_email,
-            )
-            if conflicts:
-                _log.warning(
-                    "Loading : %d palettes en conflict UNIQUE — déjà liées ailleurs : %s",
-                    len(conflicts), conflicts[:5],
-                )
-                ui.notify(
-                    f"⚠ {len(conflicts)} palette(s) déjà liée(s) à une autre ramasse — "
-                    "vérifier le journal admin.",
-                    type="warning", timeout=6000,
+                # Rebuild depuis palette_loadings (= palettes scannées
+                # accumulées sur la ramasse, J1 + J2 + tout).
+                lines, total_cartons, total_palettes, total_poids = await asyncio.to_thread(
+                    rebuild_lines_from_palettes, ramasse_id_final, tenant_id,
                 )
 
-            # ── 3. Rebuild les lignes depuis palette_loadings (vérité) ──
-            lines, total_cartons, total_palettes, total_poids = await asyncio.to_thread(
-                rebuild_lines_from_palettes, ramasse_id_final, tenant_id,
-            )
+                packaging_lines_ui = _get_packaging_lines()
 
-            # ── 4. Build le PDF BL avec les vraies lignes ──
-            # Pour un définitif faisant suite à un prévisionnel, on passe
-            # le snapshot du prévisionnel comme previous_lines pour
-            # afficher le diff JAUNE/BLEU dans le PDF.
-            df_lines = _build_df_for_pdf(lines)
-            pdf_bytes = await asyncio.to_thread(
-                build_bl_enlevements_pdf,
-                date_creation=today_paris(),
-                date_ramasse=d,
-                destinataire_title=dest_title,
-                destinataire_lines=dest_addr_lines,
-                df_lines=df_lines,
-                previous_lines=previous_lines if target_status == "definitif" else None,
-                version=next_version,
-                kind=target_status,
-            )
+                df_lines = _build_df_for_pdf(lines)
+                pdf_bytes = await asyncio.to_thread(
+                    build_bl_enlevements_pdf,
+                    date_creation=today_paris(),
+                    date_ramasse=d,
+                    destinataire_title=dest_title,
+                    destinataire_lines=dest_addr_lines,
+                    df_lines=df_lines,
+                    packaging_lines=packaging_lines_ui,
+                    previous_lines=previous_lines_for_diff,  # snapshot prov pour diff
+                    version=next_version,
+                    kind="definitif",
+                )
 
-            # Snapshot du packaging UI (envoyé avec l'email + persisté)
-            packaging_lines_ui = _get_packaging_lines()
-
-            # ── 5. Persiste les lignes finales + PDF ──
-            if is_update:
-                # update_ramasse versionne automatiquement + valide la
-                # transition de statut (refus definitif→previsionnel).
                 result = await asyncio.to_thread(
                     update_ramasse,
                     ramasse_id_final,
@@ -1362,44 +1570,24 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     total_poids_kg=total_poids,
                     packaging=packaging_lines_ui,
                     pdf_bytes=pdf_bytes,
-                    target_status=target_status,
+                    target_status="definitif",
                     tenant_id=tenant_id,
                 )
                 if result is None:
                     ui.notify(
-                        "Transition de statut refusée (un BL définitif "
-                        "ne peut pas redevenir prévisionnel). Crée une "
-                        "nouvelle ramasse si besoin.",
+                        "Transition refusée (legacy → définitif interdit).",
                         type="negative", timeout=8000,
                     )
-                    _refresh_action_buttons()
-                    prev_btn.props(remove="loading")
-                    def_btn.props(remove="loading")
                     return
-            else:
-                # Patch atomique du placeholder — ne touche pas à version.
-                await asyncio.to_thread(
-                    finalize_ramasse_lines,
-                    ramasse_id_final,
-                    lines=lines,
-                    total_cartons=total_cartons,
-                    total_palettes=total_palettes,
-                    total_poids_kg=total_poids,
-                    packaging=packaging_lines_ui,
-                    pdf_bytes=pdf_bytes,
-                    tenant_id=tenant_id,
-                )
 
-            cleanup_placeholder = False  # success path — pas de rollback
-
-            # ── 6. Envoie l'email (ton adapté au statut) ──
+            # ── Email + download + notif (commun aux 2 modes) ──
             subject = build_email_subject(d, kind=target_status)
             body = build_email_body(
                 d, total_palettes=total_palettes, total_cartons=total_cartons,
                 packaging_lines=packaging_lines_ui,
                 kind=target_status,
             )
-            kind_short = "Previsionnel" if target_status == "previsionnel" else "Definitif"
+            kind_short = "Provisoire" if target_status == "previsionnel" else "Definitif"
             fname = f"BL_{kind_short}_{d:%Y%m%d}.pdf"
             await asyncio.to_thread(
                 send_html_with_pdf,
@@ -1407,15 +1595,16 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 html_body=body, attachments=[(fname, pdf_bytes)],
             )
 
-            # ── 7. Télécharge le PDF (utile au chauffeur pour le définitif) ──
             if target_status == "definitif":
+                # Le chauffeur a besoin du PDF papier — download obligatoire
                 ui.download(pdf_bytes, fname)
             kind_label = (
-                "Prévisionnel envoyé" if target_status == "previsionnel"
+                "Demande provisoire envoyée"
+                if target_status == "previsionnel"
                 else "BL définitif envoyé"
             )
             ui.notify(
-                f"✓ {kind_label} — {inserted} palette(s) liée(s).",
+                f"✓ {kind_label} — {total_palettes} palette(s) dans le BL.",
                 type="positive", icon="check_circle", timeout=6000,
             )
 
@@ -1427,26 +1616,10 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _refresh_existing_ramasses()
             _refresh_linked_palettes()
             _refresh_state_banner()
+            _refresh_cold_room()
         except Exception as exc:
             _log.exception("Erreur validation chargement camion (kind=%s)", target_status)
             ui.notify(f"Erreur : {exc}", type="negative", timeout=8000)
-            # Rollback : si on a créé un placeholder mais que la finalisation
-            # n'est pas allée au bout, on évite de laisser une ramasse fantôme
-            # vide dans l'historique. Soft-delete → corbeille (récupérable 7j).
-            if cleanup_placeholder and ramasse_id_final:
-                try:
-                    await asyncio.to_thread(
-                        delete_ramasse, ramasse_id_final, tenant_id=tenant_id,
-                    )
-                    _log.info(
-                        "Placeholder ramasse %s soft-deleted suite à échec validation",
-                        ramasse_id_final,
-                    )
-                except Exception:
-                    _log.warning(
-                        "Cleanup placeholder ramasse %s a échoué",
-                        ramasse_id_final, exc_info=True,
-                    )
         finally:
             prev_btn.props(remove="loading")
             def_btn.props(remove="loading")
@@ -1509,6 +1682,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _refresh_unscanned()
             _refresh_linked_palettes()
             _refresh_state_banner()
+            _refresh_cold_room()
         except Exception as exc:
             _log.exception("Erreur rattrapage link")
             ui.notify(f"Erreur : {exc}", type="negative")
@@ -1692,6 +1866,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         if current_rid and current_rid in ramasse_status_by_id:
             ramasse_to_update_select.value = ""
         _refresh_state_banner()
+        _refresh_cold_room()
         _try_auto_select_active_ramasse()
 
     dest_select.on_value_change(_on_dest_changed_for_state)
@@ -1703,6 +1878,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     # Initial render — affichera les palettes restaurées si présentes
     _refresh_basket()
+    _refresh_cold_room()
     _refresh_state_banner()
     _try_auto_select_active_ramasse()
 
