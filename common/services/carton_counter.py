@@ -16,10 +16,13 @@ réelles avant d'envisager l'intégration dans /etiquettes-palette.
 from __future__ import annotations
 
 import base64
+import datetime as _dt
 import json
 import logging
 import os
 from dataclasses import dataclass
+
+from db.conn import run_sql
 
 _log = logging.getLogger("ferment.carton_counter")
 
@@ -163,4 +166,144 @@ def count_cartons_in_photo(
         confidence=confidence,
         description=str(data.get("description", "")).strip(),
         raw_response=raw,
+    )
+
+
+# ─── Persistance : suivi des évals pour mesurer la précision ────────────────
+
+@dataclass(frozen=True)
+class EvalEntry:
+    """Une ligne du journal d'évaluations."""
+    id: int
+    claude_count: int
+    claude_confidence: str
+    claude_description: str
+    real_count: int | None         # None tant que l'opérateur n'a pas saisi
+    created_at: _dt.datetime
+
+
+@dataclass(frozen=True)
+class EvalStats:
+    """Stats agrégées sur les évals avec ``real_count`` renseigné."""
+    total_with_real: int           # nb d'évals évaluées
+    exact_match_pct: float         # % où claude_count == real_count
+    within_one_pct: float          # % où |écart| ≤ 1
+    within_three_pct: float        # % où |écart| ≤ 3
+    avg_abs_error: float           # erreur absolue moyenne (cartons)
+
+
+def save_eval_attempt(
+    tenant_id: str,
+    *,
+    user_email: str,
+    claude_result: CartonCountResult,
+    image_bytes: bytes | None = None,
+) -> int:
+    """Insert une nouvelle ligne d'éval avec le résultat Claude.
+
+    ``real_count`` reste ``NULL`` — sera renseigné via
+    :func:`set_real_count` quand l'opérateur aura compté manuellement.
+
+    Retourne l'``id`` (BIGSERIAL) pour permettre l'update ultérieur.
+    """
+    rows = run_sql(
+        """INSERT INTO carton_count_evals
+               (tenant_id, user_email,
+                claude_count, claude_confidence, claude_description,
+                image_bytes)
+           VALUES (:t, :u, :cc, :conf, :desc, :img)
+           RETURNING id""",
+        {
+            "t": tenant_id,
+            "u": user_email or "",
+            "cc": int(claude_result.count),
+            "conf": claude_result.confidence,
+            "desc": claude_result.description[:1000],
+            "img": image_bytes,
+        },
+    )
+    return int(rows[0]["id"]) if rows else 0
+
+
+def set_real_count(eval_id: int, *, real_count: int, tenant_id: str) -> bool:
+    """Met à jour ``real_count`` sur une éval existante.
+
+    Idempotent : appel multiple → écrase la valeur précédente (permet à
+    l'opérateur de corriger s'il s'est trompé).
+    """
+    rows = run_sql(
+        """UPDATE carton_count_evals
+              SET real_count = :rc
+            WHERE id = :id AND tenant_id = :t
+            RETURNING id""",
+        {"id": int(eval_id), "rc": int(real_count), "t": tenant_id},
+    )
+    return bool(rows)
+
+
+def list_recent_evals(tenant_id: str, *, limit: int = 15) -> list[EvalEntry]:
+    """Retourne les ``limit`` derniers essais, plus récents en premier."""
+    rows = run_sql(
+        """SELECT id, claude_count, claude_confidence, claude_description,
+                  real_count, created_at
+             FROM carton_count_evals
+            WHERE tenant_id = :t
+         ORDER BY created_at DESC
+            LIMIT :lim""",
+        {"t": tenant_id, "lim": int(limit)},
+    ) or []
+    out: list[EvalEntry] = []
+    for r in rows:
+        try:
+            out.append(EvalEntry(
+                id=int(r["id"]),
+                claude_count=int(r.get("claude_count") or 0),
+                claude_confidence=str(r.get("claude_confidence") or ""),
+                claude_description=str(r.get("claude_description") or ""),
+                real_count=(
+                    int(r["real_count"]) if r.get("real_count") is not None else None
+                ),
+                created_at=r["created_at"],
+            ))
+        except (KeyError, TypeError, ValueError):
+            _log.warning("Eval row invalide ignorée : %r", r, exc_info=True)
+    return out
+
+
+def compute_eval_stats(tenant_id: str) -> EvalStats:
+    """Agrège la précision sur toutes les évals avec ``real_count != NULL``."""
+    rows = run_sql(
+        """SELECT claude_count, real_count
+             FROM carton_count_evals
+            WHERE tenant_id = :t AND real_count IS NOT NULL""",
+        {"t": tenant_id},
+    ) or []
+    n = len(rows)
+    if n == 0:
+        return EvalStats(0, 0.0, 0.0, 0.0, 0.0)
+
+    exact = 0
+    within_1 = 0
+    within_3 = 0
+    total_abs_err = 0
+    for r in rows:
+        try:
+            cc = int(r["claude_count"])
+            rc = int(r["real_count"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        err = abs(cc - rc)
+        total_abs_err += err
+        if err == 0:
+            exact += 1
+        if err <= 1:
+            within_1 += 1
+        if err <= 3:
+            within_3 += 1
+    return EvalStats(
+        total_with_real=n,
+        exact_match_pct=100.0 * exact / n,
+        within_one_pct=100.0 * within_1 / n,
+        within_three_pct=100.0 * within_3 / n,
+        avg_abs_error=total_abs_err / n,
     )

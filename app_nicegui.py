@@ -953,6 +953,9 @@ async def _api_count_cartons_poc(request: Request):
     role = (user_store.get("role") or "").lower()
     if role != "admin":
         return JSONResponse({"error": "Admin only"}, status_code=403)
+    tenant_id = user_store.get("tenant_id")
+    if not tenant_id:
+        return JSONResponse({"error": "No tenant in session"}, status_code=403)
 
     try:
         form = await request.form()
@@ -989,7 +992,10 @@ async def _api_count_cartons_poc(request: Request):
             status_code=413,
         )
 
-    from common.services.carton_counter import count_cartons_in_photo
+    from common.services.carton_counter import (
+        count_cartons_in_photo,
+        save_eval_attempt,
+    )
 
     try:
         result = await asyncio.to_thread(
@@ -1012,15 +1018,86 @@ async def _api_count_cartons_poc(request: Request):
             {"error": f"Erreur serveur : {exc}"}, status_code=500,
         )
 
+    # Persiste l'essai pour pouvoir comparer avec le réel saisi ensuite.
+    # Best-effort : si la DB échoue, on retourne quand même le résultat
+    # Claude au front (juste sans eval_id, donc pas de comparaison
+    # possible — c'est inoffensif).
+    eval_id: int | None = None
+    try:
+        eval_id = await asyncio.to_thread(
+            save_eval_attempt,
+            tenant_id,
+            user_email=str(user_store.get("email") or ""),
+            claude_result=result,
+            image_bytes=image_bytes,
+        )
+    except Exception:
+        _log.warning("Persistance eval échec — on continue sans", exc_info=True)
+
     _log.info(
-        "Carton count OK : %d cartons (conf=%s) sur %d Ko",
+        "Carton count OK : %d cartons (conf=%s) sur %d Ko (eval=%s)",
         result.count, result.confidence, len(image_bytes) // 1024,
+        eval_id or "—",
     )
     return JSONResponse({
         "count": result.count,
         "confidence": result.confidence,
         "description": result.description,
+        "eval_id": eval_id,
     })
+
+
+@app.post("/api/count-cartons-poc/eval")
+async def _api_count_cartons_eval(request: Request):
+    """Saisie a posteriori du nombre réel de cartons pour un essai donné.
+
+    Permet à l'opérateur de comparer l'estimation Claude avec ce qu'il
+    compte réellement à l'œil, et au système d'agréger une mesure de
+    précision (cf. compute_eval_stats).
+
+    Body JSON : ``{eval_id: int, real_count: int}``.
+    """
+    user_store = app.storage.user
+    if not user_store.get("authenticated"):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    role = (user_store.get("role") or "").lower()
+    if role != "admin":
+        return JSONResponse({"error": "Admin only"}, status_code=403)
+
+    tenant_id = user_store.get("tenant_id")
+    if not tenant_id:
+        return JSONResponse({"error": "No tenant in session"}, status_code=403)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    try:
+        eval_id = int(payload.get("eval_id"))
+        real_count = int(payload.get("real_count"))
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"error": "eval_id et real_count doivent être des entiers"},
+            status_code=400,
+        )
+    if real_count < 0:
+        return JSONResponse(
+            {"error": "real_count doit être >= 0"}, status_code=400,
+        )
+
+    from common.services.carton_counter import set_real_count
+    try:
+        ok = await asyncio.to_thread(
+            set_real_count, eval_id, real_count=real_count, tenant_id=tenant_id,
+        )
+    except Exception as exc:
+        _log.exception("set_real_count échec")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    if not ok:
+        return JSONResponse(
+            {"error": f"Eval id={eval_id} introuvable"}, status_code=404,
+        )
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/lookup-sscc")

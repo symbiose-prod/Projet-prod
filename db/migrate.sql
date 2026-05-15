@@ -611,6 +611,31 @@ CREATE INDEX IF NOT EXISTS idx_print_jobs_status
   ON print_jobs(tenant_id, status, created_at DESC);
 
 -- =========================
+-- PoC : éval du comptage cartons via Claude Vision
+-- =========================
+-- Chaque essai sur /test-carton-counter enregistre une row : l'estimation
+-- Claude (count, confidence, description) + la photo + le nombre réel
+-- saisi a posteriori par l'opérateur (NULL au départ, mis à jour via
+-- /api/count-cartons-poc/eval). Permet de calculer la précision globale
+-- avant de décider d'intégrer ou non dans /etiquettes-palette.
+--
+-- Table volontairement plate (pas de FK ramasse / palette) — c'est un
+-- PoC isolé, supprimable d'un DROP TABLE quand la décision sera prise.
+CREATE TABLE IF NOT EXISTS carton_count_evals (
+  id                 BIGSERIAL PRIMARY KEY,
+  tenant_id          UUID REFERENCES tenants(id) ON DELETE CASCADE,
+  user_email         TEXT,
+  claude_count       INTEGER NOT NULL,
+  claude_confidence  TEXT,
+  claude_description TEXT,
+  real_count         INTEGER,                    -- NULL = pas encore évalué
+  image_bytes        BYTEA,                      -- pour debug visuel
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_carton_evals_tenant_date
+  ON carton_count_evals(tenant_id, created_at DESC);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -625,7 +650,8 @@ BEGIN
                        eb_cache, eb_sync_meta,
                        email_queue, monthly_sales,
                        etiquette_palette_history,
-                       print_jobs, sscc_log, palette_loadings TO shark;
+                       print_jobs, sscc_log, palette_loadings,
+                       carton_count_evals TO shark;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;
