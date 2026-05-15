@@ -950,6 +950,7 @@ async def _api_v1_decode_gs1(request: Request):
         return JSONResponse({"error": "Code too long"}, status_code=400)
 
     from common.services.etiquette_palette_service import (
+        get_product_image_url,
         lookup_product_by_ean,
         parse_gs1_to_entry,
     )
@@ -961,6 +962,11 @@ async def _api_v1_decode_gs1(request: Request):
 
     ean = str(parsed["ean"])
     product = await asyncio.to_thread(lookup_product_by_ean, ean)
+
+    # Enrichit le produit avec l'URL relative de l'image (mapping
+    # assets/image_map.csv via gout). L'app iOS préfixera avec son baseURL.
+    if product:
+        product["image_url"] = get_product_image_url(product.get("gout"))
 
     _log.info(
         "decode-gs1 : ean=%s lot=%s product=%s user=%s",
