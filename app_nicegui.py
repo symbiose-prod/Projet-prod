@@ -992,6 +992,131 @@ async def _api_v1_logout(request: Request):
     return JSONResponse({"ok": True})
 
 
+# ─── API mobile v1 : génération PDF étiquette palette ──────────────────────
+
+@app.post("/api/v1/print-palette")
+async def _api_v1_print_palette(request: Request):
+    """Génère un PDF d'étiquette palette à partir d'un scan + saisie qté.
+
+    Auth : Bearer token.
+    Body JSON :
+      ``{"ean": "...", "lot": "...", "ddm": "YYYY-MM-DD",
+         "case_count": 12, "full_pallet": true, "n_copies": 1}``
+
+    Retour 200 : binaire PDF (Content-Type: application/pdf, Content-Disposition
+    inline). L'app iOS lit les bytes, les sauve dans un fichier temporaire et
+    les affiche via PDFKit.
+
+    Logique : re-lookup produit côté serveur (jamais faire confiance aux
+    champs produit envoyés par le client) → EtiquetteContext → PDF →
+    save_label_history pour audit/réimpression.
+    """
+    import datetime as _dt_local
+
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return JSONResponse(
+            {"error": "Invalid or expired token"}, status_code=401
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    body = body or {}
+
+    ean = str(body.get("ean") or "").strip()
+    lot = str(body.get("lot") or "").strip()
+    ddm_str = str(body.get("ddm") or "").strip()
+    case_count = int(body.get("case_count") or 0)
+    full_pallet = bool(body.get("full_pallet", False))
+    n_copies = int(body.get("n_copies") or 1)
+
+    if not ean or not lot or not ddm_str:
+        return JSONResponse({"error": "Missing ean/lot/ddm"}, status_code=400)
+    if case_count <= 0:
+        return JSONResponse({"error": "case_count must be > 0"}, status_code=400)
+    if n_copies < 1 or n_copies > 10:
+        return JSONResponse({"error": "n_copies must be between 1 and 10"}, status_code=400)
+
+    try:
+        ddm = _dt_local.date.fromisoformat(ddm_str[:10])
+    except ValueError:
+        return JSONResponse({"error": "Invalid ddm format (expected YYYY-MM-DD)"}, status_code=400)
+
+    from common.etiquette_palette_pdf import EtiquetteContext, build_etiquette_palette_pdf
+    from common.services.etiquette_palette_service import (
+        lookup_product_by_ean,
+        save_label_history,
+    )
+
+    product = await asyncio.to_thread(lookup_product_by_ean, ean)
+    if not product:
+        return JSONResponse(
+            {"error": f"Produit introuvable pour EAN {ean}"}, status_code=404
+        )
+
+    ctx = EtiquetteContext(
+        product_label=product.get("designation") or "",
+        fmt=product.get("fmt") or "",
+        ean13=ean,
+        lot=lot,
+        ddm=ddm,
+        case_count=case_count,
+        full_pallet=full_pallet,
+        tenant_name="",   # affiché en footer, vide = pas affiché
+        n_copies=n_copies,
+        marque=product.get("marque") or "",
+        code_interne="",  # non géré côté mobile pour l'instant
+        gtin_uvc=product.get("ean_uvc") or "",
+        pcb=int(product.get("pcb") or 0),
+        bio=True,
+        sscc="",
+    )
+
+    try:
+        pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
+    except Exception:
+        _log.exception("Echec build PDF étiquette palette (mobile)")
+        return JSONResponse({"error": "PDF generation failed"}, status_code=500)
+
+    # Audit : on persiste l'étiquette générée (fire-and-forget — None si DB
+    # down, on ne bloque pas le PDF pour ça).
+    await asyncio.to_thread(
+        save_label_history,
+        user["tenant_id"],
+        user_email=user.get("email") or "",
+        ean=ean,
+        lot=lot,
+        ddm=ddm,
+        fmt=product.get("fmt") or "",
+        marque=product.get("marque") or "",
+        designation=product.get("designation") or "",
+        gout=product.get("gout") or "",
+        case_count=case_count,
+        full_pallet=full_pallet,
+        n_copies=n_copies,
+        pcb=int(product.get("pcb") or 0),
+        gtin_uvc=product.get("ean_uvc") or "",
+        code_interne="",
+        bio=True,
+        sscc="",
+    )
+
+    _log.info(
+        "print-palette : ean=%s qty=%d copies=%d user=%s tenant=%s",
+        ean, case_count, n_copies, user.get("email"), user["tenant_id"],
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="palette_{ean}_{lot}.pdf"',
+        },
+    )
+
+
 # ─── API mobile v1 : résumé accueil (stats + historique récent) ────────────
 
 def _query_home_summary(tenant_id: str, recent_limit: int = 20) -> dict:
