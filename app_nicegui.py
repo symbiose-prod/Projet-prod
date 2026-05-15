@@ -963,10 +963,23 @@ async def _api_v1_decode_gs1(request: Request):
     ean = str(parsed["ean"])
     product = await asyncio.to_thread(lookup_product_by_ean, ean)
 
-    # Enrichit le produit avec l'URL relative de l'image (mapping
-    # assets/image_map.csv via gout). L'app iOS préfixera avec son baseURL.
+    # Enrichit le produit avec :
+    # - image_url (mapping assets/image_map.csv via gout)
+    # - palette_layout (config palette_layouts pour le format du produit) →
+    #   permet à l'app iOS de proposer la sélection étages/cartons comme
+    #   la version web (sans dupliquer la config côté mobile).
     if product:
         product["image_url"] = get_product_image_url(product.get("gout"))
+        from common.ramasse import get_palette_layout
+        layout = get_palette_layout(
+            product.get("fmt") or "",
+            product.get("designation") or "",
+        )
+        product["palette_layout"] = {
+            "layers": layout.get("layers") or 0,
+            "per_layer": layout.get("per_layer") or 0,
+            "total": layout.get("total") or 0,
+        }
 
     _log.info(
         "decode-gs1 : ean=%s lot=%s product=%s user=%s",
