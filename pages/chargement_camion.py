@@ -41,7 +41,7 @@ from common.ramasse import (
 from common.ramasse_history import (
     delete_ramasse,
     finalize_ramasse_lines,
-    find_active_previsionnel_for_dest,
+    get_active_ramasse_for_dest,
     get_last_packaging_for_dest,
     get_ramasse,
     list_ramasses,
@@ -201,6 +201,15 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     destinataires_list = load_destinataires()
 
     # ────────────────────────────────────────────────────────────────────
+    # BANDEAU D'ÉTAT — visible en permanence en haut de la page
+    # ────────────────────────────────────────────────────────────────────
+    # Raconte qui a fait quoi sur la ramasse en cours. Crucial dans le
+    # contexte multi-utilisateurs (Max crée le prévisionnel J1, Mohamed
+    # le finalise J2). Mis à jour à chaque action et au changement de
+    # destinataire.
+    state_banner_container = ui.column().classes("w-full q-mb-md")
+
+    # ────────────────────────────────────────────────────────────────────
     # ÉTAPE 1 — Destination
     # ────────────────────────────────────────────────────────────────────
     _step_title(1, "Destination", "place")
@@ -276,14 +285,6 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             ramasse_to_update_select.update()
 
         _refresh_existing_ramasses()
-
-        # Bandeau d'auto-sélection — affiché quand on a trouvé un
-        # prévisionnel ouvert pour le destinataire courant et qu'on l'a
-        # pré-sélectionné pour update. Laisse à l'opérateur la
-        # possibilité visuelle de comprendre « pourquoi cette ramasse
-        # est déjà cochée » et de la désélectionner s'il veut créer une
-        # nouvelle ramasse à la place.
-        auto_select_banner = ui.row().classes("w-full")
 
         # Liste des palettes déjà liées à la ramasse sélectionnée — pour
         # permettre de retirer du BL une palette pas prête / cassée /
@@ -719,10 +720,12 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                     type="positive", icon="link_off", timeout=4000,
                 )
                 # Refresh : la palette disparaît de la liste « liées »,
-                # réapparaît dans « non chargées ».
+                # réapparaît dans « non chargées ». Le bandeau d'état
+                # se met à jour aussi (total_palettes a changé).
                 _refresh_linked_palettes()
                 _refresh_unscanned()
                 _refresh_existing_ramasses()
+                _refresh_state_banner()
 
             with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
                 ui.button("Annuler", on_click=dlg.close).props("flat color=grey-7")
@@ -1269,18 +1272,34 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             if is_update:
                 ramasse_id_final = str(ramasse_id_to_update)
             else:
-                ramasse_id_final = await asyncio.to_thread(
-                    save_ramasse,
-                    date_ramasse=d,
-                    destinataire=dest_title,
-                    recipients=recipients,
-                    lines=[], total_cartons=0,
-                    total_palettes=0, total_poids_kg=0,
-                    pdf_bytes=None,
-                    status=target_status,
-                    tenant_id=tenant_id,
-                )
-                cleanup_placeholder = True
+                try:
+                    ramasse_id_final = await asyncio.to_thread(
+                        save_ramasse,
+                        date_ramasse=d,
+                        destinataire=dest_title,
+                        recipients=recipients,
+                        lines=[], total_cartons=0,
+                        total_palettes=0, total_poids_kg=0,
+                        pdf_bytes=None,
+                        status=target_status,
+                        tenant_id=tenant_id,
+                    )
+                    cleanup_placeholder = True
+                except ValueError as exc:
+                    # Verrou « 1 ramasse active à la fois par dest » — Max
+                    # a essayé de créer un nouveau prévisionnel alors qu'une
+                    # ramasse non-livrée existe déjà. On rafraîchit la liste
+                    # + le bandeau d'état pour qu'il voie celle qui existe.
+                    ui.notify(
+                        str(exc), type="negative", icon="lock",
+                        timeout=10000, position="top",
+                    )
+                    _refresh_existing_ramasses()
+                    _refresh_state_banner()
+                    prev_btn.props(remove="loading")
+                    def_btn.props(remove="loading")
+                    _refresh_action_buttons()
+                    return
 
             # ── 2. Lie les palettes du panier à la ramasse ──
             sscc_list = [p.sscc for p in basket]
@@ -1407,6 +1426,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _refresh_unscanned()
             _refresh_existing_ramasses()
             _refresh_linked_palettes()
+            _refresh_state_banner()
         except Exception as exc:
             _log.exception("Erreur validation chargement camion (kind=%s)", target_status)
             ui.notify(f"Erreur : {exc}", type="negative", timeout=8000)
@@ -1488,6 +1508,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _refresh_basket()
             _refresh_unscanned()
             _refresh_linked_palettes()
+            _refresh_state_banner()
         except Exception as exc:
             _log.exception("Erreur rattrapage link")
             ui.notify(f"Erreur : {exc}", type="negative")
@@ -1513,99 +1534,167 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     clear_basket_btn.on_click(_on_clear_basket)
 
-    def _render_auto_select_banner(rid: str, dest: str):
-        """Bandeau d'info affiché quand on auto-sélectionne un prévisionnel.
+    # ── Bandeau d'état permanent ──
+    # Cache de la ramasse active (None si aucune) — partagé entre
+    # _refresh_state_banner et _try_auto_select_active_ramasse pour
+    # éviter 2 lectures DB consécutives au refresh.
+    active_ramasse_cache: dict = {"current": None}
 
-        Explicite l'auto-sélection (sinon l'opérateur peut se demander
-        pourquoi la ramasse est déjà cochée) et offre un bouton « Créer
-        une nouvelle ramasse à la place » pour sortir de l'auto-update.
+    def _format_who_when(email: str | None, when) -> str:
+        """Formate « par X le DD/MM HH:MM » (cohérence multi-user)."""
+        who = email or "?"
+        when_str = fmt_paris(when, "%d/%m %H:%M") if when else "?"
+        return f"par {who} le {when_str}"
+
+    def _render_state_banner():
+        """Bandeau d'état permanent en haut de la page. 4 cas :
+
+        - Pas de destinataire sélectionné → vide.
+        - Aucune ramasse active pour ce dest → bandeau gris vert
+          « Prêt à créer une nouvelle ramasse ».
+        - Ramasse prévisionnelle en cours → bandeau bleu avec créateur,
+          nb palettes, dernière update.
+        - BL définitif envoyé → bandeau vert « en attente du chauffeur ».
+
+        Lit ``active_ramasse_cache["current"]`` (populé par
+        :func:`_refresh_state_banner`).
         """
-        auto_select_banner.clear()
-        with auto_select_banner:
+        state_banner_container.clear()
+        dest = (dest_select.value or "").strip()
+        if not dest:
+            return
+        ramasse = active_ramasse_cache.get("current")
+
+        if not ramasse:
+            # Aucune ramasse active — l'opérateur peut en créer une
+            with state_banner_container:
+                with ui.row().classes(
+                    "w-full items-center gap-3 q-pa-md",
+                ).style(
+                    "background: #F3F4F6; border-left: 6px solid #9CA3AF; "
+                    "border-radius: 6px",
+                ):
+                    ui.icon("inbox", size="lg").style("color: #6B7280")
+                    with ui.column().classes("flex-1 gap-0"):
+                        ui.label("AUCUNE RAMASSE EN COURS").classes(
+                            "text-subtitle1",
+                        ).style(
+                            "color: #374151; font-weight: 700; letter-spacing: 1px",
+                        )
+                        ui.label(
+                            f"Prêt à démarrer une nouvelle ramasse pour {dest}. "
+                            "Scanne une palette puis envoie le prévisionnel.",
+                        ).classes("text-caption").style("color: #4B5563")
+            return
+
+        # Ramasse en cours
+        status = str(ramasse.get("status") or "")
+        is_def = (status == "definitif")
+        bg, border, ink, sub, icon = (
+            ("#ECFDF5", "#10B981", "#065F46", "#047857", "check_circle")
+            if is_def
+            else ("#EFF6FF", "#3B82F6", "#1E3A8A", "#1E40AF", "schedule_send")
+        )
+        title = "BL DÉFINITIF ENVOYÉ" if is_def else "RAMASSE PRÉVISIONNELLE EN COURS"
+        sub_action = (
+            "En attente du chauffeur. Marque comme livrée quand il sera passé."
+            if is_def
+            else "Continue à scanner pour ajouter des palettes, ou envoie le BL définitif."
+        )
+        dr = ramasse.get("date_ramasse")
+        date_str = dr.strftime("%d/%m/%Y") if hasattr(dr, "strftime") else str(dr)
+        nb_palettes = int(ramasse.get("total_palettes") or 0)
+        version = int(ramasse.get("version") or 1)
+        created_meta = _format_who_when(
+            ramasse.get("created_by_email"), ramasse.get("created_at"),
+        )
+        updated_meta = (
+            f"Dernière modification : {fmt_paris(ramasse.get('updated_at'), '%d/%m %H:%M')}"
+            if ramasse.get("updated_at") else ""
+        )
+
+        with state_banner_container:
             with ui.row().classes(
-                "w-full items-center gap-3 q-pa-sm",
+                "w-full items-center gap-3 q-pa-md no-wrap",
             ).style(
-                "background: #ECFDF5; border: 1px solid #6EE7B7; "
-                "border-radius: 8px",
+                f"background: {bg}; border-left: 6px solid {border}; "
+                "border-radius: 6px",
             ):
-                ui.icon("auto_awesome", color="green-7", size="md")
+                ui.icon(icon, size="lg").style(f"color: {border}")
                 with ui.column().classes("flex-1 gap-0"):
-                    ui.label("Prévisionnel ouvert détecté").classes(
-                        "text-subtitle2",
-                    ).style("color: #065F46; font-weight: 600")
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label(title).classes("text-subtitle1").style(
+                            f"color: {ink}; font-weight: 700; letter-spacing: 1px",
+                        )
+                        if version > 1:
+                            ui.badge(f"v{version}", color="orange-8").props("outline")
                     ui.label(
-                        f"Une ramasse prévisionnelle pour {dest} est en cours — "
-                        "elle a été pré-sélectionnée pour mise à jour. "
-                        "Scanne pour ajouter des palettes, ou crée-en une "
-                        "nouvelle si tu préfères.",
-                    ).classes("text-caption").style("color: #047857")
+                        f"{dest} · ramasse du {date_str} · {nb_palettes} palette(s)",
+                    ).classes("text-body2").style(
+                        f"color: {ink}; font-weight: 500",
+                    )
+                    ui.label(f"Créée {created_meta}").classes("text-caption").style(
+                        f"color: {sub}",
+                    )
+                    if updated_meta:
+                        ui.label(updated_meta).classes("text-caption").style(
+                            f"color: {sub}; opacity: 0.85",
+                        )
+                    ui.label(sub_action).classes("text-caption q-mt-xs").style(
+                        f"color: {sub}; font-style: italic",
+                    )
 
-                def _switch_to_create():
-                    ramasse_to_update_select.value = ""
-                    auto_select_banner.clear()
-                    _on_ramasse_select_changed()
+    def _refresh_state_banner():
+        """Recharge la ramasse active depuis la DB puis ré-affiche le
+        bandeau. À appeler à chaque changement de dest ou après une
+        action qui change l'état (envoi, suppression, livraison)."""
+        dest = (dest_select.value or "").strip()
+        if not dest:
+            active_ramasse_cache["current"] = None
+        else:
+            try:
+                active_ramasse_cache["current"] = get_active_ramasse_for_dest(
+                    dest, tenant_id=tenant_id,
+                )
+            except Exception:
+                _log.warning("Échec get_active_ramasse_for_dest", exc_info=True)
+                active_ramasse_cache["current"] = None
+        _render_state_banner()
 
-                ui.button(
-                    "Créer une nouvelle ramasse",
-                    icon="add",
-                    on_click=_switch_to_create,
-                ).props("flat dense color=green-8")
-
-    def _try_auto_select_previsionnel():
-        """Cherche un prévisionnel ouvert pour le destinataire courant et
-        pré-sélectionne le select s'il y en a un.
-
-        Conditions de déclenchement (toutes nécessaires) :
-        - panier vide (sinon on respecte le travail en cours),
-        - select ramasse vide (sinon l'opérateur a fait un choix conscient),
-        - destinataire sélectionné.
-
-        Si un prévisionnel est trouvé, on positionne le select + on
-        affiche le bandeau d'info. Sinon, no-op silencieux.
-        """
+    def _try_auto_select_active_ramasse():
+        """Si une ramasse active existe pour le dest courant ET que le
+        panier est vide ET qu'aucune ramasse n'est sélectionnée → on la
+        pré-sélectionne dans le select. Évite à Mohamed d'avoir à
+        scroller pour retrouver « la ramasse de Max d'hier »."""
         if state["basket"]:
             return
         if ramasse_to_update_select.value:
             return
-        dest = (dest_select.value or "").strip()
-        if not dest:
+        ramasse = active_ramasse_cache.get("current")
+        if not ramasse:
             return
-        try:
-            rid = find_active_previsionnel_for_dest(dest, tenant_id=tenant_id)
-        except Exception:
-            _log.warning("Échec find_active_previsionnel_for_dest", exc_info=True)
-            return
-        if not rid:
-            auto_select_banner.clear()
-            return
-        # Vérifie que la ramasse fait bien partie des options actuelles
-        # (refresh peut ne pas l'avoir incluse si lim=15 dépassée).
+        rid = str(ramasse["id"])
+        # Vérifie que la ramasse est dans les options actuelles
         if rid not in ramasse_status_by_id:
             _refresh_existing_ramasses()
         if rid not in ramasse_status_by_id:
             _log.info(
-                "Prévisionnel trouvé %s mais hors liste limit=15, skip auto-select",
-                rid,
+                "Ramasse active %s hors liste limit=15, skip auto-select", rid,
             )
             return
         ramasse_to_update_select.value = rid
-        _render_auto_select_banner(rid, dest)
         _on_ramasse_select_changed()
 
-    # Au changement de destinataire : réessayer l'auto-sélection
-    # (un dest différent peut avoir son propre prévisionnel ouvert,
-    # ou aucun → on désélectionne pour éviter l'incohérence).
-    def _on_dest_changed_for_autoselect(_e=None):
-        # Si une ramasse était sélectionnée pour un autre destinataire,
-        # on libère la sélection (l'opérateur ne voudra pas updater une
-        # ramasse pour Sofripa s'il a changé de dest).
+    # Au changement de destinataire : libérer l'ancienne sélection,
+    # recharger le bandeau d'état + retenter l'auto-sélection.
+    def _on_dest_changed_for_state(_e=None):
         current_rid = ramasse_to_update_select.value
         if current_rid and current_rid in ramasse_status_by_id:
             ramasse_to_update_select.value = ""
-            auto_select_banner.clear()
-        _try_auto_select_previsionnel()
+        _refresh_state_banner()
+        _try_auto_select_active_ramasse()
 
-    dest_select.on_value_change(_on_dest_changed_for_autoselect)
+    dest_select.on_value_change(_on_dest_changed_for_state)
 
     # ── Historique court (5 dernières ramasses, sans corbeille) ──
     # Pour les actions complètes (corbeille, marquage chauffeur passé,
@@ -1614,7 +1703,8 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     # Initial render — affichera les palettes restaurées si présentes
     _refresh_basket()
-    _try_auto_select_previsionnel()
+    _refresh_state_banner()
+    _try_auto_select_active_ramasse()
 
 
 def _render_recent_history(tenant_id: str) -> None:
