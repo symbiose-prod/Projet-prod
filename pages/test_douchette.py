@@ -243,9 +243,11 @@ def page_test_douchette():
 
         # Inclusion des libs JS (JsBarcode pour 1D, qrcode-generator pour
         # 2D) + script qui parcourt les placeholders et fait le rendu.
+        # Libs servies en local depuis /static/vendor/ (vs CDN) — évite
+        # tout blocage CSP / réseau côté iPad.
         ui.add_body_html("""
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="/static/vendor/JsBarcode.all.min.js"></script>
+<script src="/static/vendor/qrcode.min.js"></script>
 <script>
 (function() {
     function _renderBarcodes() {
