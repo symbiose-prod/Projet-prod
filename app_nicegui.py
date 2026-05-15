@@ -1004,8 +1004,8 @@ def _query_home_summary(tenant_id: str, recent_limit: int = 20) -> dict:
     Returns:
         ``{today_count, month_count, recent: [...]}``
     """
-    from db.conn import run_sql
     from common.services.etiquette_palette_service import list_recent_labels
+    from db.conn import run_sql
 
     # Stats agrégées en une seule query (PostgreSQL FILTER WHERE).
     rows = run_sql(
