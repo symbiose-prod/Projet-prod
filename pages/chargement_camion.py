@@ -229,61 +229,11 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 value=default_dest,
             ).classes("flex-1").props("outlined dense")
 
-        # Ramasse existante à mettre à jour ? Liste des ramasses non
-        # verrouillées (driver_passed=False) du tenant, triées par date.
-        ramasse_select_row = ui.row().classes("w-full q-mt-sm")
-        with ramasse_select_row:
-            ramasse_to_update_select = ui.select(
-                options={"": "— Créer une nouvelle ramasse —"},
-                label="Mettre à jour une ramasse existante ?",
-                value="",
-            ).classes("w-full").props("outlined dense")
-
-        # Cache du statut des ramasses listées — sert à piloter la
-        # visibilité / le label des boutons d'envoi.
-        ramasse_status_by_id: dict[str, str] = {}
-
-        def _refresh_existing_ramasses():
-            """Recharge la liste des ramasses non-livrées éligibles à update.
-
-            Exclut les ramasses ``legacy`` (créées avant la refonte) et
-            celles déjà livrées ou supprimées. Le statut courant
-            (``previsionnel`` / ``definitif``) est annoté dans le label
-            pour que l'opérateur sache où en est chaque ramasse.
-            """
-            try:
-                ramasses = list_ramasses(tenant_id=tenant_id, limit=15)
-            except Exception:
-                _log.warning("Échec list_ramasses", exc_info=True)
-                ramasses = []
-            opts = {"": "— Créer une nouvelle ramasse —"}
-            ramasse_status_by_id.clear()
-            for r in ramasses:
-                if r.get("driver_passed"):
-                    continue
-                if r.get("deleted_at"):
-                    continue
-                status = str(r.get("status") or "")
-                if status == "legacy":
-                    # Anciennes ramasses /ramasse : ne participent pas au
-                    # workflow prévisionnel/définitif scan-driven.
-                    continue
-                dr = r.get("date_ramasse")
-                dest = r.get("destinataire", "?")
-                status_label = {
-                    "previsionnel": "PRÉV",
-                    "definitif": "DÉF",
-                }.get(status, status[:5].upper() if status else "?")
-                rid = str(r["id"])
-                ramasse_status_by_id[rid] = status
-                opts[rid] = (
-                    f"{dr} · {dest} [{status_label}] · "
-                    f"{r.get('total_palettes', 0)} pal"
-                )
-            ramasse_to_update_select.options = opts
-            ramasse_to_update_select.update()
-
-        _refresh_existing_ramasses()
+        # La ramasse à mettre à jour est désormais déduite automatiquement
+        # de l'état DB (via get_active_ramasse_for_dest, mis en cache dans
+        # active_ramasse_cache et affichée via le bandeau d'état). Plus de
+        # widget UI : avec le verrou 1-ramasse-active-par-dest, il n'y a
+        # jamais plus d'un candidat possible, l'opérateur n'a rien à choisir.
 
         # Liste des palettes déjà liées à la ramasse sélectionnée — pour
         # permettre de retirer du BL une palette pas prête / cassée /
@@ -594,12 +544,22 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                         )
         _refresh_summary()
 
+    def _active_ramasse_id() -> str | None:
+        """Id de la ramasse active courante (None si mode CREATE)."""
+        ramasse = active_ramasse_cache.get("current")
+        return str(ramasse["id"]) if ramasse else None
+
     def _current_target_status() -> str | None:
-        """Statut de la ramasse pré-sélectionnée (None si create)."""
-        rid = ramasse_to_update_select.value
-        if not rid or rid == "":
+        """Statut de la ramasse active courante (None si CREATE).
+
+        Lu depuis ``active_ramasse_cache`` qui est rafraîchi par
+        :func:`_refresh_state_banner` à chaque action ou changement de
+        destinataire.
+        """
+        ramasse = active_ramasse_cache.get("current")
+        if not ramasse:
             return None
-        return ramasse_status_by_id.get(str(rid))
+        return str(ramasse.get("status") or "") or None
 
     # Cache des palettes liées à la ramasse pré-sélectionnée — populé par
     # _refresh_linked_palettes et lu par _refresh_summary pour distinguer
@@ -617,13 +577,13 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         « Retirer du BL » → dialog raison → unlink + refresh.
         """
         linked_palettes_container.clear()
-        rid = ramasse_to_update_select.value
-        if not rid or rid == "":
+        rid = _active_ramasse_id()
+        if not rid:
             linked_cache["items"] = []
             _refresh_summary()  # nettoie le récap « déjà liées »
             return
         try:
-            linked = list_linked_palettes(str(rid), tenant_id)
+            linked = list_linked_palettes(rid, tenant_id)
         except Exception:
             _log.warning("Échec list_linked_palettes", exc_info=True)
             linked = []
@@ -740,7 +700,6 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 # d'état se met à jour aussi (total_palettes a changé).
                 _refresh_linked_palettes()
                 _refresh_unscanned()
-                _refresh_existing_ramasses()
                 _refresh_state_banner()
                 _refresh_cold_room()
 
@@ -777,8 +736,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         has_basket = bool(state["basket"])
         has_linked = bool(linked_cache.get("items"))
         current_status = _current_target_status()
-        rid = ramasse_to_update_select.value
-        has_ramasse = bool(rid) and rid != ""
+        has_ramasse = bool(_active_ramasse_id())
 
         if current_status == "definitif":
             # Mode C : correction d'un définitif
@@ -840,10 +798,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         basket: list[PaletteInfo] = state["basket"]
         linked: list[PaletteInfo] = linked_cache.get("items") or []
         details_container.clear()
-        is_update_mode = bool(linked) or bool(
-            ramasse_to_update_select.value
-            and ramasse_to_update_select.value != "",
-        )
+        is_update_mode = bool(linked) or bool(_active_ramasse_id())
 
         # ── Pas de panier ET pas de ramasse → vraiment vide ──
         if not basket and not linked:
@@ -1360,10 +1315,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             )
             return
 
-        ramasse_id_to_update = (
-            state["ramasse_to_update_id"]
-            or (ramasse_to_update_select.value if ramasse_to_update_select.value else None)
-        )
+        ramasse_id_to_update = _active_ramasse_id()
         is_update = bool(ramasse_id_to_update)
         previous_lines_for_diff: list[dict] | None = None
         next_version = 1
@@ -1503,7 +1455,6 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                             str(exc), type="negative", icon="lock",
                             timeout=10000, position="top",
                         )
-                        _refresh_existing_ramasses()
                         _refresh_state_banner()
                         return
 
@@ -1613,9 +1564,8 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
             _clear_persisted_basket()
             _refresh_basket()
             _refresh_unscanned()
-            _refresh_existing_ramasses()
-            _refresh_linked_palettes()
             _refresh_state_banner()
+            _refresh_linked_palettes()
             _refresh_cold_room()
         except Exception as exc:
             _log.exception("Erreur validation chargement camion (kind=%s)", target_status)
@@ -1641,11 +1591,11 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         if not basket:
             ui.notify("Panier vide.", type="warning")
             return
-        ramasse_id = ramasse_to_update_select.value
-        if not ramasse_id or ramasse_id == "":
+        ramasse_id = _active_ramasse_id()
+        if not ramasse_id:
             ui.notify(
-                "Sélectionne une ramasse existante (le rattrapage la met "
-                "à jour sans toucher au BL).",
+                "Aucune ramasse active — le rattrapage suppose qu'une "
+                "ramasse existe déjà pour ce destinataire.",
                 type="warning",
             )
             return
@@ -1692,12 +1642,10 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
 
     link_only_btn.on_click(_on_link_only)
 
-    # Quand le select ramasse change → re-évaluer la visibilité du bouton rattrapage
-    def _on_ramasse_select_changed(_e=None):
-        _refresh_action_buttons()
-        _refresh_linked_palettes()
-
-    ramasse_to_update_select.on_value_change(_on_ramasse_select_changed)
+    # _refresh_state_banner met à jour active_ramasse_cache puis appelle
+    # déjà _refresh_action_buttons / _refresh_linked_palettes / _refresh_cold_room
+    # via _on_dest_changed_for_state. Plus de handler sur un widget select
+    # depuis qu'on a retiré ce widget redondant.
 
     def _on_clear_basket():
         """Bouton manuel : vide le panier persisté + l'état courant."""
@@ -1709,9 +1657,10 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     clear_basket_btn.on_click(_on_clear_basket)
 
     # ── Bandeau d'état permanent ──
-    # Cache de la ramasse active (None si aucune) — partagé entre
-    # _refresh_state_banner et _try_auto_select_active_ramasse pour
-    # éviter 2 lectures DB consécutives au refresh.
+    # Cache de la ramasse active (None si aucune) — c'est la source
+    # de vérité pour _active_ramasse_id, _current_target_status,
+    # _refresh_action_buttons, _refresh_linked_palettes, etc. Tenu à
+    # jour par _refresh_state_banner depuis la DB (get_active_ramasse_for_dest).
     active_ramasse_cache: dict = {"current": None}
 
     def _format_who_when(email: str | None, when) -> str:
@@ -1821,7 +1770,13 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     def _refresh_state_banner():
         """Recharge la ramasse active depuis la DB puis ré-affiche le
         bandeau. À appeler à chaque changement de dest ou après une
-        action qui change l'état (envoi, suppression, livraison)."""
+        action qui change l'état (envoi, suppression, livraison).
+
+        Tient à jour ``active_ramasse_cache`` qui est lu par
+        :func:`_active_ramasse_id`, :func:`_current_target_status`,
+        :func:`_refresh_action_buttons`, etc. Toute la page lit depuis
+        ce cache, plus de widget select intermédiaire.
+        """
         dest = (dest_select.value or "").strip()
         if not dest:
             active_ramasse_cache["current"] = None
@@ -1835,39 +1790,25 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
                 active_ramasse_cache["current"] = None
         _render_state_banner()
 
-    def _try_auto_select_active_ramasse():
-        """Si une ramasse active existe pour le dest courant ET que le
-        panier est vide ET qu'aucune ramasse n'est sélectionnée → on la
-        pré-sélectionne dans le select. Évite à Mohamed d'avoir à
-        scroller pour retrouver « la ramasse de Max d'hier »."""
-        if state["basket"]:
-            return
-        if ramasse_to_update_select.value:
-            return
-        ramasse = active_ramasse_cache.get("current")
-        if not ramasse:
-            return
-        rid = str(ramasse["id"])
-        # Vérifie que la ramasse est dans les options actuelles
-        if rid not in ramasse_status_by_id:
-            _refresh_existing_ramasses()
-        if rid not in ramasse_status_by_id:
-            _log.info(
-                "Ramasse active %s hors liste limit=15, skip auto-select", rid,
-            )
-            return
-        ramasse_to_update_select.value = rid
-        _on_ramasse_select_changed()
+    def _sync_after_active_ramasse_changed():
+        """Enchaîne les refresh dépendants de la ramasse active.
 
-    # Au changement de destinataire : libérer l'ancienne sélection,
-    # recharger le bandeau d'état + retenter l'auto-sélection.
+        Appelée à la fin de :func:`_refresh_state_banner` (qui charge la
+        ramasse active depuis la DB dans ``active_ramasse_cache``) — les
+        autres composants (boutons d'action, palettes liées, CF) lisent
+        ensuite depuis ce cache.
+        """
+        _refresh_action_buttons()
+        _refresh_linked_palettes()
+
+    # Au changement de destinataire : recharger le bandeau d'état (qui
+    # mettra à jour active_ramasse_cache) puis tous les composants
+    # dépendants. Plus de "sélection à libérer" — la ramasse active
+    # est déduite de la DB.
     def _on_dest_changed_for_state(_e=None):
-        current_rid = ramasse_to_update_select.value
-        if current_rid and current_rid in ramasse_status_by_id:
-            ramasse_to_update_select.value = ""
         _refresh_state_banner()
         _refresh_cold_room()
-        _try_auto_select_active_ramasse()
+        _sync_after_active_ramasse_changed()
 
     dest_select.on_value_change(_on_dest_changed_for_state)
 
@@ -1880,7 +1821,7 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     _refresh_basket()
     _refresh_cold_room()
     _refresh_state_banner()
-    _try_auto_select_active_ramasse()
+    _sync_after_active_ramasse_changed()
 
 
 def _render_recent_history(tenant_id: str) -> None:
