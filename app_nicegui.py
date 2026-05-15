@@ -992,6 +992,78 @@ async def _api_v1_logout(request: Request):
     return JSONResponse({"ok": True})
 
 
+# ─── API mobile v1 : résumé accueil (stats + historique récent) ────────────
+
+def _query_home_summary(tenant_id: str, recent_limit: int = 20) -> dict:
+    """Charge en un coup les données affichées sur l'accueil de l'app iOS.
+
+    Synchrone (run_sql) — le caller passera par `asyncio.to_thread` pour ne
+    pas bloquer la boucle FastAPI. Tout est groupé pour éviter 3 round-trips
+    HTTP côté mobile (1 seul GET sert l'écran d'accueil).
+
+    Returns:
+        ``{today_count, month_count, recent: [...]}``
+    """
+    from db.conn import run_sql
+    from common.services.etiquette_palette_service import list_recent_labels
+
+    # Stats agrégées en une seule query (PostgreSQL FILTER WHERE).
+    rows = run_sql(
+        """
+        SELECT
+          COUNT(*) FILTER (WHERE generated_at::date = CURRENT_DATE) AS today_count,
+          COUNT(*) FILTER (WHERE date_trunc('month', generated_at)
+                              = date_trunc('month', now()))           AS month_count
+        FROM etiquette_palette_history
+        WHERE tenant_id = :t
+        """,
+        {"t": tenant_id},
+    ) or [{}]
+    stats = rows[0]
+    today_count = int(stats.get("today_count") or 0)
+    month_count = int(stats.get("month_count") or 0)
+
+    # Historique récent (réutilise le service domaine existant)
+    entries = list_recent_labels(tenant_id, limit=recent_limit)
+    recent = [
+        {
+            "id": e.id,
+            "designation": e.designation,
+            "marque": e.marque,
+            "fmt": e.fmt,
+            "gout": e.gout,
+            "case_count": e.case_count,
+            "generated_at": e.generated_at.isoformat() if e.generated_at else None,
+        }
+        for e in entries
+    ]
+    return {
+        "today_count": today_count,
+        "month_count": month_count,
+        "recent": recent,
+    }
+
+
+@app.get("/api/v1/home-summary")
+async def _api_v1_home_summary(request: Request):
+    """Résumé accueil pour l'app iOS : stats du jour + du mois + 20 derniers scans.
+
+    Auth : Bearer token.
+    Retour 200 :
+      ``{"today_count": 12, "month_count": 147,
+         "recent": [{"id", "designation", "marque", "fmt", "gout",
+                     "case_count", "generated_at"}, ...]}``
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return JSONResponse(
+            {"error": "Invalid or expired token"}, status_code=401
+        )
+
+    data = await asyncio.to_thread(_query_home_summary, user["tenant_id"])
+    return JSONResponse(data)
+
+
 # ─── Scan SSCC palette (chargement camion) ─────────────────────────────────
 
 @app.post("/api/scan-sscc")
