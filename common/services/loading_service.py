@@ -477,6 +477,74 @@ def create_palette_manually(
     return True
 
 
+# ─── Stock chambre froide ───────────────────────────────────────────────────
+
+def list_palettes_in_cold_room(tenant_id: str) -> list[PaletteInfo]:
+    """Liste toutes les palettes actuellement en chambre froide.
+
+    Une palette est « en CF » quand :
+    - elle a été étiquetée (``sscc_log`` + ``etiquette_palette_history``),
+    - elle n'a pas été annulée (``voided_at IS NULL``),
+    - elle n'est pas liée à une ramasse active (``palette_loadings`` actif
+      = ``unlinked_at IS NULL``).
+
+    Pas de filtre temporel : une palette étiquetée il y a 2 semaines et
+    jamais chargée reste candidate (cas typique : production excédentaire
+    en attente d'une ramasse plus volumineuse).
+
+    Tri ascendant par ``generated_at`` — FIFO côté UI (les plus anciennes
+    en haut pour priorisation par DDM).
+
+    Sert au workflow de la « demande de ramasse provisoire » : à la
+    place de demander à l'opérateur de scanner les palettes à inclure,
+    on prend automatiquement tout le stock CF.
+    """
+    rows = run_sql(
+        """SELECT
+              sl.sscc, sl.gtin_palette, sl.lot, sl.ddm,
+              sl.case_count, sl.generated_at,
+              eph.designation, eph.fmt, eph.marque, eph.gout,
+              eph.pcb, eph.gtin_uvc
+           FROM sscc_log sl
+           LEFT JOIN etiquette_palette_history eph
+                  ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
+           LEFT JOIN palette_loadings pl
+                  ON pl.sscc = sl.sscc
+                 AND pl.tenant_id = sl.tenant_id
+                 AND pl.unlinked_at IS NULL
+           WHERE sl.tenant_id = :t
+             AND sl.voided_at IS NULL
+             AND pl.id IS NULL
+             AND eph.designation IS NOT NULL
+           ORDER BY sl.generated_at ASC""",
+        {"t": tenant_id},
+    ) or []
+
+    out: list[PaletteInfo] = []
+    for r in rows:
+        try:
+            ddm = r.get("ddm")
+            ddm_date = ddm if isinstance(ddm, _dt.date) or ddm is None \
+                else _dt.date.fromisoformat(str(ddm)[:10])
+            out.append(PaletteInfo(
+                sscc=str(r["sscc"]),
+                gtin_palette=str(r.get("gtin_palette") or ""),
+                lot=str(r.get("lot") or ""),
+                ddm=ddm_date,
+                case_count=int(r.get("case_count") or 0),
+                designation=str(r.get("designation") or ""),
+                fmt=str(r.get("fmt") or ""),
+                marque=str(r.get("marque") or ""),
+                gout=str(r.get("gout") or ""),
+                pcb=int(r.get("pcb") or 0),
+                gtin_uvc=str(r.get("gtin_uvc") or ""),
+                generated_at=r["generated_at"],
+            ))
+        except (KeyError, TypeError, ValueError):
+            _log.warning("Ligne CF invalide ignorée : %r", r, exc_info=True)
+    return out
+
+
 # ─── Source de vérité : reconstruction des lignes depuis palette_loadings ───
 
 def list_linked_palettes(

@@ -16,6 +16,7 @@ from common.services.loading_service import (
     _normalize_sscc,
     aggregate_palettes_to_lines,
     list_linked_palettes,
+    list_palettes_in_cold_room,
     rebuild_lines_from_palettes,
     unlink_palette,
 )
@@ -372,3 +373,58 @@ class TestUnlinkPalette:
                 reason=long_reason,
             )
         assert len(captured["params"]["r"]) == 500
+
+
+# ─── list_palettes_in_cold_room ─────────────────────────────────────────────
+
+class TestListPalettesInColdRoom:
+    """La requête source du « snapshot CF » pour la ramasse provisoire."""
+
+    def test_empty_when_no_rows(self):
+        with mock.patch.object(loading_service, "run_sql", return_value=[]):
+            out = list_palettes_in_cold_room("tid-1")
+        assert out == []
+
+    def test_returns_typed_palettes(self):
+        with mock.patch.object(loading_service, "run_sql", return_value=[_db_row()]):
+            out = list_palettes_in_cold_room("tid-1")
+        assert len(out) == 1
+        assert out[0].designation == "Kéfir Test"
+        assert out[0].case_count == 126
+
+    def test_sql_filters_active_unloaded_palettes(self):
+        # Garde-fou : on ne ramène ni les SSCC annulés, ni les palettes
+        # déjà liées à une ramasse active.
+        captured = {}
+
+        def fake(sql, params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        with mock.patch.object(loading_service, "run_sql", side_effect=fake):
+            list_palettes_in_cold_room("tid-99")
+
+        sql = captured["sql"]
+        params = captured["params"]
+        # Filtre voided
+        assert "sl.voided_at IS NULL" in sql
+        # JOIN avec restriction sur liaison active + filtre pas-liée
+        assert "pl.unlinked_at IS NULL" in sql
+        assert "pl.id IS NULL" in sql
+        # Designation obligatoire (pas d'anomalie DB qui passe en silence)
+        assert "eph.designation IS NOT NULL" in sql
+        # FIFO (ascendant) — DDM la plus proche en haut visuellement
+        assert "ORDER BY sl.generated_at ASC" in sql
+        # Tenant scoping
+        assert params == {"t": "tid-99"}
+
+    def test_invalid_row_skipped(self):
+        good = _db_row()
+        bad = _db_row(sscc="3" + "9" * 17)
+        bad["ddm"] = "not-a-date"  # ValueError dans fromisoformat
+        with mock.patch.object(
+            loading_service, "run_sql", return_value=[good, bad],
+        ):
+            out = list_palettes_in_cold_room("tid-1")
+        assert len(out) == 1
