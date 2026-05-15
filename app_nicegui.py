@@ -332,6 +332,7 @@ import pages.stocks  # noqa: F401 — /stocks
 import pages.sync  # noqa: F401 — /sync
 import pages.tags  # noqa: F401 — /tags
 import pages.test_carton_counter  # noqa: F401 — /test-carton-counter (admin only)
+import pages.test_douchette  # noqa: F401 — /test-douchette (admin only)
 
 # ─── Health check ────────────────────────────────────────────────────────────
 
@@ -1098,6 +1099,51 @@ async def _api_count_cartons_eval(request: Request):
             {"error": f"Eval id={eval_id} introuvable"}, status_code=404,
         )
     return JSONResponse({"ok": True})
+
+
+# ─── PoC : test douchette code-barres ──────────────────────────────────────
+
+@app.post("/api/test-douchette-decode")
+async def _api_test_douchette_decode(request: Request):
+    """Décode une chaîne reçue d'une douchette (mode HID = clavier).
+
+    Sert à la page admin /test-douchette pour valider qu'une nouvelle
+    douchette est bien compatible avec le format GS1-128 / FNC1 utilisé
+    par les étiquettes palette Ferment Station.
+
+    Body JSON : ``{raw: str}``.
+    Retour : ``{type, raw, normalized, ais, sscc, summary}``.
+    """
+    user_store = app.storage.user
+    if not user_store.get("authenticated"):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    role = (user_store.get("role") or "").lower()
+    if role != "admin":
+        return JSONResponse({"error": "Admin only"}, status_code=403)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    raw = str(payload.get("raw") or "")
+    if len(raw) > 4096:
+        return JSONResponse({"error": "Scan trop long"}, status_code=413)
+
+    from common.services.scan_decoder import decode_scan
+    try:
+        result = await asyncio.to_thread(decode_scan, raw)
+    except Exception as exc:
+        _log.exception("decode_scan échec")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+    return JSONResponse({
+        "raw": result.raw,
+        "normalized": result.normalized,
+        "type": result.type,
+        "ais": result.ais,
+        "sscc": result.sscc,
+        "summary": result.summary,
+    })
 
 
 @app.post("/api/lookup-sscc")

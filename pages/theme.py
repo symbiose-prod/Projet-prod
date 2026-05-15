@@ -81,6 +81,7 @@ NAV_ITEMS: list[tuple] = [
         # ADMIN_ONLY_PATHS dans common/permissions.py
         ("history",        "Journal SSCC",         "/sscc-log"),
         ("photo_camera",   "PoC compte cartons",   "/test-carton-counter"),
+        ("qr_code_scanner", "Test douchette",       "/test-douchette"),
     ]),
 ]
 
@@ -451,6 +452,40 @@ def section_title(title: str, icon: str = ""):
         ui.label(title).classes("text-subtitle1").style(
             f"color: {COLORS['ink']}; font-weight: 600"
         )
+
+
+def install_wake_lock():
+    """Demande au navigateur de garder l'écran allumé tant que la page
+    est visible (iPad / iPhone / Android).
+
+    Utilise la `Wake Lock API <https://developer.mozilla.org/en-US/docs/Web/API/WakeLock>`_,
+    supportée depuis iOS 16.4. Le verrou se libère automatiquement
+    quand l'utilisateur quitte la page (l'écran reprend son comportement
+    normal de veille).
+
+    À appeler dans les pages où l'opérateur travaille sur un poste fixe
+    avec un iPad (par ex. chargement camion sur chariot). Idempotent —
+    le script ne s'installe qu'une fois par session navigateur grâce à
+    une garde ``window._fsWakeLockBound``.
+    """
+    ui.add_body_html("""
+<script>
+(function() {
+    if (window._fsWakeLockBound) return;
+    window._fsWakeLockBound = true;
+    let wakeLock = null;
+    async function _acquireWakeLock() {
+        if (!('wakeLock' in navigator)) return;
+        try { wakeLock = await navigator.wakeLock.request('screen'); }
+        catch (e) { /* OS a refusé — page non visible, etc. */ }
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') _acquireWakeLock();
+    });
+    _acquireWakeLock();
+})();
+</script>
+""")
 
 
 def confirm_dialog(

@@ -53,7 +53,7 @@ from common.services.print_jobs_service import (
     list_pending_jobs,
 )
 from pages.auth import require_auth
-from pages.theme import COLORS, page_layout
+from pages.theme import COLORS, install_wake_lock, page_layout
 
 _log = logging.getLogger("ferment.etiquettes_palette")
 
@@ -91,6 +91,9 @@ async def page_etiquettes_palette():
             "Édite une étiquette logistique GS1-128 pour palette filmée — "
             "imprime sur la Brother (par défaut) ou via AirPrint."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
+
+        # Wake Lock : l'iPad reste allumé pendant l'étiquetage en série.
+        install_wake_lock()
 
         # Mode scan-first : le scan interroge directement la matrice codes-barres
         # EasyBeer (cache 24 h). La sync étiquettes alimente uniquement le

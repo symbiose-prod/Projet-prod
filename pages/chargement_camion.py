@@ -63,7 +63,7 @@ from common.services.ramasse_service import (
 )
 from common.xlsx_fill.bl_pdf import build_bl_enlevements_pdf
 from pages.auth import require_auth
-from pages.theme import COLORS, page_layout
+from pages.theme import COLORS, install_wake_lock, page_layout
 
 _log = logging.getLogger("ferment.chargement_camion")
 
@@ -107,6 +107,9 @@ async def page_chargement_camion():
             "Scanne les SSCC des palettes au moment du chargement. "
             "À la validation : email logisticien + BL téléchargeable."
         ).classes("text-body2").style(f"color: {COLORS['ink2']}")
+
+        # Wake Lock : l'iPad du chariot reste allumé pendant le chargement.
+        install_wake_lock()
 
         _render_form(tenant_id=tenant_id, user_email=user_email)
 
