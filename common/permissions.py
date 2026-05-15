@@ -33,6 +33,7 @@ OPERATEUR_ALLOWED_PATHS: tuple[str, ...] = (
 ADMIN_ONLY_PATHS: tuple[str, ...] = (
     "/admin",
     "/sscc-log",
+    "/test-carton-counter",
 )
 
 # Page d'accueil par défaut selon le rôle, utilisée :
