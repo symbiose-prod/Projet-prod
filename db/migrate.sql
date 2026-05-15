@@ -636,6 +636,30 @@ CREATE INDEX IF NOT EXISTS idx_carton_evals_tenant_date
   ON carton_count_evals(tenant_id, created_at DESC);
 
 -- =========================
+-- Tokens API mobile (app iOS Ferment Station)
+-- =========================
+-- Tokens d'authentification pour l'app iOS native. Distincts de
+-- `user_sessions` (cookies navigateur "remember-me") car :
+--   - TTL plus long (90 jours par défaut, rotation moins fréquente)
+--   - Nommables par appareil (`device_name`)
+--   - `last_used_at` mis à jour à chaque appel API (pour audit/révocation)
+CREATE TABLE IF NOT EXISTS mobile_api_tokens (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  token_hash    TEXT NOT NULL UNIQUE,
+  device_name   TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at    TIMESTAMPTZ NOT NULL,
+  last_used_at  TIMESTAMPTZ,
+  revoked_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_mobile_tokens_hash    ON mobile_api_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_mobile_tokens_user    ON mobile_api_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_mobile_tokens_expires ON mobile_api_tokens(expires_at);
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -651,7 +675,8 @@ BEGIN
                        email_queue, monthly_sales,
                        etiquette_palette_history,
                        print_jobs, sscc_log, palette_loadings,
-                       carton_count_evals TO shark;
+                       carton_count_evals,
+                       mobile_api_tokens TO shark;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

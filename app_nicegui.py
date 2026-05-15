@@ -836,6 +836,158 @@ async def _api_scan_barcode(request: Request):
     })
 
 
+# ─── API mobile v1 (app iOS Ferment Station) ───────────────────────────────
+#
+# Endpoints destinés à l'app native iOS. Auth via Bearer token (table
+# `mobile_api_tokens`) au lieu de cookie session NiceGUI. Pour les détails,
+# voir `common/mobile_auth.py`.
+#
+# Préfixe `/api/v1/` réservé aux endpoints versionnés pour clients mobiles —
+# distinct des `/api/...` existants qui supposent une session navigateur.
+
+from common.mobile_auth import (
+    create_mobile_token,
+    extract_bearer_token,
+    verify_mobile_token,
+)
+
+
+async def _resolve_mobile_user(request: Request) -> dict | None:
+    """Résout l'utilisateur courant via `Authorization: Bearer <token>`.
+
+    Retourne le user dict (id/tenant_id/email/role) ou None. Le caller est
+    responsable de retourner 401 si None.
+    """
+    token = extract_bearer_token(request.headers.get("authorization"))
+    if not token:
+        return None
+    return await asyncio.to_thread(verify_mobile_token, token)
+
+
+@app.post("/api/v1/auth/login")
+async def _api_v1_login(request: Request):
+    """Login mobile : email + password → token Bearer.
+
+    Body JSON : ``{"email": "...", "password": "...", "device_name": "..."}``
+    Retour 200 : ``{"token": "...", "expires_at": "...", "user": {...},
+                    "tenant_id": "..."}``
+    Retour 401 : ``{"error": "Invalid credentials"}``
+
+    Le verrouillage brute-force de `authenticate()` (table `login_failures`)
+    s'applique à cette route comme au login web.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    body = body or {}
+    email = (body.get("email") or "").strip()
+    password = body.get("password") or ""
+    device_name = body.get("device_name") or ""
+
+    if not email or not password:
+        return JSONResponse(
+            {"error": "Missing email or password"}, status_code=400
+        )
+
+    from common.auth import authenticate
+
+    user = await asyncio.to_thread(authenticate, email, password)
+    if user is None:
+        return JSONResponse({"error": "Invalid credentials"}, status_code=401)
+
+    user_id = str(user["id"])
+    tenant_id = str(user["tenant_id"])
+    token, expires_at = await asyncio.to_thread(
+        create_mobile_token, user_id, tenant_id, device_name
+    )
+
+    return JSONResponse({
+        "token": token,
+        "expires_at": expires_at.isoformat(),
+        "tenant_id": tenant_id,
+        "user": {
+            "email": user["email"],
+            "role": user.get("role") or "",
+        },
+    })
+
+
+@app.post("/api/v1/decode-gs1")
+async def _api_v1_decode_gs1(request: Request):
+    """Décode un GS1-128 déjà scanné côté client (string brute) + lookup produit.
+
+    Auth : Bearer token (header `Authorization: Bearer <token>`).
+    Body JSON : ``{"code": "01037700144272501527051110527"}``
+    Retour 200 : ``{"ean": "...", "lot": "...", "ddm": "YYYY-MM-DD" | null,
+                    "product": {...} | null}``
+    Retour 401 : ``{"error": "Invalid or expired token"}``
+    Retour 400 : ``{"error": "..."}`` (JSON invalide, code vide, parsing échoué)
+
+    Diffère de ``/api/scan-barcode`` qui prend une image — ici on suppose que
+    l'app iOS a déjà décodé le code-barres en natif (AVFoundation/Vision).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return JSONResponse(
+            {"error": "Invalid or expired token"}, status_code=401
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    code = ((body or {}).get("code") or "").strip()
+    if not code:
+        return JSONResponse({"error": "Missing 'code' field"}, status_code=400)
+    if len(code) > 200:
+        return JSONResponse({"error": "Code too long"}, status_code=400)
+
+    from common.services.etiquette_palette_service import (
+        lookup_product_by_ean,
+        parse_gs1_to_entry,
+    )
+
+    parsed = await asyncio.to_thread(parse_gs1_to_entry, code)
+    if parsed is None:
+        _log.info("decode-gs1 : parse échoué pour code=%r", code[:60])
+        return JSONResponse({"error": "Could not parse GS1 code"}, status_code=400)
+
+    ean = str(parsed["ean"])
+    product = await asyncio.to_thread(lookup_product_by_ean, ean)
+
+    _log.info(
+        "decode-gs1 : ean=%s lot=%s product=%s user=%s",
+        ean,
+        parsed.get("lot") or "—",
+        (product or {}).get("designation") or "(non trouvé EB)",
+        user.get("email"),
+    )
+
+    return JSONResponse({
+        "ean": ean,
+        "lot": parsed.get("lot") or "",
+        "ddm": parsed.get("ddm") or None,
+        "product": product,
+    })
+
+
+# ─── API mobile v1 : logout ────────────────────────────────────────────────
+
+@app.post("/api/v1/auth/logout")
+async def _api_v1_logout(request: Request):
+    """Révoque le token Bearer fourni. Idempotent : 200 même si déjà révoqué."""
+    from common.mobile_auth import revoke_mobile_token
+
+    token = extract_bearer_token(request.headers.get("authorization"))
+    if not token:
+        return JSONResponse({"error": "Missing token"}, status_code=400)
+    await asyncio.to_thread(revoke_mobile_token, token)
+    return JSONResponse({"ok": True})
+
+
 # ─── Scan SSCC palette (chargement camion) ─────────────────────────────────
 
 @app.post("/api/scan-sscc")

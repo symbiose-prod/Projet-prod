@@ -600,6 +600,50 @@ def parse_gs1_ddm(yymmdd: str) -> _dt.date | None:
         return None
 
 
+def parse_gs1_to_entry(text: str) -> dict[str, str] | None:
+    """Parse une string GS1-128 (avec parenthèses ou digits FNC1-less) en entrée
+    ergonomique pour l'API mobile.
+
+    Utilisé par l'endpoint ``POST /api/v1/decode-gs1`` : l'app iOS décode le
+    code-barres en natif (AVFoundation) puis envoie la string brute au backend.
+    Le backend la convertit en ``{ean, lot, ddm}`` puis enrichit via la matrice
+    EasyBeer (lookup_product_by_ean).
+
+    Args:
+        text: chaîne brute scannée — formats supportés :
+            - ``"(01)037...(15)270511(10)110527"`` (avec parenthèses)
+            - ``"01037...15270511 10110527"`` (digits, FNC1 absent)
+
+    Returns:
+        ``{"ean": "037...", "lot": "110527", "ddm": "2027-05-11"}`` si l'AI 01
+        est présent (les autres champs sont des strings vides si absents,
+        sauf ddm qui est ``""`` si non présent ou invalide).
+        ``None`` si aucun AI 01 lisible (sans EAN, pas d'enrichissement
+        possible côté backend).
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+
+    # Essai 1 : format avec parenthèses (output `treepoem` ou string déjà
+    # formattée). Essai 2 : digits bruts (cas iOS AVFoundation qui rend le
+    # GS1-128 décodé sans le FNC1 visible).
+    ais = parse_gs1_string(text)
+    if not ais.get("01"):
+        ais = parse_gs1_digits(text)
+    ean = ais.get("01")
+    if not ean:
+        return None
+
+    ddm_str = ais.get("15") or ais.get("17") or ""
+    ddm_date = parse_gs1_ddm(ddm_str)
+    return {
+        "ean": ean,
+        "lot": ais.get("10") or "",
+        "ddm": ddm_date.isoformat() if ddm_date else "",
+    }
+
+
 def extract_gs1_data_from_image(image_bytes: bytes) -> dict[str, str | _dt.date] | None:
     """Décode et parse un GS1-128 depuis une image.
 
