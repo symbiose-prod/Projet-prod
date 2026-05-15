@@ -212,35 +212,36 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     # ÉTAPE 1 — Destination
     # ────────────────────────────────────────────────────────────────────
     _step_title(1, "Destination", "place")
-    with ui.card().classes("w-full q-pa-md").props("flat bordered"):
-        with ui.row().classes("w-full gap-3 items-end no-wrap"):
-            date_input = ui.input(
-                label="Date de ramasse",
-                value=today_paris().strftime("%Y-%m-%d"),
-            ).classes("flex-1").props("outlined dense type=date")
+    with ui.row().classes("w-full gap-3 items-end no-wrap q-mt-sm"):
+        # Date vide par défaut : on force l'opérateur à saisir la
+        # bonne date plutôt que de risquer un envoi avec « aujourd'hui »
+        # par défaut (cas typique : on prépare le prévisionnel le soir
+        # pour la ramasse de demain).
+        date_input = ui.input(
+            label="Date de ramasse",
+            value="",
+        ).classes("flex-1").props("outlined dense type=date")
 
-            # Les destinataires utilisent la clé "name" (pas "title").
-            # Format réel : {"name", "address_lines", "email_recipients",
-            #                "packaging_items"} — voir data/destinataires.json.
-            dest_opts = [d["name"] for d in destinataires_list]
-            default_dest = dest_opts[0] if dest_opts else None
-            dest_select = ui.select(
-                options=dest_opts, label="Destinataire",
-                value=default_dest,
-            ).classes("flex-1").props("outlined dense")
+        # Les destinataires utilisent la clé "name" (pas "title").
+        # Format réel : {"name", "address_lines", "email_recipients",
+        #                "packaging_items"} — voir data/destinataires.json.
+        dest_opts = [d["name"] for d in destinataires_list]
+        default_dest = dest_opts[0] if dest_opts else None
+        dest_select = ui.select(
+            options=dest_opts, label="Destinataire",
+            value=default_dest,
+        ).classes("flex-1").props("outlined dense")
 
-        # La ramasse à mettre à jour est désormais déduite automatiquement
-        # de l'état DB (via get_active_ramasse_for_dest, mis en cache dans
-        # active_ramasse_cache et affichée via le bandeau d'état). Plus de
-        # widget UI : avec le verrou 1-ramasse-active-par-dest, il n'y a
-        # jamais plus d'un candidat possible, l'opérateur n'a rien à choisir.
+    # Avec le verrou 1-ramasse-active-par-dest, la ramasse à mettre à
+    # jour est déduite automatiquement de l'état DB (via
+    # get_active_ramasse_for_dest, mis en cache dans
+    # active_ramasse_cache et affichée via le bandeau d'état).
 
-        # Liste des palettes déjà liées à la ramasse sélectionnée — pour
-        # permettre de retirer du BL une palette pas prête / cassée /
-        # erronée sans annuler le SSCC. La section est visible uniquement
-        # en mode update (ramasse non vide sélectionnée). Le refresh est
-        # piloté par _refresh_linked_palettes (au changement du select).
-        linked_palettes_container = ui.column().classes("w-full q-mt-sm")
+    # Liste des palettes déjà liées à la ramasse active — pour
+    # permettre de retirer du BL une palette pas prête / cassée /
+    # erronée sans annuler le SSCC. Visible uniquement quand une
+    # ramasse est active.
+    linked_palettes_container = ui.column().classes("w-full q-mt-sm")
 
     # ────────────────────────────────────────────────────────────────────
     # ÉTAPE 2 — Palettes en chambre froide (toujours visible)
@@ -1289,8 +1290,14 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
         # ── State commun aux 2 modes ──
         basket: list[PaletteInfo] = state["basket"]
         d_str = (date_input.value or "").strip()
+        if not d_str:
+            ui.notify(
+                "Choisis la date de ramasse avant d'envoyer.",
+                type="warning", icon="event",
+            )
+            return
         try:
-            d = _dt.date.fromisoformat(d_str) if d_str else today_paris()
+            d = _dt.date.fromisoformat(d_str)
         except ValueError:
             ui.notify(f"Date invalide : {d_str}", type="negative")
             return
