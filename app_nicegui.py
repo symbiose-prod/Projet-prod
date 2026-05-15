@@ -331,6 +331,7 @@ import pages.sscc_log  # noqa: F401 — /sscc-log (admin only)
 import pages.stocks  # noqa: F401 — /stocks
 import pages.sync  # noqa: F401 — /sync
 import pages.tags  # noqa: F401 — /tags
+import pages.test_carton_counter  # noqa: F401 — /test-carton-counter (admin only)
 
 # ─── Health check ────────────────────────────────────────────────────────────
 
@@ -927,6 +928,98 @@ async def _api_scan_sscc(request: Request):
         "palette": palette_dict,
         "existing_ramasse_id": result.existing_ramasse_id,
         "error": result.error_message,
+    })
+
+
+# ─── PoC : comptage de cartons via Claude Vision ───────────────────────────
+
+# Limite défensive sur la photo envoyée (le front resize à 1280px → ~500 Ko).
+_MAX_CARTON_COUNT_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+@app.post("/api/count-cartons-poc")
+async def _api_count_cartons_poc(request: Request):
+    """PoC admin : compte les cartons sur une photo de palette via Claude
+    Vision. Sert à mesurer la fiabilité avant intégration dans le flow
+    nominal /etiquettes-palette.
+
+    Auth : session NiceGUI + role=admin obligatoire.
+    Body : multipart/form-data avec un champ 'file' (image).
+    Retour : ``{count, confidence, description}`` ou ``{error}`` (HTTP 4xx/5xx).
+    """
+    user_store = app.storage.user
+    if not user_store.get("authenticated"):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    role = (user_store.get("role") or "").lower()
+    if role != "admin":
+        return JSONResponse({"error": "Admin only"}, status_code=403)
+
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"error": "Invalid form data"}, status_code=400)
+
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        return JSONResponse({"error": "Missing 'file' field"}, status_code=400)
+
+    content_type = (getattr(upload, "content_type", "") or "image/jpeg").lower()
+    if not content_type.startswith("image/"):
+        return JSONResponse(
+            {"error": f"Type non supporté ({content_type})"},
+            status_code=415,
+        )
+
+    try:
+        image_bytes = await upload.read()
+    except Exception:
+        _log.exception("Erreur lecture upload count-cartons")
+        return JSONResponse({"error": "Cannot read file"}, status_code=400)
+
+    if len(image_bytes) == 0:
+        return JSONResponse({"error": "Empty file"}, status_code=400)
+    if len(image_bytes) > _MAX_CARTON_COUNT_IMAGE_BYTES:
+        return JSONResponse(
+            {
+                "error": (
+                    f"File too large ({len(image_bytes) // 1024} Ko > "
+                    f"{_MAX_CARTON_COUNT_IMAGE_BYTES // 1024} Ko)"
+                ),
+            },
+            status_code=413,
+        )
+
+    from common.services.carton_counter import count_cartons_in_photo
+
+    try:
+        result = await asyncio.to_thread(
+            count_cartons_in_photo, image_bytes, media_type=content_type,
+        )
+    except RuntimeError as exc:
+        # ANTHROPIC_API_KEY manquante ou image trop grosse côté service
+        _log.warning("Carton count : config/limite : %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    except ValueError as exc:
+        # Réponse Claude non parsable
+        _log.warning("Carton count : parsing : %s", exc)
+        return JSONResponse(
+            {"error": f"Réponse Claude inattendue : {exc}"},
+            status_code=502,
+        )
+    except Exception as exc:
+        _log.exception("Carton count : erreur inattendue")
+        return JSONResponse(
+            {"error": f"Erreur serveur : {exc}"}, status_code=500,
+        )
+
+    _log.info(
+        "Carton count OK : %d cartons (conf=%s) sur %d Ko",
+        result.count, result.confidence, len(image_bytes) // 1024,
+    )
+    return JSONResponse({
+        "count": result.count,
+        "confidence": result.confidence,
+        "description": result.description,
     })
 
 

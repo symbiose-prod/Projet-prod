@@ -80,6 +80,7 @@ NAV_ITEMS: list[tuple] = [
         # admin only — masqué automatiquement pour user/operateur via
         # ADMIN_ONLY_PATHS dans common/permissions.py
         ("history",        "Journal SSCC",         "/sscc-log"),
+        ("photo_camera",   "PoC compte cartons",   "/test-carton-counter"),
     ]),
 ]
 
