@@ -24,10 +24,7 @@ page est ouverte (utile en test, indispensable en chargement réel).
 """
 from __future__ import annotations
 
-import base64
-import io
 import logging
-from functools import lru_cache
 
 from nicegui import app, ui
 
@@ -37,61 +34,43 @@ from pages.theme import COLORS, install_wake_lock, page_layout
 _log = logging.getLogger("ferment.test_douchette")
 
 
-# Exemples GS1-128 à afficher pour permettre le test sans étiquette
-# palette physique. Format identique à ce que /etiquettes-palette
-# génère, avec FNC1 entre AIs variables (treepoem gère ça en interne
-# quand on passe les parenthèses).
+# Exemples à scanner sans étiquette physique. La génération du code
+# se fait côté navigateur (JsBarcode pour 1D, qrcode-generator pour
+# 2D) pour éviter la dépendance Ghostscript côté serveur.
+#
+# ``js_format`` :
+#   - 'CODE128' : Code128 brut. On lui passe la chaîne avec parenthèses
+#     pour qu'elles soient visibles sous le code-barres (HRI). Le
+#     parser Ferment Station détecte le format HRI parenthèses sans
+#     ambiguïté.
+#   - 'EAN13' : standard EAN-13 (13 digits).
+#   - 'QR' : QR code via qrcode-generator.
 _SAMPLE_CODES = [
     {
         "title": "SSCC palette seul (AI 00)",
-        "barcode_type": "gs1-128",
+        "js_format": "CODE128",
         "data": "(00)337700144200000005",
-        "expected_type": "gs1_128_hri",
         "note": "Reproduit le scan AI 00 d'une palette logistique nue.",
     },
     {
         "title": "Étiquette palette complète (SSCC + GTIN + DDM + Lot + Count)",
-        "barcode_type": "gs1-128",
+        "js_format": "CODE128",
         "data": "(00)337700144200000005(02)23770014427049(15)270508(10)L080527(37)126",
-        "expected_type": "gs1_128_hri",
         "note": "Format exact d'une étiquette palette Ferment Station.",
     },
     {
         "title": "EAN-13 carton (style supermarché)",
-        "barcode_type": "ean13",
+        "js_format": "EAN13",
         "data": "3770014427250",
-        "expected_type": "ean13",
         "note": "Format d'un carton individuel — pas une palette.",
     },
     {
         "title": "QR code URL (test 2D)",
-        "barcode_type": "qrcode",
+        "js_format": "QR",
         "data": "https://prod.symbiose-kefir.fr/test-douchette",
-        "expected_type": "url",
         "note": "Valide que la BCST-72 lit aussi les codes 2D.",
     },
 ]
-
-
-@lru_cache(maxsize=16)
-def _generate_barcode_png_b64(barcode_type: str, data: str) -> str:
-    """Génère un code-barres PNG via treepoem et le retourne en data URI.
-
-    Cache LRU : les 4 exemples ne sont calculés qu'une fois par
-    démarrage du serveur (treepoem appelle Ghostscript, ~200 ms par
-    image — négligeable mais évitons de répéter).
-    """
-    try:
-        import treepoem
-        img = treepoem.generate_barcode(barcode_type=barcode_type, data=data)
-        buf = io.BytesIO()
-        # Marge blanche autour pour faciliter le scan sur écran
-        img.convert("RGB").save(buf, format="PNG")
-        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-        return f"data:image/png;base64,{b64}"
-    except Exception:
-        _log.exception("Génération barcode test échec (type=%s)", barcode_type)
-        return ""
 
 
 @ui.page("/test-douchette")
@@ -224,10 +203,14 @@ def page_test_douchette():
             "sans étiquettes palette physiques.",
         ).classes("text-body2 q-mb-md").style(f"color: {COLORS['ink2']}")
 
-        for sample in _SAMPLE_CODES:
-            png_data_uri = _generate_barcode_png_b64(
-                sample["barcode_type"], sample["data"],
-            )
+        # Pour chaque exemple : on émet un placeholder DOM avec un id
+        # unique, et un payload JSON. Le script en bas de page lit les
+        # data-attributes et appelle JsBarcode / qrcode-generator pour
+        # remplir le placeholder (rendu côté navigateur — pas de
+        # dépendance Ghostscript côté serveur).
+        import html
+        for idx, sample in enumerate(_SAMPLE_CODES):
+            placeholder_id = f"fs-sample-bc-{idx}"
             with ui.card().classes("w-full q-pa-md q-mb-md").props(
                 "flat bordered",
             ):
@@ -242,15 +225,74 @@ def page_test_douchette():
                         f"color: {COLORS['ink2']}; font-family: monospace; "
                         "word-break: break-all",
                     )
-                    if png_data_uri:
-                        ui.image(png_data_uri).style(
-                            "max-width: 500px; background: white; "
-                            "padding: 12px; border-radius: 8px",
-                        )
-                    else:
-                        ui.label("(génération échec — vérifie treepoem)").classes(
-                            "text-negative",
-                        )
+                    # Placeholder qui sera rempli par le JS en bas de page.
+                    # On encode data + format dans des data-attributes pour
+                    # éviter toute injection / problème de quoting.
+                    ui.html(
+                        f'<div id="{placeholder_id}" '
+                        f'class="fs-sample-barcode" '
+                        f'data-format="{html.escape(sample["js_format"])}" '
+                        f'data-payload="{html.escape(sample["data"])}" '
+                        f'style="background: white; padding: 12px; '
+                        f'border-radius: 8px; min-height: 80px; '
+                        f'display: flex; align-items: center; '
+                        f'justify-content: center;">'
+                        '<span style="color:#9CA3AF;font-style:italic">'
+                        'Génération…</span></div>',
+                    )
+
+        # Inclusion des libs JS (JsBarcode pour 1D, qrcode-generator pour
+        # 2D) + script qui parcourt les placeholders et fait le rendu.
+        ui.add_body_html("""
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script>
+(function() {
+    function _renderBarcodes() {
+        const els = document.querySelectorAll('.fs-sample-barcode');
+        els.forEach((el) => {
+            if (el.dataset.rendered === '1') return;
+            const format = el.dataset.format;
+            const payload = el.dataset.payload;
+            try {
+                if (format === 'QR') {
+                    if (typeof qrcode === 'undefined') return;
+                    const qr = qrcode(0, 'M');
+                    qr.addData(payload);
+                    qr.make();
+                    el.innerHTML = qr.createImgTag(6, 12);
+                } else {
+                    if (typeof JsBarcode === 'undefined') return;
+                    // Crée un SVG inline, plus net pour le scan sur écran.
+                    el.innerHTML = '<svg></svg>';
+                    JsBarcode(el.querySelector('svg'), payload, {
+                        format: format,
+                        width: 2.5,
+                        height: 100,
+                        displayValue: true,
+                        fontSize: 14,
+                        margin: 12,
+                    });
+                }
+                el.dataset.rendered = '1';
+            } catch (err) {
+                el.innerHTML = '<span style="color:#B91C1C">' +
+                    'Erreur rendu : ' + (err.message || err) + '</span>';
+            }
+        });
+    }
+    // Attend que les libs CDN soient chargées (parfois retardé).
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _renderBarcodes);
+    } else {
+        _renderBarcodes();
+    }
+    // Re-essai après 500ms au cas où les libs n'étaient pas prêtes.
+    setTimeout(_renderBarcodes, 500);
+    setTimeout(_renderBarcodes, 1500);
+})();
+</script>
+""")
 
         # Wake Lock : iPad reste allumé tant que la page est ouverte.
         install_wake_lock()
