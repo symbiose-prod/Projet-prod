@@ -52,7 +52,7 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `pages/auth.py` | `/login`, `/reset/{token}` | Login, signup, password reset |
 | `pages/accueil.py` | `/accueil` | Home — file upload, EasyBeer sync |
 | `pages/production.py` | `/production` | Production planning + EasyBeer brassin creation |
-| `pages/etiquettes_palette.py` | `/etiquettes-palette` | Scan carton iPhone/iPad → PDF étiquette palette (GS1-128) — voir [docs/ETIQUETTES_PALETTE.md](docs/ETIQUETTES_PALETTE.md) |
+| `pages/etiquettes_palette.py` | `/etiquettes-palette` | Scan carton iPhone/iPad → PDF étiquette palette (GS1-128). La génération du PDF passe par `etiquette_palette_service.generate_and_save_palette_label()` — fonction partagée avec l'app iOS mobile. Voir [docs/ETIQUETTES_PALETTE.md](docs/ETIQUETTES_PALETTE.md) et section "Mobile API" plus bas. |
 | `pages/chargement_camion.py` | `/chargement-camion` | Scan SSCC palette → BL prévisionnel / définitif (workflow ramasse unique) |
 | `pages/historique_ramasses.py` | `/historique-ramasses` | Historique complet + corbeille + export CSV |
 | `pages/stocks.py` | `/stocks` | Stock autonomy by supplier, order suggestions |
@@ -82,6 +82,8 @@ docs/                   # RUNBOOK.md, DEPLOYMENT_NOTES.md, EasyBeer OpenAPI
 | `common/xlsx_fill/` | Excel/PDF generation package (fiche production, BL, bon de commande) |
 | `common/etiquette_palette_pdf.py` | Génération PDF étiquette palette 102×152 mm (GS1-128 via `treepoem` + Ghostscript, layout fpdf2 inspiré du modèle PPTX interne) |
 | `common/easybeer/` | EasyBeer API client package (stocks, brassins, recipes, conditioning, suppliers, history) |
+| `common/mobile_auth.py` | Auth Bearer pour l'app iOS — table `mobile_api_tokens` (TTL 90j, SHA-256, révocation) |
+| `common/mobile_v1.py` | Routes `/api/v1/*` pour l'app iOS — adaptateur HTTP qui délègue aux services (voir tableau dédié ci-dessous) |
 
 ### Core Modules
 
@@ -283,6 +285,99 @@ git push origin main
 - **Data files:** `data/production.xlsx`, `data/flavor_map.csv`, `data/regles_cuves.csv` (tank ruler interpolation), `data/destinataires.json` (harvest pickup recipients)
 - **Email:** Use Brevo HTTPS API (`common/email.py`), never SMTP in production
 - **AI:** Claude API via `common/ai.py` for supplier order email generation (Anthropic SDK)
+
+---
+
+## Mobile API (app iOS Ferment station)
+
+App native iOS dans `/Users/nicolaspradignac/Documents/Ferment station/` (Swift/SwiftUI 26+) qui se branche sur ce backend via des endpoints REST `/api/v1/*`. Auth Bearer token, distincte des cookies session NiceGUI du web.
+
+### Architecture en 1 schéma
+
+```
+iPhone (SwiftUI)                  VPS OVH (Python NiceGUI)
+─────────────────                 ──────────────────────────────────────────────
+CameraScannerView                 app_nicegui.py
+  └─ AVFoundation                   ├── PUBLIC_PATHS = {..., "/api/v1/"}
+       décode GS1-128 →             └── _register_mobile_v1_routes(app)
+                                          │
+APIClient.swift          ──HTTP──►  common/mobile_v1.py  (adapteur HTTP)
+  Bearer <token>                          │  parse body, vérif Bearer, format JSON
+                                          ▼
+                                    common/services/
+                                      etiquette_palette_service.py
+                                        - parse_gs1_to_entry
+                                        - lookup_product_by_ean
+                                        - generate_and_save_palette_label  ←┐
+                                        - count_today_and_month             │
+                                        - list_today_labels                 │  partagé
+                                        - list_recent_labels                │  avec web
+                                        - set_label_archived                │  (pages/
+                                        - get_history_entry                 │  etiquettes
+                                      sscc_service.py                       │  _palette.py)
+                                        - generate_sscc                    ─┘
+                                        - list_sscc_log
+                                      mobile_auth.py
+                                        - create_mobile_token / verify / revoke
+                                          │
+                                          ▼
+                                    PostgreSQL (mobile_api_tokens, sscc_log,
+                                                etiquette_palette_history, ...)
+```
+
+### Endpoints `/api/v1/*` (voir `common/mobile_v1.py`)
+
+| Méthode | Route | Auth | Rôle |
+|---|---|---|---|
+| POST | `/api/v1/auth/login` | — | email+password → token Bearer + infos user |
+| POST | `/api/v1/auth/logout` | Bearer | révoque le token courant |
+| POST | `/api/v1/decode-gs1` | Bearer | décode string GS1-128 + lookup produit + image + layout palette |
+| POST | `/api/v1/print-palette` | Bearer | génère SSCC + PDF étiquette palette + audit |
+| POST | `/api/v1/labels/{id}/archive` | Bearer | toggle archive (réversible, tenant-scoped) |
+| POST | `/api/v1/labels/{id}/reprint` | Bearer | régénère le PDF d'une étiquette historisée |
+| GET | `/api/v1/today-labels` | Bearer | étiquettes du jour (archivées incluses) |
+| GET | `/api/v1/home-summary` | Bearer | compteurs jour/mois + 20 derniers scans |
+| GET | `/api/v1/sscc-log` | Bearer + admin | journal SSCC complet (filtres date/lot) |
+
+### Code de génération unifié web + mobile
+
+⚠️ **`etiquette_palette_service.generate_and_save_palette_label()` est l'unique source de vérité** pour le pipeline `SSCC → PDF → audit history → purge`. Appelée à 2 endroits :
+- `pages/etiquettes_palette.py:_do_generate` (web — passe tous les champs produit depuis `LabelEntry`)
+- `common/mobile_v1.py:_v1_print_palette` (mobile — passe juste ean/lot/ddm, le service fait `lookup_product_by_ean`)
+
+Toute évolution du flux (nouveau champ context, gestion `bio`, nouveau format Domino…) doit se faire UNIQUEMENT dans cette fonction. Pas de divergence possible.
+
+### Auth Bearer mobile
+
+- Token créé via `POST /api/v1/auth/login` (90 jours TTL par défaut, hash SHA-256 en DB)
+- Storé côté iOS dans le **Keychain iOS** (`KeychainStorage.swift`)
+- À chaque requête : header `Authorization: Bearer <token>`
+- Vérifié par `mobile_auth.verify_mobile_token` (resolution token → user dict)
+- Révoqué via `POST /api/v1/auth/logout` ou via colonne `revoked_at` côté DB
+- Le préfixe `/api/v1/` est listé dans `PUBLIC_PATHS` côté `app_nicegui.py` pour bypasser le middleware d'auth web
+
+### Ajouter une route mobile en 5 étapes
+
+1. **Endpoint Python** dans `common/mobile_v1.py` :
+   - Définir `async def _v1_xxx(request: Request)`
+   - Premier appel : `user = await _resolve_mobile_user(request)` + `if user is None: return _unauthorized()`
+   - Déléguer la logique à un service (PAS de SQL inline)
+2. **Enregistrer la route** dans `register_routes(app)` du même fichier
+3. **Côté iOS** : ajouter une méthode dans `APIClient.swift` (suivre le pattern des existantes)
+4. **Côté iOS** : ajouter un modèle `Codable` dans `Models.swift` pour la réponse
+5. **CLAUDE.md** : compléter le tableau d'endpoints ci-dessus + ce diagramme si l'architecture change
+
+### Multi-tenant
+
+Tous les endpoints `/api/v1/*` filtrent obligatoirement par `user["tenant_id"]` (du token). Les services qui prennent un `tenant_id` paramètre l'utilisent dans toutes leurs queries. Pas de fuite cross-tenant possible **tant qu'on ne contourne pas** ce pattern.
+
+### Tests à ajouter (priorité)
+
+Actuellement aucun test ne couvre les modules mobile :
+- `tests/test_mobile_auth.py` — create/verify/revoke/expired token
+- `tests/test_gs1_parsers.py` — `parse_gs1_raw` (format iOS AVFoundation `]C1` + FNC1), `parse_gs1_to_entry` 3 formats
+- `tests/test_mobile_api_v1.py` (FastAPI TestClient) — isolation tenant cross-tenant, login 200/401/400
+- `tests/test_set_label_archived.py` — toggle/force/cross-tenant
 
 ---
 

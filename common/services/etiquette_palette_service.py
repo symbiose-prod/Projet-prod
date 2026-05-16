@@ -1195,6 +1195,211 @@ def purge_old_label_history(tenant_id: str, keep: int = _HISTORY_MAX_PER_TENANT)
         return 0
 
 
+def count_today_and_month(tenant_id: str) -> dict[str, int]:
+    """Compte les étiquettes générées aujourd'hui et ce mois pour le tenant.
+
+    Exclut les archivées (``archived_at IS NULL``) — l'archivage est censé
+    sortir l'étiquette des compteurs sans la supprimer. Une seule query
+    pour les 2 compteurs via PostgreSQL FILTER WHERE.
+
+    Returns:
+        ``{"today_count": int, "month_count": int}``.
+    """
+    rows = run_sql(
+        """
+        SELECT
+          COUNT(*) FILTER (WHERE generated_at::date = CURRENT_DATE
+                             AND archived_at IS NULL)                  AS today_count,
+          COUNT(*) FILTER (WHERE date_trunc('month', generated_at)
+                              = date_trunc('month', now())
+                             AND archived_at IS NULL)                  AS month_count
+        FROM etiquette_palette_history
+        WHERE tenant_id = :t
+        """,
+        {"t": tenant_id},
+    ) or [{}]
+    stats = rows[0]
+    return {
+        "today_count": int(stats.get("today_count") or 0),
+        "month_count": int(stats.get("month_count") or 0),
+    }
+
+
+def list_today_labels(tenant_id: str) -> list[dict]:
+    """Retourne les étiquettes du jour (générées aujourd'hui), tous statuts.
+
+    Inclut les archivées (avec ``archived_at`` non null) pour permettre la
+    réversibilité côté mobile. Triées par ``generated_at DESC``.
+
+    Format dict (et non HistoryEntry) parce que c'est destiné directement
+    à un payload JSON API — on évite une couche de conversion en plus.
+    """
+    rows = run_sql(
+        """
+        SELECT id, sscc, designation, marque, fmt, gout, lot, ddm,
+               case_count, full_pallet, n_copies, generated_at, archived_at
+        FROM etiquette_palette_history
+        WHERE tenant_id = :t
+          AND generated_at::date = CURRENT_DATE
+        ORDER BY generated_at DESC
+        """,
+        {"t": tenant_id},
+    ) or []
+    return [
+        {
+            "id": int(r["id"]),
+            "sscc": str(r.get("sscc") or ""),
+            "designation": str(r.get("designation") or ""),
+            "marque": str(r.get("marque") or ""),
+            "fmt": str(r.get("fmt") or ""),
+            "gout": str(r.get("gout") or ""),
+            "lot": str(r.get("lot") or ""),
+            "ddm": r["ddm"].isoformat() if r.get("ddm") else None,
+            "case_count": int(r.get("case_count") or 0),
+            "full_pallet": bool(r.get("full_pallet")),
+            "n_copies": int(r.get("n_copies") or 1),
+            "generated_at": r["generated_at"].isoformat() if r.get("generated_at") else None,
+            "archived_at": r["archived_at"].isoformat() if r.get("archived_at") else None,
+        }
+        for r in rows
+    ]
+
+
+def generate_and_save_palette_label(
+    tenant_id: str,
+    *,
+    user_email: str,
+    ean: str,
+    lot: str,
+    ddm: _dt.date,
+    case_count: int,
+    full_pallet: bool,
+    n_copies: int = 1,
+    # Champs produit optionnels — si non fournis, on fait un lookup_product_by_ean.
+    # Le web les fournit (depuis sa LabelEntry chargée) ; le mobile les omet.
+    designation: str | None = None,
+    marque: str | None = None,
+    fmt: str | None = None,
+    pcb: int | None = None,
+    gout: str | None = None,
+    gtin_uvc: str | None = None,
+    code_interne: str = "",
+    bio: bool = True,
+    tenant_name: str = "",
+) -> tuple[bytes, str, int | None]:
+    """Pipeline complet "génération d'une étiquette palette".
+
+    Source de vérité **unique** pour web + mobile. Effectue dans l'ordre :
+      1. Lookup produit si les champs produit ne sont pas fournis (mobile).
+      2. Génère un SSCC unique (atomique via sequence Postgres ; audité dans sscc_log).
+      3. Construit l'EtiquetteContext et le PDF (treepoem + fpdf2).
+      4. Persiste l'audit dans ``etiquette_palette_history`` (fire-and-forget).
+      5. Purge les anciennes entrées au-delà de la limite par tenant.
+
+    Si la lookup produit échoue (EAN inconnu en matrice EasyBeer) et qu'aucun
+    champ produit n'a été fourni → lève ``ProductNotFoundError``.
+
+    Returns:
+        ``(pdf_bytes, sscc, label_history_id | None)``. Le ``label_history_id``
+        est ``None`` si l'INSERT history a échoué (DB down) — le PDF est
+        quand même retourné pour respecter la logique fire-and-forget.
+
+    Raises:
+        ProductNotFoundError: si lookup nécessaire mais EAN absent de la matrice EB.
+    """
+    # Lazy import pour ne pas créer de cycle entre services / modules de rendu.
+    from common.etiquette_palette_pdf import EtiquetteContext, build_etiquette_palette_pdf
+    from common.services.sscc_service import generate_sscc
+
+    # Étape 1 — Lookup produit si les champs ne sont pas fournis par le caller.
+    needs_lookup = any(
+        v is None for v in (designation, marque, fmt, pcb, gout, gtin_uvc)
+    )
+    if needs_lookup:
+        product = lookup_product_by_ean(ean)
+        if not product:
+            raise ProductNotFoundError(
+                f"Produit introuvable pour EAN {ean} dans la matrice EasyBeer"
+            )
+        designation = designation if designation is not None else product.get("designation") or ""
+        marque = marque if marque is not None else product.get("marque") or ""
+        fmt = fmt if fmt is not None else product.get("fmt") or ""
+        pcb = pcb if pcb is not None else int(product.get("pcb") or 0)
+        gout = gout if gout is not None else product.get("gout") or ""
+        gtin_uvc = gtin_uvc if gtin_uvc is not None else product.get("ean_uvc") or ""
+
+    # Étape 2 — SSCC. Best-effort : si la séquence échoue (DB down), on continue
+    # avec un SSCC vide pour que l'opérateur puisse quand même imprimer (mieux
+    # qu'aucune étiquette du tout — le manque sera visible côté audit).
+    try:
+        sscc_result = generate_sscc(
+            tenant_id,
+            user_email=user_email,
+            gtin_palette=ean,
+            lot=lot,
+            ddm=ddm,
+            case_count=case_count,
+        )
+        sscc_str = sscc_result.sscc
+    except Exception:
+        _log.exception("Échec génération SSCC — étiquette imprimée sans SSCC")
+        sscc_str = ""
+
+    # Étape 3 — Contexte + PDF.
+    ctx = EtiquetteContext(
+        product_label=designation or "",
+        fmt=fmt or "",
+        ean13=ean,
+        lot=lot,
+        ddm=ddm,
+        case_count=case_count,
+        full_pallet=full_pallet,
+        tenant_name=tenant_name,
+        n_copies=n_copies,
+        marque=marque or "",
+        code_interne=code_interne,
+        gtin_uvc=gtin_uvc or "",
+        pcb=int(pcb or 0),
+        bio=bio,
+        sscc=sscc_str,
+    )
+    pdf_bytes = build_etiquette_palette_pdf(ctx)
+
+    # Étape 4 — Audit (fire-and-forget). Si l'INSERT échoue (DB down), on log
+    # mais on ne propage pas — le PDF est déjà imprimable.
+    label_id = save_label_history(
+        tenant_id,
+        user_email=user_email,
+        ean=ean,
+        lot=lot,
+        ddm=ddm,
+        fmt=fmt or "",
+        marque=marque or "",
+        designation=designation or "",
+        gout=gout or "",
+        case_count=case_count,
+        full_pallet=full_pallet,
+        n_copies=n_copies,
+        pcb=int(pcb or 0),
+        gtin_uvc=gtin_uvc or "",
+        code_interne=code_interne,
+        bio=bio,
+        sscc=sscc_str,
+    )
+
+    # Étape 5 — Purge (best-effort, ne bloque pas).
+    try:
+        purge_old_label_history(tenant_id)
+    except Exception:
+        _log.exception("Échec purge_old_label_history (non bloquant)")
+
+    return pdf_bytes, sscc_str, label_id
+
+
+class ProductNotFoundError(Exception):
+    """Levée par generate_and_save_palette_label quand l'EAN est introuvable."""
+
+
 def get_sync_status(tenant_id: str) -> SyncStatus:
     """Retourne l'âge et le statut de la dernière sync étiquettes du tenant."""
     rows = run_sql(

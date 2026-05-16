@@ -45,8 +45,6 @@ from common.services.etiquette_palette_service import (
     list_recent_labels,
     load_label_data_from_sync,
     lookup_product_by_ean,
-    purge_old_label_history,
-    save_label_history,
 )
 from common.services.print_jobs_service import (
     PendingJobView,
@@ -845,36 +843,37 @@ def _render_form(
         """
         _set_print_buttons(False, loading=True)
         try:
-            from common.etiquette_palette_pdf import build_etiquette_palette_pdf
-            from common.services.sscc_service import generate_sscc
-
-            # Génération du SSCC palette (NEW). Atomic via PG sequence,
-            # jamais réutilisé, audité dans sscc_log. Si la DB échoue on
-            # log mais on continue : la palette aura un SSCC vide plutôt
-            # qu'aucune étiquette.
-            try:
-                sscc_result = await asyncio.to_thread(
-                    generate_sscc,
-                    tenant_id,
-                    user_email=user_email,
-                    gtin_palette=entry.ean_colis,
-                    lot=entry.lot_str,
-                    ddm=entry.ddm_date,
-                    case_count=count,
-                )
-                sscc_str = sscc_result.sscc
-            except Exception:
-                _log.exception("Échec génération SSCC — étiquette imprimée sans SSCC")
-                sscc_str = ""
-
-            ctx = _ctx_from_entry(
-                entry, count,
-                full_pallet=bool(state["full_pallet"]),
-                n_copies=2 if double_copies_toggle.value else 1,
-                tenant_name=tenant_name,
-                sscc=sscc_str,
+            # Pipeline unifié web + mobile : SSCC + EtiquetteContext + PDF +
+            # audit history + purge dans une seule fonction du service.
+            # Voir common/services/etiquette_palette_service.py.
+            from common.services.etiquette_palette_service import (
+                generate_and_save_palette_label,
             )
-            pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
+
+            n_copies = 2 if double_copies_toggle.value else 1
+            full_pallet = bool(state["full_pallet"])
+            pdf_bytes, _sscc, _label_id = await asyncio.to_thread(
+                generate_and_save_palette_label,
+                tenant_id,
+                user_email=user_email,
+                ean=entry.ean_colis,
+                lot=entry.lot_str,
+                ddm=entry.ddm_date,
+                case_count=count,
+                full_pallet=full_pallet,
+                n_copies=n_copies,
+                # Web fournit tous les champs produit depuis sa LabelEntry
+                # déjà chargée → évite un re-lookup EasyBeer inutile.
+                designation=entry.designation,
+                marque=entry.marque,
+                fmt=entry.fmt,
+                pcb=entry.pcb,
+                gout=entry.gout,
+                gtin_uvc=entry.ean_uvc,
+                code_interne=entry.code_interne,
+                bio=True,
+                tenant_name=tenant_name,
+            )
             safe_gout = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.gout or "")
             fname = (
                 f"etiquette_{entry.marque}_{entry.fmt}_"
@@ -885,10 +884,10 @@ def _render_form(
                 # Soumet à la queue d'impression — l'agent Windows long-poll
                 # /api/print-jobs/next, récupère le PDF et imprime via le
                 # driver Brother (Windows ShellExecute).
-                await _submit_print_job(pdf_bytes, fname, ctx.n_copies)
+                await _submit_print_job(pdf_bytes, fname, n_copies)
                 ui.notify(
                     f"✓ Envoyé à l'imprimante Brother — {count} caisses, "
-                    f"{ctx.n_copies} étiquette(s).",
+                    f"{n_copies} étiquette(s).",
                     type="positive", icon="print", timeout=5000,
                 )
             else:
@@ -898,30 +897,6 @@ def _render_form(
                     type="positive", icon="check", timeout=5000,
                 )
 
-            # Audit historique (fire-and-forget) — identique pour les 2 modes.
-            # On stocke le SSCC pour qu'une réimpression future utilise le
-            # même (même palette physique).
-            await asyncio.to_thread(
-                save_label_history,
-                tenant_id,
-                user_email=user_email,
-                ean=entry.ean_colis,
-                lot=entry.lot_str,
-                ddm=entry.ddm_date,
-                fmt=entry.fmt,
-                marque=entry.marque,
-                designation=entry.designation,
-                gout=entry.gout,
-                case_count=count,
-                full_pallet=bool(state["full_pallet"]),
-                n_copies=ctx.n_copies,
-                pcb=entry.pcb,
-                gtin_uvc=entry.ean_uvc,
-                code_interne=entry.code_interne,
-                bio=True,
-                sscc=sscc_str,
-            )
-            await asyncio.to_thread(purge_old_label_history, tenant_id)
             _refresh_history()
             # Rafraîchir le mini-menu sidebar (pending + récentes)
             refresh_sidebar = state.get("_refresh_sidebar")
@@ -1722,31 +1697,6 @@ def _install_scan_input_listener() -> None:
     page est ré-ouverte sans full reload (édge case Quasar/NiceGUI).
     """
     ui.add_body_html(_SCAN_INPUT_LISTENER_JS)
-
-
-def _ctx_from_entry(
-    entry: LabelEntry, count: int,
-    *, full_pallet: bool, n_copies: int, tenant_name: str, sscc: str = "",
-):
-    """Construit un EtiquetteContext depuis une LabelEntry + saisie quantité."""
-    from common.etiquette_palette_pdf import EtiquetteContext
-    return EtiquetteContext(
-        product_label=entry.product_label,
-        fmt=entry.fmt,
-        ean13=entry.ean_colis,
-        lot=entry.lot_str,
-        ddm=entry.ddm_date,
-        case_count=count,
-        full_pallet=full_pallet,
-        tenant_name=tenant_name,
-        n_copies=n_copies,
-        marque=entry.marque,
-        code_interne=entry.code_interne,
-        gtin_uvc=entry.ean_uvc,
-        pcb=entry.pcb,
-        bio=True,
-        sscc=sscc,
-    )
 
 
 def _ctx_from_history(h: HistoryEntry, *, tenant_name: str):
