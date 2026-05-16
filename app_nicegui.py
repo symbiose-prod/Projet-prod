@@ -1068,12 +1068,27 @@ async def _api_v1_print_palette(request: Request):
         lookup_product_by_ean,
         save_label_history,
     )
+    from common.services.sscc_service import generate_sscc
 
     product = await asyncio.to_thread(lookup_product_by_ean, ean)
     if not product:
         return JSONResponse(
             {"error": f"Produit introuvable pour EAN {ean}"}, status_code=404
         )
+
+    # Génération SSCC : aligne le comportement mobile sur le web. Atomique
+    # via sscc_serial_seq (PostgreSQL), pas de risque de doublon même en
+    # concurrence. Audit INSERT dans sscc_log (best-effort).
+    sscc_result = await asyncio.to_thread(
+        generate_sscc,
+        user["tenant_id"],
+        user_email=user.get("email") or "",
+        gtin_palette=ean,
+        lot=lot,
+        ddm=ddm,
+        case_count=case_count,
+    )
+    sscc = sscc_result.sscc
 
     ctx = EtiquetteContext(
         product_label=product.get("designation") or "",
@@ -1090,7 +1105,7 @@ async def _api_v1_print_palette(request: Request):
         gtin_uvc=product.get("ean_uvc") or "",
         pcb=int(product.get("pcb") or 0),
         bio=True,
-        sscc="",
+        sscc=sscc,
     )
 
     try:
@@ -1119,12 +1134,12 @@ async def _api_v1_print_palette(request: Request):
         gtin_uvc=product.get("ean_uvc") or "",
         code_interne="",
         bio=True,
-        sscc="",
+        sscc=sscc,
     )
 
     _log.info(
-        "print-palette : ean=%s qty=%d copies=%d user=%s tenant=%s",
-        ean, case_count, n_copies, user.get("email"), user["tenant_id"],
+        "print-palette : ean=%s qty=%d copies=%d sscc=%s user=%s tenant=%s",
+        ean, case_count, n_copies, sscc, user.get("email"), user["tenant_id"],
     )
 
     return Response(
@@ -1213,42 +1228,23 @@ async def _api_v1_archive_label(label_id: int, request: Request):
     except Exception:
         pass
 
-    from db.conn import run_sql
+    from common.services.etiquette_palette_service import set_label_archived
 
-    if desired is None:
-        # Toggle : si archived_at IS NULL → now(), sinon → NULL.
-        rows = await asyncio.to_thread(
-            run_sql,
-            """
-            UPDATE etiquette_palette_history
-            SET archived_at = CASE WHEN archived_at IS NULL THEN now() ELSE NULL END
-            WHERE id = :id AND tenant_id = :t
-            RETURNING id, archived_at
-            """,
-            {"id": label_id, "t": user["tenant_id"]},
-        )
-    else:
-        rows = await asyncio.to_thread(
-            run_sql,
-            """
-            UPDATE etiquette_palette_history
-            SET archived_at = CASE WHEN :a THEN now() ELSE NULL END
-            WHERE id = :id AND tenant_id = :t
-            RETURNING id, archived_at
-            """,
-            {"id": label_id, "t": user["tenant_id"], "a": desired},
-        )
-
-    if not rows:
+    result = await asyncio.to_thread(
+        set_label_archived,
+        user["tenant_id"],
+        label_id,
+        archived=desired,
+    )
+    if result is False:
         return JSONResponse({"error": "Label not found"}, status_code=404)
-    row = rows[0]
-    archived_at = row.get("archived_at")
+    archived_at = result if hasattr(result, "isoformat") else None
     _log.info(
         "label archive : id=%s archived=%s tenant=%s user=%s",
-        row["id"], archived_at is not None, user["tenant_id"], user.get("email"),
+        label_id, archived_at is not None, user["tenant_id"], user.get("email"),
     )
     return JSONResponse({
-        "id": int(row["id"]),
+        "id": label_id,
         "archived_at": archived_at.isoformat() if archived_at else None,
     })
 

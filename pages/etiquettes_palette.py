@@ -1179,19 +1179,48 @@ def _render_form(
                 type="warning",
             )
 
+    def _do_archive(h: HistoryEntry):
+        """Toggle l'état archivé d'une étiquette (réversible).
+
+        Différent de `_do_void` : void = SSCC fantôme (palette physique
+        cancelée), archive = on exclut juste l'entrée des compteurs (ex:
+        doublon de saisie).
+        """
+        from common.services.etiquette_palette_service import set_label_archived
+        result = set_label_archived(tenant_id, h.id, archived=None)  # toggle
+        if result is False:
+            ui.notify("Archivage impossible (étiquette introuvable).", type="warning")
+            return
+        if result is not None:
+            ui.notify(
+                f"📦 Étiquette « {h.designation or h.ean} » archivée.",
+                type="info", icon="archive",
+            )
+        else:
+            ui.notify(
+                f"↩ Étiquette « {h.designation or h.ean} » désarchivée.",
+                type="positive", icon="unarchive",
+            )
+        _refresh_history()
+
     def _refresh_history():
         """Recharge la section historique (appelée après chaque génération).
 
         Format : expansion repliable contenant un tableau condensé des
         20 dernières étiquettes générées. L'opérateur peut l'ouvrir pour
-        retrouver une étiquette à réimprimer ou annuler une fantôme.
+        retrouver une étiquette à réimprimer / annuler / archiver.
         """
         history_section.clear()
         if not tenant_id:
             return
         recent = list_recent_labels(tenant_id, limit=20)
         with history_section:
-            _render_history_table(recent, on_reprint=_do_reprint, on_void=_do_void)
+            _render_history_table(
+                recent,
+                on_reprint=_do_reprint,
+                on_void=_do_void,
+                on_archive=_do_archive,
+            )
 
     _refresh_history()
 
@@ -1501,15 +1530,19 @@ def _render_history_table(
     *,
     on_reprint,
     on_void=None,
+    on_archive=None,
 ) -> None:
     """Rend les étiquettes récentes sous forme d'un tableau Quasar
     encapsulé dans une ``ui.expansion`` repliable.
 
-    Chaque ligne propose 2 actions :
+    Chaque ligne propose 3 actions :
       - Réimprimer : regénère le PDF avec le SSCC d'origine
       - Annuler : marque le SSCC comme fantôme (étiquette pas imprimée
-        ou doublon). Les lignes annulées apparaissent grisées et leur
-        bouton Réimprimer est désactivé.
+        ou doublon physique). Les lignes annulées apparaissent grisées
+        et leur bouton Réimprimer est désactivé.
+      - Archiver/Désarchiver : marque l'entrée comme à exclure des
+        compteurs (doublon de saisie, erreur). Réversible.
+        Les lignes archivées sont grisées en italique (sans rayé).
     """
     label_text = (
         f"Étiquettes récentes ({len(entries)})"
@@ -1532,10 +1565,12 @@ def _render_history_table(
             from common.ramasse import fmt_paris as _fmt_paris
             when = _fmt_paris(h.generated_at, "%d/%m %H:%M")
             is_voided = bool(h.voided_at)
+            is_archived = bool(h.archived_at)
             produit_str = f"{h.designation or 'GTIN ' + h.ean} — {h.fmt}"
             if is_voided:
-                # Marqueur visuel devant le produit annulé
                 produit_str = f"⊘ {produit_str}"
+            elif is_archived:
+                produit_str = f"📦 {produit_str}"  # marqueur "archivée"
             rows.append({
                 "id": h.id,
                 "produit": produit_str,
@@ -1544,6 +1579,7 @@ def _render_history_table(
                 "cartons": h.case_count,
                 "when": when,
                 "voided": is_voided,
+                "archived": is_archived,
             })
 
         cols = [
@@ -1565,10 +1601,12 @@ def _render_history_table(
             pagination={"rowsPerPage": 10},
         ).classes("w-full").props("flat bordered dense")
 
-        # Slot row : grise les lignes annulées
+        # Style ligne : voided = barré + 50%, archived = italique + 60%
+        # (sans rayé : visuel plus doux car réversible / opérationnel).
         table.add_slot("body", """
-            <q-tr :props="props" :style="props.row.voided ?
-                'opacity: 0.5; text-decoration: line-through' : ''">
+            <q-tr :props="props" :style="
+                props.row.voided  ? 'opacity: 0.5; text-decoration: line-through' :
+                props.row.archived ? 'opacity: 0.6; font-style: italic' : ''">
                 <q-td v-for="col in props.cols" :key="col.name" :props="props">
                     <template v-if="col.name === 'id'">
                         <q-btn flat dense color="green-8" icon="print"
@@ -1577,6 +1615,10 @@ def _render_history_table(
                         <q-btn flat dense color="red-7" icon="block"
                                :disable="props.row.voided"
                                @click="$parent.$emit('void', props.row.id)" />
+                        <q-btn flat dense color="orange-8"
+                               :icon="props.row.archived ? 'unarchive' : 'archive'"
+                               :disable="props.row.voided"
+                               @click="$parent.$emit('archive', props.row.id)" />
                     </template>
                     <template v-else>
                         {{ col.value }}
@@ -1603,8 +1645,18 @@ def _render_history_table(
             if h is not None and on_void is not None:
                 on_void(h)
 
+        def _on_archive_event(e):
+            try:
+                row_id = int(e.args)
+            except (TypeError, ValueError):
+                return
+            h = by_id.get(row_id)
+            if h is not None and on_archive is not None:
+                on_archive(h)
+
         table.on("reprint", _on_reprint_event)
         table.on("void", _on_void_event)
+        table.on("archive", _on_archive_event)
 
 
 # ─── Dialog d'annulation SSCC (utilisé par _do_void) ────────────────────────

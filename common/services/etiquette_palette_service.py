@@ -130,6 +130,10 @@ class HistoryEntry:
     sscc: str = ""              # SSCC 18 digits (vide pour entrées pré-SSCC)
     voided_at: _dt.datetime | None = None
     voided_reason: str = ""
+    # archived_at : NULL = active, sinon date d'archivage. Réversible.
+    # Exclue des compteurs ("imprimées aujourd'hui" etc.) tant qu'archivée.
+    # Différent de voided_at (qui est lié au SSCC dans sscc_log).
+    archived_at: _dt.datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -1054,7 +1058,7 @@ def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
                       eph.designation, eph.gout, eph.case_count,
                       eph.full_pallet, eph.n_copies, eph.pcb,
                       eph.gtin_uvc, eph.code_interne, eph.bio, eph.sscc,
-                      eph.user_email, eph.generated_at,
+                      eph.user_email, eph.generated_at, eph.archived_at,
                       sl.voided_at, sl.voided_reason
                FROM etiquette_palette_history eph
                LEFT JOIN sscc_log sl
@@ -1092,10 +1096,57 @@ def list_recent_labels(tenant_id: str, limit: int = 20) -> list[HistoryEntry]:
                 sscc=str(r.get("sscc") or ""),
                 voided_at=r.get("voided_at"),
                 voided_reason=str(r.get("voided_reason") or ""),
+                archived_at=r.get("archived_at"),
             ))
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne historique invalide ignorée : %r", r, exc_info=True)
     return out
+
+
+def set_label_archived(
+    tenant_id: str,
+    label_id: int,
+    *,
+    archived: bool | None = None,
+) -> _dt.datetime | None | bool:
+    """Archive/désarchive une étiquette palette historisée.
+
+    - ``archived=True`` : force l'archivage (set archived_at = now())
+    - ``archived=False`` : désarchive (set archived_at = NULL)
+    - ``archived=None`` : toggle (utilisé par mobile pour le bouton uniforme)
+
+    L'étiquette doit appartenir au ``tenant_id`` fourni — sinon retourne False
+    (sécurité multi-tenant : pas d'archivage cross-tenant).
+
+    Returns:
+        - datetime de l'archivage (ou None si désarchivée) si succès
+        - False si label introuvable ou pas dans le bon tenant
+    """
+    if archived is None:
+        sql = """
+            UPDATE etiquette_palette_history
+            SET archived_at = CASE WHEN archived_at IS NULL THEN now() ELSE NULL END
+            WHERE id = :id AND tenant_id = :t
+            RETURNING archived_at
+        """
+        params = {"id": int(label_id), "t": tenant_id}
+    else:
+        sql = """
+            UPDATE etiquette_palette_history
+            SET archived_at = CASE WHEN :a THEN now() ELSE NULL END
+            WHERE id = :id AND tenant_id = :t
+            RETURNING archived_at
+        """
+        params = {"id": int(label_id), "t": tenant_id, "a": bool(archived)}
+
+    try:
+        rows = run_sql(sql, params)
+    except Exception:
+        _log.exception("Échec set_label_archived id=%s tenant=%s", label_id, tenant_id)
+        return False
+    if not rows:
+        return False
+    return rows[0].get("archived_at")
 
 
 def get_history_entry(tenant_id: str, entry_id: int) -> HistoryEntry | None:
