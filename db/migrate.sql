@@ -482,7 +482,11 @@ ALTER TABLE etiquette_palette_history
   ADD COLUMN IF NOT EXISTS gtin_uvc TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS code_interne TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS bio BOOLEAN NOT NULL DEFAULT true,
-  ADD COLUMN IF NOT EXISTS sscc TEXT NOT NULL DEFAULT '';
+  ADD COLUMN IF NOT EXISTS sscc TEXT NOT NULL DEFAULT '',
+  -- Permet d'"archiver" une étiquette (doublon, erreur de saisie...) sans
+  -- la supprimer. NULL = active, timestamptz = archivée à cette date.
+  -- Réversible (UPDATE … SET archived_at = NULL).
+  ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 
 -- =========================
 -- SSCC (Serial Shipping Container Code) — identifiant unique de palette

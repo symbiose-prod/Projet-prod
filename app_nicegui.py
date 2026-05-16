@@ -1136,6 +1136,181 @@ async def _api_v1_print_palette(request: Request):
     )
 
 
+# ─── API mobile v1 : étiquettes du jour + archive + réimpression ───────────
+
+@app.get("/api/v1/today-labels")
+async def _api_v1_today_labels(request: Request):
+    """Liste des étiquettes générées aujourd'hui pour le tenant courant.
+
+    Inclut les archivées (avec `archived_at` non null) pour permettre la
+    réversibilité (l'utilisateur peut "désarchiver" depuis la liste).
+    Trié par `generated_at DESC` (plus récent en premier).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return JSONResponse(
+            {"error": "Invalid or expired token"}, status_code=401
+        )
+
+    from db.conn import run_sql
+
+    rows = await asyncio.to_thread(
+        run_sql,
+        """
+        SELECT id, sscc, designation, marque, fmt, gout, lot, ddm,
+               case_count, full_pallet, n_copies, generated_at, archived_at
+        FROM etiquette_palette_history
+        WHERE tenant_id = :t
+          AND generated_at::date = CURRENT_DATE
+        ORDER BY generated_at DESC
+        """,
+        {"t": user["tenant_id"]},
+    )
+
+    labels = [
+        {
+            "id": int(r["id"]),
+            "sscc": str(r.get("sscc") or ""),
+            "designation": str(r.get("designation") or ""),
+            "marque": str(r.get("marque") or ""),
+            "fmt": str(r.get("fmt") or ""),
+            "gout": str(r.get("gout") or ""),
+            "lot": str(r.get("lot") or ""),
+            "ddm": r["ddm"].isoformat() if r.get("ddm") else None,
+            "case_count": int(r.get("case_count") or 0),
+            "full_pallet": bool(r.get("full_pallet")),
+            "n_copies": int(r.get("n_copies") or 1),
+            "generated_at": r["generated_at"].isoformat() if r.get("generated_at") else None,
+            "archived_at": r["archived_at"].isoformat() if r.get("archived_at") else None,
+        }
+        for r in (rows or [])
+    ]
+    return JSONResponse({"labels": labels})
+
+
+@app.post("/api/v1/labels/{label_id}/archive")
+async def _api_v1_archive_label(label_id: int, request: Request):
+    """Toggle l'état archivé d'une étiquette.
+
+    Body JSON (optionnel) : ``{"archived": true|false}`` pour forcer une
+    valeur. Sans body, fait un toggle : archivée → active, active → archivée.
+
+    Retour : ``{"id", "archived_at": "ISO" | null}``.
+    L'étiquette doit appartenir au tenant du token.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return JSONResponse(
+            {"error": "Invalid or expired token"}, status_code=401
+        )
+
+    # Optionnel : force la valeur depuis le body. Sinon toggle.
+    desired: bool | None = None
+    try:
+        body = await request.json()
+        if isinstance(body, dict) and "archived" in body:
+            desired = bool(body["archived"])
+    except Exception:
+        pass
+
+    from db.conn import run_sql
+
+    if desired is None:
+        # Toggle : si archived_at IS NULL → now(), sinon → NULL.
+        rows = await asyncio.to_thread(
+            run_sql,
+            """
+            UPDATE etiquette_palette_history
+            SET archived_at = CASE WHEN archived_at IS NULL THEN now() ELSE NULL END
+            WHERE id = :id AND tenant_id = :t
+            RETURNING id, archived_at
+            """,
+            {"id": label_id, "t": user["tenant_id"]},
+        )
+    else:
+        rows = await asyncio.to_thread(
+            run_sql,
+            """
+            UPDATE etiquette_palette_history
+            SET archived_at = CASE WHEN :a THEN now() ELSE NULL END
+            WHERE id = :id AND tenant_id = :t
+            RETURNING id, archived_at
+            """,
+            {"id": label_id, "t": user["tenant_id"], "a": desired},
+        )
+
+    if not rows:
+        return JSONResponse({"error": "Label not found"}, status_code=404)
+    row = rows[0]
+    archived_at = row.get("archived_at")
+    _log.info(
+        "label archive : id=%s archived=%s tenant=%s user=%s",
+        row["id"], archived_at is not None, user["tenant_id"], user.get("email"),
+    )
+    return JSONResponse({
+        "id": int(row["id"]),
+        "archived_at": archived_at.isoformat() if archived_at else None,
+    })
+
+
+@app.post("/api/v1/labels/{label_id}/reprint")
+async def _api_v1_reprint_label(label_id: int, request: Request):
+    """Régénère le PDF d'une étiquette historisée (réimpression à l'identique).
+
+    Récupère la ligne `etiquette_palette_history` par id+tenant, reconstruit
+    l'EtiquetteContext, et retourne le PDF. N'INSERT pas une nouvelle entrée
+    dans l'historique (c'est une réimpression du même SSCC/lot).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return JSONResponse(
+            {"error": "Invalid or expired token"}, status_code=401
+        )
+
+    from common.etiquette_palette_pdf import EtiquetteContext, build_etiquette_palette_pdf
+    from common.services.etiquette_palette_service import get_history_entry
+
+    entry = await asyncio.to_thread(get_history_entry, user["tenant_id"], label_id)
+    if entry is None:
+        return JSONResponse({"error": "Label not found"}, status_code=404)
+
+    ctx = EtiquetteContext(
+        product_label=entry.designation or "",
+        fmt=entry.fmt or "",
+        ean13=entry.ean or "",
+        lot=entry.lot or "",
+        ddm=entry.ddm,
+        case_count=entry.case_count,
+        full_pallet=entry.full_pallet,
+        tenant_name="",
+        n_copies=entry.n_copies,
+        marque=entry.marque or "",
+        code_interne=entry.code_interne or "",
+        gtin_uvc=entry.gtin_uvc or "",
+        pcb=entry.pcb,
+        bio=entry.bio,
+        sscc=entry.sscc or "",
+    )
+
+    try:
+        pdf_bytes = await asyncio.to_thread(build_etiquette_palette_pdf, ctx)
+    except Exception:
+        _log.exception("Echec réimpression PDF label_id=%s", label_id)
+        return JSONResponse({"error": "PDF generation failed"}, status_code=500)
+
+    _log.info(
+        "label reprint : id=%s tenant=%s user=%s",
+        label_id, user["tenant_id"], user.get("email"),
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="palette_{entry.ean}_{entry.lot}_reprint.pdf"',
+        },
+    )
+
+
 # ─── API mobile v1 : résumé accueil (stats + historique récent) ────────────
 
 def _query_home_summary(tenant_id: str, recent_limit: int = 20) -> dict:
@@ -1152,12 +1327,15 @@ def _query_home_summary(tenant_id: str, recent_limit: int = 20) -> dict:
     from db.conn import run_sql
 
     # Stats agrégées en une seule query (PostgreSQL FILTER WHERE).
+    # On exclut les étiquettes archivées des compteurs (archived_at IS NULL).
     rows = run_sql(
         """
         SELECT
-          COUNT(*) FILTER (WHERE generated_at::date = CURRENT_DATE) AS today_count,
+          COUNT(*) FILTER (WHERE generated_at::date = CURRENT_DATE
+                             AND archived_at IS NULL)                  AS today_count,
           COUNT(*) FILTER (WHERE date_trunc('month', generated_at)
-                              = date_trunc('month', now()))           AS month_count
+                              = date_trunc('month', now())
+                             AND archived_at IS NULL)                  AS month_count
         FROM etiquette_palette_history
         WHERE tenant_id = :t
         """,
