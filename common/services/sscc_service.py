@@ -101,6 +101,12 @@ class SsccLogEntry:
     label_archived_at: _dt.datetime | None = None
     # Désignation du produit (depuis etiquette_palette_history.designation).
     designation: str = ""
+    # Marque ("SYMBIOSE" | "NIKO" | "") — affichée sur chaque card individuelle.
+    marque: str = ""
+    # Goût canonique ("Gingembre", "Pamplemousse Rose"…) — clé de groupement
+    # côté mobile : toutes les productions du même goût (NIKO et SYMBIOSE)
+    # s'empilent sous une seule card parent.
+    gout: str = ""
     # Numéro humain de la ramasse (1, 2, 3...) — None si pas encore chargée.
     ramasse_numero: int | None = None
 
@@ -280,7 +286,9 @@ def list_sscc_log(
                rh.numero       AS rh_numero,
                eph.id AS eph_label_id,
                eph.archived_at AS eph_archived_at,
-               eph.designation AS eph_designation
+               eph.designation AS eph_designation,
+               eph.marque AS eph_marque,
+               eph.gout AS eph_gout
         FROM sscc_log sl
         LEFT JOIN palette_loadings pl
                ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
@@ -323,6 +331,8 @@ def list_sscc_log(
                 label_id=int(r["eph_label_id"]) if r.get("eph_label_id") is not None else None,
                 label_archived_at=r.get("eph_archived_at"),
                 designation=str(r.get("eph_designation") or ""),
+                marque=str(r.get("eph_marque") or ""),
+                gout=str(r.get("eph_gout") or ""),
                 ramasse_numero=int(r["rh_numero"]) if r.get("rh_numero") is not None else None,
             ))
         except (KeyError, TypeError, ValueError):
