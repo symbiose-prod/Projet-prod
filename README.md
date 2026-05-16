@@ -1,19 +1,29 @@
 # Ferment Station
 
 Application web multi-tenant de gestion de production de fermentation (kéfir, infusions).
+Le backend sert aussi d'API pour l'**app iOS native compagnon** (scan caméra + impression palette).
 
-**Framework:** NiceGUI (Python 3.11+)
+**Framework:** NiceGUI (Python 3.11+) — FastAPI/Starlette sous-jacent
 **Base de données:** PostgreSQL 16
 **Déploiement:** OVH VPS — https://prod.symbiose-kefir.fr
+**App iOS compagnon:** projet séparé dans `/Users/nicolaspradignac/Documents/Ferment station/`
+(SwiftUI, iOS 26+, signed Apple Developer)
 
 ## Fonctionnalités
 
+### Web (NiceGUI)
 - **Planning de production** — algorithme d'optimisation (égalisation des jours d'épuisement)
 - **Intégration EasyBeer** — création automatique de brassins, planification conditionnement
 - **Fiche de ramasse** — génération PDF/Excel pour les enlèvements
 - **Fiche de production** — remplissage automatique du template Excel
 - **Multi-tenancy** — isolation complète des données par organisation
 - **Authentification** — PBKDF2-SHA256, sessions persistantes, protection brute-force
+
+### API mobile (`/api/v1/*`)
+- **Auth Bearer token** (table `mobile_api_tokens`, TTL 90j, SHA-256)
+- **Scan GS1-128** : l'iPhone décode en natif via AVFoundation, le serveur enrichit (lookup produit + layout palette + image)
+- **Génération SSCC + PDF + audit** unifiée avec le flux web (fonction partagée `generate_and_save_palette_label`)
+- **Vue Aujourd'hui + Journal SSCC** (admin) — voir [CLAUDE.md](CLAUDE.md) section "Mobile API"
 
 ## Lancer en local
 
@@ -36,13 +46,19 @@ python app_nicegui.py
 ## Structure du projet
 
 ```
-app_nicegui.py          # Point d'entrée + middleware auth
-ui/                     # Pages NiceGUI (auth, accueil, production, ramasse)
+app_nicegui.py          # Point d'entrée + middleware auth + appel register_routes(app) mobile
+pages/                  # Pages NiceGUI (auth, accueil, production, ramasse, etiquettes…)
 common/                 # Utilitaires partagés (auth, email, storage, EasyBeer)
-core/                   # Logique métier / algorithmes (optimiseur)
+common/services/        # Logique métier pure (sans NiceGUI) — partagée web + mobile
+common/mobile_v1.py     # 🆕 Routes /api/v1/* pour l'app iOS (auth Bearer)
+common/mobile_auth.py   # 🆕 Helpers Bearer token mobile (create/verify/revoke)
+core/                   # Algorithmes (optimiseur production)
 db/                     # Couche base de données (SQLAlchemy)
 config.yaml             # Constantes métier centralisées
 ```
+
+Détail complet de l'architecture (couches, conventions, ajout d'endpoint
+mobile en 5 étapes) : voir [CLAUDE.md](CLAUDE.md).
 
 ## Déploiement (OVH VPS)
 

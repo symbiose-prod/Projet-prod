@@ -1,33 +1,48 @@
 # Architecture — Ferment Station
 
-**Statut :** Vivant. Mis à jour 2026-04-19 après la vague "couche services".
+**Statut :** Vivant. Mis à jour 2026-05-16 après l'extraction de la couche
+mobile API (`common/mobile_v1.py`) et l'unification du pipeline de
+génération d'étiquettes (`generate_and_save_palette_label`).
 **Public cible :** Développeur qui ajoute une feature et veut savoir où placer son code sans casser l'équilibre du projet.
 
 ---
 
-## TL;DR — Les 3 couches
+## TL;DR — Les 3 couches + l'API mobile
 
 ```
-┌─────────────────────────────────────────────────┐
-│  pages/                          ← UI (NiceGUI) │  "Que voit l'utilisateur ?"
-│  pages/theme.py, pages/auth.py, pages/admin.py  │
-└────────────────┬────────────────────────────────┘
-                 │  appelle
-                 ▼
-┌─────────────────────────────────────────────────┐
-│  common/services/                ← DOMAINE      │  "Quelle est la logique métier ?"
-│  stocks_service, ramasse_service, production_*  │
-└────────────┬─────────────────┬──────────────────┘
-             │ orchestre       │ persiste
-             ▼                 ▼
-┌──────────────────────┐ ┌─────────────────────────┐
-│ common/easybeer/     │ │ db/conn.py + common/*  │ ← TRANSPORT / INFRA
-│ (HTTP + cache +      │ │  (SQL, audit, auth,    │   "Comment parler à
-│  circuit breaker)    │ │   email, storage)      │   l'extérieur ?"
-└──────────────────────┘ └─────────────────────────┘
+┌──────────────────────────────────┐    ┌─────────────────────────────────┐
+│  pages/        ← UI (NiceGUI)   │    │  common/mobile_v1.py            │
+│  pages/theme.py, auth.py, …      │    │  ← UI/transport (FastAPI routes)│
+│                                  │    │  /api/v1/* pour l'app iOS       │
+└──────────────────┬───────────────┘    └────────────────┬────────────────┘
+                   │                                     │
+                   └────────────────┬────────────────────┘
+                                    │  appellent les MÊMES services
+                                    ▼
+              ┌─────────────────────────────────────────────────┐
+              │  common/services/                ← DOMAINE      │  Logique métier pure
+              │  stocks_service, ramasse_service, production_*, │
+              │  etiquette_palette_service, sscc_service…       │
+              │  → `generate_and_save_palette_label` est l'EX-  │
+              │    EMPLE de fonction partagée web + mobile      │
+              └────────────┬─────────────────┬──────────────────┘
+                           │ orchestre       │ persiste
+                           ▼                 ▼
+              ┌──────────────────────┐ ┌─────────────────────────┐
+              │ common/easybeer/     │ │ db/conn.py + common/*  │ ← TRANSPORT / INFRA
+              │ (HTTP + cache +      │ │  (SQL, audit, auth,    │
+              │  circuit breaker)    │ │   email, storage,      │
+              │                      │ │   mobile_auth)         │
+              └──────────────────────┘ └─────────────────────────┘
 ```
 
-Le sens des flèches **compte** : une couche basse ne peut jamais importer d'une couche haute.
+**Règles** :
+- Le sens des flèches compte : une couche basse ne peut jamais importer d'une couche haute.
+- `pages/` (web) et `common/mobile_v1.py` (API mobile) sont **2 transports
+  équivalents** — ils ne contiennent QUE du parsing input + appel service +
+  formatage output. Toute logique métier vit dans `common/services/`.
+- Une fonction du service doit pouvoir être appelée par les 2 sans dépendre
+  de NiceGUI ni de FastAPI.
 
 ---
 

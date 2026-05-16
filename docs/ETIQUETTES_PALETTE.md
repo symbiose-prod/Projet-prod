@@ -1,7 +1,17 @@
 # Étiquettes palette — Documentation
 
-**Statut :** vivant. Mis à jour 2026-05-09.
+**Statut :** vivant. Mis à jour 2026-05-16.
 **Public :** développeur (humain ou Claude Code) qui doit modifier, déboguer ou étendre cette feature.
+
+> ⚠️ **Évolution mai 2026** : la génération d'étiquettes est désormais
+> partagée entre **web** et **mobile** via la fonction
+> `etiquette_palette_service.generate_and_save_palette_label()`. Toute évolution
+> du pipeline (SSCC + EtiquetteContext + PDF + audit history + purge)
+> doit se faire **uniquement** dans cette fonction — sinon divergence
+> garantie entre les 2 plateformes.
+>
+> L'app iOS mobile utilise le même backend via les endpoints `/api/v1/*`
+> (voir `common/mobile_v1.py`). Code iOS séparé dans `/Users/nicolaspradignac/Documents/Ferment station/`.
 
 ---
 
@@ -32,9 +42,10 @@ Tout l'historique est persisté pour réimpression et audit.
 
 | Fichier | Rôle |
 |---|---|
-| [common/services/etiquette_palette_service.py](../common/services/etiquette_palette_service.py) | Logique pure (parsing GS1, lookup EB, classify, save/list/purge historique) — sans NiceGUI |
+| [common/services/etiquette_palette_service.py](../common/services/etiquette_palette_service.py) | Logique pure (parsing GS1, lookup EB, classify, save/list/purge historique) — sans NiceGUI. Contient aussi `generate_and_save_palette_label()` (partagée web + mobile), `count_today_and_month()`, `list_today_labels()`, `set_label_archived()`. |
 | [common/etiquette_palette_pdf.py](../common/etiquette_palette_pdf.py) | Rendu PDF via `fpdf2` + code-barres via `treepoem` |
-| [pages/etiquettes_palette.py](../pages/etiquettes_palette.py) | Page NiceGUI (943 lignes — voir refacto possible plus bas) |
+| [pages/etiquettes_palette.py](../pages/etiquettes_palette.py) | Page NiceGUI (~900 lignes — délègue le pipeline génération au service partagé) |
+| [common/mobile_v1.py](../common/mobile_v1.py) | Endpoints `/api/v1/*` pour l'app iOS — `_v1_print_palette` délègue au même service partagé. |
 
 ### Tests
 
