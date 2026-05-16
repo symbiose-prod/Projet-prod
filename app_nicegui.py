@@ -1230,6 +1230,9 @@ async def _api_v1_sscc_log(request: Request):
             # Pour l'archive depuis l'app mobile (réversible).
             "label_id": e.label_id,
             "label_archived_at": e.label_archived_at.isoformat() if e.label_archived_at else None,
+            # Enrichissement pour la card SSCC mobile (titre produit + numéro de ramasse).
+            "designation": e.designation,
+            "ramasse_numero": e.ramasse_numero,
         }
         for e in entries
     ]

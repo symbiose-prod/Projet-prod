@@ -99,6 +99,10 @@ class SsccLogEntry:
     # via le SSCC. Permet d'archiver/désarchiver depuis le log SSCC.
     label_id: int | None = None
     label_archived_at: _dt.datetime | None = None
+    # Désignation du produit (depuis etiquette_palette_history.designation).
+    designation: str = ""
+    # Numéro humain de la ramasse (1, 2, 3...) — None si pas encore chargée.
+    ramasse_numero: int | None = None
 
 
 # ─── Algorithme clé de contrôle GS1 (pure) ──────────────────────────────────
@@ -273,8 +277,10 @@ def list_sscc_log(
                pl.scanned_at AS pl_loaded_at,
                rh.date_ramasse AS rh_date,
                rh.destinataire AS rh_destinataire,
+               rh.numero       AS rh_numero,
                eph.id AS eph_label_id,
-               eph.archived_at AS eph_archived_at
+               eph.archived_at AS eph_archived_at,
+               eph.designation AS eph_designation
         FROM sscc_log sl
         LEFT JOIN palette_loadings pl
                ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
@@ -316,6 +322,8 @@ def list_sscc_log(
                 loaded_at=r.get("pl_loaded_at"),
                 label_id=int(r["eph_label_id"]) if r.get("eph_label_id") is not None else None,
                 label_archived_at=r.get("eph_archived_at"),
+                designation=str(r.get("eph_designation") or ""),
+                ramasse_numero=int(r["rh_numero"]) if r.get("rh_numero") is not None else None,
             ))
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne sscc_log invalide ignorée : %r", r, exc_info=True)

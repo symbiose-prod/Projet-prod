@@ -318,6 +318,41 @@ CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_date
 CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_created
   ON ramasse_history(tenant_id, created_at DESC);
 
+-- Numéro de ramasse incrémental, lisible humain (#1, #2, ...). Distinct
+-- de l'UUID `id` qui n'est pas affichable. Une séquence globale au tenant
+-- (pour Symbiose mono-tenant, ça correspond à un compteur unique tout court).
+-- Ajout idempotent + backfill chronologique pour les ramasses existantes.
+CREATE SEQUENCE IF NOT EXISTS ramasse_numero_seq START 1;
+ALTER TABLE ramasse_history
+  ADD COLUMN IF NOT EXISTS numero BIGINT;
+-- Backfill : assigne 1, 2, 3... aux ramasses existantes triées par date
+-- (les plus anciennes ont les plus petits numéros).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ramasse_history WHERE numero IS NULL LIMIT 1) THEN
+    WITH ordered AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY date_ramasse, created_at) AS rownum
+      FROM ramasse_history
+      WHERE numero IS NULL
+    )
+    UPDATE ramasse_history rh
+    SET numero = ordered.rownum
+    FROM ordered
+    WHERE rh.id = ordered.id;
+    -- Cale la séquence au-dessus du max existant pour les futures insertions
+    PERFORM setval(
+      'ramasse_numero_seq',
+      COALESCE((SELECT MAX(numero) FROM ramasse_history), 0) + 1,
+      false
+    );
+  END IF;
+END $$;
+-- Default = next value de la séquence pour les futures insertions
+ALTER TABLE ramasse_history
+  ALTER COLUMN numero SET DEFAULT nextval('ramasse_numero_seq');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ramasse_numero
+  ON ramasse_history(numero);
+
 -- Édition / versioning / verrouillage chauffeur (ajout 2026-04)
 ALTER TABLE ramasse_history
   ADD COLUMN IF NOT EXISTS version          INTEGER     NOT NULL DEFAULT 1,
