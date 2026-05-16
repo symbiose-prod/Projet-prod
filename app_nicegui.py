@@ -1151,6 +1151,61 @@ async def _api_v1_print_palette(request: Request):
     )
 
 
+# ─── API mobile v1 : journal SSCC (admin only) ─────────────────────────────
+
+@app.get("/api/v1/sscc-log")
+async def _api_v1_sscc_log(request: Request):
+    """Liste des SSCC générés pour le tenant courant (audit + traçabilité).
+
+    Réservé aux utilisateurs avec ``role = 'admin'`` — même règle d'accès
+    que la page web ``/sscc-log``.
+
+    Query params optionnels : ``limit`` (défaut 50, max 500).
+    Retour : ``{"entries": [{...}]}``.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return JSONResponse(
+            {"error": "Invalid or expired token"}, status_code=401
+        )
+    if (user.get("role") or "").lower() != "admin":
+        return JSONResponse(
+            {"error": "Admin access required"}, status_code=403
+        )
+
+    try:
+        limit = int(request.query_params.get("limit") or "50")
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 500))
+
+    from common.services.sscc_service import list_sscc_log
+
+    entries = await asyncio.to_thread(list_sscc_log, user["tenant_id"], limit=limit)
+
+    payload = [
+        {
+            "id": e.id,
+            "sscc": e.sscc,
+            "user_email": e.user_email,
+            "gtin_palette": e.gtin_palette,
+            "lot": e.lot,
+            "ddm": e.ddm.isoformat() if e.ddm else None,
+            "case_count": e.case_count,
+            "generated_at": e.generated_at.isoformat() if e.generated_at else None,
+            "voided_at": e.voided_at.isoformat() if e.voided_at else None,
+            "voided_reason": e.voided_reason,
+            "voided_by": e.voided_by,
+            "ramasse_id": e.ramasse_id,
+            "ramasse_date": e.ramasse_date.isoformat() if e.ramasse_date else None,
+            "ramasse_destinataire": e.ramasse_destinataire,
+            "loaded_at": e.loaded_at.isoformat() if e.loaded_at else None,
+        }
+        for e in entries
+    ]
+    return JSONResponse({"entries": payload})
+
+
 # ─── API mobile v1 : étiquettes du jour + archive + réimpression ───────────
 
 @app.get("/api/v1/today-labels")
