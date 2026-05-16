@@ -95,6 +95,10 @@ class SsccLogEntry:
     ramasse_date: _dt.date | None = None
     ramasse_destinataire: str = ""
     loaded_at: _dt.datetime | None = None
+    # Lien vers l'étiquette palette correspondante (etiquette_palette_history)
+    # via le SSCC. Permet d'archiver/désarchiver depuis le log SSCC.
+    label_id: int | None = None
+    label_archived_at: _dt.datetime | None = None
 
 
 # ─── Algorithme clé de contrôle GS1 (pure) ──────────────────────────────────
@@ -259,6 +263,8 @@ def list_sscc_log(
         params["lot"] = f"%{lot_filter.strip()}%"
     # JOIN palette_loadings + ramasse_history pour récupérer le lien
     # SSCC → ramasse (None si pas encore chargé).
+    # JOIN etiquette_palette_history pour exposer label_id + archived_at —
+    # nécessaire à l'archivage depuis l'app mobile (réversible).
     sql = f"""
         SELECT sl.id, sl.sscc, sl.user_email, sl.gtin_palette, sl.lot, sl.ddm,
                sl.case_count, sl.generated_at,
@@ -266,12 +272,16 @@ def list_sscc_log(
                pl.ramasse_id AS pl_ramasse_id,
                pl.scanned_at AS pl_loaded_at,
                rh.date_ramasse AS rh_date,
-               rh.destinataire AS rh_destinataire
+               rh.destinataire AS rh_destinataire,
+               eph.id AS eph_label_id,
+               eph.archived_at AS eph_archived_at
         FROM sscc_log sl
         LEFT JOIN palette_loadings pl
                ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
         LEFT JOIN ramasse_history rh
                ON rh.id = pl.ramasse_id
+        LEFT JOIN etiquette_palette_history eph
+               ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
         WHERE {" AND ".join(where)}
         ORDER BY sl.generated_at DESC
         LIMIT :lim
@@ -304,6 +314,8 @@ def list_sscc_log(
                     else _dt.date.fromisoformat(str(rh_date)[:10]),
                 ramasse_destinataire=str(r.get("rh_destinataire") or ""),
                 loaded_at=r.get("pl_loaded_at"),
+                label_id=int(r["eph_label_id"]) if r.get("eph_label_id") is not None else None,
+                label_archived_at=r.get("eph_archived_at"),
             ))
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne sscc_log invalide ignorée : %r", r, exc_info=True)

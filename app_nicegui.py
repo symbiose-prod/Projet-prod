@@ -1160,9 +1160,16 @@ async def _api_v1_sscc_log(request: Request):
     Réservé aux utilisateurs avec ``role = 'admin'`` — même règle d'accès
     que la page web ``/sscc-log``.
 
-    Query params optionnels : ``limit`` (défaut 50, max 500).
+    Query params optionnels :
+        - ``limit``     : défaut 50, max 500
+        - ``date_from`` : YYYY-MM-DD inclus (>=)
+        - ``date_to``   : YYYY-MM-DD inclus (<=)
+        - ``lot``       : motif ILIKE (substring case-insensitive)
+
     Retour : ``{"entries": [{...}]}``.
     """
+    import datetime as _dt_local
+
     user = await _resolve_mobile_user(request)
     if user is None:
         return JSONResponse(
@@ -1173,15 +1180,35 @@ async def _api_v1_sscc_log(request: Request):
             {"error": "Admin access required"}, status_code=403
         )
 
+    params = request.query_params
     try:
-        limit = int(request.query_params.get("limit") or "50")
+        limit = int(params.get("limit") or "50")
     except ValueError:
         limit = 50
     limit = max(1, min(limit, 500))
 
+    def _parse_date(s: str | None) -> _dt_local.date | None:
+        if not s:
+            return None
+        try:
+            return _dt_local.date.fromisoformat(s[:10])
+        except ValueError:
+            return None
+
+    date_from = _parse_date(params.get("date_from"))
+    date_to = _parse_date(params.get("date_to"))
+    lot_filter = (params.get("lot") or "").strip()
+
     from common.services.sscc_service import list_sscc_log
 
-    entries = await asyncio.to_thread(list_sscc_log, user["tenant_id"], limit=limit)
+    entries = await asyncio.to_thread(
+        list_sscc_log,
+        user["tenant_id"],
+        date_from=date_from,
+        date_to=date_to,
+        lot_filter=lot_filter,
+        limit=limit,
+    )
 
     payload = [
         {
@@ -1200,6 +1227,9 @@ async def _api_v1_sscc_log(request: Request):
             "ramasse_date": e.ramasse_date.isoformat() if e.ramasse_date else None,
             "ramasse_destinataire": e.ramasse_destinataire,
             "loaded_at": e.loaded_at.isoformat() if e.loaded_at else None,
+            # Pour l'archive depuis l'app mobile (réversible).
+            "label_id": e.label_id,
+            "label_archived_at": e.label_archived_at.isoformat() if e.label_archived_at else None,
         }
         for e in entries
     ]
