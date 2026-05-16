@@ -337,6 +337,68 @@ class TestSsccLog:
         assert kwargs["lot_filter"] == "ABC"
 
 
+# ─── preview-palette (sans SSCC ni history) ───────────────────────────────
+
+class TestPreviewPalette:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_missing_fields_returns_400(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user()
+        resp = client.post(
+            "/api/v1/preview-palette", headers=auth_headers, json={"ean": "x"}
+        )
+        assert resp.status_code == 400
+
+    @patch("common.services.etiquette_palette_service.preview_palette_label")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_product_not_found_returns_404(
+        self, mock_verify, mock_preview, client, auth_headers
+    ):
+        from common.services.etiquette_palette_service import ProductNotFoundError
+
+        mock_verify.return_value = _user()
+        mock_preview.side_effect = ProductNotFoundError("Produit introuvable")
+        resp = client.post(
+            "/api/v1/preview-palette",
+            headers=auth_headers,
+            json={
+                "ean": "999", "lot": "L1", "ddm": "2027-05-11",
+                "case_count": 1, "full_pallet": True, "n_copies": 1,
+            },
+        )
+        assert resp.status_code == 404
+
+    @patch("common.services.etiquette_palette_service.preview_palette_label")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_pdf_without_sscc_side_effects(
+        self, mock_verify, mock_preview, client, auth_headers
+    ):
+        """Le preview NE DOIT PAS appeler generate_sscc ni save_label_history.
+        On vérifie en mockant le service : il doit recevoir UNIQUEMENT les
+        params de génération (pas de tenant_id pour audit).
+        """
+        mock_verify.return_value = _user()
+        mock_preview.return_value = b"%PDF-preview"
+        resp = client.post(
+            "/api/v1/preview-palette",
+            headers=auth_headers,
+            json={
+                "ean": "03770014427250", "lot": "110527", "ddm": "2027-05-11",
+                "case_count": 96, "full_pallet": True, "n_copies": 1,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content == b"%PDF-preview"
+        # preview_palette_label n'a pas de paramètre tenant_id (pas d'audit).
+        # On vérifie qu'il a été appelé avec les bons champs et qu'il n'y a
+        # PAS de user_email (différence clé avec generate_and_save_palette_label).
+        call_kwargs = mock_preview.call_args.kwargs
+        assert call_kwargs["ean"] == "03770014427250"
+        assert call_kwargs["case_count"] == 96
+        assert "user_email" not in call_kwargs
+        assert "tenant_id" not in call_kwargs
+
+
 # ─── print-palette ─────────────────────────────────────────────────────────
 
 class TestPrintPalette:

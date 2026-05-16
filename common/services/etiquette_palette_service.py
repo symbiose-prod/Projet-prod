@@ -1265,6 +1265,141 @@ def list_today_labels(tenant_id: str) -> list[dict]:
     ]
 
 
+def _resolve_palette_label_fields(
+    *,
+    ean: str,
+    designation: str | None,
+    marque: str | None,
+    fmt: str | None,
+    pcb: int | None,
+    gout: str | None,
+    gtin_uvc: str | None,
+) -> dict:
+    """Centralise la résolution des champs produit pour la génération
+    d'étiquette palette.
+
+    Si TOUS les champs produit sont fournis (cas web qui a déjà sa LabelEntry),
+    on les retourne tels quels. Si AU MOINS UN champ manque (cas mobile qui
+    n'a que l'EAN), on fait un ``lookup_product_by_ean`` et on remplit les
+    trous avec la matrice EasyBeer.
+
+    Raises:
+        ProductNotFoundError: si lookup nécessaire mais EAN absent.
+
+    Returns:
+        Dict normalisé : ``{designation, marque, fmt, pcb, gout, gtin_uvc}``.
+    """
+    needs_lookup = any(
+        v is None for v in (designation, marque, fmt, pcb, gout, gtin_uvc)
+    )
+    if needs_lookup:
+        product = lookup_product_by_ean(ean)
+        if not product:
+            raise ProductNotFoundError(
+                f"Produit introuvable pour EAN {ean} dans la matrice EasyBeer"
+            )
+        designation = designation if designation is not None else product.get("designation") or ""
+        marque = marque if marque is not None else product.get("marque") or ""
+        fmt = fmt if fmt is not None else product.get("fmt") or ""
+        pcb = pcb if pcb is not None else int(product.get("pcb") or 0)
+        gout = gout if gout is not None else product.get("gout") or ""
+        gtin_uvc = gtin_uvc if gtin_uvc is not None else product.get("ean_uvc") or ""
+    return {
+        "designation": designation or "",
+        "marque": marque or "",
+        "fmt": fmt or "",
+        "pcb": int(pcb or 0),
+        "gout": gout or "",
+        "gtin_uvc": gtin_uvc or "",
+    }
+
+
+def _build_palette_pdf(
+    *,
+    ean: str,
+    lot: str,
+    ddm: _dt.date,
+    case_count: int,
+    full_pallet: bool,
+    n_copies: int,
+    sscc: str,
+    fields: dict,
+    code_interne: str,
+    bio: bool,
+    tenant_name: str,
+) -> bytes:
+    """Build pur du PDF étiquette palette. Pas d'I/O DB.
+    Utilisé par ``generate_and_save_palette_label`` (vraie impression) ET par
+    ``preview_palette_label`` (aperçu sans SSCC ni audit).
+    """
+    from common.etiquette_palette_pdf import EtiquetteContext, build_etiquette_palette_pdf
+
+    ctx = EtiquetteContext(
+        product_label=fields["designation"],
+        fmt=fields["fmt"],
+        ean13=ean,
+        lot=lot,
+        ddm=ddm,
+        case_count=case_count,
+        full_pallet=full_pallet,
+        tenant_name=tenant_name,
+        n_copies=n_copies,
+        marque=fields["marque"],
+        code_interne=code_interne,
+        gtin_uvc=fields["gtin_uvc"],
+        pcb=fields["pcb"],
+        bio=bio,
+        sscc=sscc,
+    )
+    return build_etiquette_palette_pdf(ctx)
+
+
+def preview_palette_label(
+    *,
+    ean: str,
+    lot: str,
+    ddm: _dt.date,
+    case_count: int,
+    full_pallet: bool,
+    n_copies: int = 1,
+    designation: str | None = None,
+    marque: str | None = None,
+    fmt: str | None = None,
+    pcb: int | None = None,
+    gout: str | None = None,
+    gtin_uvc: str | None = None,
+    code_interne: str = "",
+    bio: bool = True,
+    tenant_name: str = "",
+) -> bytes:
+    """Génère un PDF d'étiquette palette en mode APERÇU.
+
+    Différences avec ``generate_and_save_palette_label`` :
+    - PAS d'appel à ``generate_sscc`` → aucune consommation de la séquence
+      ``sscc_serial_seq`` (utile pour tests / formation sans polluer l'audit)
+    - PAS d'INSERT dans ``etiquette_palette_history`` → aucun audit créé
+    - Le SSCC affiché sur le PDF est laissé vide (``""``) → la section SSCC
+      du PDF est masquée, l'opérateur voit que c'est un aperçu non-valide.
+
+    Use case : valider visuellement le contenu (nom produit, lot, DDM, qty,
+    format) avant de cliquer sur "Imprimer" qui fera la vraie génération.
+
+    Raises:
+        ProductNotFoundError: si lookup produit nécessaire et EAN absent.
+    """
+    fields = _resolve_palette_label_fields(
+        ean=ean, designation=designation, marque=marque, fmt=fmt,
+        pcb=pcb, gout=gout, gtin_uvc=gtin_uvc,
+    )
+    return _build_palette_pdf(
+        ean=ean, lot=lot, ddm=ddm, case_count=case_count,
+        full_pallet=full_pallet, n_copies=n_copies,
+        sscc="",                        # ← aperçu : pas de SSCC
+        fields=fields,
+        code_interne=code_interne, bio=bio, tenant_name=tenant_name,
+    )
+
+
 def generate_and_save_palette_label(
     tenant_id: str,
     *,
@@ -1307,30 +1442,17 @@ def generate_and_save_palette_label(
     Raises:
         ProductNotFoundError: si lookup nécessaire mais EAN absent de la matrice EB.
     """
-    # Lazy import pour ne pas créer de cycle entre services / modules de rendu.
-    from common.etiquette_palette_pdf import EtiquetteContext, build_etiquette_palette_pdf
     from common.services.sscc_service import generate_sscc
 
-    # Étape 1 — Lookup produit si les champs ne sont pas fournis par le caller.
-    needs_lookup = any(
-        v is None for v in (designation, marque, fmt, pcb, gout, gtin_uvc)
+    # Étape 1 — Lookup produit si nécessaire (helper partagé avec preview).
+    fields = _resolve_palette_label_fields(
+        ean=ean, designation=designation, marque=marque, fmt=fmt,
+        pcb=pcb, gout=gout, gtin_uvc=gtin_uvc,
     )
-    if needs_lookup:
-        product = lookup_product_by_ean(ean)
-        if not product:
-            raise ProductNotFoundError(
-                f"Produit introuvable pour EAN {ean} dans la matrice EasyBeer"
-            )
-        designation = designation if designation is not None else product.get("designation") or ""
-        marque = marque if marque is not None else product.get("marque") or ""
-        fmt = fmt if fmt is not None else product.get("fmt") or ""
-        pcb = pcb if pcb is not None else int(product.get("pcb") or 0)
-        gout = gout if gout is not None else product.get("gout") or ""
-        gtin_uvc = gtin_uvc if gtin_uvc is not None else product.get("ean_uvc") or ""
 
-    # Étape 2 — SSCC. Best-effort : si la séquence échoue (DB down), on continue
-    # avec un SSCC vide pour que l'opérateur puisse quand même imprimer (mieux
-    # qu'aucune étiquette du tout — le manque sera visible côté audit).
+    # Étape 2 — SSCC. Best-effort : si la séquence échoue (DB down), on
+    # continue avec un SSCC vide pour que l'opérateur puisse quand même
+    # imprimer (mieux qu'aucune étiquette — le manque sera visible côté audit).
     try:
         sscc_result = generate_sscc(
             tenant_id,
@@ -1345,49 +1467,38 @@ def generate_and_save_palette_label(
         _log.exception("Échec génération SSCC — étiquette imprimée sans SSCC")
         sscc_str = ""
 
-    # Étape 3 — Contexte + PDF.
-    ctx = EtiquetteContext(
-        product_label=designation or "",
-        fmt=fmt or "",
-        ean13=ean,
-        lot=lot,
-        ddm=ddm,
-        case_count=case_count,
-        full_pallet=full_pallet,
-        tenant_name=tenant_name,
-        n_copies=n_copies,
-        marque=marque or "",
-        code_interne=code_interne,
-        gtin_uvc=gtin_uvc or "",
-        pcb=int(pcb or 0),
-        bio=bio,
+    # Étape 3 — Build PDF (helper partagé avec preview).
+    pdf_bytes = _build_palette_pdf(
+        ean=ean, lot=lot, ddm=ddm, case_count=case_count,
+        full_pallet=full_pallet, n_copies=n_copies,
         sscc=sscc_str,
+        fields=fields,
+        code_interne=code_interne, bio=bio, tenant_name=tenant_name,
     )
-    pdf_bytes = build_etiquette_palette_pdf(ctx)
 
-    # Étape 4 — Audit (fire-and-forget). Si l'INSERT échoue (DB down), on log
-    # mais on ne propage pas — le PDF est déjà imprimable.
+    # Étape 4 — Audit (fire-and-forget). Si l'INSERT échoue, on log mais on
+    # ne propage pas — le PDF est déjà imprimable.
     label_id = save_label_history(
         tenant_id,
         user_email=user_email,
         ean=ean,
         lot=lot,
         ddm=ddm,
-        fmt=fmt or "",
-        marque=marque or "",
-        designation=designation or "",
-        gout=gout or "",
+        fmt=fields["fmt"],
+        marque=fields["marque"],
+        designation=fields["designation"],
+        gout=fields["gout"],
         case_count=case_count,
         full_pallet=full_pallet,
         n_copies=n_copies,
-        pcb=int(pcb or 0),
-        gtin_uvc=gtin_uvc or "",
+        pcb=fields["pcb"],
+        gtin_uvc=fields["gtin_uvc"],
         code_interne=code_interne,
         bio=bio,
         sscc=sscc_str,
     )
 
-    # Étape 5 — Purge (best-effort, ne bloque pas).
+    # Étape 5 — Purge (best-effort).
     try:
         purge_old_label_history(tenant_id)
     except Exception:

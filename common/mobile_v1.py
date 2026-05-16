@@ -213,6 +213,83 @@ async def _v1_decode_gs1(request: Request):
 
 # ─── Génération PDF étiquette palette ──────────────────────────────────────
 
+async def _v1_preview_palette(request: Request):
+    """Génère un PDF d'aperçu pour validation visuelle AVANT impression réelle.
+
+    Body : ``{"ean", "lot", "ddm", "case_count", "full_pallet", "n_copies"}``
+    (mêmes champs que /print-palette).
+
+    Retour 200 : PDF binaire. Aucun SSCC consommé, aucun audit créé.
+    Le SSCC affiché sur le PDF est vide → la section SSCC est masquée,
+    l'opérateur voit visuellement qu'il s'agit d'un aperçu.
+
+    Use case : opérateur en formation, ou validation visuelle d'un layout
+    avant impression réelle. Ne sale pas la séquence ``sscc_serial_seq``.
+    """
+    import datetime as _dt_local
+
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    body = body or {}
+
+    ean = str(body.get("ean") or "").strip()
+    lot = str(body.get("lot") or "").strip()
+    ddm_str = str(body.get("ddm") or "").strip()
+    case_count = int(body.get("case_count") or 0)
+    full_pallet = bool(body.get("full_pallet", False))
+    n_copies = int(body.get("n_copies") or 1)
+
+    if not ean or not lot or not ddm_str:
+        return JSONResponse({"error": "Missing ean/lot/ddm"}, status_code=400)
+    if case_count <= 0:
+        return JSONResponse({"error": "case_count must be > 0"}, status_code=400)
+
+    try:
+        ddm = _dt_local.date.fromisoformat(ddm_str[:10])
+    except ValueError:
+        return JSONResponse({"error": "Invalid ddm format"}, status_code=400)
+
+    from common.services.etiquette_palette_service import (
+        ProductNotFoundError,
+        preview_palette_label,
+    )
+
+    try:
+        pdf_bytes = await asyncio.to_thread(
+            preview_palette_label,
+            ean=ean,
+            lot=lot,
+            ddm=ddm,
+            case_count=case_count,
+            full_pallet=full_pallet,
+            n_copies=n_copies,
+        )
+    except ProductNotFoundError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
+    except Exception:
+        _log.exception("Echec preview PDF étiquette palette")
+        return JSONResponse({"error": "PDF generation failed"}, status_code=500)
+
+    _log.info(
+        "preview-palette : ean=%s qty=%d user=%s (no SSCC, no history)",
+        ean, case_count, user.get("email"),
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="palette_{ean}_{lot}_PREVIEW.pdf"',
+        },
+    )
+
+
 async def _v1_print_palette(request: Request):
     """Génère un PDF d'étiquette palette pour le scan + saisie courante.
 
@@ -523,6 +600,7 @@ def register_routes(app) -> None:
     app.post("/api/v1/auth/login")(_v1_login)
     app.post("/api/v1/auth/logout")(_v1_logout)
     app.post("/api/v1/decode-gs1")(_v1_decode_gs1)
+    app.post("/api/v1/preview-palette")(_v1_preview_palette)
     app.post("/api/v1/print-palette")(_v1_print_palette)
     app.post("/api/v1/labels/{label_id}/archive")(_v1_archive_label)
     app.post("/api/v1/labels/{label_id}/reprint")(_v1_reprint_label)
