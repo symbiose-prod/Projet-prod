@@ -338,6 +338,24 @@ APIClient.swift          ──HTTP──►  common/mobile_v1.py  (adapteur HTT
 | GET | `/api/v1/today-labels` | Bearer | étiquettes du jour (archivées incluses) |
 | GET | `/api/v1/home-summary` | Bearer | compteurs jour/mois + 20 derniers scans |
 | GET | `/api/v1/sscc-log` | Bearer + admin | journal SSCC complet (filtres date/lot) |
+| GET | `/api/v1/cold-room-palettes` | Bearer | palettes étiquetées non encore chargées (FIFO `generated_at` ASC) |
+| GET | `/api/v1/last-packaging?destinataire=SOFRIPA` | Bearer | items packaging configurés + dernières quantités saisies |
+| GET | `/api/v1/active-ramasses?destinataire=SOFRIPA` | Bearer | ramasses non livrées (`previsionnel` ou `definitif`) — au plus 1 par dest |
+| POST | `/api/v1/loadings/previsionnel` | Bearer | **J1 soir** : crée ramasse `previsionnel` + envoie BL provisionnel par email (409 si verrou actif) |
+| GET | `/api/v1/loadings/{id}` | Bearer | détail chargement (palettes liées + totaux + meta ramasse) |
+| POST | `/api/v1/loadings/{id}/scan` | Bearer | **J2 chargement** : lookup SSCC + link en un appel. Renvoie `{status, palette, linked, already_in_this_loading}` |
+| POST | `/api/v1/loadings/{id}/finalize` | Bearer | **J2 validation** : transition `previsionnel`→`definitif` + PDF BL rectificatif + email. Retourne le PDF binaire pour download chauffeur (headers `X-Email-Sent`, `X-Total-Palettes`, etc.) |
+| DELETE | `/api/v1/loadings/{id}/palettes/{sscc}` | Bearer | délie une palette (soft, `unlinked_at`) — body `{"reason": "..."}` |
+
+### Workflow Ramasse mobile (J1 + J2)
+
+Le workflow web `pages/chargement_camion.py` est reproduit à 100 % depuis l'iPad — tout passe par l'app native :
+
+1. **J1 soir** : opérateur ouvre l'app → `GET /cold-room-palettes` (liste CF) + `GET /last-packaging` (suggestions) → renseigne date + emballages → `POST /loadings/previsionnel` → PDF + email envoyés à SOFRIPA (logisticien) + créateur.
+2. **J2 midi** : opérateur monte sur le chariot élévateur avec iPad + douchette → `GET /active-ramasses` (récupère le `previsionnel` ouvert) → pour chaque palette chargée, scan douchette → `POST /loadings/{id}/scan` (lookup + link temps-réel). Animation "CF → camion" côté iOS.
+3. **Fin du chargement** : `POST /loadings/{id}/finalize` → BL définitif (avec diff JAUNE/BLEU vs prévisionnel) + email rectificatif + PDF téléchargé pour le chauffeur.
+
+L'orchestration métier (DB + PDF + email) est centralisée dans `common/services/loading_service.py:send_previsionnel` et `:finalize_loading` — l'endpoint mobile n'est qu'un adaptateur HTTP. Le destinataire est codé `SOFRIPA` par défaut (configurable via query param) ; ses 5 emails sont dans `data/destinataires.json`.
 
 ### Code de génération unifié web + mobile
 

@@ -428,3 +428,408 @@ class TestListPalettesInColdRoom:
         ):
             out = list_palettes_in_cold_room("tid-1")
         assert len(out) == 1
+
+
+# ─── normalize_packaging_payload ────────────────────────────────────────────
+
+class TestNormalizePackagingPayload:
+    """Tests de la normalisation packaging entrant (mobile/web)."""
+
+    def test_keeps_valid_items(self):
+        from common.services.loading_service import normalize_packaging_payload
+
+        result = normalize_packaging_payload([
+            {"label": "Palette Bouteilles 33cl", "qty": 2, "unit": "palette"},
+            {"label": "Palette Bouteilles 75cl", "qty": 1, "unit": "palette"},
+        ])
+        assert len(result) == 2
+        assert result[0] == {
+            "label": "Palette Bouteilles 33cl", "qty": 2, "unit": "palette",
+        }
+
+    def test_filters_zero_qty(self):
+        from common.services.loading_service import normalize_packaging_payload
+
+        result = normalize_packaging_payload([
+            {"label": "OK", "qty": 1, "unit": "palette"},
+            {"label": "Empty", "qty": 0, "unit": "palette"},
+            {"label": "Negative", "qty": -3, "unit": "palette"},
+        ])
+        assert len(result) == 1
+        assert result[0]["label"] == "OK"
+
+    def test_filters_empty_label(self):
+        from common.services.loading_service import normalize_packaging_payload
+
+        result = normalize_packaging_payload([
+            {"label": "", "qty": 2, "unit": "palette"},
+            {"label": "   ", "qty": 3, "unit": "palette"},
+        ])
+        assert result == []
+
+    def test_default_unit_is_palette(self):
+        from common.services.loading_service import normalize_packaging_payload
+
+        result = normalize_packaging_payload([{"label": "X", "qty": 1}])
+        assert result[0]["unit"] == "palette"
+
+    def test_none_input(self):
+        from common.services.loading_service import normalize_packaging_payload
+
+        assert normalize_packaging_payload(None) == []
+        assert normalize_packaging_payload([]) == []
+
+    def test_skips_non_dict(self):
+        from common.services.loading_service import normalize_packaging_payload
+
+        result = normalize_packaging_payload([
+            "not-a-dict",
+            None,
+            {"label": "OK", "qty": 1},
+        ])
+        assert len(result) == 1
+
+
+# ─── send_previsionnel (orchestrateur métier) ───────────────────────────────
+
+class TestSendPrevisionnel:
+    """Tests de l'orchestration end-to-end de l'envoi prévisionnel.
+
+    On mock TOUS les helpers externes (DB, PDF, email) — on vérifie
+    uniquement que le service appelle les bons helpers avec les bons args,
+    et propage les erreurs métier en ValueError.
+    """
+
+    _SOFRIPA_OBJ = {
+        "name": "SOFRIPA",
+        "address_lines": ["ZAC du Haut de Wissous II,", "91320 Wissous"],
+        "email_recipients": ["exploitation@sofripa.fr", "z.dawam@sofripa.fr"],
+        "packaging_items": [],
+    }
+
+    def _setup_happy_path_mocks(self, monkeypatch):
+        """Configure tous les mocks pour le scénario success."""
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda name: self._SOFRIPA_OBJ if name == "SOFRIPA" else None,
+        )
+        monkeypatch.setattr(
+            loading_service, "link_palettes_to_ramasse",
+            lambda tid, **kw: (2, []),
+        )
+        monkeypatch.setattr(
+            loading_service, "rebuild_lines_from_palettes",
+            lambda rid, tid, **kw: (
+                [{"ref": "X", "produit": "Kéfir 33cl", "ddm": "11/05/2027",
+                  "cartons": 192, "palettes": 2, "poids": 1600}],
+                192, 2, 1600,
+            ),
+        )
+
+    def test_unknown_destinataire_raises_value_error(self, monkeypatch):
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire", lambda _name: None,
+        )
+        with pytest.raises(ValueError, match="Destinataire inconnu"):
+            loading_service.send_previsionnel(
+                "tenant-A",
+                user_id="u1", user_email="op@sym.fr",
+                destinataire="INCONNU",
+                date_ramasse=_dt.date(2026, 5, 20),
+                sscc_list=[],
+            )
+
+    def test_dest_without_emails_raises_value_error(self, monkeypatch):
+        empty_dest = {**self._SOFRIPA_OBJ, "email_recipients": []}
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire", lambda _: empty_dest,
+        )
+        with pytest.raises(ValueError, match="Aucun email configuré"):
+            loading_service.send_previsionnel(
+                "tenant-A",
+                user_id="u1", user_email="",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 5, 20),
+                sscc_list=[],
+            )
+
+    def test_active_ramasse_lock_propagates(self, monkeypatch):
+        self._setup_happy_path_mocks(monkeypatch)
+        with mock.patch(
+            "common.ramasse_history.save_ramasse",
+            side_effect=ValueError("Une ramasse est déjà en cours"),
+        ):
+            with pytest.raises(ValueError, match="déjà en cours"):
+                loading_service.send_previsionnel(
+                    "tenant-A",
+                    user_id="u1", user_email="op@sym.fr",
+                    destinataire="SOFRIPA",
+                    date_ramasse=_dt.date(2026, 5, 20),
+                    sscc_list=["111111111111111111"],
+                )
+
+    def test_happy_path_calls_all_helpers_in_order(self, monkeypatch):
+        self._setup_happy_path_mocks(monkeypatch)
+        with (
+            mock.patch("common.ramasse_history.save_ramasse") as m_save,
+            mock.patch("common.ramasse_history.finalize_ramasse_lines") as m_fin,
+            mock.patch("common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf") as m_pdf,
+            mock.patch("common.email.send_html_with_pdf") as m_mail,
+        ):
+            m_save.return_value = "ramasse-uuid"
+            m_pdf.return_value = b"%PDF-fake"
+            m_mail.return_value = {"status": "sent"}
+
+            result = loading_service.send_previsionnel(
+                "tenant-A",
+                user_id="u1", user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 5, 20),
+                sscc_list=["111111111111111111", "222222222222222222"],
+                packaging=[
+                    {"label": "Palette Bouteilles 33cl", "qty": 2, "unit": "palette"},
+                ],
+            )
+
+        # save_ramasse appelé avec status="previsionnel" + tenant + user
+        save_kwargs = m_save.call_args.kwargs
+        assert save_kwargs["status"] == "previsionnel"
+        assert save_kwargs["tenant_id"] == "tenant-A"
+        assert save_kwargs["user_id"] == "u1"
+        assert save_kwargs["destinataire"] == "SOFRIPA"
+        # user_email ajouté aux recipients de SOFRIPA
+        assert "op@sym.fr" in save_kwargs["recipients"]
+        assert "exploitation@sofripa.fr" in save_kwargs["recipients"]
+        # packaging normalisé (qty validée)
+        assert save_kwargs["packaging"] == [
+            {"label": "Palette Bouteilles 33cl", "qty": 2, "unit": "palette"},
+        ]
+
+        # PDF généré avec kind=previsionnel
+        pdf_kwargs = m_pdf.call_args.kwargs
+        assert pdf_kwargs["kind"] == "previsionnel"
+        assert pdf_kwargs["destinataire_title"] == "SOFRIPA"
+
+        # finalize_ramasse_lines patche les lignes/totaux/PDF
+        fin_kwargs = m_fin.call_args.kwargs
+        assert fin_kwargs["total_palettes"] == 2
+        assert fin_kwargs["total_cartons"] == 192
+        assert fin_kwargs["pdf_bytes"] == b"%PDF-fake"
+
+        # Mail envoyé aux recipients
+        mail_kwargs = m_mail.call_args.kwargs
+        assert "exploitation@sofripa.fr" in mail_kwargs["to_email"]
+        assert "BL_Provisoire_20260520.pdf" in mail_kwargs["attachments"][0][0]
+
+        # Réponse
+        assert result["id"] == "ramasse-uuid"
+        assert result["total_palettes"] == 2
+        assert result["email_sent"] is True
+        assert result["inserted"] == 2
+
+    def test_email_failure_returns_email_sent_false(self, monkeypatch):
+        """Si send_html_with_pdf raise, la ramasse reste créée mais
+        email_sent=False — l'opérateur sait qu'il doit réagir."""
+        self._setup_happy_path_mocks(monkeypatch)
+        with (
+            mock.patch("common.ramasse_history.save_ramasse") as m_save,
+            mock.patch("common.ramasse_history.finalize_ramasse_lines"),
+            mock.patch(
+                "common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf",
+                return_value=b"%PDF",
+            ),
+            mock.patch(
+                "common.email.send_html_with_pdf",
+                side_effect=RuntimeError("SMTP down"),
+            ),
+        ):
+            m_save.return_value = "ramasse-1"
+            result = loading_service.send_previsionnel(
+                "tenant-A",
+                user_id="u1", user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 5, 20),
+                sscc_list=["111111111111111111"],
+            )
+        assert result["email_sent"] is False
+        assert result["id"] == "ramasse-1"
+
+
+# ─── finalize_loading (orchestrateur métier) ────────────────────────────────
+
+class TestFinalizeLoading:
+    """Tests de la transition previsionnel → definitif + PDF + email."""
+
+    _SOFRIPA_OBJ = {
+        "name": "SOFRIPA",
+        "address_lines": ["ZAC ..."],
+        "email_recipients": ["exploitation@sofripa.fr"],
+    }
+
+    def test_ramasse_not_found_raises_value_error(self):
+        with mock.patch(
+            "common.ramasse_history.get_ramasse", return_value=None,
+        ):
+            with pytest.raises(ValueError, match="introuvable"):
+                loading_service.finalize_loading(
+                    "tenant-A", ramasse_id="missing", user_email="op@sym.fr",
+                )
+
+    def test_non_previsionnel_status_raises_value_error(self):
+        ramasse = {
+            "id": "r1", "status": "definitif",  # déjà finalisée
+            "destinataire": "SOFRIPA", "date_ramasse": _dt.date(2026, 5, 20),
+            "lines": [], "packaging": [], "version": 2,
+        }
+        with mock.patch(
+            "common.ramasse_history.get_ramasse", return_value=ramasse,
+        ):
+            with pytest.raises(ValueError, match="previsionnel"):
+                loading_service.finalize_loading(
+                    "tenant-A", ramasse_id="r1", user_email="op@sym.fr",
+                )
+
+    def test_happy_path_returns_info_and_pdf(self, monkeypatch):
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _name: self._SOFRIPA_OBJ,
+        )
+        monkeypatch.setattr(
+            loading_service, "rebuild_lines_from_palettes",
+            lambda rid, tid, **kw: (
+                [{"ref": "X", "produit": "Kéfir", "ddm": "11/05/2027",
+                  "cartons": 480, "palettes": 5, "poids": 4000}],
+                480, 5, 4000,
+            ),
+        )
+
+        ramasse = {
+            "id": "r1", "status": "previsionnel",
+            "destinataire": "SOFRIPA",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "lines": [
+                {"ref": "X", "produit": "Kéfir", "cartons": 384, "palettes": 4}
+            ],
+            "packaging": [{"label": "Palette 33cl", "qty": 2, "unit": "palette"}],
+            "recipients": ["exploitation@sofripa.fr"],
+            "version": 1,
+        }
+
+        with (
+            mock.patch(
+                "common.ramasse_history.get_ramasse", return_value=ramasse,
+            ),
+            mock.patch(
+                "common.ramasse_history.update_ramasse",
+                return_value={"id": "r1", "version": 2},
+            ) as m_update,
+            mock.patch(
+                "common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf",
+                return_value=b"%PDF-final",
+            ) as m_pdf,
+            mock.patch(
+                "common.email.send_html_with_pdf",
+                return_value={"status": "sent"},
+            ),
+        ):
+            info, pdf = loading_service.finalize_loading(
+                "tenant-A", ramasse_id="r1", user_email="op@sym.fr",
+            )
+
+        # Info de retour
+        assert info["id"] == "r1"
+        assert info["total_palettes"] == 5
+        assert info["total_cartons"] == 480
+        assert info["email_sent"] is True
+        assert info["version"] == 2
+        assert "op@sym.fr" in info["recipients"]
+        # PDF binaire renvoyé
+        assert pdf == b"%PDF-final"
+
+        # PDF généré avec kind=definitif + previous_lines (diff)
+        pdf_kwargs = m_pdf.call_args.kwargs
+        assert pdf_kwargs["kind"] == "definitif"
+        assert pdf_kwargs["version"] == 2
+        assert pdf_kwargs["previous_lines"] == [
+            {"ref": "X", "produit": "Kéfir", "cartons": 384, "palettes": 4},
+        ]
+
+        # update_ramasse transitionne au statut definitif
+        upd_kwargs = m_update.call_args.kwargs
+        assert upd_kwargs["target_status"] == "definitif"
+        assert upd_kwargs["tenant_id"] == "tenant-A"
+
+    def test_update_refused_raises_value_error(self, monkeypatch):
+        """Cas où update_ramasse renvoie None (transition refusée ou
+        chauffeur déjà passé) → ValueError."""
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _: self._SOFRIPA_OBJ,
+        )
+        monkeypatch.setattr(
+            loading_service, "rebuild_lines_from_palettes",
+            lambda rid, tid, **kw: ([], 0, 0, 0),
+        )
+        ramasse = {
+            "id": "r1", "status": "previsionnel",
+            "destinataire": "SOFRIPA",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "lines": [], "packaging": [],
+            "recipients": [], "version": 1,
+        }
+        with (
+            mock.patch(
+                "common.ramasse_history.get_ramasse", return_value=ramasse,
+            ),
+            mock.patch(
+                "common.ramasse_history.update_ramasse", return_value=None,
+            ),
+            mock.patch(
+                "common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf",
+                return_value=b"%PDF",
+            ),
+        ):
+            with pytest.raises(ValueError, match="Transition refusée"):
+                loading_service.finalize_loading(
+                    "tenant-A", ramasse_id="r1", user_email="op@sym.fr",
+                )
+
+    def test_email_failure_still_returns_pdf(self, monkeypatch):
+        """Si SMTP plante, on récupère quand même le PDF + email_sent=False."""
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _: self._SOFRIPA_OBJ,
+        )
+        monkeypatch.setattr(
+            loading_service, "rebuild_lines_from_palettes",
+            lambda rid, tid, **kw: ([], 0, 0, 0),
+        )
+        ramasse = {
+            "id": "r1", "status": "previsionnel",
+            "destinataire": "SOFRIPA",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "lines": [], "packaging": [],
+            "recipients": [], "version": 1,
+        }
+        with (
+            mock.patch(
+                "common.ramasse_history.get_ramasse", return_value=ramasse,
+            ),
+            mock.patch(
+                "common.ramasse_history.update_ramasse",
+                return_value={"id": "r1"},
+            ),
+            mock.patch(
+                "common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf",
+                return_value=b"%PDF",
+            ),
+            mock.patch(
+                "common.email.send_html_with_pdf",
+                side_effect=RuntimeError("SMTP down"),
+            ),
+        ):
+            info, pdf = loading_service.finalize_loading(
+                "tenant-A", ramasse_id="r1", user_email="op@sym.fr",
+            )
+        assert info["email_sent"] is False
+        assert pdf == b"%PDF"

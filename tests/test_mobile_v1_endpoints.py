@@ -70,6 +70,14 @@ class TestUnauthorized:
         ("get", "/api/v1/today-labels"),
         ("get", "/api/v1/home-summary"),
         ("get", "/api/v1/sscc-log"),
+        ("get", "/api/v1/cold-room-palettes"),
+        ("get", "/api/v1/last-packaging"),
+        ("get", "/api/v1/active-ramasses"),
+        ("post", "/api/v1/loadings/previsionnel"),
+        ("get", "/api/v1/loadings/abc-123"),
+        ("post", "/api/v1/loadings/abc-123/scan"),
+        ("post", "/api/v1/loadings/abc-123/finalize"),
+        ("delete", "/api/v1/loadings/abc-123/palettes/123456789012345678"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -493,3 +501,541 @@ class TestPrintPalette:
         assert resp.content == b"%PDF-fake"
         # Service appelé avec le tenant du token (pas un autre)
         assert mock_gen.call_args[0][0] == "tenant-A"
+
+
+# ─── Chargement camion (ramasse) ───────────────────────────────────────────
+
+def _fake_palette(sscc: str = "123456789012345678", **kwargs):
+    """Construit un ``PaletteInfo`` minimal pour les tests loading."""
+    from common.services.loading_service import PaletteInfo
+
+    defaults = dict(
+        sscc=sscc,
+        gtin_palette="03770014427250",
+        lot="L110527",
+        ddm=_dt.date(2027, 5, 11),
+        case_count=96,
+        designation="Kéfir Pêche",
+        fmt="12x33",
+        marque="SYMBIOSE",
+        gout="Pêche",
+        pcb=12,
+        gtin_uvc="03770014427267",
+        generated_at=_dt.datetime(2026, 5, 16, 14, 30, tzinfo=_dt.UTC),
+    )
+    defaults.update(kwargs)
+    return PaletteInfo(**defaults)
+
+
+class TestColdRoomPalettes:
+    @patch("common.services.loading_service.list_palettes_in_cold_room")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_palettes_list(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_list.return_value = [
+            _fake_palette(sscc="111111111111111111"),
+            _fake_palette(sscc="222222222222222222", designation="Kombucha Citron"),
+        ]
+        resp = client.get("/api/v1/cold-room-palettes", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["palettes"]) == 2
+        assert body["palettes"][0]["sscc"] == "111111111111111111"
+        assert body["palettes"][1]["designation"] == "Kombucha Citron"
+        # tenant scoping
+        assert mock_list.call_args[0][0] == "tenant-A"
+
+    @patch("common.services.loading_service.list_palettes_in_cold_room")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_empty_returns_empty_list(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_list.return_value = []
+        resp = client.get("/api/v1/cold-room-palettes", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json() == {"palettes": []}
+
+
+class TestLastPackaging:
+    @patch("common.ramasse_history.get_last_packaging_for_dest")
+    @patch("common.ramasse.load_packaging_items")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_items_and_last_for_default_sofripa(
+        self, mock_verify, mock_items, mock_last, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_items.return_value = [
+            {"id": "pal_bt_33", "label": "Palette Bouteilles 33cl",
+             "unit": "palette", "active": True},
+            {"id": "pal_bt_75", "label": "Palette Bouteilles 75cl",
+             "unit": "palette", "active": True},
+        ]
+        mock_last.return_value = [
+            {"label": "Palette Bouteilles 33cl", "qty": 2, "unit": "palette"},
+            {"label": "Palette Bouteilles 75cl", "qty": 2, "unit": "palette"},
+        ]
+        resp = client.get("/api/v1/last-packaging", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["destinataire"] == "SOFRIPA"
+        assert len(body["items"]) == 2
+        assert body["items"][0]["label"] == "Palette Bouteilles 33cl"
+        assert body["last_quantities"][0]["qty"] == 2
+        # Default destinataire est SOFRIPA, et tenant_id propagé à get_last
+        assert mock_items.call_args[0][0] == "SOFRIPA"
+        assert mock_last.call_args[0] == ("SOFRIPA", "tenant-A")
+
+    @patch("common.ramasse_history.get_last_packaging_for_dest")
+    @patch("common.ramasse.load_packaging_items")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_custom_destinataire_query_param(
+        self, mock_verify, mock_items, mock_last, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_items.return_value = []
+        mock_last.return_value = []
+        resp = client.get(
+            "/api/v1/last-packaging?destinataire=AUTRE", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert mock_items.call_args[0][0] == "AUTRE"
+
+
+class TestActiveRamasses:
+    @patch("common.ramasse_history.get_active_ramasse_for_dest")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_no_active_returns_empty_list(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_get.return_value = None
+        resp = client.get("/api/v1/active-ramasses", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json() == {"ramasses": []}
+
+    @patch("common.ramasse_history.get_active_ramasse_for_dest")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_active_ramasse_with_meta(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_get.return_value = {
+            "id": "ramasse-abc",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "destinataire": "SOFRIPA",
+            "status": "previsionnel",
+            "total_palettes": 5,
+            "total_cartons": 480,
+            "total_poids_kg": 4000,
+            "version": 1,
+            "created_by_email": "ops@symbiose.fr",
+            "created_at": _dt.datetime(2026, 5, 19, 18, 30, tzinfo=_dt.UTC),
+        }
+        resp = client.get("/api/v1/active-ramasses", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["ramasses"]) == 1
+        r = body["ramasses"][0]
+        assert r["id"] == "ramasse-abc"
+        assert r["status"] == "previsionnel"
+        assert r["date_ramasse"] == "2026-05-20"
+        assert r["total_palettes"] == 5
+        assert r["version"] == 1
+        # Tenant scoping
+        assert mock_get.call_args[0] == ("SOFRIPA", "tenant-A")
+
+
+class TestCreatePrevisionnel:
+    """POST /api/v1/loadings/previsionnel — délègue à send_previsionnel."""
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_missing_date_returns_400(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user()
+        resp = client.post(
+            "/api/v1/loadings/previsionnel",
+            headers=auth_headers,
+            json={"sscc_list": ["123456789012345678"]},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_invalid_date_returns_400(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user()
+        resp = client.post(
+            "/api/v1/loadings/previsionnel",
+            headers=auth_headers,
+            json={"date_ramasse": "not-a-date", "sscc_list": []},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_packaging_must_be_list(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user()
+        resp = client.post(
+            "/api/v1/loadings/previsionnel",
+            headers=auth_headers,
+            json={
+                "date_ramasse": "2026-05-20",
+                "sscc_list": [],
+                "packaging": "not-a-list",
+            },
+        )
+        assert resp.status_code == 400
+
+    @patch("common.services.loading_service.send_previsionnel")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_active_ramasse_lock_returns_409(
+        self, mock_verify, mock_send, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_send.side_effect = ValueError(
+            "Une ramasse est déjà en cours pour SOFRIPA.",
+        )
+        resp = client.post(
+            "/api/v1/loadings/previsionnel",
+            headers=auth_headers,
+            json={
+                "date_ramasse": "2026-05-20",
+                "sscc_list": ["111111111111111111"],
+            },
+        )
+        assert resp.status_code == 409
+        assert "déjà en cours" in resp.json()["error"]
+
+    @patch("common.services.loading_service.send_previsionnel")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_service_dict(
+        self, mock_verify, mock_send, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_send.return_value = {
+            "id": "ramasse-abc",
+            "total_palettes": 3,
+            "total_cartons": 288,
+            "total_poids_kg": 2400,
+            "inserted": 3,
+            "conflicts": [],
+            "email_sent": True,
+            "recipients": ["exploitation@sofripa.fr", "ops@symbiose.fr"],
+        }
+        resp = client.post(
+            "/api/v1/loadings/previsionnel",
+            headers=auth_headers,
+            json={
+                "date_ramasse": "2026-05-20",
+                "sscc_list": [
+                    "111111111111111111",
+                    "222222222222222222",
+                    "333333333333333333",
+                ],
+                "packaging": [
+                    {"label": "Palette Bouteilles 33cl", "qty": 2, "unit": "palette"},
+                ],
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == "ramasse-abc"
+        assert body["total_palettes"] == 3
+        assert body["email_sent"] is True
+        # send_previsionnel reçoit tenant_id du token + destinataire par défaut
+        call_kwargs = mock_send.call_args.kwargs
+        assert mock_send.call_args[0][0] == "tenant-A"
+        assert call_kwargs["destinataire"] == "SOFRIPA"
+        assert call_kwargs["date_ramasse"] == _dt.date(2026, 5, 20)
+        assert call_kwargs["sscc_list"] == [
+            "111111111111111111",
+            "222222222222222222",
+            "333333333333333333",
+        ]
+        assert call_kwargs["user_id"] == "user-1"
+
+
+class TestScanPaletteToLoading:
+    """POST /api/v1/loadings/{id}/scan — lookup + link en un appel."""
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_missing_sscc_returns_400(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user()
+        resp = client.post(
+            "/api/v1/loadings/ramasse-1/scan",
+            headers=auth_headers,
+            json={},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.services.loading_service.link_palettes_to_ramasse")
+    @patch("common.services.loading_service.lookup_sscc")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_ok_palette_links_and_returns_linked_true(
+        self, mock_verify, mock_lookup, mock_link, client, auth_headers
+    ):
+        from common.services.loading_service import LookupResult
+
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_lookup.return_value = LookupResult(
+            status="ok", palette=_fake_palette(),
+        )
+        mock_link.return_value = (1, [])
+        resp = client.post(
+            "/api/v1/loadings/ramasse-1/scan",
+            headers=auth_headers,
+            json={"sscc": "(00)123456789012345678"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["linked"] is True
+        assert body["already_in_this_loading"] is False
+        assert body["palette"]["sscc"] == "123456789012345678"
+        # link reçoit le tenant + la ramasse cible
+        assert mock_link.call_args[0][0] == "tenant-A"
+        assert mock_link.call_args.kwargs["ramasse_id"] == "ramasse-1"
+
+    @patch("common.services.loading_service.list_linked_palettes")
+    @patch("common.services.loading_service.lookup_sscc")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_already_in_this_loading_returns_idempotent_ok(
+        self, mock_verify, mock_lookup, mock_list, client, auth_headers
+    ):
+        """Re-scan de la même palette pendant le chargement = idempotent."""
+        from common.services.loading_service import LookupResult
+
+        mock_verify.return_value = _user()
+        mock_lookup.return_value = LookupResult(
+            status="already_loaded",
+            existing_ramasse_id="ramasse-1",  # = cette ramasse
+            error_message="Palette déjà chargée",
+        )
+        mock_list.return_value = [_fake_palette(sscc="123456789012345678")]
+        resp = client.post(
+            "/api/v1/loadings/ramasse-1/scan",
+            headers=auth_headers,
+            json={"sscc": "123456789012345678"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["linked"] is False
+        assert body["already_in_this_loading"] is True
+        assert body["palette"]["sscc"] == "123456789012345678"
+
+    @patch("common.services.loading_service.link_palettes_to_ramasse")
+    @patch("common.services.loading_service.lookup_sscc")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_already_loaded_elsewhere_returns_alert(
+        self, mock_verify, mock_lookup, mock_link, client, auth_headers
+    ):
+        """Palette liée à une AUTRE ramasse → on alerte, pas de link."""
+        from common.services.loading_service import LookupResult
+
+        mock_verify.return_value = _user()
+        mock_lookup.return_value = LookupResult(
+            status="already_loaded",
+            existing_ramasse_id="ramasse-AUTRE",
+            error_message="Palette déjà chargée sur une autre ramasse",
+        )
+        resp = client.post(
+            "/api/v1/loadings/ramasse-1/scan",
+            headers=auth_headers,
+            json={"sscc": "123456789012345678"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "already_loaded"
+        assert body["linked"] is False
+        assert body["existing_ramasse_id"] == "ramasse-AUTRE"
+        mock_link.assert_not_called()
+
+    @patch("common.services.loading_service.lookup_sscc")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_unknown_sscc_returns_status_without_link(
+        self, mock_verify, mock_lookup, client, auth_headers
+    ):
+        from common.services.loading_service import LookupResult
+
+        mock_verify.return_value = _user()
+        mock_lookup.return_value = LookupResult(
+            status="unknown", error_message="SSCC inconnu",
+        )
+        resp = client.post(
+            "/api/v1/loadings/ramasse-1/scan",
+            headers=auth_headers,
+            json={"sscc": "999999999999999999"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "unknown"
+        assert body["linked"] is False
+
+
+class TestFinalizeLoading:
+    """POST /api/v1/loadings/{id}/finalize — délègue à finalize_loading."""
+
+    @patch("common.services.loading_service.finalize_loading")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_finalize, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_finalize.side_effect = ValueError("Ramasse introuvable")
+        resp = client.post(
+            "/api/v1/loadings/missing/finalize", headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @patch("common.services.loading_service.finalize_loading")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_already_definitif_returns_409(
+        self, mock_verify, mock_finalize, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_finalize.side_effect = ValueError(
+            "Seules les ramasses 'previsionnel' peuvent être finalisées",
+        )
+        resp = client.post(
+            "/api/v1/loadings/r1/finalize", headers=auth_headers,
+        )
+        assert resp.status_code == 409
+
+    @patch("common.services.loading_service.finalize_loading")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_pdf_with_meta_headers(
+        self, mock_verify, mock_finalize, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_finalize.return_value = (
+            {
+                "id": "ramasse-abc",
+                "total_palettes": 5,
+                "total_cartons": 480,
+                "total_poids_kg": 4000,
+                "email_sent": True,
+                "recipients": ["exploitation@sofripa.fr"],
+                "version": 2,
+            },
+            b"%PDF-fake-definitif",
+        )
+        resp = client.post(
+            "/api/v1/loadings/ramasse-abc/finalize", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content == b"%PDF-fake-definitif"
+        assert resp.headers["x-ramasse-id"] == "ramasse-abc"
+        assert resp.headers["x-total-palettes"] == "5"
+        assert resp.headers["x-email-sent"] == "true"
+        assert resp.headers["x-ramasse-version"] == "2"
+        # Service appelé avec tenant + ramasse_id
+        assert mock_finalize.call_args[0][0] == "tenant-A"
+        assert mock_finalize.call_args.kwargs["ramasse_id"] == "ramasse-abc"
+
+    @patch("common.services.loading_service.finalize_loading")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_email_failure_still_returns_pdf(
+        self, mock_verify, mock_finalize, client, auth_headers
+    ):
+        """Si l'envoi mail plante, on récupère quand même le PDF
+        (download chauffeur prioritaire) — header X-Email-Sent à false."""
+        mock_verify.return_value = _user()
+        mock_finalize.return_value = (
+            {
+                "id": "ramasse-1",
+                "total_palettes": 1,
+                "total_cartons": 96,
+                "total_poids_kg": 800,
+                "email_sent": False,
+                "recipients": [],
+                "version": 2,
+            },
+            b"%PDF-fake",
+        )
+        resp = client.post(
+            "/api/v1/loadings/ramasse-1/finalize", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.headers["x-email-sent"] == "false"
+
+
+class TestGetLoading:
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_get.return_value = None  # autre tenant ou inexistant
+        resp = client.get("/api/v1/loadings/missing-id", headers=auth_headers)
+        assert resp.status_code == 404
+        # tenant scoping : on a bien interrogé avec le tenant du token
+        assert mock_get.call_args[0][1] == "tenant-A"
+
+    @patch("common.services.loading_service.list_linked_palettes")
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_palettes_and_totals(
+        self, mock_verify, mock_get, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_get.return_value = {
+            "id": "ramasse-abc",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "destinataire": "FoodChéri",
+            "status": "definitif",
+            "total_palettes": 2,
+            "total_cartons": 192,
+            "total_poids_kg": 1600,
+        }
+        mock_list.return_value = [
+            _fake_palette(sscc="111111111111111111"),
+            _fake_palette(sscc="222222222222222222"),
+        ]
+        resp = client.get("/api/v1/loadings/ramasse-abc", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == "ramasse-abc"
+        assert body["destinataire"] == "FoodChéri"
+        assert body["status"] == "definitif"
+        assert body["date_ramasse"] == "2026-05-20"
+        assert body["total_palettes"] == 2
+        assert len(body["palettes"]) == 2
+
+
+class TestUnlinkPalette:
+    @patch("common.services.loading_service.unlink_palette")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_linked_returns_404(
+        self, mock_verify, mock_unlink, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_unlink.return_value = False
+        resp = client.delete(
+            "/api/v1/loadings/ramasse-1/palettes/123456789012345678",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @patch("common.services.loading_service.unlink_palette")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_ok(
+        self, mock_verify, mock_unlink, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_unlink.return_value = True
+        resp = client.request(
+            "DELETE",
+            "/api/v1/loadings/ramasse-1/palettes/123456789012345678",
+            headers=auth_headers,
+            json={"reason": "palette cassée"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        # tenant scoping + reason propagé
+        call_kwargs = mock_unlink.call_args.kwargs
+        assert mock_unlink.call_args[0][0] == "tenant-A"
+        assert call_kwargs["sscc"] == "123456789012345678"
+        assert call_kwargs["ramasse_id"] == "ramasse-1"
+        assert call_kwargs["reason"] == "palette cassée"

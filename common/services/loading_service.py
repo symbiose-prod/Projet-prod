@@ -645,6 +645,363 @@ def rebuild_lines_from_palettes(
     return (lines, total_cartons, total_palettes, total_poids)
 
 
+# ─── Orchestration bout-en-bout : prévisionnel + finalize (mobile + futur DRY web) ──
+
+def _build_df_for_pdf(lines: list[dict]):
+    """Construit le DataFrame attendu par ``build_bl_enlevements_pdf``.
+
+    Extrait de ``pages/chargement_camion.py:_build_df_for_pdf`` pour
+    permettre la réutilisation depuis ``send_previsionnel`` / ``finalize_loading``
+    sans dépendance NiceGUI.
+    """
+    import pandas as pd
+    return pd.DataFrame([
+        {
+            "Référence": line.get("ref", ""),
+            "Produit": line.get("produit", ""),
+            "DDM": line.get("ddm", ""),
+            "Cartons": int(line.get("cartons") or 0),
+            "Palettes": int(line.get("palettes") or 0),
+            "Poids (kg)": int(line.get("poids") or 0),
+        }
+        for line in lines
+    ])
+
+
+def _resolve_destinataire(name: str) -> dict | None:
+    """Cherche un destinataire dans ``data/destinataires.json`` par nom.
+
+    Retourne le dict complet (``name``, ``address_lines``, ``email_recipients``,
+    ``packaging_items``) ou ``None`` si inconnu.
+    """
+    from common.ramasse import load_destinataires
+    for d in load_destinataires():
+        if d.get("name") == name:
+            return d
+    return None
+
+
+def normalize_packaging_payload(items: list[dict] | None) -> list[dict]:
+    """Normalise un payload packaging (mobile/web) en ``[{label, qty, unit}]``.
+
+    Filtre les entrées invalides (label vide, qty <= 0). Coerce ``qty`` en int.
+    Format identique à ``ramasse.build_packaging_summary`` mais accepte plus
+    de variantes en entrée (tolérant aux clés manquantes).
+    """
+    out: list[dict] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        try:
+            qty = int(item.get("qty") or 0)
+        except (ValueError, TypeError):
+            qty = 0
+        if not label or qty <= 0:
+            continue
+        out.append({
+            "label": label,
+            "qty": qty,
+            "unit": str(item.get("unit") or "palette"),
+        })
+    return out
+
+
+def send_previsionnel(
+    tenant_id: str,
+    *,
+    user_id: str,
+    user_email: str,
+    destinataire: str,
+    date_ramasse: _dt.date,
+    sscc_list: list[str],
+    packaging: list[dict] | None = None,
+) -> dict:
+    """Crée + envoie un BL prévisionnel pour un destinataire.
+
+    Orchestre toute la séquence métier en une seule appel (utilisable depuis
+    mobile_v1 ou un futur refactor de ``pages/chargement_camion.py``) :
+
+    1. Résout le destinataire (recipients + address_lines) depuis
+       ``data/destinataires.json``.
+    2. ``save_ramasse`` placeholder vide en status ``previsionnel`` —
+       fait remonter le verrou métier "1 ramasse active par dest" en
+       ``ValueError`` si déjà active.
+    3. ``link_palettes_to_ramasse`` — INSERT palette_loadings.
+    4. ``rebuild_lines_from_palettes`` — agrégation par produit.
+    5. ``build_bl_enlevements_pdf`` (kind="previsionnel").
+    6. ``finalize_ramasse_lines`` — patch lignes/totaux/PDF en DB.
+    7. ``send_html_with_pdf`` — envoi email au logisticien + créateur.
+
+    Si l'envoi email plante, on log mais on retourne ``email_sent=False`` —
+    la ramasse est créée en DB, l'opérateur peut la renvoyer manuellement.
+
+    Args:
+        sscc_list: SSCC à inclure dans le prévisionnel. Si vide, la ramasse
+            est créée sans palettes (cas exceptionnel — rare en pratique).
+        packaging: ``[{label, qty, unit}, ...]`` — emballages à ramener.
+
+    Returns:
+        ``{"id", "total_palettes", "total_cartons", "total_poids_kg",
+           "inserted", "conflicts", "email_sent", "recipients"}``.
+
+    Raises:
+        ValueError: destinataire inconnu, sans emails, ou ramasse active
+            déjà ouverte pour ce destinataire (verrou métier).
+    """
+    from common.email import send_html_with_pdf
+    from common.ramasse_history import finalize_ramasse_lines, save_ramasse
+    from common.services.ramasse_service import (
+        build_email_body,
+        build_email_subject,
+    )
+    from common.xlsx_fill.bl_pdf import build_bl_enlevements_pdf
+
+    dest_obj = _resolve_destinataire(destinataire)
+    if dest_obj is None:
+        raise ValueError(f"Destinataire inconnu : {destinataire}")
+
+    recipients = list(dest_obj.get("email_recipients", []) or [])
+    if user_email and user_email not in recipients:
+        recipients.append(user_email)
+    if not recipients:
+        raise ValueError(f"Aucun email configuré pour {destinataire}")
+
+    address_lines = dest_obj.get("address_lines", []) or []
+    packaging_clean = normalize_packaging_payload(packaging)
+
+    # 1. Placeholder ramasse vide → verrou métier remonte en ValueError
+    ramasse_id = save_ramasse(
+        date_ramasse=date_ramasse,
+        destinataire=destinataire,
+        recipients=recipients,
+        lines=[],
+        total_cartons=0,
+        total_palettes=0,
+        total_poids_kg=0,
+        packaging=packaging_clean,
+        status="previsionnel",
+        tenant_id=tenant_id,
+        user_id=user_id,
+    )
+
+    # 2. Lien palettes (conflits = palettes déjà chargées ailleurs)
+    inserted, conflicts = link_palettes_to_ramasse(
+        tenant_id,
+        sscc_list=sscc_list or [],
+        ramasse_id=ramasse_id,
+        user_email=user_email,
+    )
+
+    # 3. Rebuild lines + génération PDF
+    lines, total_cartons, total_palettes, total_poids = rebuild_lines_from_palettes(
+        ramasse_id, tenant_id,
+    )
+    df_lines = _build_df_for_pdf(lines)
+    pdf_bytes = build_bl_enlevements_pdf(
+        date_creation=_dt.date.today(),
+        date_ramasse=date_ramasse,
+        destinataire_title=destinataire,
+        destinataire_lines=address_lines,
+        df_lines=df_lines,
+        packaging_lines=packaging_clean,
+        kind="previsionnel",
+    )
+
+    # 4. Finalize en DB (atomic patch lignes + totaux + PDF)
+    finalize_ramasse_lines(
+        ramasse_id,
+        lines=lines,
+        total_cartons=total_cartons,
+        total_palettes=total_palettes,
+        total_poids_kg=total_poids,
+        pdf_bytes=pdf_bytes,
+        packaging=packaging_clean,
+        tenant_id=tenant_id,
+    )
+
+    # 5. Envoi email — best-effort (la ramasse reste en DB si l'email plante)
+    subject = build_email_subject(date_ramasse, kind="previsionnel")
+    body = build_email_body(
+        date_ramasse,
+        total_palettes=total_palettes,
+        total_cartons=total_cartons,
+        packaging_lines=packaging_clean,
+        kind="previsionnel",
+    )
+    fname = f"BL_Provisoire_{date_ramasse:%Y%m%d}.pdf"
+    email_sent = False
+    try:
+        send_html_with_pdf(
+            to_email=recipients,
+            subject=subject,
+            html_body=body,
+            attachments=[(fname, pdf_bytes)],
+        )
+        email_sent = True
+    except Exception:
+        _log.exception(
+            "Échec envoi email prévisionnel ramasse=%s dest=%s",
+            ramasse_id, destinataire,
+        )
+
+    return {
+        "id": ramasse_id,
+        "total_palettes": total_palettes,
+        "total_cartons": total_cartons,
+        "total_poids_kg": total_poids,
+        "inserted": inserted,
+        "conflicts": conflicts,
+        "email_sent": email_sent,
+        "recipients": recipients,
+    }
+
+
+def finalize_loading(
+    tenant_id: str,
+    *,
+    ramasse_id: str,
+    user_email: str,
+) -> tuple[dict, bytes]:
+    """Finalise une ramasse ``previsionnel`` → ``definitif`` (BL réel).
+
+    Appelé au moment du chargement physique (J2) une fois toutes les palettes
+    scannées sur le camion. Recharge les lignes depuis ``palette_loadings``
+    (= ce qui est réellement chargé), génère le BL définitif avec diff vs
+    prévisionnel, envoie l'email rectificatif, et retourne le PDF pour
+    download immédiat (le chauffeur l'imprime).
+
+    Orchestration :
+    1. Charge la ramasse (doit exister + être ``previsionnel``).
+    2. Snapshot ``previous_lines`` (= ce qui était dans le prévisionnel) →
+       servira au diff JAUNE/BLEU dans le PDF.
+    3. ``rebuild_lines_from_palettes`` (source de vérité = palette_loadings).
+    4. ``build_bl_enlevements_pdf`` (kind="definitif" + previous_lines).
+    5. ``update_ramasse(target_status="definitif")`` — transition de statut
+       + remplace lignes/totaux/PDF.
+    6. ``send_html_with_pdf`` — envoi email rectificatif (best-effort).
+
+    Returns:
+        Tuple ``(info_dict, pdf_bytes)`` :
+        - ``info_dict`` = ``{"id", "total_palettes", ..., "email_sent",
+          "recipients", "version"}``
+        - ``pdf_bytes`` = PDF binaire pour download immédiat (chauffeur)
+
+    Raises:
+        ValueError: ramasse introuvable, déjà ``definitif``, ou autre
+            transition refusée.
+    """
+    from common.email import send_html_with_pdf
+    from common.ramasse_history import get_ramasse, update_ramasse
+    from common.services.ramasse_service import (
+        build_email_body,
+        build_email_subject,
+    )
+    from common.xlsx_fill.bl_pdf import build_bl_enlevements_pdf
+
+    current = get_ramasse(ramasse_id, tenant_id)
+    if current is None:
+        raise ValueError("Ramasse introuvable")
+    if current.get("status") != "previsionnel":
+        raise ValueError(
+            f"Seules les ramasses 'previsionnel' peuvent être finalisées "
+            f"(statut actuel : {current.get('status')})",
+        )
+
+    destinataire = current.get("destinataire") or ""
+    dest_obj = _resolve_destinataire(destinataire)
+    address_lines = (dest_obj or {}).get("address_lines", []) or []
+
+    # Recipients : on relit destinataires.json (en cas d'évolution config)
+    # + ajout du créateur du finalize si pas déjà dedans.
+    recipients = list((dest_obj or {}).get("email_recipients", []) or [])
+    existing_recipients = current.get("recipients") or []
+    for r in existing_recipients:
+        if r and r not in recipients:
+            recipients.append(r)
+    if user_email and user_email not in recipients:
+        recipients.append(user_email)
+
+    previous_lines = current.get("lines") or []
+    packaging = current.get("packaging") or []
+    date_ramasse = current.get("date_ramasse")
+    next_version = int(current.get("version") or 1) + 1
+
+    # Rebuild lignes depuis palette_loadings (= chargement physique réel)
+    lines, total_cartons, total_palettes, total_poids = rebuild_lines_from_palettes(
+        ramasse_id, tenant_id,
+    )
+
+    df_lines = _build_df_for_pdf(lines)
+    pdf_bytes = build_bl_enlevements_pdf(
+        date_creation=_dt.date.today(),
+        date_ramasse=date_ramasse,
+        destinataire_title=destinataire,
+        destinataire_lines=address_lines,
+        df_lines=df_lines,
+        packaging_lines=packaging,
+        previous_lines=previous_lines,
+        version=next_version,
+        kind="definitif",
+    )
+
+    result = update_ramasse(
+        ramasse_id,
+        date_ramasse=date_ramasse,
+        destinataire=destinataire,
+        recipients=recipients,
+        lines=lines,
+        total_cartons=total_cartons,
+        total_palettes=total_palettes,
+        total_poids_kg=total_poids,
+        packaging=packaging,
+        pdf_bytes=pdf_bytes,
+        target_status="definitif",
+        tenant_id=tenant_id,
+    )
+    if result is None:
+        raise ValueError(
+            "Transition refusée (ramasse verrouillée par chauffeur ou "
+            "transition de statut invalide)",
+        )
+
+    # Email rectificatif — best-effort
+    subject = build_email_subject(date_ramasse, kind="definitif")
+    body = build_email_body(
+        date_ramasse,
+        total_palettes=total_palettes,
+        total_cartons=total_cartons,
+        packaging_lines=packaging,
+        kind="definitif",
+    )
+    fname = f"BL_Definitif_{date_ramasse:%Y%m%d}.pdf"
+    email_sent = False
+    try:
+        send_html_with_pdf(
+            to_email=recipients,
+            subject=subject,
+            html_body=body,
+            attachments=[(fname, pdf_bytes)],
+        )
+        email_sent = True
+    except Exception:
+        _log.exception(
+            "Échec envoi email définitif ramasse=%s dest=%s",
+            ramasse_id, destinataire,
+        )
+
+    info = {
+        "id": ramasse_id,
+        "total_palettes": total_palettes,
+        "total_cartons": total_cartons,
+        "total_poids_kg": total_poids,
+        "email_sent": email_sent,
+        "recipients": recipients,
+        "version": next_version,
+    }
+    return (info, pdf_bytes)
+
+
 def unlink_palette(
     tenant_id: str,
     *,

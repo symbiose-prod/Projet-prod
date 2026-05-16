@@ -17,6 +17,20 @@
         {"id": "pal_bt_33", "label": "Palette Bouteilles 33cl", "unit": "palette", "active": true},
         {"id": "pal_bt_75", "label": "Palette Bouteilles 75cl", "unit": "palette", "active": true}
       ]
+    },
+    {
+      "name": "SOFRIPA_TEST",
+      "address_lines": [
+        "DESTINATAIRE DE TEST — ne pas utiliser en production réelle",
+        "ZAC du Haut de Wissous II, 91320 Wissous"
+      ],
+      "email_recipients": [
+        "nicolas@symbiose-kefir.fr"
+      ],
+      "packaging_items": [
+        {"id": "pal_bt_33", "label": "Palette Bouteilles 33cl", "unit": "palette", "active": true},
+        {"id": "pal_bt_75", "label": "Palette Bouteilles 75cl", "unit": "palette", "active": true}
+      ]
     }
   ]
 }

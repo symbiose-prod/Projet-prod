@@ -16,6 +16,14 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/today-labels``         | Tk   | étiquettes du jour (toutes, archivées incl.)|
 | GET     | ``/api/v1/home-summary``         | Tk   | compteurs jour/mois + 20 dernières         |
 | GET     | ``/api/v1/sscc-log``             | Tk*  | journal SSCC (admin uniquement)            |
+| GET     | ``/api/v1/cold-room-palettes``   | Tk   | palettes étiquetées non encore chargées    |
+| GET     | ``/api/v1/last-packaging``       | Tk   | emballages habituels du destinataire + items configurés |
+| GET     | ``/api/v1/active-ramasses``      | Tk   | ramasses ``previsionnel`` ouvertes (J2 reprise) |
+| POST    | ``/api/v1/loadings/previsionnel`` | Tk  | crée + envoie BL prévisionnel (J1 soir)    |
+| GET     | ``/api/v1/loadings/{id}``        | Tk   | détail d'un chargement (palettes liées + totaux) |
+| POST    | ``/api/v1/loadings/{id}/scan``   | Tk   | scan SSCC + lien à la ramasse (chargement J2) |
+| POST    | ``/api/v1/loadings/{id}/finalize`` | Tk | finalise prévisionnel → définitif + PDF BL + email |
+| DELETE  | ``/api/v1/loadings/{id}/palettes/{sscc}`` | Tk | délie une palette d'une ramasse (soft) |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -589,6 +597,493 @@ async def _v1_sscc_log(request: Request):
     return JSONResponse({"entries": payload})
 
 
+# ─── Chargement camion (ramasse) ───────────────────────────────────────────
+
+def _palette_to_dict(p) -> dict:
+    """Sérialise un ``PaletteInfo`` en dict JSON-compatible.
+
+    Centralisé pour garantir le même format sur tous les endpoints loading
+    (scan-sscc, cold-room-palettes, loadings/{id}). L'app iOS décode ce dict
+    en ``PaletteInfo`` Swift Codable.
+    """
+    return {
+        "sscc": p.sscc,
+        "gtin_palette": p.gtin_palette,
+        "lot": p.lot,
+        "ddm": p.ddm.isoformat() if p.ddm else None,
+        "case_count": p.case_count,
+        "designation": p.designation,
+        "fmt": p.fmt,
+        "marque": p.marque,
+        "gout": p.gout,
+        "pcb": p.pcb,
+        "gtin_uvc": p.gtin_uvc,
+        "generated_at": p.generated_at.isoformat() if p.generated_at else None,
+    }
+
+
+_DEFAULT_DESTINATAIRE = "SOFRIPA"
+"""Destinataire unique côté mobile. La page web supporte plusieurs destinataires,
+mais en pratique côté terrain c'est toujours SOFRIPA (logisticien Ferment).
+Si on veut en supporter d'autres, ajouter un sélecteur côté iOS + query param
+sur les endpoints concernés."""
+
+
+def _lookup_result_to_dict(result) -> dict:
+    """Sérialise un ``LookupResult`` en dict JSON-compatible."""
+    return {
+        "status": result.status,
+        "palette": _palette_to_dict(result.palette) if result.palette else None,
+        "existing_ramasse_id": result.existing_ramasse_id,
+        "existing_scanned_at": (
+            result.existing_scanned_at.isoformat()
+            if result.existing_scanned_at else None
+        ),
+        "error_message": result.error_message,
+    }
+
+
+async def _v1_cold_room_palettes(request: Request):
+    """Liste les palettes en chambre froide non encore chargées.
+
+    Retour 200 : ``{"palettes": [{sscc, designation, ...}, ...]}``.
+    Tri FIFO par ``generated_at`` croissant (les plus anciennes en haut).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    from common.services.loading_service import list_palettes_in_cold_room
+
+    palettes = await asyncio.to_thread(
+        list_palettes_in_cold_room, user["tenant_id"],
+    )
+    return JSONResponse({
+        "palettes": [_palette_to_dict(p) for p in palettes],
+    })
+
+
+async def _v1_last_packaging(request: Request):
+    """Renvoie les emballages habituels d'un destinataire + items configurés.
+
+    Query : ``?destinataire=SOFRIPA`` (défaut: SOFRIPA — seul destinataire mobile).
+
+    Retour 200 :
+      ``{"destinataire": "SOFRIPA",
+         "items": [{id, label, unit, active}, ...],
+         "last_quantities": [{label, qty, unit}, ...]}``.
+
+    L'app iOS utilise ``items`` pour afficher les inputs et ``last_quantities``
+    pour le bouton "Appliquer les quantités habituelles".
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    destinataire = (
+        request.query_params.get("destinataire") or _DEFAULT_DESTINATAIRE
+    ).strip()
+
+    from common.ramasse import load_packaging_items
+    from common.ramasse_history import get_last_packaging_for_dest
+
+    items, last = await asyncio.gather(
+        asyncio.to_thread(load_packaging_items, destinataire),
+        asyncio.to_thread(
+            get_last_packaging_for_dest, destinataire, user["tenant_id"],
+        ),
+    )
+    return JSONResponse({
+        "destinataire": destinataire,
+        "items": items,
+        "last_quantities": last,
+    })
+
+
+async def _v1_active_ramasses(request: Request):
+    """Liste les ramasses ``previsionnel`` (ou ``definitif`` non livré) ouvertes.
+
+    Query : ``?destinataire=SOFRIPA`` (défaut: SOFRIPA).
+
+    Sert au J2 : l'opérateur ouvre l'app, l'iPad lui affiche les ramasses
+    prêtes à être chargées. En pratique il n'y en a qu'une (verrou métier).
+
+    Retour 200 : ``{"ramasses": [{id, date_ramasse, status, total_palettes,
+                                  ...}, ...]}``.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    destinataire = (
+        request.query_params.get("destinataire") or _DEFAULT_DESTINATAIRE
+    ).strip()
+
+    from common.ramasse_history import get_active_ramasse_for_dest
+
+    active = await asyncio.to_thread(
+        get_active_ramasse_for_dest, destinataire, user["tenant_id"],
+    )
+    ramasses: list[dict] = []
+    if active:
+        ramasses.append({
+            "id": str(active["id"]),
+            "date_ramasse": (
+                active["date_ramasse"].isoformat()
+                if active.get("date_ramasse") else None
+            ),
+            "destinataire": active.get("destinataire") or "",
+            "status": active.get("status") or "",
+            "total_palettes": int(active.get("total_palettes") or 0),
+            "total_cartons": int(active.get("total_cartons") or 0),
+            "total_poids_kg": int(active.get("total_poids_kg") or 0),
+            "version": int(active.get("version") or 1),
+            "created_by_email": active.get("created_by_email") or "",
+            "created_at": (
+                active["created_at"].isoformat()
+                if active.get("created_at") else None
+            ),
+        })
+    return JSONResponse({"ramasses": ramasses})
+
+
+async def _v1_create_previsionnel(request: Request):
+    """Crée et envoie un BL prévisionnel (J1 soir).
+
+    Body JSON :
+      ``{"date_ramasse": "YYYY-MM-DD",
+         "sscc_list": ["...", ...],            # palettes à inclure
+         "packaging": [{label, qty, unit?}, ...],  # emballages à ramener
+         "destinataire": "SOFRIPA"}``  # optionnel, défaut SOFRIPA
+
+    Délègue toute l'orchestration (save_ramasse + link + PDF + email) à
+    ``loading_service.send_previsionnel``. L'endpoint n'est qu'un adaptateur
+    HTTP qui parse le body et formate la réponse.
+
+    Retour 200 : ``{"id", "total_palettes", "total_cartons", "total_poids_kg",
+                    "inserted", "conflicts", "email_sent", "recipients"}``.
+    Retour 409 : verrou métier (ramasse active existe déjà) — l'opérateur
+    doit finaliser/supprimer l'ancienne d'abord.
+    Retour 400 : destinataire inconnu ou pas d'emails configurés.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    body = body or {}
+
+    sscc_list_raw = body.get("sscc_list") or []
+    date_ramasse_str = str(body.get("date_ramasse") or "").strip()
+    packaging = body.get("packaging") or []
+    destinataire = str(
+        body.get("destinataire") or _DEFAULT_DESTINATAIRE,
+    ).strip()
+
+    if not isinstance(sscc_list_raw, list):
+        return JSONResponse(
+            {"error": "'sscc_list' must be a list"}, status_code=400,
+        )
+    if not date_ramasse_str:
+        return JSONResponse({"error": "Missing 'date_ramasse'"}, status_code=400)
+    if not isinstance(packaging, list):
+        return JSONResponse(
+            {"error": "'packaging' must be a list"}, status_code=400,
+        )
+
+    try:
+        date_ramasse = _dt_local.date.fromisoformat(date_ramasse_str[:10])
+    except ValueError:
+        return JSONResponse(
+            {"error": "Invalid date_ramasse format (expected YYYY-MM-DD)"},
+            status_code=400,
+        )
+
+    sscc_list = [str(s).strip() for s in sscc_list_raw if str(s).strip()]
+
+    from common.services.loading_service import send_previsionnel
+
+    try:
+        result = await asyncio.to_thread(
+            send_previsionnel,
+            user["tenant_id"],
+            user_id=user["id"],
+            user_email=user.get("email") or "",
+            destinataire=destinataire,
+            date_ramasse=date_ramasse,
+            sscc_list=sscc_list,
+            packaging=packaging,
+        )
+    except ValueError as exc:
+        # Verrou métier OU destinataire inconnu — code 409 dans les 2 cas
+        # pour signaler "conflit métier" (vs 400 = body malformé)
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    except Exception:
+        _log.exception("Échec création prévisionnel (mobile)")
+        return JSONResponse(
+            {"error": "Failed to create previsionnel"}, status_code=500,
+        )
+
+    _log.info(
+        "previsionnel : ramasse=%s dest=%s palettes=%d email_sent=%s "
+        "tenant=%s user=%s",
+        result["id"], destinataire, result["total_palettes"],
+        result["email_sent"], user["tenant_id"], user.get("email"),
+    )
+    return JSONResponse(result)
+
+
+async def _v1_scan_palette_to_loading(ramasse_id: str, request: Request):
+    """Scan SSCC + lien immédiat à une ramasse en cours (J2 chargement).
+
+    Body JSON : ``{"sscc": "..."}``.
+
+    Un appel = un scan douchette. L'iPad scanne une palette, on lookup ET
+    on lie en une seule transaction pour avoir le retour temps-réel (palette
+    qui "passe de la CF au camion" côté UI).
+
+    Retour 200 :
+      Si ``status="ok"`` (palette valide + ajoutée) :
+        ``{"status": "ok", "palette": {...}, "linked": true,
+           "already_in_this_loading": false}``
+      Si déjà liée à cette ramasse (re-scan du même SSCC) :
+        ``{"status": "ok", "palette": {...}, "linked": false,
+           "already_in_this_loading": true}``
+      Si liée à une AUTRE ramasse :
+        ``{"status": "already_loaded", "existing_ramasse_id": "...",
+           "error_message": "..."}``
+      Si inconnue / annulée / inconsistante :
+        ``{"status": "unknown"|"inconsistent", "error_message": "..."}``
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    sscc_raw = ((body or {}).get("sscc") or "").strip()
+    if not sscc_raw:
+        return JSONResponse({"error": "Missing 'sscc' field"}, status_code=400)
+    if len(sscc_raw) > 200:
+        return JSONResponse({"error": "SSCC too long"}, status_code=400)
+
+    from common.services.loading_service import (
+        link_palettes_to_ramasse,
+        lookup_sscc,
+    )
+
+    result = await asyncio.to_thread(lookup_sscc, sscc_raw, user["tenant_id"])
+
+    # Cas "déjà liée à cette ramasse" = re-scan du même SSCC pendant le
+    # chargement. lookup_sscc renvoie 'already_loaded' avec
+    # existing_ramasse_id. On distingue : si c'est CETTE ramasse, c'est OK
+    # (idempotent) ; sinon c'est une vraie collision avec une autre ramasse.
+    if result.status == "already_loaded" and result.existing_ramasse_id == ramasse_id:
+        # Récupère la PaletteInfo pour la retourner (lookup_sscc ne la
+        # remplit pas en cas already_loaded). On refait un lookup direct
+        # via list_linked_palettes — petit coût, mais retour propre.
+        from common.services.loading_service import list_linked_palettes
+        all_linked = await asyncio.to_thread(
+            list_linked_palettes, ramasse_id, user["tenant_id"],
+        )
+        # On cherche le SSCC dans les palettes liées (en supportant les
+        # variantes avec/sans préfixe AI). Comparaison stricte sur 18 digits.
+        from common.services.loading_service import _normalize_sscc
+        sscc_norm = _normalize_sscc(sscc_raw)
+        match = next((p for p in all_linked if p.sscc == sscc_norm), None)
+        return JSONResponse({
+            "status": "ok",
+            "palette": _palette_to_dict(match) if match else None,
+            "linked": False,
+            "already_in_this_loading": True,
+        })
+
+    if result.status != "ok" or result.palette is None:
+        # SSCC inconnu, inconsistent, ou déjà chargé ailleurs : on renvoie
+        # l'info brute, pas de link tenté.
+        return JSONResponse({
+            **_lookup_result_to_dict(result),
+            "linked": False,
+            "already_in_this_loading": False,
+        })
+
+    # palette OK et libre → on lie
+    inserted, conflicts = await asyncio.to_thread(
+        link_palettes_to_ramasse,
+        user["tenant_id"],
+        sscc_list=[result.palette.sscc],
+        ramasse_id=ramasse_id,
+        user_email=user.get("email") or "",
+    )
+    if inserted == 0:
+        # Race condition : palette liée entre lookup et insert (très rare)
+        return JSONResponse({
+            "status": "already_loaded",
+            "palette": _palette_to_dict(result.palette),
+            "linked": False,
+            "already_in_this_loading": False,
+            "error_message": "Palette liée entre temps à une autre ramasse",
+        })
+    _log.info(
+        "scan-to-loading : sscc=%s ramasse=%s tenant=%s user=%s",
+        result.palette.sscc, ramasse_id, user["tenant_id"], user.get("email"),
+    )
+    return JSONResponse({
+        "status": "ok",
+        "palette": _palette_to_dict(result.palette),
+        "linked": True,
+        "already_in_this_loading": False,
+    })
+
+
+async def _v1_finalize_loading(ramasse_id: str, request: Request):
+    """Finalise une ramasse ``previsionnel`` → ``definitif`` + envoie BL.
+
+    Pas de body requis. Délègue à ``loading_service.finalize_loading``.
+
+    Retour 200 : PDF binaire (Content-Type: application/pdf) du BL définitif
+    pour download immédiat par le chauffeur. Headers complémentaires :
+      - ``X-Ramasse-Id``: UUID de la ramasse
+      - ``X-Total-Palettes``: nombre de palettes
+      - ``X-Total-Cartons``: nombre de cartons
+      - ``X-Email-Sent``: ``true`` / ``false`` selon que l'envoi mail a réussi
+
+    Retour 404 : ramasse introuvable ou hors tenant.
+    Retour 409 : ramasse déjà ``definitif`` ou verrouillée (chauffeur passé).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    from common.services.loading_service import finalize_loading
+
+    try:
+        info, pdf_bytes = await asyncio.to_thread(
+            finalize_loading,
+            user["tenant_id"],
+            ramasse_id=ramasse_id,
+            user_email=user.get("email") or "",
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        # 404 si introuvable, sinon 409 (conflit métier)
+        status_code = 404 if "introuvable" in msg.lower() else 409
+        return JSONResponse({"error": msg}, status_code=status_code)
+    except Exception:
+        _log.exception("Échec finalize loading ramasse=%s", ramasse_id)
+        return JSONResponse(
+            {"error": "Failed to finalize loading"}, status_code=500,
+        )
+
+    _log.info(
+        "finalize-loading : ramasse=%s palettes=%d cartons=%d email_sent=%s "
+        "tenant=%s user=%s",
+        info["id"], info["total_palettes"], info["total_cartons"],
+        info["email_sent"], user["tenant_id"], user.get("email"),
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="BL_Definitif_{info["id"][:8]}.pdf"'
+            ),
+            "X-Ramasse-Id": str(info["id"]),
+            "X-Total-Palettes": str(info["total_palettes"]),
+            "X-Total-Cartons": str(info["total_cartons"]),
+            "X-Total-Poids-Kg": str(info["total_poids_kg"]),
+            "X-Email-Sent": "true" if info["email_sent"] else "false",
+            "X-Ramasse-Version": str(info["version"]),
+        },
+    )
+
+
+async def _v1_get_loading(ramasse_id: str, request: Request):
+    """Détail d'un chargement : palettes liées + totaux + meta ramasse.
+
+    Retour 200 :
+      ``{"id": "...", "date_ramasse": "...", "destinataire": "...",
+         "status": "...", "palettes": [...], "total_palettes": N,
+         "total_cartons": M, "total_poids_kg": P}``.
+    Retour 404 : ramasse inconnue ou hors tenant.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    from common.ramasse_history import get_ramasse
+    from common.services.loading_service import list_linked_palettes
+
+    ramasse = await asyncio.to_thread(get_ramasse, ramasse_id, user["tenant_id"])
+    if ramasse is None:
+        return JSONResponse({"error": "Loading not found"}, status_code=404)
+
+    palettes = await asyncio.to_thread(
+        list_linked_palettes, ramasse_id, user["tenant_id"],
+    )
+    return JSONResponse({
+        "id": str(ramasse["id"]),
+        "date_ramasse": (
+            ramasse["date_ramasse"].isoformat()
+            if ramasse.get("date_ramasse") else None
+        ),
+        "destinataire": ramasse.get("destinataire") or "",
+        "status": ramasse.get("status") or "",
+        "total_palettes": int(ramasse.get("total_palettes") or 0),
+        "total_cartons": int(ramasse.get("total_cartons") or 0),
+        "total_poids_kg": int(ramasse.get("total_poids_kg") or 0),
+        "palettes": [_palette_to_dict(p) for p in palettes],
+    })
+
+
+async def _v1_unlink_palette(ramasse_id: str, sscc: str, request: Request):
+    """Délie une palette d'une ramasse (soft-unlink réversible).
+
+    Body JSON optionnel : ``{"reason": "..."}`` — raison saisie par
+    l'opérateur (palette cassée, erreur de scan, etc.). Défaut: générique.
+
+    Retour 200 : ``{"ok": true}``.
+    Retour 404 : palette pas liée à cette ramasse (ou déjà unlinkée).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    reason = ""
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            reason = str(body.get("reason") or "").strip()
+    except Exception:
+        pass
+
+    from common.services.loading_service import unlink_palette
+
+    ok = await asyncio.to_thread(
+        unlink_palette,
+        user["tenant_id"],
+        sscc=sscc,
+        ramasse_id=ramasse_id,
+        reason=reason,
+        user_email=user.get("email") or "",
+    )
+    if not ok:
+        return JSONResponse(
+            {"error": "Palette not linked to this loading"}, status_code=404,
+        )
+    _log.info(
+        "unlink-palette : sscc=%s ramasse=%s tenant=%s user=%s",
+        sscc, ramasse_id, user["tenant_id"], user.get("email"),
+    )
+    return JSONResponse({"ok": True})
+
+
 # ─── Enregistrement des routes (appelé depuis app_nicegui.py) ──────────────
 
 def register_routes(app) -> None:
@@ -607,3 +1102,12 @@ def register_routes(app) -> None:
     app.get("/api/v1/today-labels")(_v1_today_labels)
     app.get("/api/v1/home-summary")(_v1_home_summary)
     app.get("/api/v1/sscc-log")(_v1_sscc_log)
+    # Chargement camion (ramasse) — workflow J1 prévisionnel + J2 chargement
+    app.get("/api/v1/cold-room-palettes")(_v1_cold_room_palettes)
+    app.get("/api/v1/last-packaging")(_v1_last_packaging)
+    app.get("/api/v1/active-ramasses")(_v1_active_ramasses)
+    app.post("/api/v1/loadings/previsionnel")(_v1_create_previsionnel)
+    app.get("/api/v1/loadings/{ramasse_id}")(_v1_get_loading)
+    app.post("/api/v1/loadings/{ramasse_id}/scan")(_v1_scan_palette_to_loading)
+    app.post("/api/v1/loadings/{ramasse_id}/finalize")(_v1_finalize_loading)
+    app.delete("/api/v1/loadings/{ramasse_id}/palettes/{sscc}")(_v1_unlink_palette)
