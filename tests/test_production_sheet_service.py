@@ -6,15 +6,12 @@ from __future__ import annotations
 
 from unittest import mock
 
-import pytest
-
 from common.services import production_sheet_service
 from common.services.production_sheet_service import (
     ConditionnementByLot,
     ConditionnementLine,
     compute_real_conditionnement_by_lot,
 )
-
 
 # ─── compute_real_conditionnement_by_lot ───────────────────────────────────
 
