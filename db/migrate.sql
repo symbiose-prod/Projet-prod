@@ -699,6 +699,53 @@ CREATE INDEX IF NOT EXISTS idx_mobile_tokens_user    ON mobile_api_tokens(user_i
 CREATE INDEX IF NOT EXISTS idx_mobile_tokens_expires ON mobile_api_tokens(expires_at);
 
 -- =========================
+-- Fiches de production (digitalisation des fiches papier brassin, mode admin beta)
+-- =========================
+-- Une fiche par brassin physique. L'opérateur la remplit pendant et après
+-- le brassage via l'app iOS. À la finalisation, on génère un PDF stocké
+-- dans pdf_bytes pour archive (« classeur digital »).
+--
+-- `data` JSONB contient toutes les sections du formulaire (fermentation,
+-- recette, phases dilution/filtration/remplissage, conditionnement prévu/réel,
+-- remarques, incidents, photos). Schéma libre côté DB — la structure est
+-- défendue dans common/services/production_sheet_service.py.
+--
+-- `brassin_id` relie à EasyBeer si la fiche est associée à un brassin
+-- existant (utilisé pour pré-remplir depuis EasyBeer + pour retrouver la
+-- fiche depuis l'historique d'un brassin).
+CREATE TABLE IF NOT EXISTS production_sheets (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  created_by    UUID REFERENCES users(id) ON DELETE SET NULL,
+  brassin_id    TEXT,                                  -- ID brassin EasyBeer (NULL si fiche manuelle)
+  produit       TEXT NOT NULL DEFAULT '',              -- libellé "K. Mangue - Passion"
+  cuve          TEXT NOT NULL DEFAULT '',              -- "Cuve de 7200L" / "Split 7200L" / ...
+  ddm           DATE,
+  lot           TEXT NOT NULL DEFAULT '',              -- lot dérivé du DDM (DDMMYYYY)
+  status        TEXT NOT NULL DEFAULT 'draft',         -- 'draft' | 'completed'
+  data          JSONB NOT NULL DEFAULT '{}'::jsonb,    -- contenu structuré du formulaire
+  pdf_bytes     BYTEA,                                 -- généré à la finalisation
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finalized_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_prod_sheets_tenant_created
+  ON production_sheets(tenant_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prod_sheets_tenant_brassin
+  ON production_sheets(tenant_id, brassin_id)
+  WHERE brassin_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_prod_sheets_tenant_status
+  ON production_sheets(tenant_id, status);
+
+DROP TRIGGER IF EXISTS trg_prod_sheets_touch ON production_sheets;
+CREATE TRIGGER trg_prod_sheets_touch
+BEFORE UPDATE ON production_sheets
+FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- =========================
 -- Permissions (user applicatif "shark")
 -- =========================
 DO $$
@@ -715,7 +762,8 @@ BEGIN
                        etiquette_palette_history,
                        print_jobs, sscc_log, palette_loadings,
                        carton_count_evals,
-                       mobile_api_tokens TO shark;
+                       mobile_api_tokens,
+                       production_sheets TO shark;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

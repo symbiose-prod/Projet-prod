@@ -349,6 +349,17 @@ APIClient.swift          ──HTTP──►  common/mobile_v1.py  (adapteur HTT
 | GET | `/api/v1/ramasses?limit=20&offset=0` | Bearer | historique paginé (toutes statuts, hors corbeille). `total` renvoyé pour pagination. |
 | GET | `/api/v1/ramasses/{id}/pdf` | Bearer | PDF BL stocké (`ramasse_history.pdf_bytes`). 404 si pas de PDF (legacy). Headers `X-Ramasse-Status` / `X-Ramasse-Version`. |
 | POST | `/api/v1/ramasses/{id}/mark-driver-passed` | Bearer | marque "chauffeur passé" → verrouille l'édition. Idempotent : renvoie `{ok, changed}` (changed=false si déjà marqué). |
+| POST | `/api/v1/admin/production-sheets` | Bearer + admin | crée une fiche de production (status `draft`). Body : `{brassin_id?, produit?, cuve?, ddm?, lot?, data?}` (tous optionnels). |
+| GET | `/api/v1/admin/production-sheets?limit=20&offset=0&status=draft\|completed` | Bearer + admin | liste paginée des fiches du tenant. Total renvoyé pour pagination. |
+
+### Fiches de production (mode admin beta — Sprint 1)
+
+Digitalisation des fiches papier de brassage. Nouvelle table `production_sheets` (id, tenant_id, brassin_id, produit, cuve, ddm, lot, status `draft`|`completed`, data JSONB, pdf_bytes, timestamps). Service `common/services/production_sheet_service.py:create_sheet`/`list_sheets`/`count_sheets`. Endpoints `admin only` côté mobile (vérif `user.role == "admin"`).
+
+Sprint 1 livre **create + list** (squelette). Sprints suivants ajouteront :
+- 2: pre-fill auto du conditionnement réel depuis SSCC (lien lot ↔ palettes)
+- 3: PATCH champ-par-champ pour auto-save formulaire
+- 4: finalize → génération PDF + archive `pdf_bytes`
 
 ### Workflow Ramasse mobile (J1 + J2)
 

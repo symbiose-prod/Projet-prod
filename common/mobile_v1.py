@@ -27,6 +27,8 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/ramasses``             | Tk   | historique paginé des ramasses (toutes statuts, hors corbeille) |
 | GET     | ``/api/v1/ramasses/{id}/pdf``    | Tk   | PDF BL stocké (renvoie le ``pdf_bytes`` de la dernière version) |
 | POST    | ``/api/v1/ramasses/{id}/mark-driver-passed`` | Tk | marque "chauffeur passé" → verrouille l'édition |
+| POST    | ``/api/v1/admin/production-sheets`` | Tk* | crée une fiche de production (status draft) |
+| GET     | ``/api/v1/admin/production-sheets`` | Tk* | liste paginée des fiches du tenant |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -1248,6 +1250,139 @@ async def _v1_unlink_palette(ramasse_id: str, sscc: str, request: Request):
     return JSONResponse({"ok": True})
 
 
+# ─── Fiches de production (admin only, beta) ───────────────────────────────
+
+async def _v1_create_production_sheet(request: Request):
+    """Crée une fiche de production (status ``'draft'``). ADMIN only.
+
+    Body JSON (tous champs optionnels) :
+      ``{"brassin_id": "...", "produit": "...", "cuve": "...",
+         "ddm": "YYYY-MM-DD", "lot": "...", "data": {...}}``
+
+    Retour 200 : ``{"id": "uuid"}``.
+    Retour 400 : body invalide (ex: ddm mal formée).
+    Retour 403 : non admin.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body or {}
+
+    ddm_str = (body.get("ddm") or "").strip() if body.get("ddm") else ""
+    ddm: _dt_local.date | None = None
+    if ddm_str:
+        try:
+            ddm = _dt_local.date.fromisoformat(ddm_str[:10])
+        except ValueError:
+            return JSONResponse(
+                {"error": "Invalid ddm format (expected YYYY-MM-DD)"},
+                status_code=400,
+            )
+
+    data_value = body.get("data") or {}
+    if not isinstance(data_value, dict):
+        return JSONResponse(
+            {"error": "'data' must be an object"}, status_code=400,
+        )
+
+    from common.services.production_sheet_service import create_sheet
+
+    try:
+        sheet_id = await asyncio.to_thread(
+            create_sheet,
+            user["tenant_id"],
+            user_id=user["id"],
+            brassin_id=(body.get("brassin_id") or None),
+            produit=str(body.get("produit") or ""),
+            cuve=str(body.get("cuve") or ""),
+            ddm=ddm,
+            lot=str(body.get("lot") or ""),
+            data=data_value,
+        )
+    except Exception:
+        _log.exception("Échec création fiche production (mobile)")
+        return JSONResponse(
+            {"error": "Failed to create production sheet"}, status_code=500,
+        )
+
+    return JSONResponse({"id": sheet_id})
+
+
+async def _v1_list_production_sheets(request: Request):
+    """Liste paginée des fiches de production. ADMIN only.
+
+    Query : ``?limit=20&offset=0&status=draft|completed`` (status optionnel).
+
+    Retour 200 :
+      ``{"sheets": [{id, brassin_id, produit, cuve, ddm, lot, status,
+                     created_at, updated_at, finalized_at,
+                     created_by_email}, ...],
+         "total": N, "limit": 20, "offset": 0}``
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    params = request.query_params
+    try:
+        limit = int(params.get("limit") or "20")
+    except ValueError:
+        limit = 20
+    limit = max(1, min(limit, 100))
+    try:
+        offset = int(params.get("offset") or "0")
+    except ValueError:
+        offset = 0
+    offset = max(0, offset)
+    status = (params.get("status") or "").strip().lower() or None
+
+    from common.services.production_sheet_service import (
+        count_sheets,
+        list_sheets,
+    )
+
+    summaries, total = await asyncio.gather(
+        asyncio.to_thread(
+            list_sheets, user["tenant_id"],
+            limit=limit, offset=offset, status=status,
+        ),
+        asyncio.to_thread(count_sheets, user["tenant_id"], status=status),
+    )
+    payload = [
+        {
+            "id": s.id,
+            "brassin_id": s.brassin_id,
+            "produit": s.produit,
+            "cuve": s.cuve,
+            "ddm": s.ddm.isoformat() if s.ddm else None,
+            "lot": s.lot,
+            "status": s.status,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+            "finalized_at": (
+                s.finalized_at.isoformat() if s.finalized_at else None
+            ),
+            "created_by_email": s.created_by_email or "",
+        }
+        for s in summaries
+    ]
+    return JSONResponse({
+        "sheets": payload,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
+
+
 # ─── Enregistrement des routes (appelé depuis app_nicegui.py) ──────────────
 
 def register_routes(app) -> None:
@@ -1279,3 +1414,6 @@ def register_routes(app) -> None:
     app.get("/api/v1/ramasses")(_v1_list_ramasses)
     app.get("/api/v1/ramasses/{ramasse_id}/pdf")(_v1_ramasse_pdf)
     app.post("/api/v1/ramasses/{ramasse_id}/mark-driver-passed")(_v1_mark_driver_passed)
+    # Fiches de production (admin only, beta — Sprint 1 : create + list)
+    app.post("/api/v1/admin/production-sheets")(_v1_create_production_sheet)
+    app.get("/api/v1/admin/production-sheets")(_v1_list_production_sheets)

@@ -81,6 +81,8 @@ class TestUnauthorized:
         ("get", "/api/v1/ramasses"),
         ("get", "/api/v1/ramasses/abc-123/pdf"),
         ("post", "/api/v1/ramasses/abc-123/mark-driver-passed"),
+        ("post", "/api/v1/admin/production-sheets"),
+        ("get", "/api/v1/admin/production-sheets"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -1217,3 +1219,201 @@ class TestMarkDriverPassed:
         assert mock_mark.call_args[0][0] == "r1"
         assert mock_mark.call_args.kwargs["tenant_id"] == "tenant-A"
         assert mock_mark.call_args.kwargs["user_id"] == "user-1"
+
+
+# ─── Fiches de production (admin only, beta) ────────────────────────────────
+
+def _fake_sheet_summary(**kwargs):
+    """Construit un ``ProductionSheetSummary`` minimal pour les tests."""
+    from common.services.production_sheet_service import ProductionSheetSummary
+
+    defaults = dict(
+        id="sheet-1",
+        brassin_id="brassin-42",
+        produit="K. Mangue - Passion",
+        cuve="Cuve de 7200L",
+        ddm=_dt.date(2027, 5, 15),
+        lot="15052027",
+        status="draft",
+        created_at=_dt.datetime(2026, 5, 15, 10, 0, tzinfo=_dt.UTC),
+        updated_at=_dt.datetime(2026, 5, 15, 12, 0, tzinfo=_dt.UTC),
+        finalized_at=None,
+        created_by_email="nicolas@symbiose-kefir.fr",
+    )
+    defaults.update(kwargs)
+    return ProductionSheetSummary(**defaults)
+
+
+class TestCreateProductionSheet:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.post(
+            "/api/v1/admin/production-sheets",
+            headers=auth_headers, json={},
+        )
+        assert resp.status_code == 403
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_invalid_ddm_returns_400(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="admin")
+        resp = client.post(
+            "/api/v1/admin/production-sheets",
+            headers=auth_headers,
+            json={"ddm": "not-a-date"},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_data_must_be_object(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="admin")
+        resp = client.post(
+            "/api/v1/admin/production-sheets",
+            headers=auth_headers,
+            json={"data": "not-a-dict"},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.services.production_sheet_service.create_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_id_and_propagates_tenant_user(
+        self, mock_verify, mock_create, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin", tenant="tenant-A")
+        mock_create.return_value = "sheet-new-uuid"
+        resp = client.post(
+            "/api/v1/admin/production-sheets",
+            headers=auth_headers,
+            json={
+                "brassin_id": "brassin-42",
+                "produit": "K. Mangue - Passion",
+                "cuve": "Cuve de 7200L",
+                "ddm": "2027-05-15",
+                "lot": "15052027",
+                "data": {"fermentation": {"mesures": []}},
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"id": "sheet-new-uuid"}
+        # tenant + user propagés au service (multi-tenant + audit)
+        assert mock_create.call_args[0][0] == "tenant-A"
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["user_id"] == "user-1"
+        assert kwargs["brassin_id"] == "brassin-42"
+        assert kwargs["produit"] == "K. Mangue - Passion"
+        assert kwargs["ddm"] == _dt.date(2027, 5, 15)
+        assert kwargs["data"] == {"fermentation": {"mesures": []}}
+
+    @patch("common.services.production_sheet_service.create_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_empty_body_creates_blank_sheet(
+        self, mock_verify, mock_create, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_create.return_value = "sheet-blank"
+        resp = client.post(
+            "/api/v1/admin/production-sheets",
+            headers=auth_headers, json={},
+        )
+        assert resp.status_code == 200
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["brassin_id"] is None
+        assert kwargs["produit"] == ""
+        assert kwargs["ddm"] is None
+        assert kwargs["data"] == {}
+
+
+class TestListProductionSheets:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get(
+            "/api/v1/admin/production-sheets", headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.services.production_sheet_service.count_sheets")
+    @patch("common.services.production_sheet_service.list_sheets")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_empty_returns_empty_with_meta(
+        self, mock_verify, mock_list, mock_count, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin", tenant="tenant-A")
+        mock_list.return_value = []
+        mock_count.return_value = 0
+        resp = client.get(
+            "/api/v1/admin/production-sheets", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "sheets": [], "total": 0, "limit": 20, "offset": 0,
+        }
+        assert mock_list.call_args[0][0] == "tenant-A"
+        assert mock_count.call_args[0][0] == "tenant-A"
+
+    @patch("common.services.production_sheet_service.count_sheets")
+    @patch("common.services.production_sheet_service.list_sheets")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_serialized_sheets(
+        self, mock_verify, mock_list, mock_count, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_list.return_value = [
+            _fake_sheet_summary(id="s1", status="draft"),
+            _fake_sheet_summary(
+                id="s2", status="completed",
+                finalized_at=_dt.datetime(2026, 5, 16, 18, 0, tzinfo=_dt.UTC),
+            ),
+        ]
+        mock_count.return_value = 7
+        resp = client.get(
+            "/api/v1/admin/production-sheets?limit=5",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 7
+        assert body["limit"] == 5
+        assert len(body["sheets"]) == 2
+        s1 = body["sheets"][0]
+        assert s1["id"] == "s1"
+        assert s1["status"] == "draft"
+        assert s1["produit"] == "K. Mangue - Passion"
+        assert s1["ddm"] == "2027-05-15"
+        assert s1["finalized_at"] is None
+        s2 = body["sheets"][1]
+        assert s2["status"] == "completed"
+        assert s2["finalized_at"] == "2026-05-16T18:00:00+00:00"
+
+    @patch("common.services.production_sheet_service.count_sheets")
+    @patch("common.services.production_sheet_service.list_sheets")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_status_filter_propagates_to_service(
+        self, mock_verify, mock_list, mock_count, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_list.return_value = []
+        mock_count.return_value = 0
+        client.get(
+            "/api/v1/admin/production-sheets?status=draft",
+            headers=auth_headers,
+        )
+        # Filter status forwardé au service
+        assert mock_list.call_args.kwargs["status"] == "draft"
+        assert mock_count.call_args.kwargs["status"] == "draft"
+
+    @patch("common.services.production_sheet_service.count_sheets")
+    @patch("common.services.production_sheet_service.list_sheets")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_limit_clamped_to_100(
+        self, mock_verify, mock_list, mock_count, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_list.return_value = []
+        mock_count.return_value = 0
+        resp = client.get(
+            "/api/v1/admin/production-sheets?limit=9999",
+            headers=auth_headers,
+        )
+        assert resp.json()["limit"] == 100
+        assert mock_list.call_args.kwargs["limit"] == 100
