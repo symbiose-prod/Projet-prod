@@ -402,6 +402,92 @@ def count_sheets(
     return int(rows[0]["n"]) if rows else 0
 
 
+# ─── Finalisation (Sprint 4) ────────────────────────────────────────────────
+
+def finalize_sheet(
+    tenant_id: str,
+    sheet_id: str,
+    *,
+    user_email: str = "",
+) -> tuple[ProductionSheetDetail, bytes]:
+    """Finalise une fiche en status ``'draft'`` → ``'completed'``.
+
+    1. Charge la fiche complète.
+    2. Vérifie qu'elle est en ``'draft'`` (sinon ValueError).
+    3. Génère le PDF via ``common.production_sheet_pdf.build_production_sheet_pdf``.
+    4. UPDATE atomique : status='completed' + finalized_at=now() + pdf_bytes.
+    5. Retourne la fiche post-update + les bytes du PDF (pour download immédiat).
+
+    La fiche reste accessible en lecture après finalisation mais ne peut plus
+    être éditée (le PATCH refuse si status != 'draft').
+
+    Raises:
+        ValueError: fiche introuvable / hors tenant / déjà finalisée.
+    """
+    from common.production_sheet_pdf import build_production_sheet_pdf
+
+    current = get_sheet(tenant_id, sheet_id)
+    if current is None:
+        raise ValueError("Sheet not found")
+    if current.status != "draft":
+        raise ValueError(
+            f"Sheet already finalized (status='{current.status}')",
+        )
+
+    pdf_bytes = build_production_sheet_pdf(current)
+
+    rows = run_sql(
+        """
+        UPDATE production_sheets
+           SET status       = 'completed',
+               finalized_at = now(),
+               pdf_bytes    = :pdf
+         WHERE id        = :sid
+           AND tenant_id = :tid
+           AND status    = 'draft'
+        RETURNING id
+        """,
+        {"sid": sheet_id, "tid": tenant_id, "pdf": pdf_bytes},
+    )
+    if not rows:
+        # Race condition : un autre process a finalisé entre temps
+        raise ValueError("Sheet not found or not in draft status")
+
+    _log.info(
+        "Fiche production finalisée : id=%s tenant=%s user=%s pdf_size=%d",
+        sheet_id, tenant_id, user_email, len(pdf_bytes),
+    )
+
+    # Recharge pour avoir les timestamps mis à jour
+    updated = get_sheet(tenant_id, sheet_id)
+    if updated is None:
+        # Très improbable (on vient d'UPDATE qui a retourné une ligne)
+        raise ValueError("Sheet disappeared after finalize")
+    return (updated, pdf_bytes)
+
+
+def get_sheet_pdf(
+    tenant_id: str,
+    sheet_id: str,
+) -> bytes | None:
+    """Retourne le PDF stocké d'une fiche finalisée. ``None`` si pas de PDF.
+
+    Utilisé pour re-télécharger une fiche déjà finalisée (sans la re-générer).
+    """
+    rows = run_sql(
+        """
+        SELECT pdf_bytes
+          FROM production_sheets
+         WHERE id = :sid AND tenant_id = :tid
+        """,
+        {"sid": sheet_id, "tid": tenant_id},
+    )
+    if not rows:
+        return None
+    pdf = rows[0].get("pdf_bytes")
+    return bytes(pdf) if pdf else None
+
+
 # ─── Conditionnement réel : agrégation depuis SSCC (Sprint 2 pre-fill) ─────
 
 @dataclass(frozen=True)

@@ -35,6 +35,8 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | PATCH   | ``/api/v1/admin/production-sheets/{id}`` | Tk* | mise à jour partielle (auto-save iOS) |
 | GET     | ``/api/v1/admin/production-overview`` | Tk* | brassins EB en cours + fiches draft associées (1 appel) |
 | GET     | ``/api/v1/admin/easybeer/brassin/{id}`` | Tk* | détail brassin EB (cache 3 niveaux) |
+| POST    | ``/api/v1/admin/production-sheets/{id}/finalize`` | Tk* | finalise (génère PDF + status completed) |
+| GET     | ``/api/v1/admin/production-sheets/{id}/pdf`` | Tk* | re-télécharge le PDF stocké |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -1679,6 +1681,111 @@ async def _v1_production_overview(request: Request):
     })
 
 
+async def _v1_finalize_production_sheet(sheet_id: str, request: Request):
+    """Finalise une fiche : génère PDF + status 'completed'. ADMIN only.
+
+    Retour 200 : PDF binaire (Content-Type: application/pdf). Headers meta :
+      - ``X-Sheet-Id``: UUID de la fiche
+      - ``X-Sheet-Finalized-At``: ISO 8601 timestamp finalisation
+      - ``Content-Disposition``: attachment avec filename construit depuis
+        produit + lot pour reconnaissance facile dans le téléchargement.
+
+    Retour 404 : fiche introuvable, hors tenant, ou déjà finalisée.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    from common.services.production_sheet_service import finalize_sheet
+
+    try:
+        detail, pdf_bytes = await asyncio.to_thread(
+            finalize_sheet,
+            user["tenant_id"], sheet_id,
+            user_email=user.get("email") or "",
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        status = 409 if "already" in msg.lower() else 404
+        return JSONResponse({"error": msg}, status_code=status)
+    except Exception:
+        _log.exception("Échec finalize production sheet id=%s", sheet_id)
+        return JSONResponse(
+            {"error": "Failed to finalize sheet"}, status_code=500,
+        )
+
+    # Filename : Production_{produit slug}_{lot}.pdf
+    produit_slug = (
+        detail.produit.replace(" ", "_").replace("/", "-")
+        if detail.produit else "sheet"
+    )[:40]
+    lot_part = f"_{detail.lot}" if detail.lot else ""
+    fname = f"Production_{produit_slug}{lot_part}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "X-Sheet-Id": detail.id,
+            "X-Sheet-Finalized-At": (
+                detail.finalized_at.isoformat()
+                if detail.finalized_at else ""
+            ),
+        },
+    )
+
+
+async def _v1_get_production_sheet_pdf(sheet_id: str, request: Request):
+    """Re-télécharge le PDF d'une fiche déjà finalisée. ADMIN only.
+
+    Sert pour : ré-imprimer, re-partager, archivage. Le PDF est servi tel
+    quel depuis ``pdf_bytes`` (pas de régénération — c'est l'archive de
+    référence figée au moment de la finalisation).
+
+    Retour 200 : PDF binaire.
+    Retour 404 : fiche introuvable, hors tenant, ou pas de PDF (jamais
+    finalisée).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    from common.services.production_sheet_service import (
+        get_sheet,
+        get_sheet_pdf,
+    )
+
+    pdf_bytes = await asyncio.to_thread(
+        get_sheet_pdf, user["tenant_id"], sheet_id,
+    )
+    if not pdf_bytes:
+        return JSONResponse(
+            {"error": "PDF not found (sheet not finalized?)"}, status_code=404,
+        )
+    # Headers meta : on relit la fiche pour le filename. Léger surcoût mais
+    # le PDF est déjà en RAM, la requête est rare (download manuel).
+    detail = await asyncio.to_thread(get_sheet, user["tenant_id"], sheet_id)
+    produit_slug = (
+        (detail.produit if detail else "").replace(" ", "_").replace("/", "-")
+    )[:40] or "sheet"
+    lot_part = f"_{detail.lot}" if detail and detail.lot else ""
+    fname = f"Production_{produit_slug}{lot_part}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{fname}"',
+            "X-Sheet-Id": sheet_id,
+        },
+    )
+
+
 async def _v1_easybeer_brassin_detail(id_brassin: int, request: Request):
     """Détail complet d'un brassin EasyBeer (cache transparent). ADMIN only.
 
@@ -1756,3 +1863,6 @@ def register_routes(app) -> None:
     # Sprint 3b1 : liste = brassins EB en cours + détail brassin proxy
     app.get("/api/v1/admin/production-overview")(_v1_production_overview)
     app.get("/api/v1/admin/easybeer/brassin/{id_brassin:int}")(_v1_easybeer_brassin_detail)
+    # Sprint 4 : finalisation + téléchargement PDF stocké
+    app.post("/api/v1/admin/production-sheets/{sheet_id}/finalize")(_v1_finalize_production_sheet)
+    app.get("/api/v1/admin/production-sheets/{sheet_id}/pdf")(_v1_get_production_sheet_pdf)

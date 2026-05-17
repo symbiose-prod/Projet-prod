@@ -89,6 +89,8 @@ class TestUnauthorized:
         ("patch", "/api/v1/admin/production-sheets/abc-123"),
         ("get", "/api/v1/admin/production-overview"),
         ("get", "/api/v1/admin/easybeer/brassin/42"),
+        ("post", "/api/v1/admin/production-sheets/abc-123/finalize"),
+        ("get", "/api/v1/admin/production-sheets/abc-123/pdf"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -1848,3 +1850,114 @@ class TestEasybeerBrassinDetail:
             "/api/v1/admin/easybeer/brassin/9999", headers=auth_headers,
         )
         assert resp.status_code == 404
+
+
+class TestFinalizeProductionSheet:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.post(
+            "/api/v1/admin/production-sheets/sheet-1/finalize",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.services.production_sheet_service.finalize_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_finalize, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_finalize.side_effect = ValueError("Sheet not found")
+        resp = client.post(
+            "/api/v1/admin/production-sheets/missing/finalize",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @patch("common.services.production_sheet_service.finalize_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_already_finalized_returns_409(
+        self, mock_verify, mock_finalize, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_finalize.side_effect = ValueError(
+            "Sheet already finalized (status='completed')",
+        )
+        resp = client.post(
+            "/api/v1/admin/production-sheets/sheet-1/finalize",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 409
+
+    @patch("common.services.production_sheet_service.finalize_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_pdf_with_headers(
+        self, mock_verify, mock_finalize, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin", tenant="tenant-A")
+        mock_finalize.return_value = (
+            _fake_sheet_detail(
+                produit="K. Mangue - Passion",
+                lot="15052027",
+                finalized_at=_dt.datetime(2026, 5, 17, 18, 0, tzinfo=_dt.UTC),
+            ),
+            b"%PDF-fake-production",
+        )
+        resp = client.post(
+            "/api/v1/admin/production-sheets/sheet-1/finalize",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content == b"%PDF-fake-production"
+        # Filename basé sur produit + lot
+        assert "Production_K" in resp.headers["content-disposition"]
+        assert "15052027" in resp.headers["content-disposition"]
+        # X-Sheet-* headers présents
+        assert resp.headers["x-sheet-id"] == "sheet-1"
+        assert "2026-05-17" in resp.headers["x-sheet-finalized-at"]
+
+
+class TestGetProductionSheetPdf:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get(
+            "/api/v1/admin/production-sheets/sheet-1/pdf",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.services.production_sheet_service.get_sheet_pdf")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_no_pdf_returns_404(
+        self, mock_verify, mock_pdf, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_pdf.return_value = None
+        resp = client.get(
+            "/api/v1/admin/production-sheets/sheet-1/pdf",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.services.production_sheet_service.get_sheet_pdf")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_pdf_bytes(
+        self, mock_verify, mock_pdf, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_pdf.return_value = b"%PDF-stored"
+        mock_get.return_value = _fake_sheet_detail(
+            produit="K. Mangue", lot="15052027", status="completed",
+        )
+        resp = client.get(
+            "/api/v1/admin/production-sheets/sheet-1/pdf",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content == b"%PDF-stored"
+        assert "Production_K" in resp.headers["content-disposition"]
