@@ -185,3 +185,90 @@ def count_sheets(
         params,
     )
     return int(rows[0]["n"]) if rows else 0
+
+
+# ─── Conditionnement réel : agrégation depuis SSCC (Sprint 2 pre-fill) ─────
+
+@dataclass(frozen=True)
+class ConditionnementLine:
+    """Une ligne agrégée du conditionnement réel — par (format, marque)."""
+    fmt: str                       # ex: "12x33", "6x75"
+    marque: str                    # ex: "SYMBIOSE", "NIKO"
+    designation: str               # libellé produit (premier rencontré)
+    cartons: int                   # SUM(sscc_log.case_count)
+    palettes: int                  # COUNT(*) palettes distinctes
+
+
+@dataclass(frozen=True)
+class ConditionnementByLot:
+    """Conteneur d'agrégation conditionnement réel pour un lot donné."""
+    lot: str
+    items: list[ConditionnementLine]
+    total_cartons: int
+    total_palettes: int
+
+
+def compute_real_conditionnement_by_lot(
+    tenant_id: str,
+    lot: str,
+) -> ConditionnementByLot:
+    """Agrège les palettes étiquetées pour un lot donné en lignes (fmt, marque).
+
+    Source de vérité : ``sscc_log`` (palettes générées) JOIN
+    ``etiquette_palette_history`` (infos produit) — filtre par tenant + lot
+    + ``voided_at IS NULL`` (palettes annulées exclues).
+
+    Pré-remplit la section "Conditionnement réel" de la fiche papier :
+    cartons + palettes par (format × marque) calculés à partir des scans SSCC
+    déjà réalisés. Idempotent et toujours à jour : on peut appeler à tout
+    moment pendant le conditionnement pour rafraîchir.
+
+    Si ``lot`` est vide, retourne un résultat vide (jamais d'agrégation
+    par tenant sans lot — protection accidentelle).
+
+    Args:
+        tenant_id: scope multi-tenant.
+        lot: ex "15052027" (format DDMMYYYY) ou tout autre format de lot.
+
+    Returns:
+        ``ConditionnementByLot`` avec ``items`` triés par (fmt, marque) et
+        ``total_cartons`` / ``total_palettes`` agrégés sur tout le lot.
+    """
+    if not lot or not lot.strip():
+        return ConditionnementByLot(lot="", items=[], total_cartons=0, total_palettes=0)
+
+    rows = run_sql(
+        """
+        SELECT eph.fmt, eph.marque, eph.designation,
+               COALESCE(SUM(sl.case_count), 0) AS total_cartons,
+               COUNT(*) AS total_palettes
+          FROM sscc_log sl
+          JOIN etiquette_palette_history eph
+                ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
+         WHERE sl.tenant_id = :tid
+           AND sl.lot = :lot
+           AND sl.voided_at IS NULL
+         GROUP BY eph.fmt, eph.marque, eph.designation
+         ORDER BY eph.fmt, eph.marque
+        """,
+        {"tid": tenant_id, "lot": lot.strip()},
+    ) or []
+
+    items = [
+        ConditionnementLine(
+            fmt=str(r.get("fmt") or ""),
+            marque=str(r.get("marque") or ""),
+            designation=str(r.get("designation") or ""),
+            cartons=int(r.get("total_cartons") or 0),
+            palettes=int(r.get("total_palettes") or 0),
+        )
+        for r in rows
+    ]
+    total_c = sum(i.cartons for i in items)
+    total_p = sum(i.palettes for i in items)
+    return ConditionnementByLot(
+        lot=lot.strip(),
+        items=items,
+        total_cartons=total_c,
+        total_palettes=total_p,
+    )

@@ -83,6 +83,8 @@ class TestUnauthorized:
         ("post", "/api/v1/ramasses/abc-123/mark-driver-passed"),
         ("post", "/api/v1/admin/production-sheets"),
         ("get", "/api/v1/admin/production-sheets"),
+        ("get", "/api/v1/admin/brassins-en-cours"),
+        ("get", "/api/v1/admin/conditionnement-by-lot"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -1417,3 +1419,115 @@ class TestListProductionSheets:
         )
         assert resp.json()["limit"] == 100
         assert mock_list.call_args.kwargs["limit"] == 100
+
+
+class TestAdminBrassinsEnCours:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get(
+            "/api/v1/admin/brassins-en-cours", headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.services.ramasse_service.load_active_brassins")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_brassins_and_errors(
+        self, mock_verify, mock_load, client, auth_headers
+    ):
+        from common.easybeer.models import BrassinLight
+
+        mock_verify.return_value = _user(role="admin")
+        mock_load.return_value = (
+            [
+                BrassinLight(
+                    id_brassin=42, nom="B042", volume=7200.0, annule=False,
+                    produit_libelle="Kéfir Mangue Passion", id_produit=12,
+                    is_archive=False, raw={},
+                ),
+                BrassinLight(
+                    id_brassin=41, nom="B041", volume=3600.0, annule=False,
+                    produit_libelle="Kombucha Gingembre", id_produit=20,
+                    is_archive=True, raw={},
+                ),
+            ],
+            ["Brassins archivés : timeout"],
+        )
+        resp = client.get(
+            "/api/v1/admin/brassins-en-cours", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["brassins"]) == 2
+        assert body["brassins"][0]["id_brassin"] == 42
+        assert body["brassins"][0]["produit_libelle"] == "Kéfir Mangue Passion"
+        assert body["brassins"][1]["is_archive"] is True
+        assert "timeout" in body["errors"][0]
+
+
+class TestAdminConditionnementByLot:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get(
+            "/api/v1/admin/conditionnement-by-lot?lot=15052027",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_missing_lot_returns_400(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="admin")
+        resp = client.get(
+            "/api/v1/admin/conditionnement-by-lot", headers=auth_headers,
+        )
+        assert resp.status_code == 400
+
+    @patch(
+        "common.services.production_sheet_service.compute_real_conditionnement_by_lot",
+    )
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_aggregated_items_with_tenant_propagated(
+        self, mock_verify, mock_compute, client, auth_headers
+    ):
+        from common.services.production_sheet_service import (
+            ConditionnementByLot,
+            ConditionnementLine,
+        )
+
+        mock_verify.return_value = _user(role="admin", tenant="tenant-A")
+        mock_compute.return_value = ConditionnementByLot(
+            lot="15052027",
+            items=[
+                ConditionnementLine(
+                    fmt="12x33", marque="SYMBIOSE",
+                    designation="K. Mangue - Passion",
+                    cartons=843, palettes=12,
+                ),
+                ConditionnementLine(
+                    fmt="6x75", marque="SYMBIOSE",
+                    designation="K. Mangue - Passion",
+                    cartons=347, palettes=4,
+                ),
+            ],
+            total_cartons=1190,
+            total_palettes=16,
+        )
+        resp = client.get(
+            "/api/v1/admin/conditionnement-by-lot?lot=15052027",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["lot"] == "15052027"
+        assert body["total_cartons"] == 1190
+        assert body["total_palettes"] == 16
+        assert len(body["items"]) == 2
+        item = body["items"][0]
+        assert item["fmt"] == "12x33"
+        assert item["marque"] == "SYMBIOSE"
+        assert item["cartons"] == 843
+        assert item["palettes"] == 12
+        # tenant_id du token propagé au service
+        assert mock_compute.call_args[0][0] == "tenant-A"
+        assert mock_compute.call_args[0][1] == "15052027"

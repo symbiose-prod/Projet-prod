@@ -29,6 +29,8 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | POST    | ``/api/v1/ramasses/{id}/mark-driver-passed`` | Tk | marque "chauffeur passé" → verrouille l'édition |
 | POST    | ``/api/v1/admin/production-sheets`` | Tk* | crée une fiche de production (status draft) |
 | GET     | ``/api/v1/admin/production-sheets`` | Tk* | liste paginée des fiches du tenant |
+| GET     | ``/api/v1/admin/brassins-en-cours`` | Tk* | brassins actifs EasyBeer (pour pré-remplir une fiche) |
+| GET     | ``/api/v1/admin/conditionnement-by-lot?lot=...`` | Tk* | agrégation SSCC par (format, marque) pour un lot |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -1383,6 +1385,94 @@ async def _v1_list_production_sheets(request: Request):
     })
 
 
+async def _v1_admin_brassins_en_cours(request: Request):
+    """Liste les brassins EasyBeer en cours (+ archives récentes). ADMIN only.
+
+    Réutilise ``ramasse_service.load_active_brassins()`` qui gère le fallback
+    EasyBeer down (renvoie ``(brassins, errors)`` au lieu de raise).
+
+    Retour 200 :
+      ``{"brassins": [{id_brassin, nom, produit_libelle, id_produit, volume,
+                       is_archive}, ...],
+         "errors": ["..."]}``
+
+    ``errors`` est la liste des messages user-friendly à afficher si l'app
+    veut prévenir d'un fetch partiel (ex: EasyBeer rate-limited).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    from common.services.ramasse_service import load_active_brassins
+
+    brassins, errors = await asyncio.to_thread(load_active_brassins, 3)
+    payload = [
+        {
+            "id_brassin": b.id_brassin,
+            "nom": b.nom,
+            "produit_libelle": b.produit_libelle,
+            "id_produit": b.id_produit,
+            "volume": b.volume,
+            "is_archive": b.is_archive,
+        }
+        for b in brassins
+    ]
+    return JSONResponse({"brassins": payload, "errors": errors})
+
+
+async def _v1_admin_conditionnement_by_lot(request: Request):
+    """Agrège les palettes étiquetées pour un lot en lignes (fmt, marque). ADMIN.
+
+    Query : ``?lot=15052027`` (obligatoire).
+
+    Sert au pré-remplissage de la section "Conditionnement réel" d'une fiche
+    de production : on n'a pas à ressaisir manuellement les cartons/palettes
+    déjà étiquetés et scannés, on les agrège depuis ``sscc_log`` (source
+    de vérité).
+
+    Retour 200 :
+      ``{"lot": "...",
+         "items": [{fmt, marque, designation, cartons, palettes}, ...],
+         "total_cartons": N, "total_palettes": M}``
+
+    Retour 400 : lot absent ou vide.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    lot = (request.query_params.get("lot") or "").strip()
+    if not lot:
+        return JSONResponse({"error": "Missing 'lot' query param"}, status_code=400)
+
+    from common.services.production_sheet_service import (
+        compute_real_conditionnement_by_lot,
+    )
+
+    result = await asyncio.to_thread(
+        compute_real_conditionnement_by_lot, user["tenant_id"], lot,
+    )
+    return JSONResponse({
+        "lot": result.lot,
+        "items": [
+            {
+                "fmt": i.fmt,
+                "marque": i.marque,
+                "designation": i.designation,
+                "cartons": i.cartons,
+                "palettes": i.palettes,
+            }
+            for i in result.items
+        ],
+        "total_cartons": result.total_cartons,
+        "total_palettes": result.total_palettes,
+    })
+
+
 # ─── Enregistrement des routes (appelé depuis app_nicegui.py) ──────────────
 
 def register_routes(app) -> None:
@@ -1417,3 +1507,6 @@ def register_routes(app) -> None:
     # Fiches de production (admin only, beta — Sprint 1 : create + list)
     app.post("/api/v1/admin/production-sheets")(_v1_create_production_sheet)
     app.get("/api/v1/admin/production-sheets")(_v1_list_production_sheets)
+    # Pre-fill via SSCC (Sprint 2 : sélection brassin + agrégation conditionnement)
+    app.get("/api/v1/admin/brassins-en-cours")(_v1_admin_brassins_en_cours)
+    app.get("/api/v1/admin/conditionnement-by-lot")(_v1_admin_conditionnement_by_lot)
