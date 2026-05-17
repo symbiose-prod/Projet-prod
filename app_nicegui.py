@@ -29,6 +29,12 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Re
 _env_file = Path(__file__).resolve().parent / ".env"
 load_dotenv(_env_file, override=False)
 
+# ─── Sentry : init dès que .env est chargé, avant les autres imports lourds,
+# pour catcher aussi les éventuelles erreurs au boot (DB connection, EB sync...).
+from common.sentry_setup import init_sentry  # noqa: E402
+
+init_sentry()
+
 
 # ─── Logging structuré ──────────────────────────────────────────────────────
 
