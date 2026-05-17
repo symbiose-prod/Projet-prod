@@ -33,6 +33,8 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/admin/conditionnement-by-lot?lot=...`` | Tk* | agrégation SSCC par (format, marque) pour un lot |
 | GET     | ``/api/v1/admin/production-sheets/{id}`` | Tk* | détail complet d'une fiche (avec data JSONB) |
 | PATCH   | ``/api/v1/admin/production-sheets/{id}`` | Tk* | mise à jour partielle (auto-save iOS) |
+| GET     | ``/api/v1/admin/production-overview`` | Tk* | brassins EB en cours + fiches draft associées (1 appel) |
+| GET     | ``/api/v1/admin/easybeer/brassin/{id}`` | Tk* | détail brassin EB (cache 3 niveaux) |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -1600,6 +1602,117 @@ async def _v1_patch_production_sheet(sheet_id: str, request: Request):
     })
 
 
+async def _v1_production_overview(request: Request):
+    """Liste des brassins EB actifs + fiches draft associées. ADMIN only.
+
+    Vue principale du tab Production iOS : pour chaque brassin EasyBeer en
+    cours, on indique s'il a déjà une fiche démarrée (status draft) ou non.
+
+    Retour 200 :
+      ``{"brassins": [{brassin: {id_brassin, nom, produit_libelle, ...},
+                       sheet: {id, status, updated_at, ...} | null}, ...],
+         "easybeer_errors": ["..."]}``
+
+    L'app iOS affiche cette liste comme la "liste des productions en cours" :
+    chaque brassin EB est une ligne. Tap sur un brassin : si ``sheet=null``,
+    POST create + nav ; si sheet existe, nav direct vers son détail.
+
+    Le destinataire du cache : ``eb_cache.brassins_en_cours`` (TTL 5 min
+    via ``load_active_brassins``). Refresh automatique.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    from common.services.production_sheet_service import (
+        find_sheets_by_brassin_ids,
+    )
+    from common.services.ramasse_service import load_active_brassins
+
+    brassins, eb_errors = await asyncio.to_thread(load_active_brassins, 0)
+    # 0 archives — on veut juste les brassins en cours (l'archive vient des
+    # fiches `completed` côté DB, pas des brassins archivés EB).
+
+    brassin_ids = [str(b.id_brassin) for b in brassins if b.id_brassin]
+    sheets_by_bid = await asyncio.to_thread(
+        find_sheets_by_brassin_ids, user["tenant_id"], brassin_ids,
+    )
+
+    items: list[dict] = []
+    for b in brassins:
+        bid = str(b.id_brassin) if b.id_brassin else ""
+        sheet_summary = sheets_by_bid.get(bid)
+        sheet_payload: dict | None = None
+        if sheet_summary is not None:
+            sheet_payload = {
+                "id": sheet_summary.id,
+                "status": sheet_summary.status,
+                "produit": sheet_summary.produit,
+                "cuve": sheet_summary.cuve,
+                "ddm": sheet_summary.ddm.isoformat() if sheet_summary.ddm else None,
+                "lot": sheet_summary.lot,
+                "created_at": (
+                    sheet_summary.created_at.isoformat()
+                    if sheet_summary.created_at else None
+                ),
+                "updated_at": (
+                    sheet_summary.updated_at.isoformat()
+                    if sheet_summary.updated_at else None
+                ),
+            }
+        items.append({
+            "brassin": {
+                "id_brassin": b.id_brassin,
+                "nom": b.nom,
+                "produit_libelle": b.produit_libelle,
+                "id_produit": b.id_produit,
+                "volume": b.volume,
+                "is_archive": b.is_archive,
+            },
+            "sheet": sheet_payload,
+        })
+    return JSONResponse({
+        "brassins": items,
+        "easybeer_errors": eb_errors,
+    })
+
+
+async def _v1_easybeer_brassin_detail(id_brassin: int, request: Request):
+    """Détail complet d'un brassin EasyBeer (cache transparent). ADMIN only.
+
+    Proxy vers ``common.easybeer.get_brassin_detail(id)`` qui gère 3 niveaux
+    de cache (L1 in-memory 10 min + L2 DB ``eb_cache`` + L3 API EasyBeer).
+    L'app iOS appelle cet endpoint pour pré-remplir la recette + étapes +
+    planification conditionnement à la création / consultation d'une fiche.
+
+    Retour 200 : payload EasyBeer brut (forme variable selon EB). Les clés
+    typiquement attendues : ``recette`` (ingrédients), ``etapes``,
+    ``planificationConditionnement``, ``dateDebut``, ``dateConditionnementPrevue``...
+
+    Retour 502 : EasyBeer down ET pas de cache disponible.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    from common.easybeer import get_brassin_detail
+
+    try:
+        detail = await asyncio.to_thread(get_brassin_detail, id_brassin)
+    except Exception as exc:
+        _log.exception("Échec récupération brassin EB id=%s", id_brassin)
+        return JSONResponse(
+            {"error": f"EasyBeer unavailable: {exc}"}, status_code=502,
+        )
+    if not detail:
+        return JSONResponse({"error": "Brassin not found"}, status_code=404)
+    return JSONResponse(detail)
+
+
 # ─── Enregistrement des routes (appelé depuis app_nicegui.py) ──────────────
 
 def register_routes(app) -> None:
@@ -1640,3 +1753,6 @@ def register_routes(app) -> None:
     # Détail + PATCH partiel (Sprint 3a : auto-save iOS)
     app.get("/api/v1/admin/production-sheets/{sheet_id}")(_v1_get_production_sheet)
     app.patch("/api/v1/admin/production-sheets/{sheet_id}")(_v1_patch_production_sheet)
+    # Sprint 3b1 : liste = brassins EB en cours + détail brassin proxy
+    app.get("/api/v1/admin/production-overview")(_v1_production_overview)
+    app.get("/api/v1/admin/easybeer/brassin/{id_brassin:int}")(_v1_easybeer_brassin_detail)

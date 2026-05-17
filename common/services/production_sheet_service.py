@@ -319,6 +319,70 @@ def list_sheets(
     return out
 
 
+def find_sheets_by_brassin_ids(
+    tenant_id: str,
+    brassin_ids: list[str],
+) -> dict[str, ProductionSheetSummary]:
+    """Pour chaque brassin_id fourni, retourne la fiche ``draft`` la plus
+    récente associée (s'il en existe une). Format : ``{brassin_id: Summary}``.
+
+    Sert à enrichir la liste des brassins EB côté mobile : chaque brassin
+    sait s'il a déjà une fiche démarrée ou non. Les brassins sans fiche
+    ne sont pas inclus dans le dict (le caller fait ``dict.get(bid)``).
+
+    Une seule requête SQL avec ``DISTINCT ON (brassin_id)`` + tri par
+    ``created_at DESC`` → on récupère la fiche la plus récente par brassin.
+
+    Note implémentation : on ne filtre pas par `brassin_id IN (...)` dans
+    le SQL (psycopg/SQLAlchemy params nommés rendent les IN complexes).
+    À la place on charge tous les drafts du tenant et on filtre côté Python
+    avec un set. Pour < 100 drafts simultanés c'est négligeable, et le
+    nombre de drafts actifs est en pratique très limité (1-5).
+    """
+    if not brassin_ids:
+        return {}
+    requested = set(brassin_ids)
+    rows = run_sql(
+        """
+        SELECT DISTINCT ON (ps.brassin_id)
+               ps.id, ps.brassin_id, ps.produit, ps.cuve, ps.ddm, ps.lot,
+               ps.status, ps.created_at, ps.updated_at, ps.finalized_at,
+               u.email AS created_by_email
+          FROM production_sheets ps
+          LEFT JOIN users u ON u.id = ps.created_by
+         WHERE ps.tenant_id = :tid
+           AND ps.brassin_id IS NOT NULL
+           AND ps.status = 'draft'
+         ORDER BY ps.brassin_id, ps.created_at DESC
+        """,
+        {"tid": tenant_id},
+    ) or []
+    out: dict[str, ProductionSheetSummary] = {}
+    for r in rows:
+        bid = r.get("brassin_id")
+        if not bid or bid not in requested:
+            continue
+        ddm = r.get("ddm")
+        ddm_date = (
+            ddm if isinstance(ddm, _dt.date) or ddm is None
+            else _dt.date.fromisoformat(str(ddm)[:10])
+        )
+        out[str(bid)] = ProductionSheetSummary(
+            id=str(r["id"]),
+            brassin_id=str(bid),
+            produit=str(r.get("produit") or ""),
+            cuve=str(r.get("cuve") or ""),
+            ddm=ddm_date,
+            lot=str(r.get("lot") or ""),
+            status=str(r.get("status") or "draft"),
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+            finalized_at=r.get("finalized_at"),
+            created_by_email=r.get("created_by_email"),
+        )
+    return out
+
+
 def count_sheets(
     tenant_id: str,
     *,

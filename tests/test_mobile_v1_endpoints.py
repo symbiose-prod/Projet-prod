@@ -87,6 +87,8 @@ class TestUnauthorized:
         ("get", "/api/v1/admin/conditionnement-by-lot"),
         ("get", "/api/v1/admin/production-sheets/abc-123"),
         ("patch", "/api/v1/admin/production-sheets/abc-123"),
+        ("get", "/api/v1/admin/production-overview"),
+        ("get", "/api/v1/admin/easybeer/brassin/42"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -1720,3 +1722,129 @@ class TestPatchProductionSheet:
         body = resp.json()
         assert body["ok"] is True
         assert body["sheet"]["id"] == "sheet-1"
+
+
+class TestProductionOverview:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get(
+            "/api/v1/admin/production-overview", headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.services.production_sheet_service.find_sheets_by_brassin_ids")
+    @patch("common.services.ramasse_service.load_active_brassins")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_combines_brassins_with_sheets(
+        self, mock_verify, mock_load, mock_find, client, auth_headers
+    ):
+        from common.easybeer.models import BrassinLight
+        from common.services.production_sheet_service import (
+            ProductionSheetSummary,
+        )
+
+        mock_verify.return_value = _user(role="admin", tenant="tenant-A")
+        mock_load.return_value = (
+            [
+                BrassinLight(
+                    id_brassin=42, nom="KPA11052026", volume=4976.0,
+                    annule=False, produit_libelle="Kéfir Pamplemousse",
+                    id_produit=12, is_archive=False, raw={},
+                ),
+                BrassinLight(
+                    id_brassin=43, nom="KMA11052026", volume=3600.0,
+                    annule=False, produit_libelle="Kéfir Mangue",
+                    id_produit=13, is_archive=False, raw={},
+                ),
+            ],
+            [],
+        )
+        # Brassin 42 a déjà une fiche draft, brassin 43 n'en a pas
+        mock_find.return_value = {
+            "42": ProductionSheetSummary(
+                id="sheet-42", brassin_id="42",
+                produit="Kéfir Pamplemousse", cuve="Cuve de 4976L",
+                ddm=_dt.date(2027, 5, 11), lot="11052027",
+                status="draft",
+                created_at=_dt.datetime(2026, 5, 11, 9, 0, tzinfo=_dt.UTC),
+                updated_at=_dt.datetime(2026, 5, 17, 14, 0, tzinfo=_dt.UTC),
+                finalized_at=None,
+                created_by_email="nicolas@symbiose-kefir.fr",
+            ),
+        }
+        resp = client.get(
+            "/api/v1/admin/production-overview", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["brassins"]) == 2
+        # brassin 42 a sa fiche
+        assert body["brassins"][0]["brassin"]["id_brassin"] == 42
+        assert body["brassins"][0]["sheet"] is not None
+        assert body["brassins"][0]["sheet"]["id"] == "sheet-42"
+        assert body["brassins"][0]["sheet"]["status"] == "draft"
+        # brassin 43 sans fiche
+        assert body["brassins"][1]["brassin"]["id_brassin"] == 43
+        assert body["brassins"][1]["sheet"] is None
+        # tenant_id propagé à find_sheets
+        assert mock_find.call_args[0][0] == "tenant-A"
+        # find_sheets reçoit la liste des id en str
+        assert "42" in mock_find.call_args[0][1]
+        assert "43" in mock_find.call_args[0][1]
+
+
+class TestEasybeerBrassinDetail:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get(
+            "/api/v1/admin/easybeer/brassin/42", headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.easybeer.get_brassin_detail")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_proxies_eb_detail(
+        self, mock_verify, mock_detail, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_detail.return_value = {
+            "idBrassin": 42,
+            "nom": "KPA11052026",
+            "recette": {"ingredients": []},
+            "etapes": ["Préparation sirop", "Fermentation"],
+        }
+        resp = client.get(
+            "/api/v1/admin/easybeer/brassin/42", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["idBrassin"] == 42
+        assert "etapes" in body
+        # get_brassin_detail appelé avec l'int id
+        assert mock_detail.call_args[0][0] == 42
+
+    @patch("common.easybeer.get_brassin_detail")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_easybeer_down_returns_502(
+        self, mock_verify, mock_detail, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_detail.side_effect = RuntimeError("EB timeout")
+        resp = client.get(
+            "/api/v1/admin/easybeer/brassin/42", headers=auth_headers,
+        )
+        assert resp.status_code == 502
+
+    @patch("common.easybeer.get_brassin_detail")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_empty_detail_returns_404(
+        self, mock_verify, mock_detail, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_detail.return_value = {}
+        resp = client.get(
+            "/api/v1/admin/easybeer/brassin/9999", headers=auth_headers,
+        )
+        assert resp.status_code == 404
