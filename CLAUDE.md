@@ -346,6 +346,9 @@ APIClient.swift          ──HTTP──►  common/mobile_v1.py  (adapteur HTT
 | POST | `/api/v1/loadings/{id}/scan` | Bearer | **J2 chargement** : lookup SSCC + link en un appel. Renvoie `{status, palette, linked, already_in_this_loading}` |
 | POST | `/api/v1/loadings/{id}/finalize` | Bearer | **J2 validation** : transition `previsionnel`→`definitif` + PDF BL rectificatif + email. Retourne le PDF binaire pour download chauffeur (headers `X-Email-Sent`, `X-Total-Palettes`, etc.) |
 | DELETE | `/api/v1/loadings/{id}/palettes/{sscc}` | Bearer | délie une palette (soft, `unlinked_at`) — body `{"reason": "..."}` |
+| GET | `/api/v1/ramasses?limit=20&offset=0` | Bearer | historique paginé (toutes statuts, hors corbeille). `total` renvoyé pour pagination. |
+| GET | `/api/v1/ramasses/{id}/pdf` | Bearer | PDF BL stocké (`ramasse_history.pdf_bytes`). 404 si pas de PDF (legacy). Headers `X-Ramasse-Status` / `X-Ramasse-Version`. |
+| POST | `/api/v1/ramasses/{id}/mark-driver-passed` | Bearer | marque "chauffeur passé" → verrouille l'édition. Idempotent : renvoie `{ok, changed}` (changed=false si déjà marqué). |
 
 ### Workflow Ramasse mobile (J1 + J2)
 

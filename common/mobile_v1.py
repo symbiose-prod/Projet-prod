@@ -24,6 +24,9 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | POST    | ``/api/v1/loadings/{id}/scan``   | Tk   | scan SSCC + lien à la ramasse (chargement J2) |
 | POST    | ``/api/v1/loadings/{id}/finalize`` | Tk | finalise prévisionnel → définitif + PDF BL + email |
 | DELETE  | ``/api/v1/loadings/{id}/palettes/{sscc}`` | Tk | délie une palette d'une ramasse (soft) |
+| GET     | ``/api/v1/ramasses``             | Tk   | historique paginé des ramasses (toutes statuts, hors corbeille) |
+| GET     | ``/api/v1/ramasses/{id}/pdf``    | Tk   | PDF BL stocké (renvoie le ``pdf_bytes`` de la dernière version) |
+| POST    | ``/api/v1/ramasses/{id}/mark-driver-passed`` | Tk | marque "chauffeur passé" → verrouille l'édition |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -1042,6 +1045,167 @@ async def _v1_get_loading(ramasse_id: str, request: Request):
     })
 
 
+async def _v1_list_ramasses(request: Request):
+    """Historique paginé des ramasses (toutes statuts, hors corbeille).
+
+    Query : ``?limit=20&offset=0`` (par défaut 20 / 0). Maximum ``limit=100``.
+
+    Retour 200 :
+      ``{"ramasses": [{id, date_ramasse, destinataire, status,
+                       total_palettes, total_cartons, total_poids_kg,
+                       version, driver_passed, driver_passed_at,
+                       created_at, has_pdf}, ...],
+         "total": N, "limit": 20, "offset": 0}``
+
+    ``has_pdf`` indique si la ramasse a un BL stocké (téléchargeable via
+    ``/api/v1/ramasses/{id}/pdf``). Les ramasses récentes auront ``has_pdf=true``,
+    les très anciennes legacy peuvent ne pas en avoir.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    params = request.query_params
+    try:
+        limit = int(params.get("limit") or "20")
+    except ValueError:
+        limit = 20
+    limit = max(1, min(limit, 100))
+    try:
+        offset = int(params.get("offset") or "0")
+    except ValueError:
+        offset = 0
+    offset = max(0, offset)
+
+    from common.ramasse_history import count_ramasses, list_ramasses
+
+    rows, total = await asyncio.gather(
+        asyncio.to_thread(
+            list_ramasses, user["tenant_id"], limit=limit, offset=offset,
+        ),
+        asyncio.to_thread(count_ramasses, user["tenant_id"]),
+    )
+
+    payload = [
+        {
+            "id": str(r["id"]),
+            "date_ramasse": (
+                r["date_ramasse"].isoformat()
+                if r.get("date_ramasse") else None
+            ),
+            "destinataire": r.get("destinataire") or "",
+            "status": r.get("status") or "",
+            "total_palettes": int(r.get("total_palettes") or 0),
+            "total_cartons": int(r.get("total_cartons") or 0),
+            "total_poids_kg": int(r.get("total_poids_kg") or 0),
+            "version": int(r.get("version") or 1),
+            "driver_passed": bool(r.get("driver_passed")),
+            "driver_passed_at": (
+                r["driver_passed_at"].isoformat()
+                if r.get("driver_passed_at") else None
+            ),
+            "created_at": (
+                r["created_at"].isoformat()
+                if r.get("created_at") else None
+            ),
+            # list_ramasses omet volontairement pdf_bytes pour la perf,
+            # donc on ne peut pas dire ici si le PDF est dispo. On marque
+            # true par défaut — le client gère le 404 si pas dispo.
+            "has_pdf": True,
+        }
+        for r in rows
+    ]
+    return JSONResponse({
+        "ramasses": payload,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
+
+
+async def _v1_ramasse_pdf(ramasse_id: str, request: Request):
+    """Renvoie le PDF BL stocké d'une ramasse (dernière version envoyée).
+
+    Le PDF est stocké en colonne ``ramasse_history.pdf_bytes`` au moment de
+    la création (prévisionnel) ou de la finalisation (définitif). Pour les
+    ramasses qui ont eu une version définitive, c'est ce dernier qui est
+    retourné.
+
+    Retour 200 : binaire PDF (Content-Type: application/pdf).
+    Retour 404 : ramasse introuvable, hors tenant, ou aucun PDF stocké.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    from common.ramasse_history import get_ramasse
+
+    ramasse = await asyncio.to_thread(get_ramasse, ramasse_id, user["tenant_id"])
+    if ramasse is None:
+        return JSONResponse({"error": "Ramasse not found"}, status_code=404)
+    pdf_bytes = ramasse.get("pdf_bytes")
+    if not pdf_bytes:
+        return JSONResponse({"error": "No PDF stored for this ramasse"}, status_code=404)
+
+    # Suffixe filename selon statut pour éviter de mélanger les BL côté chauffeur
+    status = ramasse.get("status") or "ramasse"
+    suffix = "Definitif" if status == "definitif" else "Provisoire"
+    date_ramasse = ramasse.get("date_ramasse")
+    date_str = date_ramasse.strftime("%Y%m%d") if date_ramasse else ramasse_id[:8]
+    fname = f"BL_{suffix}_{date_str}.pdf"
+
+    _log.info(
+        "ramasse-pdf : id=%s status=%s tenant=%s user=%s",
+        ramasse_id, status, user["tenant_id"], user.get("email"),
+    )
+    return Response(
+        content=bytes(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{fname}"',
+            "X-Ramasse-Id": str(ramasse["id"]),
+            "X-Ramasse-Status": status,
+            "X-Ramasse-Version": str(int(ramasse.get("version") or 1)),
+        },
+    )
+
+
+async def _v1_mark_driver_passed(ramasse_id: str, request: Request):
+    """Marque une ramasse comme livrée (chauffeur passé) → verrouille l'édition.
+
+    Idempotent : si déjà marqué, retourne 200 ``{"ok": true, "changed": false}``.
+
+    Retour 200 : ``{"ok": true, "changed": bool}`` (changed=false si déjà livré).
+    Retour 404 : ramasse introuvable ou hors tenant.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    from common.ramasse_history import get_ramasse, mark_driver_passed
+
+    # On vérifie d'abord l'existence pour distinguer "404 not found"
+    # de "déjà marqué" (mark_driver_passed renvoie False dans les 2 cas).
+    ramasse = await asyncio.to_thread(get_ramasse, ramasse_id, user["tenant_id"])
+    if ramasse is None:
+        return JSONResponse({"error": "Ramasse not found"}, status_code=404)
+
+    if ramasse.get("driver_passed"):
+        return JSONResponse({"ok": True, "changed": False})
+
+    changed = await asyncio.to_thread(
+        mark_driver_passed,
+        ramasse_id,
+        tenant_id=user["tenant_id"],
+        user_id=user["id"],
+    )
+    _log.info(
+        "mark-driver-passed : id=%s changed=%s tenant=%s user=%s",
+        ramasse_id, changed, user["tenant_id"], user.get("email"),
+    )
+    return JSONResponse({"ok": True, "changed": changed})
+
+
 async def _v1_unlink_palette(ramasse_id: str, sscc: str, request: Request):
     """Délie une palette d'une ramasse (soft-unlink réversible).
 
@@ -1111,3 +1275,7 @@ def register_routes(app) -> None:
     app.post("/api/v1/loadings/{ramasse_id}/scan")(_v1_scan_palette_to_loading)
     app.post("/api/v1/loadings/{ramasse_id}/finalize")(_v1_finalize_loading)
     app.delete("/api/v1/loadings/{ramasse_id}/palettes/{sscc}")(_v1_unlink_palette)
+    # Historique ramasses (read-only) + actions courantes
+    app.get("/api/v1/ramasses")(_v1_list_ramasses)
+    app.get("/api/v1/ramasses/{ramasse_id}/pdf")(_v1_ramasse_pdf)
+    app.post("/api/v1/ramasses/{ramasse_id}/mark-driver-passed")(_v1_mark_driver_passed)

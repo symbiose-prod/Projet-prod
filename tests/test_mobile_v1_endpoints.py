@@ -78,6 +78,9 @@ class TestUnauthorized:
         ("post", "/api/v1/loadings/abc-123/scan"),
         ("post", "/api/v1/loadings/abc-123/finalize"),
         ("delete", "/api/v1/loadings/abc-123/palettes/123456789012345678"),
+        ("get", "/api/v1/ramasses"),
+        ("get", "/api/v1/ramasses/abc-123/pdf"),
+        ("post", "/api/v1/ramasses/abc-123/mark-driver-passed"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -1039,3 +1042,178 @@ class TestUnlinkPalette:
         assert call_kwargs["sscc"] == "123456789012345678"
         assert call_kwargs["ramasse_id"] == "ramasse-1"
         assert call_kwargs["reason"] == "palette cassée"
+
+
+# ─── Historique ramasses (liste + PDF + mark driver) ────────────────────────
+
+class TestListRamasses:
+    @patch("common.ramasse_history.count_ramasses")
+    @patch("common.ramasse_history.list_ramasses")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_empty_returns_empty_list_with_meta(
+        self, mock_verify, mock_list, mock_count, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_list.return_value = []
+        mock_count.return_value = 0
+        resp = client.get("/api/v1/ramasses", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body == {"ramasses": [], "total": 0, "limit": 20, "offset": 0}
+        # tenant scoping
+        assert mock_list.call_args[0][0] == "tenant-A"
+        assert mock_count.call_args[0][0] == "tenant-A"
+
+    @patch("common.ramasse_history.count_ramasses")
+    @patch("common.ramasse_history.list_ramasses")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_serialized_ramasses_with_pagination(
+        self, mock_verify, mock_list, mock_count, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_list.return_value = [
+            {
+                "id": "r1",
+                "date_ramasse": _dt.date(2026, 5, 16),
+                "destinataire": "SOFRIPA",
+                "status": "definitif",
+                "total_palettes": 5,
+                "total_cartons": 480,
+                "total_poids_kg": 4000,
+                "version": 2,
+                "driver_passed": True,
+                "driver_passed_at": _dt.datetime(2026, 5, 16, 14, 30, tzinfo=_dt.UTC),
+                "created_at": _dt.datetime(2026, 5, 15, 18, 0, tzinfo=_dt.UTC),
+            },
+        ]
+        mock_count.return_value = 42
+        resp = client.get(
+            "/api/v1/ramasses?limit=10&offset=20", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 42
+        assert body["limit"] == 10
+        assert body["offset"] == 20
+        assert len(body["ramasses"]) == 1
+        r = body["ramasses"][0]
+        assert r["id"] == "r1"
+        assert r["status"] == "definitif"
+        assert r["date_ramasse"] == "2026-05-16"
+        assert r["driver_passed"] is True
+        assert r["driver_passed_at"] == "2026-05-16T14:30:00+00:00"
+        assert r["has_pdf"] is True
+
+    @patch("common.ramasse_history.count_ramasses")
+    @patch("common.ramasse_history.list_ramasses")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_clamps_limit_to_max_100(
+        self, mock_verify, mock_list, mock_count, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_list.return_value = []
+        mock_count.return_value = 0
+        resp = client.get("/api/v1/ramasses?limit=999", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["limit"] == 100
+        # list_ramasses appelé avec limit clamped
+        assert mock_list.call_args.kwargs["limit"] == 100
+
+
+class TestRamassePdf:
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_get.return_value = None
+        resp = client.get("/api/v1/ramasses/missing/pdf", headers=auth_headers)
+        assert resp.status_code == 404
+        assert mock_get.call_args[0] == ("missing", "tenant-A")
+
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_no_pdf_stored_returns_404(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_get.return_value = {
+            "id": "r1", "status": "previsionnel",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "version": 1,
+            "pdf_bytes": None,  # PDF jamais généré (legacy ou erreur)
+        }
+        resp = client.get("/api/v1/ramasses/r1/pdf", headers=auth_headers)
+        assert resp.status_code == 404
+        assert "No PDF" in resp.json()["error"]
+
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_pdf_with_meta_headers(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_get.return_value = {
+            "id": "r1",
+            "status": "definitif",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "version": 3,
+            "pdf_bytes": b"%PDF-fake-stored",
+        }
+        resp = client.get("/api/v1/ramasses/r1/pdf", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/pdf"
+        assert resp.content == b"%PDF-fake-stored"
+        assert resp.headers["x-ramasse-id"] == "r1"
+        assert resp.headers["x-ramasse-status"] == "definitif"
+        assert resp.headers["x-ramasse-version"] == "3"
+        # Filename suffixe selon statut
+        assert "Definitif" in resp.headers["content-disposition"]
+        assert "20260520" in resp.headers["content-disposition"]
+
+
+class TestMarkDriverPassed:
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_get.return_value = None
+        resp = client.post(
+            "/api/v1/ramasses/missing/mark-driver-passed", headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_already_marked_returns_changed_false(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_get.return_value = {"id": "r1", "driver_passed": True}
+        resp = client.post(
+            "/api/v1/ramasses/r1/mark-driver-passed", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True, "changed": False}
+
+    @patch("common.ramasse_history.mark_driver_passed")
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_marks_and_returns_changed_true(
+        self, mock_verify, mock_get, mock_mark, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_get.return_value = {"id": "r1", "driver_passed": False}
+        mock_mark.return_value = True
+        resp = client.post(
+            "/api/v1/ramasses/r1/mark-driver-passed", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True, "changed": True}
+        # tenant + user propagés
+        assert mock_mark.call_args[0][0] == "r1"
+        assert mock_mark.call_args.kwargs["tenant_id"] == "tenant-A"
+        assert mock_mark.call_args.kwargs["user_id"] == "user-1"
