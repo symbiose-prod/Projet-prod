@@ -31,6 +31,8 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/admin/production-sheets`` | Tk* | liste paginée des fiches du tenant |
 | GET     | ``/api/v1/admin/brassins-en-cours`` | Tk* | brassins actifs EasyBeer (pour pré-remplir une fiche) |
 | GET     | ``/api/v1/admin/conditionnement-by-lot?lot=...`` | Tk* | agrégation SSCC par (format, marque) pour un lot |
+| GET     | ``/api/v1/admin/production-sheets/{id}`` | Tk* | détail complet d'une fiche (avec data JSONB) |
+| PATCH   | ``/api/v1/admin/production-sheets/{id}`` | Tk* | mise à jour partielle (auto-save iOS) |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -1473,6 +1475,131 @@ async def _v1_admin_conditionnement_by_lot(request: Request):
     })
 
 
+def _serialize_sheet_detail(s) -> dict:
+    """Sérialise ProductionSheetDetail en dict JSON pour le mobile."""
+    return {
+        "id": s.id,
+        "brassin_id": s.brassin_id,
+        "produit": s.produit,
+        "cuve": s.cuve,
+        "ddm": s.ddm.isoformat() if s.ddm else None,
+        "lot": s.lot,
+        "status": s.status,
+        "data": s.data,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        "finalized_at": (
+            s.finalized_at.isoformat() if s.finalized_at else None
+        ),
+        "created_by_email": s.created_by_email or "",
+    }
+
+
+async def _v1_get_production_sheet(sheet_id: str, request: Request):
+    """Détail complet d'une fiche (avec ``data`` JSONB). ADMIN only.
+
+    Retour 200 : voir ``_serialize_sheet_detail``.
+    Retour 404 : introuvable ou hors tenant.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    from common.services.production_sheet_service import get_sheet
+
+    detail = await asyncio.to_thread(get_sheet, user["tenant_id"], sheet_id)
+    if detail is None:
+        return JSONResponse({"error": "Sheet not found"}, status_code=404)
+    return JSONResponse(_serialize_sheet_detail(detail))
+
+
+async def _v1_patch_production_sheet(sheet_id: str, request: Request):
+    """Mise à jour partielle d'une fiche (auto-save iOS). ADMIN only.
+
+    Body JSON : tous champs optionnels. Seuls les champs fournis sont mis
+    à jour (sémantique PATCH).
+
+    Exemple : ``{"produit": "K. Mangue", "data": {"fermentation": {...}}}``.
+
+    La fiche doit être en status ``'draft'``. Pas de modif si déjà
+    ``'completed'`` → 404 (la fiche reste accessible en lecture mais
+    figée).
+
+    Retour 200 : ``{"ok": true}`` + fiche complète mise à jour (mêmes
+    champs que GET) pour permettre au client de re-synchroniser sans
+    requête supplémentaire.
+    Retour 400 : body invalide (ex: ddm mal formée).
+    Retour 404 : fiche introuvable, hors tenant, ou déjà finalisée.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    body = body or {}
+
+    # Parse les champs présents — on n'ajoute aux kwargs QUE les champs
+    # fournis. Le service utilise un sentinel `_UNSET` par défaut pour
+    # distinguer "non fourni" (skip dans SQL) de "fourni avec None" (NULL).
+    from common.services.production_sheet_service import get_sheet, patch_sheet
+
+    kwargs: dict = {}
+    if "produit" in body:
+        kwargs["produit"] = body.get("produit") or ""
+    if "cuve" in body:
+        kwargs["cuve"] = body.get("cuve") or ""
+    if "lot" in body:
+        kwargs["lot"] = body.get("lot") or ""
+    if "brassin_id" in body:
+        kwargs["brassin_id"] = body.get("brassin_id") or None
+    if "ddm" in body:
+        ddm_value = body.get("ddm")
+        if ddm_value in (None, ""):
+            kwargs["ddm"] = None
+        else:
+            try:
+                kwargs["ddm"] = _dt_local.date.fromisoformat(str(ddm_value)[:10])
+            except ValueError:
+                return JSONResponse(
+                    {"error": "Invalid ddm format (expected YYYY-MM-DD)"},
+                    status_code=400,
+                )
+    if "data" in body:
+        if not isinstance(body["data"], dict):
+            return JSONResponse(
+                {"error": "'data' must be an object"}, status_code=400,
+            )
+        kwargs["data"] = body["data"]
+
+    if not kwargs:
+        # Rien à patcher — on renvoie la fiche actuelle (idempotent friendly)
+        detail = await asyncio.to_thread(get_sheet, user["tenant_id"], sheet_id)
+        if detail is None:
+            return JSONResponse({"error": "Sheet not found"}, status_code=404)
+        return JSONResponse({"ok": True, "sheet": _serialize_sheet_detail(detail)})
+
+    changed = await asyncio.to_thread(
+        patch_sheet, user["tenant_id"], sheet_id, **kwargs,
+    )
+    if not changed:
+        return JSONResponse(
+            {"error": "Sheet not found, not editable, or unchanged"},
+            status_code=404,
+        )
+    detail = await asyncio.to_thread(get_sheet, user["tenant_id"], sheet_id)
+    return JSONResponse({
+        "ok": True,
+        "sheet": _serialize_sheet_detail(detail) if detail else None,
+    })
+
+
 # ─── Enregistrement des routes (appelé depuis app_nicegui.py) ──────────────
 
 def register_routes(app) -> None:
@@ -1510,3 +1637,6 @@ def register_routes(app) -> None:
     # Pre-fill via SSCC (Sprint 2 : sélection brassin + agrégation conditionnement)
     app.get("/api/v1/admin/brassins-en-cours")(_v1_admin_brassins_en_cours)
     app.get("/api/v1/admin/conditionnement-by-lot")(_v1_admin_conditionnement_by_lot)
+    # Détail + PATCH partiel (Sprint 3a : auto-save iOS)
+    app.get("/api/v1/admin/production-sheets/{sheet_id}")(_v1_get_production_sheet)
+    app.patch("/api/v1/admin/production-sheets/{sheet_id}")(_v1_patch_production_sheet)

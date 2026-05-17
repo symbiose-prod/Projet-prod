@@ -85,6 +85,8 @@ class TestUnauthorized:
         ("get", "/api/v1/admin/production-sheets"),
         ("get", "/api/v1/admin/brassins-en-cours"),
         ("get", "/api/v1/admin/conditionnement-by-lot"),
+        ("get", "/api/v1/admin/production-sheets/abc-123"),
+        ("patch", "/api/v1/admin/production-sheets/abc-123"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -1531,3 +1533,190 @@ class TestAdminConditionnementByLot:
         # tenant_id du token propagé au service
         assert mock_compute.call_args[0][0] == "tenant-A"
         assert mock_compute.call_args[0][1] == "15052027"
+
+
+def _fake_sheet_detail(**kwargs):
+    """Construit un ProductionSheetDetail pour les tests GET/PATCH."""
+    from common.services.production_sheet_service import ProductionSheetDetail
+
+    defaults = dict(
+        id="sheet-1",
+        brassin_id="brassin-42",
+        produit="K. Mangue - Passion",
+        cuve="Cuve de 7200L",
+        ddm=_dt.date(2027, 5, 15),
+        lot="15052027",
+        status="draft",
+        data={"fermentation": {"mesures": []}},
+        created_at=_dt.datetime(2026, 5, 15, 10, 0, tzinfo=_dt.UTC),
+        updated_at=_dt.datetime(2026, 5, 15, 12, 0, tzinfo=_dt.UTC),
+        finalized_at=None,
+        created_by_email="nicolas@symbiose-kefir.fr",
+    )
+    defaults.update(kwargs)
+    return ProductionSheetDetail(**defaults)
+
+
+class TestGetProductionSheet:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get(
+            "/api/v1/admin/production-sheets/sheet-1", headers=auth_headers,
+        )
+        assert resp.status_code == 403
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin", tenant="tenant-A")
+        mock_get.return_value = None
+        resp = client.get(
+            "/api/v1/admin/production-sheets/missing", headers=auth_headers,
+        )
+        assert resp.status_code == 404
+        # tenant_id propagé
+        assert mock_get.call_args[0] == ("tenant-A", "missing")
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_full_serialized_detail(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_get.return_value = _fake_sheet_detail()
+        resp = client.get(
+            "/api/v1/admin/production-sheets/sheet-1", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == "sheet-1"
+        assert body["produit"] == "K. Mangue - Passion"
+        assert body["ddm"] == "2027-05-15"
+        assert body["status"] == "draft"
+        # data JSONB renvoyé tel quel
+        assert body["data"] == {"fermentation": {"mesures": []}}
+
+
+class TestPatchProductionSheet:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers, json={"produit": "X"},
+        )
+        assert resp.status_code == 403
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_invalid_ddm_returns_400(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="admin")
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers, json={"ddm": "nope"},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_data_must_be_object(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="admin")
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers, json={"data": "not-a-dict"},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.services.production_sheet_service.patch_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_patch, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        mock_patch.return_value = False
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/missing",
+            headers=auth_headers, json={"produit": "X"},
+        )
+        assert resp.status_code == 404
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.services.production_sheet_service.patch_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_updated_sheet(
+        self, mock_verify, mock_patch, mock_get, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin", tenant="tenant-A")
+        mock_patch.return_value = True
+        mock_get.return_value = _fake_sheet_detail(
+            produit="K. Pêche", ddm=_dt.date(2027, 6, 1),
+        )
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers,
+            json={
+                "produit": "K. Pêche",
+                "ddm": "2027-06-01",
+                "data": {"fermentation": {"statut": "Conforme"}},
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["sheet"]["produit"] == "K. Pêche"
+        assert body["sheet"]["ddm"] == "2027-06-01"
+        # PATCH appelé avec tenant_id + les bons kwargs
+        assert mock_patch.call_args[0][0] == "tenant-A"
+        assert mock_patch.call_args[0][1] == "sheet-1"
+        kwargs = mock_patch.call_args.kwargs
+        assert kwargs["produit"] == "K. Pêche"
+        assert kwargs["ddm"] == _dt.date(2027, 6, 1)
+        assert kwargs["data"] == {"fermentation": {"statut": "Conforme"}}
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.services.production_sheet_service.patch_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_only_sends_provided_fields(
+        self, mock_verify, mock_patch, mock_get, client, auth_headers
+    ):
+        """PATCH sémantique : si on n'envoie que `produit`, le service ne
+        reçoit QUE produit (le reste reste à sa valeur DB)."""
+        mock_verify.return_value = _user(role="admin")
+        mock_patch.return_value = True
+        mock_get.return_value = _fake_sheet_detail()
+        client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers,
+            json={"produit": "Nouveau produit"},
+        )
+        kwargs = mock_patch.call_args.kwargs
+        # Seul produit est fourni — pas de cuve, ddm, lot, data dans kwargs
+        assert "produit" in kwargs
+        assert "cuve" not in kwargs
+        assert "ddm" not in kwargs
+        assert "data" not in kwargs
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_empty_body_returns_current_sheet(
+        self, mock_verify, mock_get, client, auth_headers
+    ):
+        """PATCH sans body → idempotent, renvoie l'état actuel sans toucher."""
+        mock_verify.return_value = _user(role="admin")
+        mock_get.return_value = _fake_sheet_detail()
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers, json={},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["sheet"]["id"] == "sheet-1"

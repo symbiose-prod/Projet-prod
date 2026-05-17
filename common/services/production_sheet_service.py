@@ -109,6 +109,157 @@ def create_sheet(
     return sid
 
 
+# ─── Get détail ─────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class ProductionSheetDetail:
+    """Fiche complète (avec ``data`` JSONB) pour l'éditeur mobile."""
+    id: str
+    brassin_id: str | None
+    produit: str
+    cuve: str
+    ddm: _dt.date | None
+    lot: str
+    status: str
+    data: dict[str, Any]
+    created_at: _dt.datetime
+    updated_at: _dt.datetime
+    finalized_at: _dt.datetime | None
+    created_by_email: str | None
+
+
+def get_sheet(
+    tenant_id: str,
+    sheet_id: str,
+) -> ProductionSheetDetail | None:
+    """Charge une fiche complète (avec son contenu ``data``).
+
+    Retourne ``None`` si introuvable ou hors tenant.
+    """
+    rows = run_sql(
+        """
+        SELECT ps.id, ps.brassin_id, ps.produit, ps.cuve, ps.ddm, ps.lot,
+               ps.status, ps.data, ps.created_at, ps.updated_at,
+               ps.finalized_at,
+               u.email AS created_by_email
+          FROM production_sheets ps
+          LEFT JOIN users u ON u.id = ps.created_by
+         WHERE ps.id = :sid AND ps.tenant_id = :tid
+         LIMIT 1
+        """,
+        {"sid": sheet_id, "tid": tenant_id},
+    )
+    if not rows:
+        return None
+    r = rows[0]
+    ddm = r.get("ddm")
+    ddm_date = (
+        ddm if isinstance(ddm, _dt.date) or ddm is None
+        else _dt.date.fromisoformat(str(ddm)[:10])
+    )
+    raw_data = r.get("data") or {}
+    if isinstance(raw_data, str):
+        try:
+            raw_data = json.loads(raw_data)
+        except (ValueError, TypeError):
+            raw_data = {}
+    if not isinstance(raw_data, dict):
+        raw_data = {}
+    return ProductionSheetDetail(
+        id=str(r["id"]),
+        brassin_id=r.get("brassin_id"),
+        produit=str(r.get("produit") or ""),
+        cuve=str(r.get("cuve") or ""),
+        ddm=ddm_date,
+        lot=str(r.get("lot") or ""),
+        status=str(r.get("status") or "draft"),
+        data=raw_data,
+        created_at=r["created_at"],
+        updated_at=r["updated_at"],
+        finalized_at=r.get("finalized_at"),
+        created_by_email=r.get("created_by_email"),
+    )
+
+
+# ─── PATCH partiel (auto-save iOS) ──────────────────────────────────────────
+
+# Sentinelle pour distinguer "champ pas fourni" (= ne pas toucher) de "fourni
+# avec valeur None" (= mettre NULL/vide). Pythonique idiomatique.
+_UNSET = object()
+
+
+def patch_sheet(
+    tenant_id: str,
+    sheet_id: str,
+    *,
+    produit: str | None | object = _UNSET,
+    cuve: str | None | object = _UNSET,
+    ddm: _dt.date | None | object = _UNSET,
+    lot: str | None | object = _UNSET,
+    brassin_id: str | None | object = _UNSET,
+    data: dict[str, Any] | None | object = _UNSET,
+) -> bool:
+    """Mise à jour partielle d'une fiche en status ``'draft'``.
+
+    Sémantique : on n'écrase que les champs fournis. Le sentinel ``_UNSET``
+    distingue "non fourni" (pas dans le SET SQL) de "fourni avec None" (NULL/
+    vide). Côté client mobile, l'auto-save envoie typiquement 1-2 champs à
+    la fois (PATCH minimal).
+
+    Pour ``data`` : on remplace le JSONB entier. Le client iOS garde la
+    version courante en mémoire, modifie le champ puis renvoie tout. Pas de
+    merge profond côté serveur (simple, OK car 1 seul opérateur édite à la
+    fois en mode admin beta).
+
+    Bloque les modifications sur les fiches finalisées (``status='completed'``).
+
+    Returns:
+        ``True`` si l'UPDATE a affecté une ligne, ``False`` sinon (introuvable,
+        hors tenant, ou déjà finalisée).
+    """
+    updates: list[str] = []
+    params: dict[str, Any] = {"sid": sheet_id, "tid": tenant_id}
+
+    if produit is not _UNSET:
+        updates.append("produit = :produit")
+        params["produit"] = str(produit or "")
+    if cuve is not _UNSET:
+        updates.append("cuve = :cuve")
+        params["cuve"] = str(cuve or "")
+    if lot is not _UNSET:
+        updates.append("lot = :lot")
+        params["lot"] = str(lot or "")
+    if brassin_id is not _UNSET:
+        updates.append("brassin_id = :bid")
+        params["bid"] = brassin_id or None
+    if ddm is not _UNSET:
+        updates.append("ddm = :ddm")
+        params["ddm"] = ddm
+    if data is not _UNSET:
+        updates.append("data = CAST(:data AS jsonb)")
+        params["data"] = json.dumps(data or {}, default=str, ensure_ascii=False)
+
+    if not updates:
+        return False
+
+    sql = f"""
+        UPDATE production_sheets
+           SET {', '.join(updates)}
+         WHERE id = :sid
+           AND tenant_id = :tid
+           AND status = 'draft'
+        RETURNING id
+    """
+    rows = run_sql(sql, params)
+    if rows:
+        _log.info(
+            "Fiche production patch : id=%s tenant=%s fields=%s",
+            sheet_id, tenant_id, [u.split(" = ")[0] for u in updates],
+        )
+        return True
+    return False
+
+
 # ─── List ───────────────────────────────────────────────────────────────────
 
 def list_sheets(
