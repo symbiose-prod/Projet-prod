@@ -38,3 +38,6 @@ htmlcov/
 
 # Deployment (legacy)
 Procfile
+.env
+.env.local
+*.env
