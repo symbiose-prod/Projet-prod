@@ -543,7 +543,11 @@ CREATE SEQUENCE IF NOT EXISTS sscc_serial_seq
 CREATE TABLE IF NOT EXISTS sscc_log (
   id            BIGSERIAL PRIMARY KEY,
   sscc          TEXT NOT NULL UNIQUE,
-  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  -- ON DELETE RESTRICT : un sscc_log est un audit log réglementaire de
+  -- traçabilité alimentaire ; il doit survivre à toute suppression de
+  -- tenant. Une suppression intentionnelle de tenant nécessite donc un
+  -- archivage manuel préalable des sscc_log (procédure documentée).
+  tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
   user_email    TEXT,
   gtin_palette  TEXT,                     -- GTIN-14 du carton (AI 02)
   lot           TEXT,
@@ -551,6 +555,24 @@ CREATE TABLE IF NOT EXISTS sscc_log (
   case_count    INTEGER,                  -- nb cartons sur la palette
   generated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration idempotente pour bases existantes créées avant la bascule
+-- RESTRICT : on ne flip que si la contrainte est encore CASCADE.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    WHERE t.relname = 'sscc_log'
+      AND c.conname = 'sscc_log_tenant_id_fkey'
+      AND c.confdeltype = 'c'
+  ) THEN
+    ALTER TABLE sscc_log DROP CONSTRAINT sscc_log_tenant_id_fkey;
+    ALTER TABLE sscc_log
+      ADD CONSTRAINT sscc_log_tenant_id_fkey
+      FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT;
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_sscc_log_tenant_date
   ON sscc_log(tenant_id, generated_at DESC);
 
