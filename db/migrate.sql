@@ -745,6 +745,7 @@ CREATE TABLE IF NOT EXISTS production_sheets (
   ddm           DATE,
   lot           TEXT NOT NULL DEFAULT '',              -- lot dérivé du DDM (DDMMYYYY)
   status        TEXT NOT NULL DEFAULT 'draft',         -- 'draft' | 'completed'
+  version       INTEGER NOT NULL DEFAULT 1,            -- optimistic-lock (auto-save iOS concurrent)
   data          JSONB NOT NULL DEFAULT '{}'::jsonb,    -- contenu structuré du formulaire
   pdf_bytes     BYTEA,                                 -- généré à la finalisation
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -761,6 +762,12 @@ CREATE INDEX IF NOT EXISTS idx_prod_sheets_tenant_brassin
 
 CREATE INDEX IF NOT EXISTS idx_prod_sheets_tenant_status
   ON production_sheets(tenant_id, status);
+
+-- Optimistic locking pour bases existantes : compteur incrémenté à chaque
+-- PATCH. L'auto-save iOS envoie la version qu'il a lue ; un PATCH avec une
+-- version périmée (un autre client a édité entre temps) renvoie 409 Conflict.
+ALTER TABLE production_sheets
+  ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 
 DROP TRIGGER IF EXISTS trg_prod_sheets_touch ON production_sheets;
 CREATE TRIGGER trg_prod_sheets_touch

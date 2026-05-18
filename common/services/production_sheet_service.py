@@ -126,6 +126,8 @@ class ProductionSheetDetail:
     updated_at: _dt.datetime
     finalized_at: _dt.datetime | None
     created_by_email: str | None
+    # Compteur optimistic-lock — incrémenté à chaque PATCH réussi.
+    version: int = 1
 
 
 def get_sheet(
@@ -139,7 +141,7 @@ def get_sheet(
     rows = run_sql(
         """
         SELECT ps.id, ps.brassin_id, ps.produit, ps.cuve, ps.ddm, ps.lot,
-               ps.status, ps.data, ps.created_at, ps.updated_at,
+               ps.status, ps.version, ps.data, ps.created_at, ps.updated_at,
                ps.finalized_at,
                u.email AS created_by_email
           FROM production_sheets ps
@@ -178,6 +180,7 @@ def get_sheet(
         updated_at=r["updated_at"],
         finalized_at=r.get("finalized_at"),
         created_by_email=r.get("created_by_email"),
+        version=int(r.get("version") or 1),
     )
 
 
@@ -198,7 +201,8 @@ def patch_sheet(
     lot: str | None | object = _UNSET,
     brassin_id: str | None | object = _UNSET,
     data: dict[str, Any] | None | object = _UNSET,
-) -> bool:
+    expected_version: int | None = None,
+) -> str:
     """Mise à jour partielle d'une fiche en status ``'draft'``.
 
     Sémantique : on n'écrase que les champs fournis. Le sentinel ``_UNSET``
@@ -213,9 +217,18 @@ def patch_sheet(
 
     Bloque les modifications sur les fiches finalisées (``status='completed'``).
 
+    Optimistic locking : ``version`` est incrémenté à chaque PATCH réussi.
+    Si ``expected_version`` est fourni, l'UPDATE n'aboutit que si la version
+    en base correspond — sinon un autre client a édité entre temps (conflit).
+    Si ``expected_version`` est ``None``, comportement legacy last-write-wins
+    (clients iOS pas encore mis à jour).
+
     Returns:
-        ``True`` si l'UPDATE a affecté une ligne, ``False`` sinon (introuvable,
-        hors tenant, ou déjà finalisée).
+        ``"ok"``         : l'UPDATE a affecté la fiche.
+        ``"no_changes"`` : aucun champ à patcher.
+        ``"not_found"``  : fiche introuvable, hors tenant, ou déjà finalisée.
+        ``"conflict"``   : ``expected_version`` périmée — un autre client a
+                           modifié la fiche depuis sa dernière lecture.
     """
     updates: list[str] = []
     params: dict[str, Any] = {"sid": sheet_id, "tid": tenant_id}
@@ -240,24 +253,50 @@ def patch_sheet(
         params["data"] = json.dumps(data or {}, default=str, ensure_ascii=False)
 
     if not updates:
-        return False
+        return "no_changes"
+
+    # Le compteur s'incrémente à chaque PATCH réussi, qu'un expected_version
+    # ait été fourni ou non — pour que les clients qui lisent la version
+    # restent cohérents.
+    updates.append("version = version + 1")
+
+    where_version = ""
+    if expected_version is not None:
+        where_version = " AND version = :expver"
+        params["expver"] = int(expected_version)
 
     sql = f"""
         UPDATE production_sheets
            SET {', '.join(updates)}
          WHERE id = :sid
            AND tenant_id = :tid
-           AND status = 'draft'
+           AND status = 'draft'{where_version}
         RETURNING id
     """
     rows = run_sql(sql, params)
     if rows:
         _log.info(
             "Fiche production patch : id=%s tenant=%s fields=%s",
-            sheet_id, tenant_id, [u.split(" = ")[0] for u in updates],
+            sheet_id, tenant_id,
+            [u.split(" = ")[0] for u in updates if not u.startswith("version")],
         )
-        return True
-    return False
+        return "ok"
+
+    # 0 ligne affectée — distinguer fiche absente/finalisée d'un conflit de
+    # version. Un SELECT simple : si la fiche existe et est en 'draft', c'est
+    # nécessairement expected_version qui était périmée.
+    check = run_sql(
+        "SELECT status FROM production_sheets "
+        "WHERE id = :sid AND tenant_id = :tid LIMIT 1",
+        {"sid": sheet_id, "tid": tenant_id},
+    )
+    if not check or str(check[0].get("status")) != "draft":
+        return "not_found"
+    _log.info(
+        "Fiche production patch : conflit de version id=%s tenant=%s "
+        "expected=%s", sheet_id, tenant_id, expected_version,
+    )
+    return "conflict"
 
 
 # ─── List ───────────────────────────────────────────────────────────────────

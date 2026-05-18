@@ -1551,6 +1551,7 @@ def _fake_sheet_detail(**kwargs):
         ddm=_dt.date(2027, 5, 15),
         lot="15052027",
         status="draft",
+        version=1,
         data={"fermentation": {"mesures": []}},
         created_at=_dt.datetime(2026, 5, 15, 10, 0, tzinfo=_dt.UTC),
         updated_at=_dt.datetime(2026, 5, 15, 12, 0, tzinfo=_dt.UTC),
@@ -1641,7 +1642,7 @@ class TestPatchProductionSheet:
         self, mock_verify, mock_patch, client, auth_headers
     ):
         mock_verify.return_value = _user(role="admin")
-        mock_patch.return_value = False
+        mock_patch.return_value = "not_found"
         resp = client.request(
             "PATCH",
             "/api/v1/admin/production-sheets/missing",
@@ -1656,7 +1657,7 @@ class TestPatchProductionSheet:
         self, mock_verify, mock_patch, mock_get, client, auth_headers
     ):
         mock_verify.return_value = _user(role="admin", tenant="tenant-A")
-        mock_patch.return_value = True
+        mock_patch.return_value = "ok"
         mock_get.return_value = _fake_sheet_detail(
             produit="K. Pêche", ddm=_dt.date(2027, 6, 1),
         )
@@ -1692,7 +1693,7 @@ class TestPatchProductionSheet:
         """PATCH sémantique : si on n'envoie que `produit`, le service ne
         reçoit QUE produit (le reste reste à sa valeur DB)."""
         mock_verify.return_value = _user(role="admin")
-        mock_patch.return_value = True
+        mock_patch.return_value = "ok"
         mock_get.return_value = _fake_sheet_detail()
         client.request(
             "PATCH",
@@ -1724,6 +1725,78 @@ class TestPatchProductionSheet:
         body = resp.json()
         assert body["ok"] is True
         assert body["sheet"]["id"] == "sheet-1"
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.services.production_sheet_service.patch_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_version_conflict_returns_409(
+        self, mock_verify, mock_patch, mock_get, client, auth_headers
+    ):
+        """patch_sheet renvoie 'conflict' → 409 + état serveur courant."""
+        mock_verify.return_value = _user(role="admin")
+        mock_patch.return_value = "conflict"
+        mock_get.return_value = _fake_sheet_detail(version=7)
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers,
+            json={"produit": "X", "version": 3},
+        )
+        assert resp.status_code == 409
+        body = resp.json()
+        assert "conflict" in body["error"].lower()
+        # La réponse inclut la fiche serveur pour re-synchroniser
+        assert body["sheet"]["version"] == 7
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.services.production_sheet_service.patch_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_version_passed_to_service_as_expected_version(
+        self, mock_verify, mock_patch, mock_get, client, auth_headers
+    ):
+        """Le champ `version` du body est transmis comme expected_version."""
+        mock_verify.return_value = _user(role="admin")
+        mock_patch.return_value = "ok"
+        mock_get.return_value = _fake_sheet_detail()
+        client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers,
+            json={"produit": "X", "version": 5},
+        )
+        assert mock_patch.call_args.kwargs["expected_version"] == 5
+        # `version` ne doit PAS être traité comme un champ patchable
+        assert "version" not in mock_patch.call_args.kwargs
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_invalid_version_returns_400(
+        self, mock_verify, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        resp = client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers,
+            json={"produit": "X", "version": "not-an-int"},
+        )
+        assert resp.status_code == 400
+
+    @patch("common.services.production_sheet_service.get_sheet")
+    @patch("common.services.production_sheet_service.patch_sheet")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_no_version_omits_expected_version(
+        self, mock_verify, mock_patch, mock_get, client, auth_headers
+    ):
+        """Sans `version` dans le body → expected_version=None (legacy)."""
+        mock_verify.return_value = _user(role="admin")
+        mock_patch.return_value = "ok"
+        mock_get.return_value = _fake_sheet_detail()
+        client.request(
+            "PATCH",
+            "/api/v1/admin/production-sheets/sheet-1",
+            headers=auth_headers, json={"produit": "X"},
+        )
+        assert mock_patch.call_args.kwargs["expected_version"] is None
 
 
 class TestProductionOverview:

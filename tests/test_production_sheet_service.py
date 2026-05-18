@@ -16,6 +16,7 @@ from common.services.production_sheet_service import (
     ProductionSheetDetail,
     compute_real_conditionnement_by_lot,
     finalize_sheet,
+    patch_sheet,
 )
 
 # ─── compute_real_conditionnement_by_lot ───────────────────────────────────
@@ -312,3 +313,86 @@ class TestPDFBuilder:
         )
         pdf = build_production_sheet_pdf(sheet)
         assert pdf.startswith(b"%PDF")
+
+
+# ─── patch_sheet — optimistic locking ──────────────────────────────────────
+
+class TestPatchSheetOptimisticLock:
+    """Vérifie le verrouillage optimiste par `version` de patch_sheet."""
+
+    def test_no_fields_returns_no_changes_without_query(self):
+        with mock.patch.object(
+            production_sheet_service, "run_sql",
+        ) as mock_sql:
+            result = patch_sheet("tenant-A", "sheet-1")
+        mock_sql.assert_not_called()
+        assert result == "no_changes"
+
+    def test_success_returns_ok_and_increments_version(self):
+        with mock.patch.object(
+            production_sheet_service, "run_sql",
+        ) as mock_sql:
+            mock_sql.return_value = [{"id": "sheet-1"}]
+            result = patch_sheet("tenant-A", "sheet-1", produit="K. Mangue")
+        assert result == "ok"
+        # Une seule requête (UPDATE) — pas de SELECT de désambiguïsation
+        assert mock_sql.call_count == 1
+        sql = mock_sql.call_args[0][0]
+        assert "version = version + 1" in sql
+
+    def test_expected_version_adds_where_clause(self):
+        with mock.patch.object(
+            production_sheet_service, "run_sql",
+        ) as mock_sql:
+            mock_sql.return_value = [{"id": "sheet-1"}]
+            patch_sheet(
+                "tenant-A", "sheet-1", produit="X", expected_version=4,
+            )
+        sql, params = mock_sql.call_args[0]
+        assert "version = :expver" in sql
+        assert params["expver"] == 4
+
+    def test_no_expected_version_omits_where_clause(self):
+        with mock.patch.object(
+            production_sheet_service, "run_sql",
+        ) as mock_sql:
+            mock_sql.return_value = [{"id": "sheet-1"}]
+            patch_sheet("tenant-A", "sheet-1", produit="X")
+        sql, params = mock_sql.call_args[0]
+        assert "version = :expver" not in sql
+        assert "expver" not in params
+
+    def test_stale_version_on_draft_sheet_returns_conflict(self):
+        # UPDATE n'affecte rien (version périmée), mais la fiche existe
+        # toujours en 'draft' → conflit, pas not_found.
+        with mock.patch.object(
+            production_sheet_service, "run_sql",
+        ) as mock_sql:
+            mock_sql.side_effect = [[], [{"status": "draft"}]]
+            result = patch_sheet(
+                "tenant-A", "sheet-1", produit="X", expected_version=2,
+            )
+        assert result == "conflict"
+        assert mock_sql.call_count == 2
+
+    def test_missing_sheet_returns_not_found(self):
+        with mock.patch.object(
+            production_sheet_service, "run_sql",
+        ) as mock_sql:
+            mock_sql.side_effect = [[], []]
+            result = patch_sheet(
+                "tenant-A", "sheet-1", produit="X", expected_version=2,
+            )
+        assert result == "not_found"
+
+    def test_finalized_sheet_returns_not_found_not_conflict(self):
+        # Fiche existe mais status='completed' → not_found (pas un conflit
+        # de version : elle est juste figée).
+        with mock.patch.object(
+            production_sheet_service, "run_sql",
+        ) as mock_sql:
+            mock_sql.side_effect = [[], [{"status": "completed"}]]
+            result = patch_sheet(
+                "tenant-A", "sheet-1", produit="X", expected_version=2,
+            )
+        assert result == "not_found"

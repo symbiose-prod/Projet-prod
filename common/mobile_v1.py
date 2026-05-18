@@ -1489,6 +1489,7 @@ def _serialize_sheet_detail(s) -> dict:
         "ddm": s.ddm.isoformat() if s.ddm else None,
         "lot": s.lot,
         "status": s.status,
+        "version": s.version,
         "data": s.data,
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -1531,11 +1532,18 @@ async def _v1_patch_production_sheet(sheet_id: str, request: Request):
     ``'completed'`` → 404 (la fiche reste accessible en lecture mais
     figée).
 
+    Optimistic locking : le client peut envoyer ``version`` (la valeur lue
+    au dernier GET). Si la fiche a été modifiée entre temps par un autre
+    client, le serveur renvoie 409 sans rien écraser. ``version`` absent =
+    comportement legacy last-write-wins (clients iOS pas encore à jour).
+
     Retour 200 : ``{"ok": true}`` + fiche complète mise à jour (mêmes
     champs que GET) pour permettre au client de re-synchroniser sans
     requête supplémentaire.
-    Retour 400 : body invalide (ex: ddm mal formée).
+    Retour 400 : body invalide (ex: ddm mal formée, version non entière).
     Retour 404 : fiche introuvable, hors tenant, ou déjà finalisée.
+    Retour 409 : conflit de version — la réponse inclut ``sheet`` (l'état
+    serveur courant) pour que le client puisse re-synchroniser.
     """
     user = await _resolve_mobile_user(request)
     if user is None:
@@ -1582,6 +1590,17 @@ async def _v1_patch_production_sheet(sheet_id: str, request: Request):
             )
         kwargs["data"] = body["data"]
 
+    # Optimistic locking : version attendue (optionnelle). Pas un champ
+    # patchable — on la passe à part comme expected_version.
+    expected_version: int | None = None
+    if "version" in body and body.get("version") is not None:
+        try:
+            expected_version = int(body["version"])
+        except (TypeError, ValueError):
+            return JSONResponse(
+                {"error": "'version' must be an integer"}, status_code=400,
+            )
+
     if not kwargs:
         # Rien à patcher — on renvoie la fiche actuelle (idempotent friendly)
         detail = await asyncio.to_thread(get_sheet, user["tenant_id"], sheet_id)
@@ -1589,14 +1608,31 @@ async def _v1_patch_production_sheet(sheet_id: str, request: Request):
             return JSONResponse({"error": "Sheet not found"}, status_code=404)
         return JSONResponse({"ok": True, "sheet": _serialize_sheet_detail(detail)})
 
-    changed = await asyncio.to_thread(
-        patch_sheet, user["tenant_id"], sheet_id, **kwargs,
+    result = await asyncio.to_thread(
+        patch_sheet, user["tenant_id"], sheet_id,
+        expected_version=expected_version, **kwargs,
     )
-    if not changed:
+
+    if result == "conflict":
+        # La fiche a changé depuis le dernier GET du client. On renvoie
+        # l'état serveur courant pour qu'il puisse re-synchroniser.
+        detail = await asyncio.to_thread(get_sheet, user["tenant_id"], sheet_id)
+        return JSONResponse(
+            {
+                "error": "Version conflict — sheet modified by another client",
+                "sheet": _serialize_sheet_detail(detail) if detail else None,
+            },
+            status_code=409,
+        )
+
+    if result != "ok":
+        # "not_found" ou "no_changes" (ce dernier improbable ici : kwargs
+        # est non vide à ce stade).
         return JSONResponse(
             {"error": "Sheet not found, not editable, or unchanged"},
             status_code=404,
         )
+
     detail = await asyncio.to_thread(get_sheet, user["tenant_id"], sheet_id)
     return JSONResponse({
         "ok": True,
