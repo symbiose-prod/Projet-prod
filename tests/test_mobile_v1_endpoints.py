@@ -91,6 +91,8 @@ class TestUnauthorized:
         ("get", "/api/v1/admin/easybeer/brassin/42"),
         ("post", "/api/v1/admin/production-sheets/abc-123/finalize"),
         ("get", "/api/v1/admin/production-sheets/abc-123/pdf"),
+        ("get", "/api/v1/auth/devices"),
+        ("delete", "/api/v1/auth/devices/abc-123"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -156,6 +158,90 @@ class TestLogin:
         assert body["tenant_id"] == "tenant-A"
         assert body["user"]["email"] == "ok@test.fr"
         assert body["user"]["role"] == "admin"
+
+
+# ─── Mes appareils (devices) ───────────────────────────────────────────────
+
+class TestListDevices:
+    @patch("common.mobile_v1.list_mobile_tokens")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_devices(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_list.return_value = [
+            {
+                "id": "tok-1",
+                "device_name": "iPhone Nicolas",
+                "created_at": _dt.datetime(2026, 5, 1, tzinfo=_dt.UTC),
+                "last_used_at": _dt.datetime(2026, 5, 18, tzinfo=_dt.UTC),
+                "expires_at": _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC),
+                "expired": False,
+                "is_current": True,
+            },
+        ]
+        resp = client.get("/api/v1/auth/devices", headers=auth_headers)
+        assert resp.status_code == 200
+        devices = resp.json()["devices"]
+        assert len(devices) == 1
+        assert devices[0]["id"] == "tok-1"
+        assert devices[0]["is_current"] is True
+        assert devices[0]["created_at"].startswith("2026-05-01")
+
+    @patch("common.mobile_v1.list_mobile_tokens")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_scoped_to_current_user(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_list.return_value = []
+        client.get("/api/v1/auth/devices", headers=auth_headers)
+        # list_mobile_tokens appelé avec l'id du user courant
+        assert mock_list.call_args[0][0] == "user-1"
+
+
+class TestRevokeDevice:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_invalid_uuid_returns_400(
+        self, mock_verify, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        resp = client.request(
+            "DELETE", "/api/v1/auth/devices/not-a-uuid",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400
+
+    @patch("common.mobile_v1.revoke_mobile_token_by_id")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_not_found_returns_404(
+        self, mock_verify, mock_revoke, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_revoke.return_value = False
+        resp = client.request(
+            "DELETE",
+            "/api/v1/auth/devices/11111111-1111-1111-1111-111111111111",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+
+    @patch("common.mobile_v1.revoke_mobile_token_by_id")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success_returns_ok(
+        self, mock_verify, mock_revoke, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_revoke.return_value = True
+        resp = client.request(
+            "DELETE",
+            "/api/v1/auth/devices/11111111-1111-1111-1111-111111111111",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        # Révocation scopée : appelée avec (user_id, device_id)
+        assert mock_revoke.call_args[0][0] == "user-1"
 
 
 # ─── decode-gs1 ────────────────────────────────────────────────────────────

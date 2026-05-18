@@ -9,6 +9,8 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 |---------|----------------------------------|------|--------------------------------------------|
 | POST    | ``/api/v1/auth/login``           | —    | email+password → token Bearer              |
 | POST    | ``/api/v1/auth/logout``          | Tk   | révoque le token courant                   |
+| GET     | ``/api/v1/auth/devices``         | Tk   | liste les appareils (tokens) du user        |
+| DELETE  | ``/api/v1/auth/devices/{id}``    | Tk   | révoque un appareil du user                 |
 | POST    | ``/api/v1/decode-gs1``           | Tk   | décode string GS1-128 + lookup produit     |
 | POST    | ``/api/v1/print-palette``        | Tk   | génère SSCC + PDF étiquette palette        |
 | POST    | ``/api/v1/labels/{id}/archive``  | Tk   | toggle archive (réversible)                |
@@ -73,7 +75,9 @@ from starlette.responses import JSONResponse, Response
 from common.mobile_auth import (
     create_mobile_token,
     extract_bearer_token,
+    list_mobile_tokens,
     revoke_mobile_token,
+    revoke_mobile_token_by_id,
     verify_mobile_token,
 )
 
@@ -158,6 +162,76 @@ async def _v1_logout(request: Request):
     if not token:
         return JSONResponse({"error": "Missing token"}, status_code=400)
     await asyncio.to_thread(revoke_mobile_token, token)
+    return JSONResponse({"ok": True})
+
+
+# ─── Auth : gestion des appareils (« Mes appareils ») ──────────────────────
+
+def _serialize_device(d: dict) -> dict:
+    """Sérialise un token mobile en entrée JSON pour l'écran Mes appareils."""
+    return {
+        "id": d["id"],
+        "device_name": d["device_name"],
+        "created_at": (
+            d["created_at"].isoformat() if d.get("created_at") else None
+        ),
+        "last_used_at": (
+            d["last_used_at"].isoformat() if d.get("last_used_at") else None
+        ),
+        "expires_at": (
+            d["expires_at"].isoformat() if d.get("expires_at") else None
+        ),
+        "expired": d["expired"],
+        "is_current": d["is_current"],
+    }
+
+
+async def _v1_list_devices(request: Request):
+    """Liste les appareils (tokens mobiles) de l'utilisateur courant.
+
+    Chaque utilisateur ne voit QUE ses propres appareils. ``is_current``
+    marque l'appareil depuis lequel la requête est faite.
+
+    Retour 200 : ``{"devices": [{id, device_name, created_at, last_used_at,
+    expires_at, expired, is_current}]}``.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    current_token = extract_bearer_token(request.headers.get("authorization"))
+    devices = await asyncio.to_thread(
+        list_mobile_tokens, user["id"], current_token,
+    )
+    return JSONResponse({"devices": [_serialize_device(d) for d in devices]})
+
+
+async def _v1_revoke_device(device_id: str, request: Request):
+    """Révoque un appareil (token mobile) de l'utilisateur courant.
+
+    Scopé à l'utilisateur : impossible de révoquer l'appareil d'un autre.
+
+    Retour 200 : ``{"ok": true}``.
+    Retour 400 : ``device_id`` mal formé (pas un UUID).
+    Retour 404 : appareil introuvable, déjà révoqué, ou hors périmètre user.
+    """
+    import uuid as _uuid
+
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    try:
+        _uuid.UUID(str(device_id))
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse({"error": "Invalid device id"}, status_code=400)
+
+    revoked = await asyncio.to_thread(
+        revoke_mobile_token_by_id, user["id"], str(device_id),
+    )
+    if not revoked:
+        return JSONResponse({"error": "Device not found"}, status_code=404)
+    _log.info("Appareil révoqué : token=%s user=%s", device_id, user["id"])
     return JSONResponse({"ok": True})
 
 
@@ -1866,6 +1940,8 @@ def register_routes(app) -> None:
     """
     app.post("/api/v1/auth/login")(_v1_login)
     app.post("/api/v1/auth/logout")(_v1_logout)
+    app.get("/api/v1/auth/devices")(_v1_list_devices)
+    app.delete("/api/v1/auth/devices/{device_id}")(_v1_revoke_device)
     app.post("/api/v1/decode-gs1")(_v1_decode_gs1)
     app.post("/api/v1/preview-palette")(_v1_preview_palette)
     app.post("/api/v1/print-palette")(_v1_print_palette)

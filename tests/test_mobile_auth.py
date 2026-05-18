@@ -22,7 +22,9 @@ from common.mobile_auth import (
     MOBILE_TOKEN_TTL_DAYS,
     create_mobile_token,
     extract_bearer_token,
+    list_mobile_tokens,
     revoke_mobile_token,
+    revoke_mobile_token_by_id,
     verify_mobile_token,
 )
 
@@ -188,3 +190,89 @@ class TestRevokeMobileToken:
         revoke_mobile_token("plaintext")
         params = mock_sql.call_args[0][1]
         assert params["h"] == hashlib.sha256(b"plaintext").hexdigest()
+
+
+# ─── list_mobile_tokens ────────────────────────────────────────────────────
+
+def _token_row(**kwargs):
+    """Ligne mobile_api_tokens factice pour les tests de listing."""
+    base = {
+        "id": "tok-1",
+        "token_hash": "hash-1",
+        "device_name": "iPhone Nicolas",
+        "created_at": _dt.datetime(2026, 5, 1, 9, 0, tzinfo=_dt.UTC),
+        "last_used_at": _dt.datetime(2026, 5, 18, 8, 0, tzinfo=_dt.UTC),
+        "expires_at": _dt.datetime(2026, 6, 1, 9, 0, tzinfo=_dt.UTC),
+        "expired": False,
+    }
+    base.update(kwargs)
+    return base
+
+
+class TestListMobileTokens:
+    @patch("common.mobile_auth.run_sql")
+    def test_serializes_rows(self, mock_sql: MagicMock):
+        mock_sql.return_value = [_token_row()]
+        result = list_mobile_tokens("user-1")
+        assert len(result) == 1
+        d = result[0]
+        assert d["id"] == "tok-1"
+        assert d["device_name"] == "iPhone Nicolas"
+        assert d["expired"] is False
+
+    @patch("common.mobile_auth.run_sql")
+    def test_never_exposes_token_hash(self, mock_sql: MagicMock):
+        mock_sql.return_value = [_token_row()]
+        result = list_mobile_tokens("user-1")
+        assert "token_hash" not in result[0]
+
+    @patch("common.mobile_auth.run_sql")
+    def test_is_current_true_when_hash_matches(self, mock_sql: MagicMock):
+        current = "my-current-token"
+        current_hash = hashlib.sha256(current.encode()).hexdigest()
+        mock_sql.return_value = [
+            _token_row(id="tok-1", token_hash=current_hash),
+            _token_row(id="tok-2", token_hash="other-hash"),
+        ]
+        result = list_mobile_tokens("user-1", current_token=current)
+        by_id = {d["id"]: d for d in result}
+        assert by_id["tok-1"]["is_current"] is True
+        assert by_id["tok-2"]["is_current"] is False
+
+    @patch("common.mobile_auth.run_sql")
+    def test_is_current_false_without_current_token(self, mock_sql: MagicMock):
+        mock_sql.return_value = [_token_row()]
+        result = list_mobile_tokens("user-1")
+        assert result[0]["is_current"] is False
+
+    @patch("common.mobile_auth.run_sql")
+    def test_filters_by_user_id(self, mock_sql: MagicMock):
+        mock_sql.return_value = []
+        list_mobile_tokens("user-42")
+        assert mock_sql.call_args[0][1]["u"] == "user-42"
+
+
+# ─── revoke_mobile_token_by_id ─────────────────────────────────────────────
+
+class TestRevokeMobileTokenById:
+    def test_returns_false_if_empty_id(self):
+        assert revoke_mobile_token_by_id("user-1", "") is False
+
+    @patch("common.mobile_auth.run_sql")
+    def test_returns_true_if_revoked(self, mock_sql: MagicMock):
+        mock_sql.return_value = [{"id": "tok-1"}]
+        assert revoke_mobile_token_by_id("user-1", "tok-1") is True
+
+    @patch("common.mobile_auth.run_sql")
+    def test_returns_false_if_not_found(self, mock_sql: MagicMock):
+        mock_sql.return_value = []
+        assert revoke_mobile_token_by_id("user-1", "tok-x") is False
+
+    @patch("common.mobile_auth.run_sql")
+    def test_scoped_to_user(self, mock_sql: MagicMock):
+        """Le filtre user_id empêche de révoquer le token d'un autre."""
+        mock_sql.return_value = []
+        revoke_mobile_token_by_id("user-1", "tok-1")
+        params = mock_sql.call_args[0][1]
+        assert params["u"] == "user-1"
+        assert params["id"] == "tok-1"

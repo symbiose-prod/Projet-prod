@@ -135,6 +135,68 @@ def revoke_mobile_token(token: str) -> bool:
     return bool(rows)
 
 
+def list_mobile_tokens(
+    user_id: str,
+    current_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Liste les tokens mobiles non révoqués d'un utilisateur.
+
+    Pour l'écran « Mes appareils » : un appareil = un token. On expose
+    ``device_name`` + dates + expiration, jamais le hash ni le token brut.
+
+    Si ``current_token`` (le token brut de la requête courante) est fourni,
+    chaque entrée porte ``is_current`` — la comparaison de hash reste
+    interne à ce module.
+    """
+    current_hash = _hash_token(current_token) if current_token else None
+    rows = run_sql(
+        """
+        SELECT id, token_hash, device_name, created_at, last_used_at,
+               expires_at, (expires_at <= now()) AS expired
+        FROM mobile_api_tokens
+        WHERE user_id = :u AND revoked_at IS NULL
+        ORDER BY last_used_at DESC NULLS LAST, created_at DESC
+        """,
+        {"u": user_id},
+    )
+    return [
+        {
+            "id": str(r["id"]),
+            "device_name": r.get("device_name") or "",
+            "created_at": r.get("created_at"),
+            "last_used_at": r.get("last_used_at"),
+            "expires_at": r.get("expires_at"),
+            "expired": bool(r.get("expired")),
+            "is_current": (
+                current_hash is not None
+                and r.get("token_hash") == current_hash
+            ),
+        }
+        for r in (rows or [])
+    ]
+
+
+def revoke_mobile_token_by_id(user_id: str, token_id: str) -> bool:
+    """Révoque un token par son id, **scopé à l'utilisateur**.
+
+    Un utilisateur ne peut révoquer que ses propres appareils — le filtre
+    ``user_id`` l'empêche de toucher le token d'un autre. Retourne ``True``
+    si une ligne (non déjà révoquée) a été modifiée.
+    """
+    if not token_id:
+        return False
+    rows = run_sql(
+        """
+        UPDATE mobile_api_tokens
+        SET revoked_at = now()
+        WHERE id = :id AND user_id = :u AND revoked_at IS NULL
+        RETURNING id
+        """,
+        {"id": token_id, "u": user_id},
+    )
+    return bool(rows)
+
+
 def extract_bearer_token(authorization_header: str | None) -> str | None:
     """Extrait le token d'un header `Authorization: Bearer <token>`.
 
