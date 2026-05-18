@@ -347,8 +347,12 @@ import pages.test_douchette  # noqa: F401 — /test-douchette (admin only)
 # ─── Health check ────────────────────────────────────────────────────────────
 
 @app.get("/health")
+@app.get("/api/v1/health")
 async def _health_check():
     """Endpoint de santé enrichi : DB + disque + état EasyBeer + cache.
+
+    Exposé sur ``/health`` (historique, monitoring infra) et ``/api/v1/health``
+    (cohérence avec le namespace de l'API mobile v1).
 
     Retour JSON::
 
@@ -1433,7 +1437,7 @@ _CLEANUP_INTERVAL = 3600  # 1 heure
 
 
 def _do_cleanup() -> None:
-    """Purge les sessions, tokens et lockouts expirés."""
+    """Purge les sessions, tokens et lockouts expirés + corbeille ramasses."""
     try:
         from common.auth import cleanup_expired_failures, cleanup_expired_resets, cleanup_expired_sessions
         cleanup_expired_sessions()
@@ -1442,6 +1446,14 @@ def _do_cleanup() -> None:
         _log.debug("Nettoyage périodique OK")
     except (SQLAlchemyError, OSError):
         _log.exception("Erreur nettoyage sessions/resets")
+
+    # Corbeille ramasses : hard-delete des ramasses soft-deleted > 7 jours.
+    # Bloc séparé pour qu'un échec ici ne masque pas le nettoyage ci-dessus.
+    try:
+        from common.ramasse_history import purge_expired_ramasses
+        purge_expired_ramasses()
+    except (SQLAlchemyError, OSError):
+        _log.exception("Erreur purge corbeille ramasses")
 
 
 async def _periodic_cleanup() -> None:

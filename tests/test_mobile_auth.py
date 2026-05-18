@@ -65,7 +65,7 @@ class TestCreateMobileToken:
         assert isinstance(token, str)
         assert len(token) > 30  # secrets.token_urlsafe(32) = ~43 chars
         assert isinstance(expires_at, _dt.datetime)
-        # TTL ≈ 90 jours (avec tolérance d'une seconde pour le now())
+        # TTL = MOBILE_TOKEN_TTL_DAYS (tolérance de quelques secondes pour now())
         delta = expires_at - _dt.datetime.now(_dt.UTC)
         assert abs(delta.total_seconds() - MOBILE_TOKEN_TTL_DAYS * 86400) < 5
 

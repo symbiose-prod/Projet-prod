@@ -5,7 +5,7 @@ Authentification de l'app iOS (Ferment Station mobile).
 
 Séparé de `common/auth.py` parce que le modèle est différent :
 - pas de cookie navigateur, on retourne un token Bearer brut
-- TTL plus long (90 jours), nommé par appareil
+- TTL fixe (30 jours), nommé par appareil
 - `last_used_at` mis à jour à chaque appel (audit + révocation ciblée)
 
 Ne dépend PAS de NiceGUI — testable en isolation.
@@ -22,9 +22,10 @@ from db.conn import run_sql
 
 _log = logging.getLogger("ferment.mobile_auth")
 
-# Durée de validité d'un token mobile. 90 jours = compromis confort utilisateur
-# (pas de relogin permanent) / sécurité (révocation possible côté serveur).
-MOBILE_TOKEN_TTL_DAYS = 90
+# Durée de validité d'un token mobile. 30 jours = compromis confort utilisateur
+# (relogin mensuel acceptable) / sécurité : un token volé sur un appareil perdu
+# expire en 1 mois max même sans révocation explicite.
+MOBILE_TOKEN_TTL_DAYS = 30
 
 
 def _hash_token(token: str) -> str:
