@@ -37,6 +37,7 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | PATCH   | ``/api/v1/admin/production-sheets/{id}`` | Tk* | mise à jour partielle (auto-save iOS) |
 | GET     | ``/api/v1/admin/production-overview`` | Tk* | brassins EB en cours + fiches draft associées (1 appel) |
 | GET     | ``/api/v1/admin/easybeer/brassin/{id}`` | Tk* | détail brassin EB (cache 3 niveaux) |
+| GET     | ``/api/v1/admin/cuves`` | Tk* | registre des cuves + tables de calibration volume↔hauteur |
 | POST    | ``/api/v1/admin/production-sheets/{id}/finalize`` | Tk* | finalise (génère PDF + status completed) |
 | GET     | ``/api/v1/admin/production-sheets/{id}/pdf`` | Tk* | re-télécharge le PDF stocké |
 
@@ -1939,6 +1940,27 @@ async def _v1_easybeer_brassin_detail(id_brassin: int, request: Request):
     return JSONResponse(detail)
 
 
+async def _v1_admin_cuves(request: Request):
+    """Registre des cuves + tables de calibration volume↔hauteur. ADMIN only.
+
+    Sert à l'app iOS pour : (1) proposer le choix de cuve à l'opérateur
+    sur la fiche de production, (2) interpoler localement le niveau de
+    liquide à partir du volume de remplissage.
+
+    Retour 200 : ``{"cuves": [...], "calibration": {...}}`` — cf.
+    ``common.services.cuve_service.get_cuves``.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+    if (user.get("role") or "").lower() != "admin":
+        return _forbidden("Admin access required")
+
+    from common.services.cuve_service import get_cuves
+
+    return JSONResponse(await asyncio.to_thread(get_cuves))
+
+
 # ─── Enregistrement des routes (appelé depuis app_nicegui.py) ──────────────
 
 def register_routes(app) -> None:
@@ -1984,6 +2006,7 @@ def register_routes(app) -> None:
     # Sprint 3b1 : liste = brassins EB en cours + détail brassin proxy
     app.get("/api/v1/admin/production-overview")(_v1_production_overview)
     app.get("/api/v1/admin/easybeer/brassin/{id_brassin:int}")(_v1_easybeer_brassin_detail)
+    app.get("/api/v1/admin/cuves")(_v1_admin_cuves)
     # Sprint 4 : finalisation + téléchargement PDF stocké
     app.post("/api/v1/admin/production-sheets/{sheet_id}/finalize")(_v1_finalize_production_sheet)
     app.get("/api/v1/admin/production-sheets/{sheet_id}/pdf")(_v1_get_production_sheet_pdf)

@@ -93,6 +93,7 @@ class TestUnauthorized:
         ("get", "/api/v1/admin/production-sheets/abc-123/pdf"),
         ("get", "/api/v1/auth/devices"),
         ("delete", "/api/v1/auth/devices/abc-123"),
+        ("get", "/api/v1/admin/cuves"),
     ])
     def test_no_token_returns_401(self, client, method, path):
         resp = client.request(method.upper(), path)
@@ -242,6 +243,28 @@ class TestRevokeDevice:
         assert resp.json()["ok"] is True
         # Révocation scopée : appelée avec (user_id, device_id)
         assert mock_revoke.call_args[0][0] == "user-1"
+
+
+# ─── Cuves (registre + calibration) ────────────────────────────────────────
+
+class TestAdminCuves:
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_non_admin_returns_403(self, mock_verify, client, auth_headers):
+        mock_verify.return_value = _user(role="user")
+        resp = client.get("/api/v1/admin/cuves", headers=auth_headers)
+        assert resp.status_code == 403
+
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_admin_returns_cuves_and_calibration(
+        self, mock_verify, client, auth_headers
+    ):
+        mock_verify.return_value = _user(role="admin")
+        resp = client.get("/api/v1/admin/cuves", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "cuves" in body
+        assert "calibration" in body
+        assert len(body["cuves"]) >= 3
 
 
 # ─── decode-gs1 ────────────────────────────────────────────────────────────
