@@ -1554,7 +1554,15 @@ async def _v1_admin_conditionnement_by_lot(request: Request):
 
 
 def _serialize_sheet_detail(s) -> dict:
-    """Sérialise ProductionSheetDetail en dict JSON pour le mobile."""
+    """Sérialise ProductionSheetDetail en dict JSON pour le mobile.
+
+    ``image_url`` : visuel produit servi par le VPS (mapping
+    ``assets/image_map.csv`` — même mécanisme que les étiquettes), résolu
+    par correspondance floue sur le libellé produit. ``None`` si pas de
+    visuel pour ce produit.
+    """
+    from common.services.etiquette_palette_service import get_product_image_url
+
     return {
         "id": s.id,
         "brassin_id": s.brassin_id,
@@ -1565,6 +1573,7 @@ def _serialize_sheet_detail(s) -> dict:
         "status": s.status,
         "version": s.version,
         "data": s.data,
+        "image_url": get_product_image_url(s.produit),
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
         "finalized_at": (
