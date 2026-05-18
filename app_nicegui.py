@@ -617,7 +617,11 @@ async def _sync_pending(request: Request):
         {"t": auth_info["tenant_id"]},
     )
     if not rows:
-        return JSONResponse(status_code=204, content=None)
+        # 204 No Content : pas de body. JSONResponse(content=None) sérialise
+        # "null" (4 bytes) tout en laissant Starlette annoncer un body vide
+        # côté HTTP/1.1, ce qui fait crasher uvicorn "Response content longer
+        # than Content-Length" via BaseHTTPMiddleware.
+        return Response(status_code=204)
 
     op = rows[0]
     # Passer en status "fetched"
