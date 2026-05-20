@@ -377,11 +377,6 @@ def _render_form(
     generate_section.props('id="step-generate"')
     with generate_section:
         _step_title(4, "Imprimer", "print")
-        with ui.row().classes("w-full items-center gap-3 q-mt-sm"):
-            double_copies_toggle = ui.checkbox(
-                "Imprimer 2 étiquettes (recommandé GS1 : 2 faces de palette)",
-                value=True,
-            )
 
         with ui.column().classes("w-full gap-2"):
             # Bouton primaire — impression directe via l'agent Brother
@@ -850,7 +845,7 @@ def _render_form(
                 generate_and_save_palette_label,
             )
 
-            n_copies = 2 if double_copies_toggle.value else 1
+            n_copies = 3
             full_pallet = bool(state["full_pallet"])
             pdf_bytes, _sscc, _label_id = await asyncio.to_thread(
                 generate_and_save_palette_label,
@@ -996,7 +991,7 @@ def _render_form(
         _open_confirm_dialog(entry, count, mode="download")
 
     def _open_confirm_dialog(entry: LabelEntry, count: int, *, mode: str):
-        n_copies = 2 if double_copies_toggle.value else 1
+        n_copies = 3
         full = bool(state["full_pallet"])
         layout = get_palette_layout(entry.fmt, entry.product_label)
         max_total = int(layout.get("total") or 0)
@@ -1043,7 +1038,7 @@ def _render_form(
                     f"Lot {entry.lot_str} — DDM {entry.ddm_date.strftime('%d/%m/%Y')}",
                 ).classes("text-body2").style(f"color: {COLORS['ink2']}")
                 ui.label(
-                    f"{n_copies} étiquette" + ("s (2 faces de palette)" if n_copies > 1 else ""),
+                    f"{n_copies} étiquettes",
                 ).classes("text-caption").style(f"color: {COLORS['ink2']}")
 
             with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
