@@ -26,6 +26,7 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | POST    | ``/api/v1/loadings/{id}/scan``   | Tk   | scan SSCC + lien à la ramasse (chargement J2) |
 | POST    | ``/api/v1/loadings/{id}/finalize`` | Tk | finalise prévisionnel → définitif + PDF BL + email |
 | DELETE  | ``/api/v1/loadings/{id}/palettes/{sscc}`` | Tk | délie une palette d'une ramasse (soft) |
+| GET     | ``/api/v1/events/loadings``      | Tk   | stream SSE temps réel (link/unlink/created/finalized) |
 | GET     | ``/api/v1/ramasses``             | Tk   | historique paginé des ramasses (toutes statuts, hors corbeille) |
 | GET     | ``/api/v1/ramasses/{id}/pdf``    | Tk   | PDF BL stocké (renvoie le ``pdf_bytes`` de la dernière version) |
 | POST    | ``/api/v1/ramasses/{id}/mark-driver-passed`` | Tk | marque "chauffeur passé" → verrouille l'édition |
@@ -71,7 +72,7 @@ import datetime as _dt_local
 import logging
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, Response, StreamingResponse
 
 from common.mobile_auth import (
     create_mobile_token,
@@ -1961,6 +1962,55 @@ async def _v1_admin_cuves(request: Request):
     return JSONResponse(await asyncio.to_thread(get_cuves))
 
 
+# ─── Synchro temps réel (SSE) ──────────────────────────────────────────────
+
+async def _v1_events_loadings(request: Request):
+    """Stream SSE des events ramasse (palette linked/unlinked, loading
+    created/finalized).
+
+    Auth : Bearer token. Le stream est scoped au ``tenant_id`` du user —
+    aucun risque de cross-tenant leak.
+
+    Format SSE standard (consommable par EventSource JS / URLSession iOS) :
+        event: palette_linked
+        data: {"type": "palette_linked", "ramasse_id": "...", "sscc": "...", ...}
+
+        event: palette_unlinked
+        data: {...}
+
+    Events possibles :
+      - ``palette_linked`` : scan d'une palette CF → camion (ou batch add)
+      - ``palette_unlinked`` : retrait d'une palette d'une ramasse
+      - ``loading_created`` : nouvelle ramasse ``previsionnel`` créée
+      - ``loading_finalized`` : ramasse passée en ``definitif``
+
+    Heartbeat (commentaire ``: ping``) toutes les 25 sec pour éviter que
+    les proxies (Caddy/nginx) coupent la connexion inactive.
+
+    Le client doit gérer la reconnexion auto (gérée nativement par
+    ``EventSource`` côté navigateur, à coder pour ``URLSession`` iOS).
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    from common.services.realtime import sse_stream
+
+    tenant_id = str(user["tenant_id"])
+
+    return StreamingResponse(
+        sse_stream(tenant_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Désactive le buffering nginx/Caddy — critique pour que les
+            # chunks arrivent au client immédiatement.
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ─── Enregistrement des routes (appelé depuis app_nicegui.py) ──────────────
 
 def register_routes(app) -> None:
@@ -1990,6 +2040,9 @@ def register_routes(app) -> None:
     app.post("/api/v1/loadings/{ramasse_id}/scan")(_v1_scan_palette_to_loading)
     app.post("/api/v1/loadings/{ramasse_id}/finalize")(_v1_finalize_loading)
     app.delete("/api/v1/loadings/{ramasse_id}/palettes/{sscc}")(_v1_unlink_palette)
+    # Stream SSE temps réel (palette linked/unlinked, loading created/finalized).
+    # Scope tenant strict ; alimente la synchro multi-comptes web + iOS.
+    app.get("/api/v1/events/loadings")(_v1_events_loadings)
     # Historique ramasses (read-only) + actions courantes
     app.get("/api/v1/ramasses")(_v1_list_ramasses)
     app.get("/api/v1/ramasses/{ramasse_id}/pdf")(_v1_ramasse_pdf)

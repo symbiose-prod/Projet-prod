@@ -25,6 +25,7 @@ import re
 import warnings
 from dataclasses import dataclass
 
+from common.services.realtime import broadcast as _rt_broadcast
 from db.conn import run_sql
 
 _log = logging.getLogger("ferment.services.loading")
@@ -305,6 +306,7 @@ def link_palettes_to_ramasse(
         return (0, [])
     inserted = 0
     conflicts: list[str] = []
+    linked_sscc: list[str] = []
     for sscc in sscc_list:
         try:
             # ON CONFLICT cible l'index unique partiel `unlinked_at IS NULL` :
@@ -322,11 +324,21 @@ def link_palettes_to_ramasse(
             )
             if rows:
                 inserted += 1
+                linked_sscc.append(sscc)
             else:
                 conflicts.append(sscc)
         except Exception:
             _log.exception("Échec INSERT palette_loadings sscc=%s", sscc)
             conflicts.append(sscc)
+    # Broadcast un event par palette effectivement liée. Les subscribers SSE
+    # (web ramasse + iOS) animeront le déplacement CF → camion.
+    for sscc in linked_sscc:
+        _rt_broadcast(tenant_id, {
+            "type": "palette_linked",
+            "ramasse_id": ramasse_id,
+            "sscc": sscc,
+            "scanned_by": user_email or "",
+        })
     return (inserted, conflicts)
 
 
@@ -845,6 +857,18 @@ def send_previsionnel(
             ramasse_id, destinataire,
         )
 
+    # Broadcast création — les autres sessions web/iOS rafraîchissent la
+    # liste des ramasses actives sans polling.
+    _rt_broadcast(tenant_id, {
+        "type": "loading_created",
+        "ramasse_id": ramasse_id,
+        "destinataire": destinataire,
+        "date_ramasse": date_ramasse.isoformat(),
+        "total_palettes": total_palettes,
+        "total_cartons": total_cartons,
+        "created_by": user_email or "",
+    })
+
     return {
         "id": ramasse_id,
         "total_palettes": total_palettes,
@@ -999,6 +1023,18 @@ def finalize_loading(
         "recipients": recipients,
         "version": next_version,
     }
+
+    # Broadcast finalisation — clôt la ramasse côté UI : on enlève la
+    # bannière "ramasse en cours" et on bascule l'historique.
+    _rt_broadcast(tenant_id, {
+        "type": "loading_finalized",
+        "ramasse_id": ramasse_id,
+        "total_palettes": total_palettes,
+        "total_cartons": total_cartons,
+        "version": next_version,
+        "finalized_by": user_email or "",
+    })
+
     return (info, pdf_bytes)
 
 
@@ -1069,5 +1105,12 @@ def unlink_palette(
             "Palette %s déliée de ramasse %s par %s — raison: %s",
             sscc_clean, ramasse_id, user_email or "?", reason_clean,
         )
+        _rt_broadcast(tenant_id, {
+            "type": "palette_unlinked",
+            "ramasse_id": ramasse_id,
+            "sscc": sscc_clean,
+            "reason": reason_clean,
+            "unlinked_by": user_email or "",
+        })
         return True
     return False
