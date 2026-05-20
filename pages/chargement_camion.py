@@ -1827,6 +1827,64 @@ def _render_form(*, tenant_id: str, user_email: str) -> None:
     # export CSV, etc.), un lien renvoie vers /historique-ramasses.
     _render_recent_history(tenant_id)
 
+    # ── Synchro temps réel multi-comptes (SSE broker) ──
+    # Quand un autre opérateur du même tenant scanne/délie une palette ou
+    # crée/finalise une ramasse, on rafraîchit les zones concernées sans
+    # qu'il ait à recharger. Critique pour le scénario multi-iPad
+    # (ex: Max scanne sur son iPad, Mohamed voit la palette bouger en
+    # temps réel sur son écran depuis la chambre froide).
+    async def _sse_subscriber() -> None:
+        from common.services.realtime import subscribe
+        try:
+            async for event in subscribe(tenant_id):
+                evt_type = str(event.get("type") or "")
+                evt_ramasse_id = str(event.get("ramasse_id") or "")
+                active_id = _active_ramasse_id()
+                try:
+                    if (
+                        evt_type in ("palette_linked", "palette_unlinked")
+                        and evt_ramasse_id
+                        and evt_ramasse_id == active_id
+                    ):
+                        # Palette ajoutée/retirée de la ramasse en cours sur
+                        # un autre device → on resynchronise CF + liées + récap.
+                        _refresh_linked_palettes()
+                        _refresh_cold_room()
+                        _refresh_summary()
+                    elif evt_type in ("loading_created", "loading_finalized"):
+                        # Bascule d'état de ramasse — peut concerner notre
+                        # destinataire courant. On recharge le bandeau et
+                        # tout ce qui en dépend.
+                        _refresh_state_banner()
+                        _sync_after_active_ramasse_changed()
+                        _refresh_cold_room()
+                except Exception:
+                    _log.warning(
+                        "Échec dispatch event SSE type=%s", evt_type,
+                        exc_info=True,
+                    )
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            _log.exception("Boucle SSE chargement_camion crashée")
+
+    _sse_task = asyncio.create_task(_sse_subscriber())
+
+    # Cleanup quand le client est définitivement supprimé (page fermée,
+    # timeout de session). on_delete est plus sûr que on_disconnect en
+    # NiceGUI 3.x qui se déclenche aussi sur reconnexion WebSocket.
+    def _cancel_sse(_client=None):
+        if not _sse_task.done():
+            _sse_task.cancel()
+    try:
+        ui.context.client.on_delete(_cancel_sse)
+    except (AttributeError, RuntimeError):
+        # NiceGUI < 3.0 : fallback sur on_disconnect (moins idéal mais ok).
+        try:
+            ui.context.client.on_disconnect(_cancel_sse)
+        except Exception:
+            _log.warning("Cleanup SSE non installable")
+
     # Initial render — affichera les palettes restaurées si présentes
     _refresh_basket()
     _refresh_cold_room()
