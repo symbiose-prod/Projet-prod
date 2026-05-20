@@ -175,6 +175,7 @@ def finalize_ramasse_lines(
     pdf_bytes: bytes | None = None,
     packaging: list[dict[str, Any]] | None = None,
     tenant_id: str | None = None,
+    previsionnel_sscc_list: list[str] | None = None,
 ) -> bool:
     """Patch les lignes d'une ramasse fraîchement créée en placeholder.
 
@@ -182,11 +183,16 @@ def finalize_ramasse_lines(
     ``version`` / ``version_log`` / ``previous_lines``. Sémantique :
     « finalisation atomique du create initial ».
 
-    Use case : ``_on_validate`` du flow scan-driven crée d'abord une
-    ramasse vide pour récupérer son id (FK obligatoire pour
-    ``palette_loadings.ramasse_id``), insère les liens palette, puis
-    appelle ``rebuild_lines_from_palettes`` pour obtenir les vraies
-    lignes — qu'on persiste ici en une seule UPDATE atomique.
+    Use case : ``send_previsionnel`` crée d'abord une ramasse vide pour
+    récupérer son id, lookup les palettes prévues, agrège les lignes,
+    puis appelle cette fonction pour persister lines + totaux + PDF +
+    snapshot des SSCC prévus (workflow J1 informatif, sans link DB).
+
+    Args:
+        previsionnel_sscc_list: liste des SSCC annoncés dans le BL
+            provisoire au J1 — stockée pour permettre le diff prévu/
+            chargé au finalize J2. Si None, le champ DB n'est pas
+            touché (use case update simple sans changer la prévision).
 
     Retourne ``True`` si la ramasse existait et a été patchée, ``False``
     sinon (introuvable ou hors tenant).
@@ -206,6 +212,12 @@ def finalize_ramasse_lines(
     if packaging is not None:
         pkg_sql = ", packaging = CAST(:pkg AS jsonb)"
         params["pkg"] = json.dumps(packaging, default=str, ensure_ascii=False)
+    psl_sql = ""
+    if previsionnel_sscc_list is not None:
+        psl_sql = ", previsionnel_sscc_list = CAST(:psl AS jsonb)"
+        params["psl"] = json.dumps(
+            previsionnel_sscc_list, default=str, ensure_ascii=False,
+        )
     rows = run_sql(
         f"""
         UPDATE ramasse_history
@@ -214,7 +226,7 @@ def finalize_ramasse_lines(
             total_palettes = :tp,
             total_poids_kg = :tpk,
             lines          = CAST(:lines AS jsonb),
-            pdf_bytes      = COALESCE(:pdf, pdf_bytes){pkg_sql},
+            pdf_bytes      = COALESCE(:pdf, pdf_bytes){pkg_sql}{psl_sql},
             updated_at     = now()
         WHERE id = :rid AND tenant_id = :tid
         RETURNING id
@@ -272,7 +284,7 @@ def get_ramasse(
         SELECT id, date_ramasse, destinataire, recipients,
                line_count, total_cartons, total_palettes, total_poids_kg,
                lines, packaging, pdf_bytes, brassin_ids, status,
-               version, version_log, previous_lines,
+               version, version_log, previous_lines, previsionnel_sscc_list,
                driver_passed, driver_passed_at, driver_passed_by,
                deleted_at, created_at, updated_at
         FROM ramasse_history

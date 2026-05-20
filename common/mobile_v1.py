@@ -1116,6 +1116,14 @@ async def _v1_get_loading(ramasse_id: str, request: Request):
     palettes = await asyncio.to_thread(
         list_linked_palettes, ramasse_id, user["tenant_id"],
     )
+    # SSCC annoncés au J1 (workflow informatif) — peut être None pour les
+    # ramasses créées avant le refacto 2026-05 (auront previsionnel_sscc_list
+    # NULL en DB) ou pour les ramasses définitives (snapshot devenu obsolète).
+    raw_psl = ramasse.get("previsionnel_sscc_list")
+    previsionnel_sscc_list: list[str] = (
+        [str(s) for s in raw_psl] if isinstance(raw_psl, list) else []
+    )
+
     return JSONResponse({
         "id": str(ramasse["id"]),
         "date_ramasse": (
@@ -1128,6 +1136,8 @@ async def _v1_get_loading(ramasse_id: str, request: Request):
         "total_cartons": int(ramasse.get("total_cartons") or 0),
         "total_poids_kg": int(ramasse.get("total_poids_kg") or 0),
         "palettes": [_palette_to_dict(p) for p in palettes],
+        "previsionnel_sscc_list": previsionnel_sscc_list,
+        "previsionnel_count": len(previsionnel_sscc_list),
     })
 
 

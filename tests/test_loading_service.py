@@ -508,22 +508,60 @@ class TestSendPrevisionnel:
     }
 
     def _setup_happy_path_mocks(self, monkeypatch):
-        """Configure tous les mocks pour le scénario success."""
+        """Configure tous les mocks pour le scénario success.
+
+        Depuis le refacto 2026-05, send_previsionnel n'utilise plus
+        link_palettes_to_ramasse ni rebuild_lines_from_palettes (workflow J1
+        informatif). On mock lookup_sscc_batch + aggregate_palettes_to_lines.
+        """
         monkeypatch.setattr(
             loading_service, "_resolve_destinataire",
             lambda name: self._SOFRIPA_OBJ if name == "SOFRIPA" else None,
         )
+        # 2 palettes valides dans le lookup batch (mêmes SSCC que les tests
+        # qui passent ["111111111111111111", "222222222222222222"]).
+        fake_palettes = {
+            "111111111111111111": loading_service.PaletteInfo(
+                sscc="111111111111111111",
+                gtin_palette="03760123456789",
+                lot="L26045",
+                ddm=_dt.date(2027, 5, 11),
+                case_count=96,
+                designation="Kéfir Pêche",
+                fmt="12x33",
+                marque="Symbiose",
+                gout="Pêche",
+                pcb=12,
+                gtin_uvc="03760000000000",
+                generated_at=_dt.datetime(2026, 5, 20, 10, 0),
+            ),
+            "222222222222222222": loading_service.PaletteInfo(
+                sscc="222222222222222222",
+                gtin_palette="03760123456789",
+                lot="L26045",
+                ddm=_dt.date(2027, 5, 11),
+                case_count=96,
+                designation="Kéfir Pêche",
+                fmt="12x33",
+                marque="Symbiose",
+                gout="Pêche",
+                pcb=12,
+                gtin_uvc="03760000000000",
+                generated_at=_dt.datetime(2026, 5, 20, 11, 0),
+            ),
+        }
         monkeypatch.setattr(
-            loading_service, "link_palettes_to_ramasse",
-            lambda tid, **kw: (2, []),
+            loading_service, "lookup_sscc_batch",
+            lambda sscc_list, tenant_id: {
+                s: p for s, p in fake_palettes.items() if s in (sscc_list or [])
+            },
         )
         monkeypatch.setattr(
-            loading_service, "rebuild_lines_from_palettes",
-            lambda rid, tid, **kw: (
-                [{"ref": "X", "produit": "Kéfir 33cl", "ddm": "11/05/2027",
-                  "cartons": 192, "palettes": 2, "poids": 1600}],
-                192, 2, 1600,
-            ),
+            loading_service, "aggregate_palettes_to_lines",
+            lambda palettes, carton_weight_fn=None: [
+                {"ref": "X", "produit": "Kéfir 33cl", "ddm": "11/05/2027",
+                 "cartons": 192, "palettes": 2, "poids": 1600},
+            ] if palettes else [],
         )
 
     def test_unknown_destinataire_raises_value_error(self, monkeypatch):
@@ -615,6 +653,11 @@ class TestSendPrevisionnel:
         assert fin_kwargs["total_palettes"] == 2
         assert fin_kwargs["total_cartons"] == 192
         assert fin_kwargs["pdf_bytes"] == b"%PDF-fake"
+        # Le snapshot SSCC est bien persisté pour le diff au J2 — sorted
+        # pour matcher le tri appliqué par send_previsionnel (déterminisme).
+        assert fin_kwargs["previsionnel_sscc_list"] == [
+            "111111111111111111", "222222222222222222",
+        ]
 
         # Mail envoyé aux recipients
         mail_kwargs = m_mail.call_args.kwargs
@@ -626,6 +669,36 @@ class TestSendPrevisionnel:
         assert result["total_palettes"] == 2
         assert result["email_sent"] is True
         assert result["inserted"] == 2
+
+    def test_does_not_link_palettes_at_j1(self, monkeypatch):
+        """Garde-fou : depuis 2026-05, send_previsionnel ne doit PLUS lier
+        les palettes au prévisionnel J1. palette_loadings reste vide
+        jusqu'au scan J2. Si quelqu'un re-introduit l'appel par accident,
+        ce test détecte la régression.
+        """
+        self._setup_happy_path_mocks(monkeypatch)
+        with (
+            mock.patch("common.ramasse_history.save_ramasse") as m_save,
+            mock.patch("common.ramasse_history.finalize_ramasse_lines"),
+            mock.patch(
+                "common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf",
+                return_value=b"%PDF",
+            ),
+            mock.patch("common.email.send_html_with_pdf"),
+            mock.patch.object(
+                loading_service, "link_palettes_to_ramasse",
+            ) as m_link,
+        ):
+            m_save.return_value = "ramasse-no-link"
+            loading_service.send_previsionnel(
+                "tenant-A",
+                user_id="u1", user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 5, 20),
+                sscc_list=["111111111111111111", "222222222222222222"],
+            )
+
+        m_link.assert_not_called()
 
     def test_email_failure_returns_email_sent_false(self, monkeypatch):
         """Si send_html_with_pdf raise, la ramasse reste créée mais

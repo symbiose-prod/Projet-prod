@@ -177,6 +177,79 @@ def lookup_sscc(sscc_raw: str, tenant_id: str) -> LookupResult:
     return LookupResult(status="ok", palette=palette)
 
 
+def lookup_sscc_batch(
+    sscc_list: list[str], tenant_id: str,
+) -> dict[str, PaletteInfo]:
+    """Lookup batch de plusieurs SSCC en un seul aller-retour DB.
+
+    Utilisé par ``send_previsionnel`` au J1 pour générer le PDF BL
+    provisoire et agréger les lignes à partir d'une liste de SSCC, SANS
+    passer par ``palette_loadings`` (les palettes ne sont pas encore
+    liées à la ramasse à ce stade — workflow J1 informatif uniquement).
+
+    Args:
+        sscc_list: liste de SSCC bruts (peuvent contenir préfixes AI ou
+                   séparateurs — sera normalisée par SSCC).
+        tenant_id: scope tenant strict.
+
+    Returns:
+        dict ``{sscc_normalisé: PaletteInfo}``. Les SSCC inconnus,
+        annulés (voided), ou avec etiquette_palette_history manquante
+        sont silencieusement omis du dict. L'appelant compare donc
+        ``set(sscc_list) - set(result.keys())`` pour détecter les
+        SSCC "fantômes" si besoin.
+    """
+    if not sscc_list:
+        return {}
+    # Normalise + dédoublonne
+    normalized = sorted({
+        _normalize_sscc(s) for s in sscc_list
+        if _normalize_sscc(s) and len(_normalize_sscc(s)) == 18
+    })
+    if not normalized:
+        return {}
+
+    rows = run_sql(
+        """SELECT
+              sl.sscc, sl.gtin_palette, sl.lot, sl.ddm,
+              sl.case_count, sl.generated_at, sl.voided_at,
+              eph.designation, eph.fmt, eph.marque, eph.gout,
+              eph.pcb, eph.gtin_uvc
+           FROM sscc_log sl
+           LEFT JOIN etiquette_palette_history eph
+                  ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
+           WHERE sl.sscc = ANY(:ssccs)
+             AND sl.tenant_id = :t""",
+        {"ssccs": normalized, "t": tenant_id},
+    ) or []
+
+    out: dict[str, PaletteInfo] = {}
+    for r in rows:
+        if r.get("voided_at"):
+            continue  # palette fantôme — ne pas inclure dans le BL
+        if not r.get("designation"):
+            continue  # etiquette_palette_history manquante (anomalie)
+        ddm = r.get("ddm")
+        ddm_date = ddm if isinstance(ddm, _dt.date) or ddm is None \
+            else _dt.date.fromisoformat(str(ddm)[:10])
+        sscc = str(r["sscc"])
+        out[sscc] = PaletteInfo(
+            sscc=sscc,
+            gtin_palette=str(r.get("gtin_palette") or ""),
+            lot=str(r.get("lot") or ""),
+            ddm=ddm_date,
+            case_count=int(r.get("case_count") or 0),
+            designation=str(r.get("designation") or ""),
+            fmt=str(r.get("fmt") or ""),
+            marque=str(r.get("marque") or ""),
+            gout=str(r.get("gout") or ""),
+            pcb=int(r.get("pcb") or 0),
+            gtin_uvc=str(r.get("gtin_uvc") or ""),
+            generated_at=r["generated_at"],
+        )
+    return out
+
+
 def lookup_sscc_from_image(image_bytes: bytes, tenant_id: str) -> LookupResult:
     """Décode une image (caméra iPhone), extrait l'AI 00 (SSCC) et appelle
     ``lookup_sscc``. Retourne 'unknown' si pas de SSCC trouvé.
@@ -797,18 +870,27 @@ def send_previsionnel(
         user_id=user_id,
     )
 
-    # 2. Lien palettes (conflits = palettes déjà chargées ailleurs)
-    inserted, conflicts = link_palettes_to_ramasse(
-        tenant_id,
-        sscc_list=sscc_list or [],
-        ramasse_id=ramasse_id,
-        user_email=user_email,
-    )
+    # 2. Lookup batch des palettes annoncées (SANS lien DB — workflow refondu
+    #    2026-05 : le prévisionnel J1 est purement informatif. Les palettes
+    #    restent en CF côté palette_loadings, ne sont liées qu'au scan J2.
+    #    Les SSCC inconnus ou annulés sont silencieusement omis du résultat.
+    palette_map = lookup_sscc_batch(sscc_list or [], tenant_id)
+    palettes_prevues = list(palette_map.values())
+    # SSCC effectivement valides — snapshot persisté pour diff au J2.
+    valid_sscc = sorted(palette_map.keys())
+    # Conflits "shape backward-compat" pour le retour : SSCC qui n'ont pas
+    # été trouvés (sscc_log absent, palette annulée, etc.).
+    conflicts = sorted(set(sscc_list or []) - set(valid_sscc))
+    inserted = len(valid_sscc)
 
-    # 3. Rebuild lines + génération PDF
-    lines, total_cartons, total_palettes, total_poids = rebuild_lines_from_palettes(
-        ramasse_id, tenant_id,
-    )
+    # 3. Agrégation directe depuis PaletteInfo (sans lecture palette_loadings)
+    total_cartons = sum(p.case_count for p in palettes_prevues)
+    total_palettes = len(palettes_prevues)
+    lines = aggregate_palettes_to_lines(palettes_prevues)
+    # Poids = somme des poids estimés par ligne (cohérent avec aggregate)
+    total_poids = sum(int(line.get("poids") or 0) for line in lines)
+
+    # 4. Génération PDF BL provisoire
     df_lines = _build_df_for_pdf(lines)
     pdf_bytes = build_bl_enlevements_pdf(
         date_creation=_dt.date.today(),
@@ -820,7 +902,9 @@ def send_previsionnel(
         kind="previsionnel",
     )
 
-    # 4. Finalize en DB (atomic patch lignes + totaux + PDF)
+    # 5. Finalize en DB (atomic patch lignes + totaux + PDF + snapshot SSCC).
+    #    Le champ previsionnel_sscc_list permettra au finalize J2 de
+    #    calculer le diff prévu vs réellement scanné.
     finalize_ramasse_lines(
         ramasse_id,
         lines=lines,
@@ -830,6 +914,7 @@ def send_previsionnel(
         pdf_bytes=pdf_bytes,
         packaging=packaging_clean,
         tenant_id=tenant_id,
+        previsionnel_sscc_list=valid_sscc,
     )
 
     # 5. Envoi email — best-effort (la ramasse reste en DB si l'email plante)

@@ -370,6 +370,15 @@ CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_driver_passed
 ALTER TABLE ramasse_history
   ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Prévisionnel non-engageant (ajout 2026-05-20) — workflow J1/J2 refondu.
+-- Liste des SSCC annoncés au logisticien dans le BL provisoire J1, SANS
+-- les lier à la ramasse en DB (palette_loadings reste vide jusqu'au scan J2).
+-- Permet : (1) générer le PDF BL provisoire, (2) calculer le diff prévu vs
+-- chargé au finalize J2 (mail définitif rectificatif), (3) afficher un
+-- compteur "X palettes prévues" sur l'app iOS pendant le chargement.
+ALTER TABLE ramasse_history
+  ADD COLUMN IF NOT EXISTS previsionnel_sscc_list JSONB;
+
 -- Index partiel : seules les lignes vivantes (non supprimées) sont indexées,
 -- les requêtes quotidiennes scannent donc uniquement les ramasses actives.
 CREATE INDEX IF NOT EXISTS idx_ramasse_tenant_active
