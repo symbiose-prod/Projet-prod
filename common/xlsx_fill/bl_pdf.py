@@ -60,6 +60,11 @@ def build_bl_enlevements_pdf(
     if "Produit" not in df.columns and "Produit (go\u00fbt + format)" in df.columns:
         df = df.rename(columns={"Produit (go\u00fbt + format)": "Produit"})
 
+    # Mode d\u00e9taill\u00e9 (1 ligne par SSCC) vs legacy agr\u00e9g\u00e9 (1 ligne par produit).
+    # D\u00e9tection par pr\u00e9sence de la colonne SSCC. Mode utilis\u00e9 depuis la refonte
+    # Sofripa : R\u00e9f. Sofripa / SSCC / D\u00e9signation / DDM / Lot / Nb cartons / Poids.
+    is_detailed_mode = "SSCC" in df.columns
+
     def _ival(x):
         try:
             return int(round(float(x)))
@@ -75,6 +80,7 @@ def build_bl_enlevements_pdf(
     is_legacy_update = (not kind) and bool(previous_lines) and version > 1
     is_update = (is_definitif and bool(previous_lines)) or is_legacy_update
     old_cartons_by_ref: dict[str, int] = {}
+    old_ssccs: set[str] = set()
     if is_update:
         for prev in previous_lines or []:
             ref = str(prev.get("ref") or prev.get("R\u00e9f\u00e9rence") or "").strip()
@@ -85,11 +91,21 @@ def build_bl_enlevements_pdf(
                     or prev.get("Quantit\u00e9 cartons")
                     or 0
                 )
+            sscc_prev = str(prev.get("sscc") or "").strip()
+            if sscc_prev:
+                old_ssccs.add(sscc_prev)
 
-    def _row_status(ref: str, new_cartons: int) -> str:
-        """Retourne 'added', 'modified' ou 'unchanged'. Toujours 'unchanged' en mode v1."""
+    def _row_status(ref: str, new_cartons: int, sscc_full: str = "") -> str:
+        """Retourne 'added', 'modified' ou 'unchanged'.
+
+        - Mode d\u00e9taill\u00e9 : compare par SSCC. 'modified' impossible (palette unique).
+        - Mode legacy : compare par ref agr\u00e9g\u00e9e + cartons.
+        - Toujours 'unchanged' hors update.
+        """
         if not is_update:
             return "unchanged"
+        if is_detailed_mode:
+            return "unchanged" if sscc_full in old_ssccs else "added"
         if ref not in old_cartons_by_ref:
             return "added"
         if old_cartons_by_ref[ref] != new_cartons:
@@ -236,36 +252,49 @@ def build_bl_enlevements_pdf(
     pdf.ln(6)
     pdf.set_fill_color(230, 230, 230)
 
-    headers = ["R\u00e9f\u00e9rence", "Produit", "DDM", "Nb cartons", "Nb palettes", "Poids (kg)"]
-    # En mode mise \u00e0 jour, "Nb cartons" devient "123 (etait 99)" (~24mm),
-    # qui ne tient pas dans 24mm \u2192 \u00e9largir la colonne (-6mm sur Produit).
-    if is_update:
-        widths_base = [30, 60, 26, 30, 22, 12]
+    # Mode d\u00e9taill\u00e9 : 7 colonnes (R\u00e9f Sofripa, SSCC, D\u00e9signation, DDM, Lot,
+    # Nb cartons, Poids). La colonne "flex" qui absorbe l'exc\u00e9dent est
+    # D\u00e9signation (index 2) car c'est la plus longue \u00e0 priori (libell\u00e9s Sofripa).
+    # Mode legacy : 6 colonnes existantes, flex = Produit (index 1).
+    if is_detailed_mode:
+        headers = ["R\u00e9f. Sofripa", "SSCC", "D\u00e9signation", "DDM", "Lot", "Nb cartons", "Poids (kg)"]
+        widths_base = [22, 24, 50, 22, 22, 22, 18]   # total = 180
+        flex_idx = 2
+        min_w = {0: 22.0, 1: 24.0, 2: 38.0, 3: 22.0, 4: 18.0, 5: 22.0, 6: 18.0}
     else:
-        widths_base = [30, 66, 26, 24, 22, 12]
+        headers = ["R\u00e9f\u00e9rence", "Produit", "DDM", "Nb cartons", "Nb palettes", "Poids (kg)"]
+        # En mode mise \u00e0 jour, "Nb cartons" devient "123 (etait 99)" (~24mm),
+        # qui ne tient pas dans 24mm \u2192 \u00e9largir la colonne (-6mm sur Produit).
+        if is_update:
+            widths_base = [30, 60, 26, 30, 22, 12]
+        else:
+            widths_base = [30, 66, 26, 24, 22, 12]
+        flex_idx = 1
+        min_w = {0: 30.0, 1: 58.0, 2: 26.0, 3: 28.0 if is_update else 22.0, 4: 20.0, 5: 18.0}
     widths = widths_base[:]
     header_h = 8
     line_h = 6
 
     pdf.set_font("Helvetica", "B", 10)
     margin_mm = 2.5
-    min_w = {0: 30.0, 1: 58.0, 2: 26.0, 3: 28.0 if is_update else 22.0, 4: 20.0, 5: 18.0}
     extra_needed = 0.0
     for j, h in enumerate(headers):
-        if j == 1:
+        if j == flex_idx:
             continue
         need = pdf.get_string_width(_txt(h)) + 2 * margin_mm
         new_w = max(widths[j], need, min_w.get(j, widths[j]))
         extra_needed += max(0.0, new_w - widths_base[j])
         widths[j] = new_w
-    widths[1] = max(min_w[1], widths[1] - extra_needed)
+    widths[flex_idx] = max(min_w[flex_idx], widths[flex_idx] - extra_needed)
     total = sum(widths)
     if total > 180.0:
         overflow = total - 180.0
-        take = min(overflow, max(0.0, widths[1] - min_w[1]))
-        widths[1] -= take
+        take = min(overflow, max(0.0, widths[flex_idx] - min_w[flex_idx]))
+        widths[flex_idx] -= take
         overflow -= take
-        for j in (3, 4, 5, 0, 2):
+        # Autres colonnes peuvent c\u00e9der dans l'ordre de priorit\u00e9 (num\u00e9riques en dernier)
+        shrink_order = (5, 6, 0, 2, 3, 4) if is_detailed_mode else (3, 4, 5, 0, 2)
+        for j in shrink_order:
             if overflow <= 0:
                 break
             free = max(0.0, widths[j] - min_w[j])
@@ -304,24 +333,39 @@ def build_bl_enlevements_pdf(
     modified_count = 0
 
     for _, r in df.iterrows():
-        ref_raw = str(r.get("R\u00e9f\u00e9rence", "")).strip()
+        ref_raw = str(r.get("R\u00e9f. Sofripa", r.get("R\u00e9f\u00e9rence", ""))).strip()
         ref = _txt(ref_raw)
-        prod = _txt(r.get("Produit", ""))
         ddm = _txt(r.get("DDM", ""))
         qc = _ival(r.get("Nb cartons", r.get("Quantit\u00e9 cartons", 0)))
         tot_cart += qc
-        qp = _ival(r.get("Nb palettes", r.get("Quantit\u00e9 palettes", 0)))
-        tot_pal += qp
         po = _ival(r.get("Poids (kg)", r.get("Poids palettes (kg)", 0)))
         tot_poids += po
 
-        # Statut de la ligne pour le surlignage
-        status = _row_status(ref_raw, qc)
+        if is_detailed_mode:
+            sscc_display = str(r.get("SSCC", "")).strip()
+            desig = _txt(r.get("D\u00e9signation", ""))
+            lot = _txt(r.get("Lot", ""))
+            tot_pal += 1   # 1 ligne = 1 palette
+        else:
+            sscc_display = ""
+            desig = _txt(r.get("Produit", ""))
+            lot = ""
+            qp = _ival(r.get("Nb palettes", r.get("Quantit\u00e9 palettes", 0)))
+            tot_pal += qp
+
+        # Statut de la ligne pour le surlignage. En mode détaillé : compare
+        # par suffixe 8 digits du SSCC (previous_lines peuvent contenir le
+        # SSCC complet ou tronqué, on aligne sur les 8 derniers).
+        if is_detailed_mode and is_update:
+            old_ssccs_suffix = {s[-8:] for s in old_ssccs}
+            status = "unchanged" if sscc_display[-8:] in old_ssccs_suffix else "added"
+        else:
+            status = _row_status(ref_raw, qc)
         if status == "added":
             fill_rgb = FILL_ADDED
             added_count += 1
             ref_display = _txt(f"* {ref_raw}")  # marqueur "nouveau"
-            cart_display = f"{qc} (NEW)"
+            cart_display = str(qc) if is_detailed_mode else f"{qc} (NEW)"
         elif status == "modified":
             fill_rgb = FILL_MODIFIED
             modified_count += 1
@@ -333,18 +377,29 @@ def build_bl_enlevements_pdf(
             ref_display = ref
             cart_display = str(qc)
 
-        # Hauteur de ligne = max wrap des cellules. Sans ça, une cellule qui
-        # wrappe avec h=row_h occupe 2× row_h et déborde sur la ligne suivante
-        # (cas typique : cart_display "12 (etait 8)" en mode mise à jour quand
-        # la colonne "Nb cartons" est étroite).
-        cells_data = [
-            (widths[0], ref_display,  "C"),
-            (widths[1], prod,         "L"),
-            (widths[2], ddm,          "C"),
-            (widths[3], cart_display, "C"),
-            (widths[4], str(qp),      "C"),
-            (widths[5], str(po),      "C"),
-        ]
+        # Suffix "kg" sur le poids en mode détaillé (demande Sofripa)
+        po_display = f"{po} kg" if is_detailed_mode else str(po)
+
+        # Hauteur de ligne = max wrap des cellules.
+        if is_detailed_mode:
+            cells_data = [
+                (widths[0], ref_display,  "C"),
+                (widths[1], sscc_display, "C"),
+                (widths[2], desig,        "L"),
+                (widths[3], ddm,          "C"),
+                (widths[4], lot,          "C"),
+                (widths[5], cart_display, "C"),
+                (widths[6], po_display,   "C"),
+            ]
+        else:
+            cells_data = [
+                (widths[0], ref_display,  "C"),
+                (widths[1], desig,        "L"),
+                (widths[2], ddm,          "C"),
+                (widths[3], cart_display, "C"),
+                (widths[4], str(qp),      "C"),
+                (widths[5], po_display,   "C"),
+            ]
         n_lines_per_cell = [
             max(1, len(pdf.multi_cell(w, line_h, t, split_only=True)))
             for (w, t, _a) in cells_data
@@ -374,10 +429,20 @@ def build_bl_enlevements_pdf(
     # Totaux — reset couleur grise pour cohérence avec en-tête
     pdf.set_fill_color(*FILL_HEADER)
     pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(widths[0] + widths[1] + widths[2], 8, _txt("Totaux"), border=1, align="R", fill=True)
-    pdf.cell(widths[3], 8, _txt(f"{tot_cart:,}".replace(",", " ")), border=1, align="C", fill=True)
-    pdf.cell(widths[4], 8, _txt(f"{tot_pal:,}".replace(",", " ")), border=1, align="C", fill=True)
-    pdf.cell(widths[5], 8, _txt(f"{tot_poids:,}".replace(",", " ")), border=1, align="C", fill=True)
+    if is_detailed_mode:
+        # 7 cols : Réf / SSCC / Désignation / DDM / Lot / Cartons / Poids
+        # Le label "Totaux (N palettes)" remplace une colonne "Nb palettes"
+        # absente : on indique le nombre de palettes dans le label.
+        label = f"Totaux ({tot_pal} palette{'s' if tot_pal > 1 else ''})"
+        label_w = sum(widths[:5])
+        pdf.cell(label_w, 8, _txt(label), border=1, align="R", fill=True)
+        pdf.cell(widths[5], 8, _txt(f"{tot_cart:,}".replace(",", " ")), border=1, align="C", fill=True)
+        pdf.cell(widths[6], 8, _txt(f"{tot_poids:,} kg".replace(",", " ")), border=1, align="C", fill=True)
+    else:
+        pdf.cell(widths[0] + widths[1] + widths[2], 8, _txt("Totaux"), border=1, align="R", fill=True)
+        pdf.cell(widths[3], 8, _txt(f"{tot_cart:,}".replace(",", " ")), border=1, align="C", fill=True)
+        pdf.cell(widths[4], 8, _txt(f"{tot_pal:,}".replace(",", " ")), border=1, align="C", fill=True)
+        pdf.cell(widths[5], 8, _txt(f"{tot_poids:,}".replace(",", " ")), border=1, align="C", fill=True)
     pdf.ln()
 
     # ---- Légende différentielle (uniquement en mode mise à jour) ----
@@ -385,18 +450,30 @@ def build_bl_enlevements_pdf(
         pdf.ln(3)
         pdf.set_x(left)
         pdf.set_font("Helvetica", "", 9)
-        pdf.cell(0, 5, _txt(
-            f"Recapitulatif de la mise a jour : {added_count} ligne(s) ajoutee(s), "
-            f"{modified_count} ligne(s) modifiee(s)."
-        ), ln=1)
-        # Petite légende visuelle
-        pdf.set_x(left)
-        pdf.set_fill_color(*FILL_ADDED)
-        pdf.cell(6, 5, "", border=1, fill=True)
-        pdf.cell(35, 5, _txt(" Nouvelle ligne"), ln=0)
-        pdf.set_fill_color(*FILL_MODIFIED)
-        pdf.cell(6, 5, "", border=1, fill=True)
-        pdf.cell(40, 5, _txt(" Ligne modifiee"), ln=1)
+        if is_detailed_mode:
+            # En mode détaillé, pas de "modifiée" possible (palette unique).
+            # Le récap parle de palettes au lieu de lignes (vocabulaire métier).
+            pdf.cell(0, 5, _txt(
+                f"Recapitulatif : {added_count} palette(s) ajoutee(s) "
+                f"par rapport au previsionnel."
+            ), ln=1)
+            pdf.set_x(left)
+            pdf.set_fill_color(*FILL_ADDED)
+            pdf.cell(6, 5, "", border=1, fill=True)
+            pdf.cell(50, 5, _txt(" Palette ajoutee au definitif"), ln=1)
+        else:
+            pdf.cell(0, 5, _txt(
+                f"Recapitulatif de la mise a jour : {added_count} ligne(s) ajoutee(s), "
+                f"{modified_count} ligne(s) modifiee(s)."
+            ), ln=1)
+            # Petite légende visuelle
+            pdf.set_x(left)
+            pdf.set_fill_color(*FILL_ADDED)
+            pdf.cell(6, 5, "", border=1, fill=True)
+            pdf.cell(35, 5, _txt(" Nouvelle ligne"), ln=0)
+            pdf.set_fill_color(*FILL_MODIFIED)
+            pdf.cell(6, 5, "", border=1, fill=True)
+            pdf.cell(40, 5, _txt(" Ligne modifiee"), ln=1)
 
     # ---- Section Emballages à récupérer (optionnel)
     if packaging_lines:
