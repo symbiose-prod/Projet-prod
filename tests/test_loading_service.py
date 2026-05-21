@@ -13,10 +13,12 @@ import pytest
 from common.services import loading_service
 from common.services.loading_service import (
     PaletteInfo,
+    _build_df_for_pdf,
     _normalize_sscc,
     aggregate_palettes_to_lines,
     list_linked_palettes,
     list_palettes_in_cold_room,
+    palettes_to_detailed_lines,
     rebuild_lines_from_palettes,
     unlink_palette,
 )
@@ -163,6 +165,66 @@ def _db_row(
     }
 
 
+class TestPalettesToDetailedLines:
+    """Format détaillé Sofripa : 1 ligne par palette (SSCC unique)."""
+
+    def _palette(self, sscc="3" + "0" * 17, lot="L001", designation="Kéfir Pêche", fmt="6x75"):
+        return PaletteInfo(
+            sscc=sscc, gtin_palette="03700123456789", lot=lot,
+            ddm=_dt.date(2027, 5, 1), case_count=84,
+            designation=designation, fmt=fmt, marque="SYM", gout="Peche",
+            pcb=12, gtin_uvc="3700123456780",
+            generated_at=_dt.datetime(2026, 5, 13, 14, 0),
+        )
+
+    def test_one_line_per_palette(self):
+        p1 = self._palette()
+        p2 = self._palette(sscc="3" + "1" * 17, lot="L002")
+        # Même produit, SSCC différents → 2 lignes en mode détaillé
+        lines = palettes_to_detailed_lines([p1, p2], carton_weight_fn=_fake_carton_weight)
+        assert len(lines) == 2
+
+    def test_required_keys_present(self):
+        p = self._palette()
+        lines = palettes_to_detailed_lines([p], carton_weight_fn=_fake_carton_weight)
+        assert lines, "lines vide alors qu'on a une palette"
+        line = lines[0]
+        for key in ("ref", "sscc", "sofripa_label", "produit", "ddm", "lot", "cartons", "poids"):
+            assert key in line, f"clé manquante : {key}"
+        assert line["sscc"] == "3" + "0" * 17
+        assert line["lot"] == "L001"
+        assert line["cartons"] == 84
+
+    def test_empty_input_returns_empty(self):
+        assert palettes_to_detailed_lines([]) == []
+
+    def test_build_df_detects_detailed_mode(self):
+        # Avec sscc dans les lines → DataFrame avec colonne SSCC
+        lines = [
+            {
+                "ref": "123456", "sscc": "3" + "0" * 17, "sofripa_label": None,
+                "produit": "Kéfir Pêche 6x75", "ddm": "01/05/2027",
+                "lot": "L001", "cartons": 84, "poids": 591,
+            }
+        ]
+        df = _build_df_for_pdf(lines)
+        assert "SSCC" in df.columns
+        assert "Lot" in df.columns
+        assert "Réf. Sofripa" in df.columns
+        # SSCC tronqué aux 8 derniers digits
+        assert str(df.iloc[0]["SSCC"]) == "0" * 8
+
+    def test_build_df_legacy_mode(self):
+        # Sans sscc → format legacy 6 colonnes
+        lines = [
+            {"ref": "123456", "produit": "Kéfir Pêche 6x75", "ddm": "01/05/2027",
+             "cartons": 84, "palettes": 1, "poids": 591}
+        ]
+        df = _build_df_for_pdf(lines)
+        assert "SSCC" not in df.columns
+        assert "Nb palettes" in df.columns
+
+
 class TestRebuildLinesFromPalettes:
 
     def test_no_palettes_returns_empty(self):
@@ -173,7 +235,8 @@ class TestRebuildLinesFromPalettes:
         assert lines == []
         assert (tc, tp, tw) == (0, 0, 0)
 
-    def test_single_palette_aggregated(self):
+    def test_single_palette_detailed(self):
+        # Format détaillé Sofripa : 1 palette = 1 ligne, avec sscc + lot
         with mock.patch.object(loading_service, "run_sql", return_value=[_db_row()]):
             lines, tc, tp, tw = rebuild_lines_from_palettes(
                 "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
@@ -183,17 +246,25 @@ class TestRebuildLinesFromPalettes:
         assert tp == 1
         # 126 × 6.741 + 1 × 25 = 849.4 + 25 ≈ 874
         assert tw == round(126 * 6.741 + 25)
+        # Vérifie présence des clés détaillées
+        assert "sscc" in lines[0]
+        assert "lot" in lines[0]
+        assert lines[0]["cartons"] == 126
 
-    def test_two_palettes_same_product_sum(self):
-        # Deux palettes du même produit → une seule ligne avec totaux cumulés
+    def test_two_palettes_same_product_two_lines(self):
+        # Format détaillé : 2 palettes même produit → 2 lignes (1 par SSCC)
         rows = [_db_row(), _db_row(sscc="3" + "4" * 17)]
         with mock.patch.object(loading_service, "run_sql", return_value=rows):
             lines, tc, tp, tw = rebuild_lines_from_palettes(
                 "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
             )
-        assert len(lines) == 1
+        # Format détaillé : 2 SSCC distincts = 2 lignes (pas d'agrégation)
+        assert len(lines) == 2
         assert tc == 252
         assert tp == 2
+        # Les 2 lignes ont des SSCC différents
+        ssccs = {line["sscc"] for line in lines}
+        assert len(ssccs) == 2
 
     def test_two_different_products_two_lines(self):
         rows = [
@@ -220,7 +291,7 @@ class TestRebuildLinesFromPalettes:
             lines, tc, tp, tw = rebuild_lines_from_palettes(
                 "rid-1", "tid-1", carton_weight_fn=_fake_carton_weight,
             )
-        # Seule la bonne row a été agrégée
+        # Seule la bonne row a survécu
         assert tp == 1
         assert tc == 126
 

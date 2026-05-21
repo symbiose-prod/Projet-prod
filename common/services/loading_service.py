@@ -354,6 +354,56 @@ def aggregate_palettes_to_lines(
     return out
 
 
+def palettes_to_detailed_lines(
+    palettes: list[PaletteInfo],
+    carton_weight_fn=None,
+) -> list[dict]:
+    """Format détaillé : 1 ligne par palette (par SSCC unique).
+
+    Contrairement à ``aggregate_palettes_to_lines`` qui agrège plusieurs
+    palettes du même produit en une seule ligne, ici on garde le grain
+    palette : chaque SSCC = une ligne distincte sur le BL. Demande métier
+    Sofripa : pouvoir tracer palette par palette à la réception.
+
+    Format de sortie aligné conventionnellement sur l'ancien (clés minuscules
+    pour stockage JSONB en DB) avec en plus ``sscc`` et ``lot``.
+
+    Clés :
+    - ``ref``        : 6 derniers digits du GTIN palette (= code Sofripa)
+    - ``sscc``       : SSCC complet 18 digits (le PDF affichera les 8 derniers)
+    - ``sofripa_label`` : libellé Sofripa officiel (fallback désignation locale)
+    - ``produit``    : libellé interne ``"{designation} {fmt}"`` (fallback)
+    - ``ddm``        : ``"DD/MM/YYYY"`` ou ``""``
+    - ``lot``        : str du lot palette
+    - ``cartons``    : nombre de cartons sur LA palette (case_count)
+    - ``poids``      : poids palette = cartons × poids_carton + 25 kg
+    """
+    if carton_weight_fn is None:
+        from common.ramasse import get_carton_weight as _gcw
+        carton_weight_fn = _gcw
+    from common.ramasse import PALETTE_EMPTY_WEIGHT, get_sofripa_label
+
+    out: list[dict] = []
+    for p in palettes:
+        ref = re.sub(r"\D+", "", p.gtin_palette)[-6:] or p.fmt
+        carton_w = carton_weight_fn(p.fmt, p.designation) or 0.0
+        poids = round(p.case_count * carton_w + PALETTE_EMPTY_WEIGHT)
+        ddm_str = p.ddm.strftime("%d/%m/%Y") if p.ddm else ""
+        out.append({
+            "ref": ref,
+            "sscc": p.sscc,
+            "sofripa_label": get_sofripa_label(ref),
+            "produit": f"{p.designation} {p.fmt}".strip(),
+            "ddm": ddm_str,
+            "lot": p.lot,
+            "cartons": int(p.case_count),
+            "poids": int(poids),
+        })
+    # Tri stable : par produit puis par SSCC pour rendu reproductible.
+    out.sort(key=lambda r: (r["produit"], r["sscc"]))
+    return out
+
+
 # ─── Commit : INSERT palette_loadings + lien ramasse ────────────────────────
 
 def link_palettes_to_ramasse(
@@ -723,10 +773,12 @@ def rebuild_lines_from_palettes(
         ``save_ramasse`` / ``update_ramasse``.
     """
     palettes = list_linked_palettes(ramasse_id, tenant_id)
-    lines = aggregate_palettes_to_lines(palettes, carton_weight_fn=carton_weight_fn)
-    total_cartons  = sum(int(line["cartons"])  for line in lines)
-    total_palettes = sum(int(line["palettes"]) for line in lines)
-    total_poids    = sum(int(line["poids"])    for line in lines)
+    # Format détaillé : 1 ligne par palette (refonte Sofripa). Le total
+    # de palettes = nombre de lignes, pas une somme.
+    lines = palettes_to_detailed_lines(palettes, carton_weight_fn=carton_weight_fn)
+    total_cartons  = sum(int(line["cartons"]) for line in lines)
+    total_palettes = len(lines)
+    total_poids    = sum(int(line["poids"])   for line in lines)
     return (lines, total_cartons, total_palettes, total_poids)
 
 
@@ -735,17 +787,35 @@ def rebuild_lines_from_palettes(
 def _build_df_for_pdf(lines: list[dict]):
     """Construit le DataFrame attendu par ``build_bl_enlevements_pdf``.
 
-    Extrait de ``pages/chargement_camion.py:_build_df_for_pdf`` pour
-    permettre la réutilisation depuis ``send_previsionnel`` / ``finalize_loading``
-    sans dépendance NiceGUI.
+    Auto-détecte le format des ``lines`` :
+    - **Format détaillé** (présence de clé ``sscc``) : 1 ligne par palette,
+      colonnes Réf Sofripa / SSCC / Désignation / DDM / Lot / Nb cartons /
+      Poids (kg). C'est le format depuis la refonte demandée par Sofripa.
+    - **Format agrégé** (legacy, pas de ``sscc``) : 1 ligne par produit,
+      colonnes Référence / Produit / DDM / Nb cartons / Nb palettes /
+      Poids (kg). Maintenu pour rétro-compat avec les ramasses historiques
+      stockées en JSONB avant la refonte.
 
-    Les noms de colonnes ``Nb cartons`` / ``Nb palettes`` matchent exactement
-    ceux lus par ``bl_pdf.py`` (cf. ``r.get("Nb cartons", ...)``). Sans cette
-    correspondance, le PDF tombait sur le fallback 0 et affichait des
-    colonnes ``0, 0, 0, ...`` pour TOUS les BLs définitifs — bug rédhibitoire
-    côté logisticien Sofripa.
+    Les noms de colonnes matchent exactement ceux lus par ``bl_pdf.py``.
     """
     import pandas as pd
+    is_detailed = bool(lines) and "sscc" in (lines[0] or {})
+
+    if is_detailed:
+        return pd.DataFrame([
+            {
+                "Réf. Sofripa": line.get("ref", ""),
+                "SSCC": str(line.get("sscc", ""))[-8:],   # 8 derniers digits
+                "Désignation": line.get("sofripa_label") or line.get("produit", ""),
+                "DDM": line.get("ddm", ""),
+                "Lot": line.get("lot", ""),
+                "Nb cartons": int(line.get("cartons") or 0),
+                "Poids (kg)": int(line.get("poids") or 0),
+            }
+            for line in lines
+        ])
+
+    # Legacy : format agrégé (1 ligne par produit)
     return pd.DataFrame([
         {
             "Référence": line.get("ref", ""),
@@ -889,11 +959,11 @@ def send_previsionnel(
     conflicts = sorted(set(sscc_list or []) - set(valid_sscc))
     inserted = len(valid_sscc)
 
-    # 3. Agrégation directe depuis PaletteInfo (sans lecture palette_loadings)
+    # 3. Détail palette par palette (1 ligne par SSCC) — format Sofripa.
     total_cartons = sum(p.case_count for p in palettes_prevues)
     total_palettes = len(palettes_prevues)
-    lines = aggregate_palettes_to_lines(palettes_prevues)
-    # Poids = somme des poids estimés par ligne (cohérent avec aggregate)
+    lines = palettes_to_detailed_lines(palettes_prevues)
+    # Poids = somme des poids par ligne (= par palette)
     total_poids = sum(int(line.get("poids") or 0) for line in lines)
 
     # 4. Génération PDF BL provisoire
