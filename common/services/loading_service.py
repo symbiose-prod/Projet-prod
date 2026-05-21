@@ -738,6 +738,12 @@ def _build_df_for_pdf(lines: list[dict]):
     Extrait de ``pages/chargement_camion.py:_build_df_for_pdf`` pour
     permettre la réutilisation depuis ``send_previsionnel`` / ``finalize_loading``
     sans dépendance NiceGUI.
+
+    Les noms de colonnes ``Nb cartons`` / ``Nb palettes`` matchent exactement
+    ceux lus par ``bl_pdf.py`` (cf. ``r.get("Nb cartons", ...)``). Sans cette
+    correspondance, le PDF tombait sur le fallback 0 et affichait des
+    colonnes ``0, 0, 0, ...`` pour TOUS les BLs définitifs — bug rédhibitoire
+    côté logisticien Sofripa.
     """
     import pandas as pd
     return pd.DataFrame([
@@ -745,8 +751,8 @@ def _build_df_for_pdf(lines: list[dict]):
             "Référence": line.get("ref", ""),
             "Produit": line.get("produit", ""),
             "DDM": line.get("ddm", ""),
-            "Cartons": int(line.get("cartons") or 0),
-            "Palettes": int(line.get("palettes") or 0),
+            "Nb cartons": int(line.get("cartons") or 0),
+            "Nb palettes": int(line.get("palettes") or 0),
             "Poids (kg)": int(line.get("poids") or 0),
         }
         for line in lines
