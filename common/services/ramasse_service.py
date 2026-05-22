@@ -354,3 +354,53 @@ def build_email_body(
         {_SIGNATURE_HTML}
         """
     return body
+
+
+# ─── Emails dédiés : demande d'emballages (sans ramasse) ────────────────────
+
+def build_packaging_request_subject(date_ramasse: _date) -> str:
+    """Sujet de l'email pour une demande d'emballages séparée.
+
+    Utilisé par ``send_packaging_request`` quand l'opérateur fait une
+    demande d'emballages sans passer par le formulaire prévisionnel ramasse.
+    """
+    return (
+        f"Demande d'emballages — livraison {date_ramasse:%d/%m/%Y} "
+        "— Ferment Station"
+    )
+
+
+def build_packaging_request_body(
+    date_ramasse: _date,
+    *,
+    items: list[dict],
+) -> str:
+    """Corps HTML de l'email de demande d'emballages.
+
+    ``items`` : liste ``[{label, qty, unit}]`` déjà normalisée.
+
+    Le mail demande à SOFRIPA de livrer les emballages le jour de la
+    prochaine ramasse (livraison combinée — 1 seul déplacement camion).
+    """
+    if not items:
+        items_html = "<p><em>Aucun emballage spécifié.</em></p>"
+    else:
+        rows = "<br>".join(
+            f"— <strong>{p.get('qty', 0)}</strong> "
+            f"{p.get('unit', '') or 'unité'}(s) "
+            f"{p.get('label', '')}"
+            for p in items
+        )
+        items_html = f"<p>{rows}</p>"
+
+    return f"""
+    <p>Bonjour,</p>
+    <p>Nous aurions besoin que vous nous rameniez les emballages
+    ci-dessous lors de la <strong>prochaine ramasse prévue le
+    {date_ramasse:%d/%m/%Y}</strong> (livraison combinée — le même
+    camion ramène les palettes vides en déposant les emballages).</p>
+    {items_html}
+    <p>Merci de confirmer la prise en compte de cette demande.</p>
+    <p>Bonne journée.</p>
+    {_SIGNATURE_HTML}
+    """

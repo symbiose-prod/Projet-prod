@@ -789,6 +789,84 @@ async def _v1_last_packaging(request: Request):
     })
 
 
+async def _v1_packaging_request(request: Request):
+    """Envoie une demande d'emballages à un destinataire (sans ramasse).
+
+    Body JSON :
+      ``{"date_ramasse": "YYYY-MM-DD",
+         "items": [{label, qty, unit?}, ...],
+         "destinataire": "SOFRIPA"}``  # optionnel, défaut SOFRIPA
+
+    Workflow : feature séparée du formulaire prévisionnel ramasse. L'opérateur
+    Symbiose demande des emballages vides (palettes, cagettes…) à recevoir
+    lors de la prochaine ramasse (livraison combinée). Génère un email à
+    SOFRIPA sans PDF — la demande est suffisamment courte pour rester dans
+    le corps de l'email.
+
+    Retour 200 : ``{"email_sent", "recipients", "items_count",
+                    "destinataire", "date_ramasse"}``.
+    Retour 400 : body malformé / date invalide / items vides.
+    Retour 409 : destinataire inconnu ou pas d'emails configurés.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    body = body or {}
+
+    date_ramasse_str = str(body.get("date_ramasse") or "").strip()
+    items = body.get("items") or []
+    destinataire = str(
+        body.get("destinataire") or _DEFAULT_DESTINATAIRE,
+    ).strip()
+
+    if not date_ramasse_str:
+        return JSONResponse({"error": "Missing 'date_ramasse'"}, status_code=400)
+    if not isinstance(items, list):
+        return JSONResponse(
+            {"error": "'items' must be a list"}, status_code=400,
+        )
+
+    try:
+        date_ramasse = _dt_local.date.fromisoformat(date_ramasse_str[:10])
+    except ValueError:
+        return JSONResponse(
+            {"error": "Invalid date_ramasse format (expected YYYY-MM-DD)"},
+            status_code=400,
+        )
+
+    from common.services.loading_service import send_packaging_request
+
+    try:
+        result = await asyncio.to_thread(
+            send_packaging_request,
+            user["tenant_id"],
+            user_email=user.get("email") or "",
+            destinataire=destinataire,
+            date_ramasse=date_ramasse,
+            items=items,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    except Exception:
+        _log.exception("Échec demande emballages (mobile)")
+        return JSONResponse(
+            {"error": "Failed to send packaging request"}, status_code=500,
+        )
+
+    _log.info(
+        "packaging_request : dest=%s items=%d email_sent=%s "
+        "tenant=%s user=%s",
+        destinataire, result["items_count"], result["email_sent"],
+        user["tenant_id"], user.get("email"),
+    )
+    return JSONResponse(result)
+
+
 async def _v1_active_ramasses(request: Request):
     """Liste les ramasses ``previsionnel`` (ou ``definitif`` non livré) ouvertes.
 
@@ -2044,6 +2122,7 @@ def register_routes(app) -> None:
     # Chargement camion (ramasse) — workflow J1 prévisionnel + J2 chargement
     app.get("/api/v1/cold-room-palettes")(_v1_cold_room_palettes)
     app.get("/api/v1/last-packaging")(_v1_last_packaging)
+    app.post("/api/v1/packaging-request")(_v1_packaging_request)
     app.get("/api/v1/active-ramasses")(_v1_active_ramasses)
     app.post("/api/v1/loadings/previsionnel")(_v1_create_previsionnel)
     app.get("/api/v1/loadings/{ramasse_id}")(_v1_get_loading)
