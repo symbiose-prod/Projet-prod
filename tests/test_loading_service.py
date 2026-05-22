@@ -799,6 +799,153 @@ class TestSendPrevisionnel:
         assert result["id"] == "ramasse-1"
 
 
+# ─── send_packaging_request (demande emballages sans ramasse) ───────────────
+
+class TestSendPackagingRequest:
+    """Tests de l'envoi de demande d'emballages séparée du formulaire ramasse.
+
+    Le service est minimaliste : résout destinataire, génère email HTML
+    (sans PDF), envoie via Brevo, trace audit. Aucune écriture DB métier.
+    """
+
+    _SOFRIPA_OBJ = {
+        "name": "SOFRIPA",
+        "address_lines": ["ZAC du Haut de Wissous II,", "91320 Wissous"],
+        "email_recipients": ["exploitation@sofripa.fr", "prepa@sofripa.fr"],
+        "packaging_items": [],
+    }
+
+    _ITEMS = [
+        {"label": "Palette Bouteilles 33cl", "qty": 5, "unit": "palette"},
+        {"label": "Palette Bouteilles 75cl", "qty": 3, "unit": "palette"},
+    ]
+
+    def _patch_email_ok(self, monkeypatch, capture):
+        """Mock send_html_with_pdf qui capture les args et renvoie OK."""
+        import common.email as email_mod
+
+        def fake_send(**kwargs):
+            capture.update(kwargs)
+            return {"status": "sent", "provider_msg_id": "msg-1"}
+
+        monkeypatch.setattr(email_mod, "send_html_with_pdf", fake_send)
+        # Audit no-op (sinon tente d'écrire en DB)
+        import common.audit
+        monkeypatch.setattr(common.audit, "log_event", lambda **kw: None)
+
+    def test_happy_path_sends_email_with_items(self, monkeypatch):
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda name: self._SOFRIPA_OBJ if name == "SOFRIPA" else None,
+        )
+        captured = {}
+        self._patch_email_ok(monkeypatch, captured)
+
+        result = loading_service.send_packaging_request(
+            "tenant-A",
+            user_email="op@sym.fr",
+            destinataire="SOFRIPA",
+            date_ramasse=_dt.date(2026, 5, 25),
+            items=self._ITEMS,
+        )
+
+        assert result["email_sent"] is True
+        assert result["items_count"] == 2
+        assert result["destinataire"] == "SOFRIPA"
+        assert result["date_ramasse"] == "2026-05-25"
+        # Email a bien été envoyé aux 2 recipients SOFRIPA
+        assert captured["to_email"] == [
+            "exploitation@sofripa.fr", "prepa@sofripa.fr",
+        ]
+        # Body contient les items
+        assert "Palette Bouteilles 33cl" in captured["html_body"]
+        assert "Palette Bouteilles 75cl" in captured["html_body"]
+        # Date de livraison dans le sujet
+        assert "25/05/2026" in captured["subject"]
+
+    def test_unknown_destinataire_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire", lambda _name: None,
+        )
+        with pytest.raises(ValueError, match="Destinataire inconnu"):
+            loading_service.send_packaging_request(
+                "tenant-A",
+                user_email="op@sym.fr",
+                destinataire="INCONNU",
+                date_ramasse=_dt.date(2026, 5, 25),
+                items=self._ITEMS,
+            )
+
+    def test_no_email_configured_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _name: {**self._SOFRIPA_OBJ, "email_recipients": []},
+        )
+        with pytest.raises(ValueError, match="Pas d'emails configurés"):
+            loading_service.send_packaging_request(
+                "tenant-A",
+                user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 5, 25),
+                items=self._ITEMS,
+            )
+
+    def test_empty_items_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _name: self._SOFRIPA_OBJ,
+        )
+        with pytest.raises(ValueError, match="Aucun emballage"):
+            loading_service.send_packaging_request(
+                "tenant-A",
+                user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 5, 25),
+                items=[],
+            )
+
+    def test_items_with_zero_qty_filtered_out(self, monkeypatch):
+        # qty=0 → normalize_packaging_payload les filtre → "Aucun emballage"
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _name: self._SOFRIPA_OBJ,
+        )
+        with pytest.raises(ValueError, match="Aucun emballage"):
+            loading_service.send_packaging_request(
+                "tenant-A",
+                user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 5, 25),
+                items=[{"label": "Palette", "qty": 0, "unit": "palette"}],
+            )
+
+    def test_email_send_failure_returns_email_sent_false(self, monkeypatch):
+        # L'email plante → le service ne lève pas, retourne email_sent=False
+        # (best-effort, l'audit log enregistre quand même)
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _name: self._SOFRIPA_OBJ,
+        )
+        import common.email as email_mod
+
+        def fake_send_fail(**kwargs):
+            raise RuntimeError("Brevo down")
+
+        monkeypatch.setattr(email_mod, "send_html_with_pdf", fake_send_fail)
+        import common.audit
+        monkeypatch.setattr(common.audit, "log_event", lambda **kw: None)
+
+        result = loading_service.send_packaging_request(
+            "tenant-A",
+            user_email="op@sym.fr",
+            destinataire="SOFRIPA",
+            date_ramasse=_dt.date(2026, 5, 25),
+            items=self._ITEMS,
+        )
+        assert result["email_sent"] is False
+        assert result["items_count"] == 2
+
+
 # ─── finalize_loading (orchestrateur métier) ────────────────────────────────
 
 class TestFinalizeLoading:

@@ -868,6 +868,95 @@ def normalize_packaging_payload(items: list[dict] | None) -> list[dict]:
     return out
 
 
+def send_packaging_request(
+    tenant_id: str,
+    *,
+    user_email: str,
+    destinataire: str,
+    date_ramasse: _dt.date,
+    items: list[dict],
+) -> dict:
+    """Envoie une demande d'emballages à un destinataire (sans ramasse).
+
+    Workflow : l'opérateur Symbiose a besoin d'emballages vides (palettes,
+    cagettes, etc.) à recevoir lors de la prochaine ramasse. Cette demande
+    est indépendante du formulaire prévisionnel ramasse (qui contient
+    seulement les palettes pleines à enlever).
+
+    Le destinataire ramène les emballages le jour de ``date_ramasse``
+    (livraison combinée — 1 seul déplacement camion).
+
+    Args :
+      ``tenant_id`` : tenant courant.
+      ``user_email`` : pour audit + signature email.
+      ``destinataire`` : nom dans ``data/destinataires.json`` (ex: 'SOFRIPA').
+      ``date_ramasse`` : date de livraison souhaitée (= date prochaine ramasse).
+      ``items`` : liste ``[{label, qty, unit}]`` déjà filtrée (qty > 0).
+
+    Retourne ``{"email_sent": bool, "recipients": [...], "items_count": int}``.
+    Lève ``ValueError`` si destinataire inconnu ou pas d'emails configurés.
+    """
+    from common.email import send_html_with_pdf
+    from common.services.ramasse_service import (
+        build_packaging_request_body,
+        build_packaging_request_subject,
+    )
+
+    dest = _resolve_destinataire(destinataire)
+    if not dest:
+        raise ValueError(f"Destinataire inconnu : {destinataire}")
+    recipients = dest.get("email_recipients") or []
+    if not recipients:
+        raise ValueError(
+            f"Pas d'emails configurés pour le destinataire : {destinataire}",
+        )
+
+    # Normalise + filtre (qty > 0)
+    items_clean = normalize_packaging_payload(items)
+    if not items_clean:
+        raise ValueError("Aucun emballage à demander (items vides ou qty=0)")
+
+    subject = build_packaging_request_subject(date_ramasse)
+    body = build_packaging_request_body(date_ramasse, items=items_clean)
+
+    email_sent = False
+    try:
+        send_html_with_pdf(
+            to_email=recipients,
+            subject=subject,
+            html_body=body,
+        )
+        email_sent = True
+    except Exception:
+        _log.exception(
+            "Échec envoi demande emballages dest=%s tenant=%s",
+            destinataire, tenant_id,
+        )
+
+    # Trace audit (best-effort, ne lève jamais)
+    from common.audit import log_event
+    log_event(
+        tenant_id=tenant_id,
+        user_email=user_email or None,
+        action="packaging_request_sent",
+        details={
+            "destinataire": destinataire,
+            "date_ramasse": date_ramasse.isoformat(),
+            "items": items_clean,
+            "recipients": recipients,
+            "email_sent": email_sent,
+        },
+    )
+
+    return {
+        "email_sent": email_sent,
+        "recipients": recipients,
+        "items_count": len(items_clean),
+        "destinataire": destinataire,
+        "date_ramasse": date_ramasse.isoformat(),
+    }
+
+
 def send_previsionnel(
     tenant_id: str,
     *,
