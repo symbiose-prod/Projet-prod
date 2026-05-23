@@ -22,7 +22,7 @@ from nicegui import ui
 
 from common.outbox import get_stats, retry_event
 from db.conn import run_sql
-from pages.admin import _require_admin
+from pages._admin_helpers import require_admin
 from pages.theme import page_layout, section_title
 
 _log = logging.getLogger("ferment.admin_eb_outbox")
@@ -153,7 +153,7 @@ def _render_events_table(events: list[dict], *, with_retry: bool, refresh_fn) ->
 @ui.page("/admin/eb-outbox")
 def page_admin_eb_outbox() -> None:
     """Dashboard outbox EB — accessible uniquement aux admins."""
-    user = _require_admin()
+    user = require_admin()
     if not user:
         return
 
