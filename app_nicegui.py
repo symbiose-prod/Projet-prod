@@ -1538,6 +1538,10 @@ async def _startup_cleanup():
     from common.eb_sync_loop import eb_cache_sync_loop
     asyncio.ensure_future(eb_cache_sync_loop())
 
+    # Démarrer le worker outbox EasyBeer (push events writes vers EB, tick 10s)
+    from common.outbox import eb_outbox_worker
+    asyncio.ensure_future(eb_outbox_worker())
+
 
 # ─── Service Worker (servi depuis / pour scope racine) ──────────────────────
 
