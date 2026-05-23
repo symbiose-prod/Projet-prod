@@ -101,28 +101,60 @@ def enregistrer_mesure_brassin(payload: dict[str, Any]) -> dict[str, Any]:
 def terminer_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     """POST /brassin/terminer → Marque le brassin comme terminé (+ archive si demandé).
 
-    Body attendu (ModeleBrassin, cf. swagger v2.3.0 — 60+ champs).
-    Champs clés :
-    - id (int) — identifiant brassin
-    - **archive (bool)** — si True, termine ET archive en une opération
-    - annule (bool)
-    - cout, coutEau (float)
-    - degreAlcool, densiteInitiale, densiteFinale (float)
-    - dateFin, dateDebut (timestamp ms)
-    - dateConditionnementPrevue, dateMiseEnBouteille (str/timestamp)
-    - commentaire, description (str)
-    - …et beaucoup d'autres champs du brassin complet
+    Deux modes d'appel :
 
-    En général le payload est le ModeleBrassin complet récupéré au préalable
-    via GET /brassin/{id}, avec quelques champs modifiés (dateFin remplie,
-    archive=True, etc.).
+    **Mode "full"** : le payload est déjà un ModeleBrassin complet (60+ champs).
+    Indiqué par ``payload.pop("_full") == True``. On push tel quel.
+
+    **Mode "lazy"** (par défaut) : le payload contient juste l'idBrassin +
+    quelques overrides (``dateFin``, ``archive``, ``commentaire``, etc.).
+    La fonction :
+    1. Charge le ModeleBrassin complet via ``get_brassin_detail(id)``
+    2. Applique les overrides au-dessus
+    3. Push le résultat à EB
+
+    Le mode lazy est préféré pour les events enqueue via outbox parce que :
+    - Le payload outbox reste léger (pas 60+ champs à sérialiser en JSON)
+    - On évite les conflits avec des modifs concurrentes côté EB entre
+      l'enqueue et le push (retry-safe)
+    - Le brassin EB est forcément à jour au moment du push
+
+    Champs notables d'override (cf. swagger ModeleBrassin) :
+    - ``archive`` (bool) : si True, termine ET archive en une opération
+    - ``dateFin`` (timestamp ms) : timestamp de fin de production
+    - ``commentaire``, ``description`` (str)
+    - ``degreAlcool``, ``densiteFinale`` (float)
 
     Effet côté EB : passe le brassin en état "terminé" (et "archivé" si flag).
     """
+    # Mode "full" : payload est déjà complet, on push tel quel
+    if payload.pop("_full", False):
+        full_payload = payload
+    else:
+        # Mode "lazy" : on charge le brassin EB complet et on applique les overrides
+        from .brassins import get_brassin_detail
+
+        brassin_id = payload.get("id")
+        if not brassin_id:
+            raise ValueError(
+                "terminer_brassin (lazy mode) requires payload['id'] (idBrassin)",
+            )
+        brassin_full = get_brassin_detail(int(brassin_id))
+        if not brassin_full:
+            raise ValueError(
+                f"terminer_brassin: brassin id={brassin_id} introuvable dans EB",
+            )
+        # Merge : full d'abord, overrides écrasent (sans modifier le cache shared)
+        full_payload = {**brassin_full, **payload}
+        _log.debug(
+            "terminer_brassin lazy: brassin id=%s overrides=%s",
+            brassin_id, list(payload.keys()),
+        )
+
     result = execute_endpoint(
         method="POST",
         path="brassin/terminer",
-        payload=payload,
+        payload=full_payload,
     )
     # Le brassin n'est plus dans les listes "en cours" ni "planifiés"
     _invalidate_caches_after_production_write(

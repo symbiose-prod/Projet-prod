@@ -21,9 +21,11 @@ Branchements actifs :
 - ``brassin.mise-en-bouteille`` (Sprint 2 ter) : items de
   ``conditionnement_reel`` poussés vers ``POST /brassin/mise-en-bouteille``
   (Conditionner — crée le stock produit côté EB)
-
-Branchements à venir :
-- ``brassin.terminer`` : nécessite charger le brassin EB complet d'abord
+- ``brassin.terminer`` (Sprint 2 quater) : termine + archive le brassin
+  côté EB. **Activé uniquement si la fiche a le flag explicite**
+  ``data.brassin_termine == True`` (à ajouter côté iOS dans une PR
+  ultérieure). Le payload reste léger (overrides) — le worker charge
+  le ModeleBrassin complet à l'appel (lazy load, retry-safe).
 """
 from __future__ import annotations
 
@@ -267,6 +269,54 @@ def build_mise_en_bouteille_payload(
     return payload, warnings
 
 
+def build_terminer_payload(
+    sheet: ProductionSheetDetail,
+) -> dict[str, Any] | None:
+    """Construit un payload léger (overrides) pour ``POST /brassin/terminer``.
+
+    **Conditions de déclenchement** :
+    - sheet.brassin_id numérique
+    - ``sheet.data.brassin_termine`` est explicitement à ``True``
+      (sinon retourne None pour skipper)
+
+    Le worker outbox chargera le ModeleBrassin EB complet au moment du push
+    (lazy load via ``terminer_brassin``), puis appliquera ces overrides :
+    - ``id`` : identifiant brassin (obligatoire pour le lazy load)
+    - ``archive`` : ``True`` si ``data.archiver`` est à True (sinon False)
+    - ``dateFin`` : timestamp ms (= now si pas dans la fiche)
+    - ``commentaire`` : remarques + statut fermentation
+    """
+    if not sheet.brassin_id:
+        return None
+    try:
+        brassin_id = int(sheet.brassin_id)
+    except (ValueError, TypeError):
+        return None
+
+    data = sheet.data or {}
+    if not data.get("brassin_termine"):
+        # Pas de flag explicite → on ne touche pas au brassin EB
+        return None
+
+    # Timestamp ms (format EB)
+    from datetime import UTC, datetime
+    dt = sheet.finalized_at or datetime.now(UTC)
+    date_fin_ms = int(dt.timestamp() * 1000)
+
+    overrides: dict[str, Any] = {
+        "id": brassin_id,
+        "dateFin": date_fin_ms,
+        "archive": bool(data.get("archiver", False)),
+    }
+
+    # Commentaire : remarques + statut + auteur
+    remarques = (data.get("remarques") or "").strip()
+    if remarques:
+        overrides["commentaire"] = remarques[:1000]
+
+    return overrides
+
+
 # ─── Point d'entrée principal ─────────────────────────────────────────────
 
 
@@ -376,8 +426,39 @@ def enqueue_eb_events_from_sheet(
             sheet.id,
         )
 
-    # ─── 3. Terminer (TODO PR suivante) ───────────────────────────────
-    summary["skipped"].append("brassin.terminer (TODO: load full brassin first)")
+    # ─── 3. Terminer (Sprint 2 quater) ────────────────────────────────
+    try:
+        from common.easybeer.queued import enqueue_brassin_terminer
+
+        terminer_payload = build_terminer_payload(sheet)
+        if terminer_payload is None:
+            summary["skipped"].append(
+                "brassin.terminer (no data.brassin_termine flag — skip)",
+            )
+        else:
+            eid = enqueue_brassin_terminer(
+                tenant_id=tenant_id,
+                payload=terminer_payload,
+                user_email=user_email,
+            )
+            if eid is not None:
+                summary["enqueued"].append({
+                    "event_type": "brassin.terminer",
+                    "id": eid,
+                    "archive": terminer_payload.get("archive", False),
+                })
+                _log.info(
+                    "EB bind: sheet %s → enqueue brassin.terminer "
+                    "(outbox id=%s, archive=%s)",
+                    sheet.id, eid, terminer_payload.get("archive"),
+                )
+            else:
+                summary["errors"].append("enqueue_brassin_terminer returned None")
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        summary["errors"].append(f"brassin.terminer: {type(exc).__name__}: {exc}")
+        _log.exception(
+            "EB bind: failed to enqueue terminer for sheet %s", sheet.id,
+        )
 
     return summary
 
