@@ -502,6 +502,32 @@ def finalize_sheet(
     if updated is None:
         # Très improbable (on vient d'UPDATE qui a retourné une ligne)
         raise ValueError("Sheet disappeared after finalize")
+
+    # ─── Branchement Easybeer (Sprint 2 bis) ──────────────────────────
+    # Pousse les events EB correspondants via l'outbox (best-effort, ne
+    # fait jamais échouer la finalize locale). Désactivé par défaut, à
+    # activer via env var EB_OUTBOX_BIND_PRODUCTION_SHEETS=true.
+    try:
+        from common.services.production_sheet_eb_bind import (
+            enqueue_eb_events_from_sheet,
+        )
+        bind_summary = enqueue_eb_events_from_sheet(
+            updated, tenant_id=tenant_id, user_email=user_email,
+        )
+        if bind_summary.get("enqueued"):
+            _log.info(
+                "EB bind finalize : sheet=%s enqueued=%s skipped=%s errors=%s",
+                sheet_id,
+                bind_summary["enqueued"],
+                bind_summary["skipped"],
+                bind_summary["errors"],
+            )
+    except Exception:
+        # Ne jamais faire échouer la finalize locale pour un problème EB
+        _log.exception(
+            "EB bind finalize failed (non-fatal) for sheet %s", sheet_id,
+        )
+
     return (updated, pdf_bytes)
 
 
