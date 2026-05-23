@@ -332,7 +332,6 @@ import pages.admin_eb_outbox  # noqa: F401 — /admin/eb-outbox (admin only)
 import pages.auth  # noqa: F401 — /login, /reset/{token}
 import pages.chargement_camion  # noqa: F401 — /chargement-camion
 import pages.commercial  # noqa: F401 — /commercial
-import pages.etiquettes_palette  # noqa: F401 — /etiquettes-palette
 import pages.historique_ramasses  # noqa: F401 — /historique-ramasses
 import pages.nomenclatures  # noqa: F401 — /nomenclatures
 import pages.previsions  # noqa: F401 — /previsions
@@ -342,8 +341,6 @@ import pages.sscc_log  # noqa: F401 — /sscc-log (admin only)
 import pages.stocks  # noqa: F401 — /stocks
 import pages.sync  # noqa: F401 — /sync
 import pages.tags  # noqa: F401 — /tags
-import pages.test_carton_counter  # noqa: F401 — /test-carton-counter (admin only)
-import pages.test_douchette  # noqa: F401 — /test-douchette (admin only)
 
 # ─── Health check ────────────────────────────────────────────────────────────
 
@@ -967,218 +964,12 @@ async def _api_scan_sscc(request: Request):
     })
 
 
-# ─── PoC : comptage de cartons via Claude Vision ───────────────────────────
-
-# Limite défensive sur la photo envoyée (le front resize à 1280px → ~500 Ko).
-_MAX_CARTON_COUNT_IMAGE_BYTES = 5 * 1024 * 1024
-
-
-@app.post("/api/count-cartons-poc")
-async def _api_count_cartons_poc(request: Request):
-    """PoC admin : compte les cartons sur une photo de palette via Claude
-    Vision. Sert à mesurer la fiabilité avant intégration dans le flow
-    nominal /etiquettes-palette.
-
-    Auth : session NiceGUI + role=admin obligatoire.
-    Body : multipart/form-data avec un champ 'file' (image).
-    Retour : ``{count, confidence, description}`` ou ``{error}`` (HTTP 4xx/5xx).
-    """
-    user_store = app.storage.user
-    if not user_store.get("authenticated"):
-        return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    role = (user_store.get("role") or "").lower()
-    if role != "admin":
-        return JSONResponse({"error": "Admin only"}, status_code=403)
-    tenant_id = user_store.get("tenant_id")
-    if not tenant_id:
-        return JSONResponse({"error": "No tenant in session"}, status_code=403)
-
-    try:
-        form = await request.form()
-    except Exception:
-        return JSONResponse({"error": "Invalid form data"}, status_code=400)
-
-    upload = form.get("file")
-    if upload is None or not hasattr(upload, "read"):
-        return JSONResponse({"error": "Missing 'file' field"}, status_code=400)
-
-    content_type = (getattr(upload, "content_type", "") or "image/jpeg").lower()
-    if not content_type.startswith("image/"):
-        return JSONResponse(
-            {"error": f"Type non supporté ({content_type})"},
-            status_code=415,
-        )
-
-    try:
-        image_bytes = await upload.read()
-    except Exception:
-        _log.exception("Erreur lecture upload count-cartons")
-        return JSONResponse({"error": "Cannot read file"}, status_code=400)
-
-    if len(image_bytes) == 0:
-        return JSONResponse({"error": "Empty file"}, status_code=400)
-    if len(image_bytes) > _MAX_CARTON_COUNT_IMAGE_BYTES:
-        return JSONResponse(
-            {
-                "error": (
-                    f"File too large ({len(image_bytes) // 1024} Ko > "
-                    f"{_MAX_CARTON_COUNT_IMAGE_BYTES // 1024} Ko)"
-                ),
-            },
-            status_code=413,
-        )
-
-    from common.services.carton_counter import (
-        count_cartons_in_photo,
-        save_eval_attempt,
-    )
-
-    try:
-        result = await asyncio.to_thread(
-            count_cartons_in_photo, image_bytes, media_type=content_type,
-        )
-    except RuntimeError as exc:
-        # ANTHROPIC_API_KEY manquante ou image trop grosse côté service
-        _log.warning("Carton count : config/limite : %s", exc)
-        return JSONResponse({"error": str(exc)}, status_code=503)
-    except ValueError as exc:
-        # Réponse Claude non parsable
-        _log.warning("Carton count : parsing : %s", exc)
-        return JSONResponse(
-            {"error": f"Réponse Claude inattendue : {exc}"},
-            status_code=502,
-        )
-    except Exception as exc:
-        _log.exception("Carton count : erreur inattendue")
-        return JSONResponse(
-            {"error": f"Erreur serveur : {exc}"}, status_code=500,
-        )
-
-    # Persiste l'essai pour pouvoir comparer avec le réel saisi ensuite.
-    # Best-effort : si la DB échoue, on retourne quand même le résultat
-    # Claude au front (juste sans eval_id, donc pas de comparaison
-    # possible — c'est inoffensif).
-    eval_id: int | None = None
-    try:
-        eval_id = await asyncio.to_thread(
-            save_eval_attempt,
-            tenant_id,
-            user_email=str(user_store.get("email") or ""),
-            claude_result=result,
-            image_bytes=image_bytes,
-        )
-    except Exception:
-        _log.warning("Persistance eval échec — on continue sans", exc_info=True)
-
-    _log.info(
-        "Carton count OK : %d cartons (conf=%s) sur %d Ko (eval=%s)",
-        result.count, result.confidence, len(image_bytes) // 1024,
-        eval_id or "—",
-    )
-    return JSONResponse({
-        "count": result.count,
-        "confidence": result.confidence,
-        "description": result.description,
-        "eval_id": eval_id,
-    })
-
-
-@app.post("/api/count-cartons-poc/eval")
-async def _api_count_cartons_eval(request: Request):
-    """Saisie a posteriori du nombre réel de cartons pour un essai donné.
-
-    Permet à l'opérateur de comparer l'estimation Claude avec ce qu'il
-    compte réellement à l'œil, et au système d'agréger une mesure de
-    précision (cf. compute_eval_stats).
-
-    Body JSON : ``{eval_id: int, real_count: int}``.
-    """
-    user_store = app.storage.user
-    if not user_store.get("authenticated"):
-        return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    role = (user_store.get("role") or "").lower()
-    if role != "admin":
-        return JSONResponse({"error": "Admin only"}, status_code=403)
-
-    tenant_id = user_store.get("tenant_id")
-    if not tenant_id:
-        return JSONResponse({"error": "No tenant in session"}, status_code=403)
-
-    try:
-        payload = await request.json()
-    except Exception:
-        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-    try:
-        eval_id = int(payload.get("eval_id"))
-        real_count = int(payload.get("real_count"))
-    except (TypeError, ValueError):
-        return JSONResponse(
-            {"error": "eval_id et real_count doivent être des entiers"},
-            status_code=400,
-        )
-    if real_count < 0:
-        return JSONResponse(
-            {"error": "real_count doit être >= 0"}, status_code=400,
-        )
-
-    from common.services.carton_counter import set_real_count
-    try:
-        ok = await asyncio.to_thread(
-            set_real_count, eval_id, real_count=real_count, tenant_id=tenant_id,
-        )
-    except Exception as exc:
-        _log.exception("set_real_count échec")
-        return JSONResponse({"error": str(exc)}, status_code=500)
-    if not ok:
-        return JSONResponse(
-            {"error": f"Eval id={eval_id} introuvable"}, status_code=404,
-        )
-    return JSONResponse({"ok": True})
-
-
-# ─── PoC : test douchette code-barres ──────────────────────────────────────
-
-@app.post("/api/test-douchette-decode")
-async def _api_test_douchette_decode(request: Request):
-    """Décode une chaîne reçue d'une douchette (mode HID = clavier).
-
-    Sert à la page admin /test-douchette pour valider qu'une nouvelle
-    douchette est bien compatible avec le format GS1-128 / FNC1 utilisé
-    par les étiquettes palette Ferment Station.
-
-    Body JSON : ``{raw: str}``.
-    Retour : ``{type, raw, normalized, ais, sscc, summary}``.
-    """
-    user_store = app.storage.user
-    if not user_store.get("authenticated"):
-        return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    role = (user_store.get("role") or "").lower()
-    if role != "admin":
-        return JSONResponse({"error": "Admin only"}, status_code=403)
-
-    try:
-        payload = await request.json()
-    except Exception:
-        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-    raw = str(payload.get("raw") or "")
-    if len(raw) > 4096:
-        return JSONResponse({"error": "Scan trop long"}, status_code=413)
-
-    from common.services.scan_decoder import decode_scan
-    try:
-        result = await asyncio.to_thread(decode_scan, raw)
-    except Exception as exc:
-        _log.exception("decode_scan échec")
-        return JSONResponse({"error": str(exc)}, status_code=500)
-
-    return JSONResponse({
-        "raw": result.raw,
-        "normalized": result.normalized,
-        "type": result.type,
-        "ais": result.ais,
-        "sscc": result.sscc,
-        "summary": result.summary,
-    })
+# ─── Endpoints PoC supprimés (Sprint 3) ────────────────────────────────────
+# Les endpoints /api/count-cartons-poc, /api/count-cartons-poc/eval et
+# /api/test-douchette-decode ont été retirés en même temps que les pages
+# admin /test-carton-counter et /test-douchette (cf. Sprint 3 — refocalisation
+# web). Les services common/services/carton_counter.py et scan_decoder.py
+# restent en place au cas où ces flows seraient réintégrés à l'iOS plus tard.
 
 
 @app.post("/api/lookup-sscc")
