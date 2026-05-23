@@ -66,12 +66,12 @@ NAV_ITEMS: list[tuple] = [
     ("home",           "Accueil",              "/accueil"),
     ("factory",        "Production",           "/production"),
     ("insights",       "Prévisions",           "/previsions"),
-    ("qr_code_2",      "Étiquettes palette",   "/etiquettes-palette"),
+    # /etiquettes-palette retiré (Sprint 3) — équivalent iOS
     ("departure_board", "Ramasse / Chargement camion", "/chargement-camion"),
     ("history",        "Historique ramasses",  "/historique-ramasses"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("bar_chart",      "Commercial",            "/commercial"),
-    # Groupe dépliable — 4 éléments : (icon, label, None, children)
+    # Groupe dépliable
     ("settings", "Paramètres", None, [
         ("menu_book",      "Instructions IA",      "/ressources"),
         ("account_tree",   "Nomenclatures",        "/nomenclatures"),
@@ -80,8 +80,7 @@ NAV_ITEMS: list[tuple] = [
         # admin only — masqué automatiquement pour user/operateur via
         # ADMIN_ONLY_PATHS dans common/permissions.py
         ("history",        "Journal SSCC",         "/sscc-log"),
-        ("photo_camera",   "PoC compte cartons",   "/test-carton-counter"),
-        ("qr_code_scanner", "Test douchette",       "/test-douchette"),
+        # /test-carton-counter, /test-douchette retirés (Sprint 3) — PoC dev
     ]),
 ]
 
