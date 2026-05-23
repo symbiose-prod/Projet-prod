@@ -83,10 +83,84 @@ def enqueue_planification_conditionnement_delete(
     )
 
 
-# Sprint 2 ajoutera les wrappers suivants :
-#
-# def enqueue_brassin_mise_en_bouteille(...) → "brassin.mise-en-bouteille"
-# def enqueue_brassin_mesure(...) → "brassin.mesure"
-# def enqueue_brassin_terminer(...) → "brassin.terminer"
-# def enqueue_stock_sortie(...) → "stock.sortie"
-# def enqueue_douane_dae_export(...) → "douane.dae.export"
+# ─── Sprint 2 : production writes (élimine la double saisie manuelle) ─────
+
+
+def enqueue_brassin_mise_en_bouteille(
+    *,
+    tenant_id: str,
+    payload: dict[str, Any],
+    user_email: str | None = None,
+) -> int | None:
+    """Enqueue un POST /brassin/mise-en-bouteille (Conditionner).
+
+    payload : ModeleStockProduit (cf. swagger). Champs attendus :
+    dateMiseEnBouteille, dateLimiteUtilisationOptimale, idProduitConditionnement,
+    numeroLot, numeroDAE, volumeRestant, modelesStockProduitBouteille,
+    modelesStockProduitFutContenant, modeleBrassin, etc.
+    """
+    return enqueue_event(
+        tenant_id=tenant_id,
+        event_type="brassin.mise-en-bouteille",
+        payload=payload,
+        created_by=user_email,
+    )
+
+
+def enqueue_brassin_mesure(
+    *,
+    tenant_id: str,
+    payload: dict[str, Any],
+    user_email: str | None = None,
+) -> int | None:
+    """Enqueue un POST /brassin/mesure/enregistrer (Mesure + Incident éventuel).
+
+    payload : ModeleBrassinMesure (cf. swagger). Champs attendus :
+    idBrassin, etape, auteur, date, densite, ph, temperature, degreAlcool,
+    nonConformite (si incident), commentaire, etc.
+    """
+    return enqueue_event(
+        tenant_id=tenant_id,
+        event_type="brassin.mesure",
+        payload=payload,
+        created_by=user_email,
+    )
+
+
+def enqueue_brassin_terminer(
+    *,
+    tenant_id: str,
+    payload: dict[str, Any],
+    user_email: str | None = None,
+) -> int | None:
+    """Enqueue un POST /brassin/terminer (avec ``archive: True`` en option).
+
+    payload : ModeleBrassin complet (cf. swagger). 60+ champs du brassin.
+    Pour archiver en même temps que terminer : ajouter ``"archive": True``.
+    """
+    return enqueue_event(
+        tenant_id=tenant_id,
+        event_type="brassin.terminer",
+        payload=payload,
+        created_by=user_email,
+    )
+
+
+def enqueue_stock_sortie(
+    *,
+    tenant_id: str,
+    payload: dict[str, Any],
+    user_email: str | None = None,
+) -> int | None:
+    """Enqueue un POST /stock/sortie/enregistrer (Sortie ramasse SOFRIPA).
+
+    payload : ModeleStockSortieForm (cf. swagger). Champs attendus :
+    idClient, idEntrepot, idProduit, identifiantLot, quantite, date,
+    typeMouvement, commentaire.
+    """
+    return enqueue_event(
+        tenant_id=tenant_id,
+        event_type="stock.sortie",
+        payload=payload,
+        created_by=user_email,
+    )

@@ -59,18 +59,59 @@ def _handle_brassin_planification_delete(payload: dict[str, Any]) -> dict[str, A
 # un cas peu critique). On le laisse en appel direct, hors outbox.
 
 
+# ─── Sprint 2 : Conditionner, Mesures, Terminer, Sortie stock ────────────
+
+
+def _handle_brassin_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
+    """event_type='brassin.mise-en-bouteille' → POST /brassin/mise-en-bouteille.
+
+    Crée les stocks produits (bouteilles + fûts) côté EB depuis un brassin.
+    """
+    from common.easybeer.production_writes import conditionner_brassin
+    return conditionner_brassin(payload)
+
+
+def _handle_brassin_mesure(payload: dict[str, Any]) -> dict[str, Any]:
+    """event_type='brassin.mesure' → POST /brassin/mesure/enregistrer.
+
+    Enregistre une mesure (densité, T°, pH, etc.) ou un incident (champ
+    ``nonConformite`` rempli).
+    """
+    from common.easybeer.production_writes import enregistrer_mesure_brassin
+    return enregistrer_mesure_brassin(payload)
+
+
+def _handle_brassin_terminer(payload: dict[str, Any]) -> dict[str, Any]:
+    """event_type='brassin.terminer' → POST /brassin/terminer.
+
+    Marque le brassin comme terminé (et archivé si ``archive: True`` dans le
+    payload).
+    """
+    from common.easybeer.production_writes import terminer_brassin
+    return terminer_brassin(payload)
+
+
+def _handle_stock_sortie(payload: dict[str, Any]) -> dict[str, Any]:
+    """event_type='stock.sortie' → POST /stock/sortie/enregistrer.
+
+    Déclare une sortie de stock vers un client (ex: ramasse SOFRIPA).
+    """
+    from common.easybeer.production_writes import enregistrer_sortie_stock
+    return enregistrer_sortie_stock(payload)
+
+
 # ─── Dispatcher ──────────────────────────────────────────────────────────
 
 EVENT_HANDLERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    # Sprint 1 — writes existants migrés
     "brassin.create": _handle_brassin_create,
     "brassin.planification.add": _handle_brassin_planification_add,
     "brassin.planification.delete": _handle_brassin_planification_delete,
-    # Sprint 2 ajoutera :
-    # "brassin.mise-en-bouteille": _handle_brassin_mise_en_bouteille,
-    # "brassin.mesure": _handle_brassin_mesure,
-    # "brassin.terminer": _handle_brassin_terminer,
-    # "stock.sortie": _handle_stock_sortie,
-    # "douane.dae.export": _handle_douane_dae_export,
+    # Sprint 2 — élimination de la double saisie manuelle
+    "brassin.mise-en-bouteille": _handle_brassin_mise_en_bouteille,
+    "brassin.mesure": _handle_brassin_mesure,
+    "brassin.terminer": _handle_brassin_terminer,
+    "stock.sortie": _handle_stock_sortie,
 }
 
 
