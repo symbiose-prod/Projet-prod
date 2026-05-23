@@ -476,6 +476,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_esm_tenant_key
   ON eb_sync_meta(tenant_id, cache_key);
 
 -- =========================
+-- Outbox EasyBeer (écritures transactionnelles vers EB)
+-- =========================
+-- Pattern Outbox : toute écriture métier qui doit remonter à EasyBeer est
+-- enregistrée ici dans la même transaction que l'opération locale. Un worker
+-- async (common/outbox/worker.py) consomme les events pending et les pousse
+-- vers EB avec retry exponentiel. Si max_attempts atteint sans succès → status
+-- 'dead' + capture Sentry pour investigation manuelle.
+--
+-- event_type : convention dot-separated par domaine + action
+--   ex: 'brassin.create', 'brassin.terminer', 'brassin.mise-en-bouteille',
+--       'brassin.mesure', 'stock.sortie', 'douane.dae.export'
+-- payload    : body JSON à transmettre à EB (déjà au format attendu par EB)
+-- status     : pending|sent|dead
+CREATE TABLE IF NOT EXISTS eb_outbox (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  event_type      TEXT NOT NULL,
+  payload         JSONB NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  attempt_count   INTEGER NOT NULL DEFAULT 0,
+  max_attempts    INTEGER NOT NULL DEFAULT 10,
+  last_error      TEXT,
+  next_retry_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at         TIMESTAMPTZ,
+  created_by      TEXT,                       -- email utilisateur pour audit
+  CHECK (status IN ('pending', 'sent', 'dead'))
+);
+
+-- Lookup principal : worker cherche les events pending dont le retry est dû
+CREATE INDEX IF NOT EXISTS idx_eb_outbox_pending_ready
+  ON eb_outbox(next_retry_at)
+  WHERE status = 'pending';
+
+-- Lookup par tenant + status (pour dashboard admin)
+CREATE INDEX IF NOT EXISTS idx_eb_outbox_tenant_status
+  ON eb_outbox(tenant_id, status, created_at DESC);
+
+-- =========================
 -- Cache ventes mensuelles par goût (pour la page Prévisions)
 -- =========================
 -- Une ligne par (tenant, année, mois, goût canon). Évite les appels API

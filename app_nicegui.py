@@ -328,6 +328,7 @@ app.add_middleware(RequestLoggingMiddleware)
 
 import pages.accueil  # noqa: F401 — /accueil
 import pages.admin  # noqa: F401 — /admin (admin only)
+import pages.admin_eb_outbox  # noqa: F401 — /admin/eb-outbox (admin only)
 import pages.auth  # noqa: F401 — /login, /reset/{token}
 import pages.chargement_camion  # noqa: F401 — /chargement-camion
 import pages.commercial  # noqa: F401 — /commercial
@@ -1537,6 +1538,10 @@ async def _startup_cleanup():
     # Démarrer la boucle de cache EasyBeer (sync toutes les 60s)
     from common.eb_sync_loop import eb_cache_sync_loop
     asyncio.ensure_future(eb_cache_sync_loop())
+
+    # Démarrer le worker outbox EasyBeer (push events writes vers EB, tick 10s)
+    from common.outbox import eb_outbox_worker
+    asyncio.ensure_future(eb_outbox_worker())
 
 
 # ─── Service Worker (servi depuis / pour scope racine) ──────────────────────
