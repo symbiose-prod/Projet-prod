@@ -272,6 +272,7 @@ def build_mise_en_bouteille_payload(
 def build_terminer_payload(
     sheet: ProductionSheetDetail,
     *,
+    tenant_id: str = "",
     user_email: str = "",
 ) -> dict[str, Any] | None:
     """Construit un payload riche (overrides) pour ``POST /brassin/terminer``.
@@ -292,7 +293,8 @@ def build_terminer_payload(
     - ``densiteInitiale`` : première mesure de fermentation
     - ``densiteFinale`` : dernière mesure de fermentation
     - ``ph``, ``temperature``, ``degreAlcool`` : dernière mesure
-    - ``commentaire`` : récap HTML riche (mesures, incidents, conditionnement, remarques)
+    - ``commentaire`` : récap HTML riche (mesures, incidents, conditionnement,
+      **liste des SSCC** pour traçabilité GS1, remarques)
     """
     if not sheet.brassin_id:
         return None
@@ -339,14 +341,62 @@ def build_terminer_payload(
     if volume_final is not None:
         overrides["volumeFinal"] = volume_final
 
-    # ─── Commentaire HTML riche ───────────────────────────────────────
+    # ─── Commentaire HTML riche (avec SSCC pour traçabilité GS1) ──────
     html_commentaire = _build_commentaire_html(
-        sheet, data=data, user_email=user_email,
+        sheet,
+        data=data,
+        user_email=user_email,
+        tenant_id=tenant_id,
     )
     if html_commentaire:
         overrides["commentaire"] = html_commentaire
 
     return overrides
+
+
+def _fetch_sscc_for_lot(tenant_id: str, lot: str) -> list[dict[str, Any]]:
+    """Charge la liste des SSCC actifs pour ce lot.
+
+    Joint ``sscc_log`` (source de vérité GS1, avec voided_at) avec
+    ``etiquette_palette_history`` (metadata marque/fmt/designation).
+
+    Retourne une liste de dicts avec : sscc, gtin_palette, lot, ddm,
+    case_count, generated_at, marque, fmt, designation, gout.
+
+    Best-effort : retourne [] si DB indisponible ou tenant/lot vide.
+    """
+    if not (tenant_id and lot):
+        return []
+    try:
+        from db.conn import run_sql
+        rows = run_sql(
+            """
+            SELECT
+              sl.sscc,
+              sl.gtin_palette,
+              sl.lot,
+              sl.ddm,
+              sl.case_count,
+              sl.generated_at,
+              eph.marque,
+              eph.fmt,
+              eph.designation,
+              eph.gout
+            FROM sscc_log sl
+            LEFT JOIN etiquette_palette_history eph
+              ON eph.sscc = sl.sscc
+             AND eph.tenant_id = sl.tenant_id
+            WHERE sl.tenant_id = :tid
+              AND sl.lot = :lot
+              AND sl.voided_at IS NULL
+            ORDER BY sl.generated_at ASC
+            """,
+            {"tid": tenant_id, "lot": lot},
+        ) or []
+        return rows
+    except Exception:
+        _log.exception("EB bind: failed to fetch SSCC for lot %s", lot)
+        return []
 
 
 def _compute_volume_final(data: dict[str, Any]) -> float | None:
@@ -394,6 +444,7 @@ def _build_commentaire_html(
     *,
     data: dict[str, Any],
     user_email: str,
+    tenant_id: str = "",
 ) -> str:
     """Construit un commentaire HTML riche pour l'archivage du brassin.
 
@@ -402,7 +453,8 @@ def _build_commentaire_html(
     2. Mesures de fermentation (liste chronologique)
     3. Incidents éventuels
     4. Conditionnement réel (récap)
-    5. Remarques libres
+    5. **Palettes / SSCC** (traçabilité GS1) — depuis sscc_log + etiquette_palette_history
+    6. Remarques libres
     """
     from html import escape
 
@@ -490,7 +542,41 @@ def _build_commentaire_html(
             parts.append(line)
         parts.append("</ul>")
 
-    # 5. Remarques libres
+    # 5. Palettes / SSCC (traçabilité GS1)
+    if tenant_id and sheet.lot:
+        sscc_rows = _fetch_sscc_for_lot(tenant_id, sheet.lot)
+        if sscc_rows:
+            parts.append(f"<h4>Palettes / SSCC ({len(sscc_rows)} palettes)</h4>")
+            parts.append("<ul>")
+            for row in sscc_rows:
+                sscc = str(row.get("sscc") or "")
+                marque = str(row.get("marque") or "")
+                fmt = str(row.get("fmt") or "")
+                designation = str(row.get("designation") or "")
+                gout = str(row.get("gout") or "")
+                case_count = row.get("case_count")
+                generated_at = row.get("generated_at")
+
+                line_parts = [f"<code>{escape(sscc)}</code>"]
+                if marque or fmt:
+                    line_parts.append(
+                        f"<b>{escape(marque)} {escape(fmt)}</b>".strip()
+                    )
+                if designation or gout:
+                    label = " ".join(s for s in (designation, gout) if s).strip()
+                    line_parts.append(escape(label))
+                if case_count:
+                    line_parts.append(f"{escape(str(case_count))} cartons")
+                if generated_at:
+                    try:
+                        date_str = generated_at.strftime("%d/%m/%Y %H:%M")
+                        line_parts.append(f"<i>{escape(date_str)}</i>")
+                    except (AttributeError, ValueError):
+                        pass
+                parts.append("<li>" + " — ".join(line_parts) + "</li>")
+            parts.append("</ul>")
+
+    # 6. Remarques libres
     remarques = (data.get("remarques") or "").strip()
     if remarques:
         parts.append("<h4>Remarques</h4>")
@@ -616,7 +702,9 @@ def enqueue_eb_events_from_sheet(
     try:
         from common.easybeer.queued import enqueue_brassin_terminer
 
-        terminer_payload = build_terminer_payload(sheet, user_email=user_email)
+        terminer_payload = build_terminer_payload(
+            sheet, tenant_id=tenant_id, user_email=user_email,
+        )
         if terminer_payload is None:
             summary["skipped"].append(
                 "brassin.terminer (no data.brassin_termine flag — skip)",
