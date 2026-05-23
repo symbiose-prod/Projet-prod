@@ -1285,36 +1285,22 @@ def finalize_loading(
         "finalized_by": user_email or "",
     })
 
-    # ─── Branchement Easybeer (Sprint 2 quinque) ──────────────────────
-    # Pousse un event stock.sortie vers EB via l'outbox (best-effort, ne
-    # fait jamais échouer la finalize locale). Désactivé par défaut, à
-    # activer via env var EB_OUTBOX_BIND_LOADINGS=true (+ EB_DEFAULT_WAREHOUSE_ID
-    # + EB_SOFRIPA_CLIENT_ID).
-    try:
-        from common.services.loading_eb_bind import enqueue_eb_events_from_loading
-        palettes_for_eb = list_linked_palettes(ramasse_id, tenant_id)
-        bind_summary = enqueue_eb_events_from_loading(
-            palettes=palettes_for_eb,
-            ramasse_id=ramasse_id,
-            ramasse_numero=int(current.get("numero")) if current.get("numero") else None,
-            date_ramasse=str(date_ramasse) if date_ramasse else "",
-            destinataire=destinataire,
-            tenant_id=tenant_id,
-            user_email=user_email,
-        )
-        if bind_summary.get("enqueued") or bind_summary.get("warnings"):
-            _log.info(
-                "EB bind ramasse %s : enqueued=%s warnings=%d errors=%s",
-                ramasse_id,
-                bind_summary.get("enqueued"),
-                len(bind_summary.get("warnings", [])),
-                bind_summary.get("errors"),
-            )
-    except Exception:
-        # Ne jamais faire échouer la finalize locale pour un problème EB
-        _log.exception(
-            "EB bind ramasse %s failed (non-fatal)", ramasse_id,
-        )
+    # ─── PAS DE BRANCHEMENT EASYBEER ICI ─────────────────────────────
+    # NOTE — Modèle métier correct (clarifié 2026-05-23) :
+    # SOFRIPA est le **stock déporté** de Ferment Station, PAS un client EB.
+    # Easybeer ne gère pas de double entrepôt (Ferment / SOFRIPA) : pour EB,
+    # le stock = ce qui est physiquement chez SOFRIPA.
+    #
+    # Par conséquent :
+    #   - La ramasse (transport Ferment → SOFRIPA) n'a PAS d'impact comptable
+    #     côté EB. C'est un événement physique sans contrepartie stock.
+    #   - Le vrai mouvement comptable EB se fait au moment du Conditionner
+    #     (POST /brassin/mise-en-bouteille) qui crée directement le stock côté EB.
+    #
+    # Cf. common/services/loading_eb_bind.py qui contient un ancien essai de
+    # branchement basé sur une compréhension erronée (SOFRIPA = client). Le
+    # module est conservé mais déprécié — ne pas activer EB_OUTBOX_BIND_LOADINGS.
+    # Voir Sprint 2 ter pour le vrai branchement (Conditionner).
 
     return (info, pdf_bytes)
 
