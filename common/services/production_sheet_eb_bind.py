@@ -140,16 +140,20 @@ def build_mise_en_bouteille_payload(
     n'a pas de brassin_id ou si aucun item n'est résolvable côté EB.
     ``warnings`` liste les items qui ont été skipped (mapping EB manquant).
 
-    Mapping appliqué pour chaque item :
-    - ``(lot, marque, fmt)`` → ``(idProduit, idContenant, contenance_l, pcb)``
-      via ``eb_product_mapping.resolve_lot_marque_fmt``
-    - ``quantite_bouteilles`` = ``cartons × pcb``
-    - 1 entrée ``ModeleStockProduitBouteille`` par item
+    Mapping appliqué pour chaque item (V2 — affectation "Carton de X") :
+    - ``(lot, marque, fmt)`` → ``LotMarqueFmtResolution`` (idProduit +
+      idContenant bouteille + idContenant carton + contenance + pcb)
+    - Si ``id_contenant_carton`` dispo → push en **Carton** :
+      idContenant = carton, quantite = cartons
+    - Sinon → fallback en **Unité** avec warning : idContenant = bouteille,
+      quantite = cartons × pcb
 
-    NOTE V1 : on N'inclut PAS ``idStockBouteille`` (le stock de contenant
-    vide consommé) parce qu'on n'a pas cette info côté iOS. EB devra soit
-    auto-résoudre, soit refuser le payload (auquel cas on verra l'erreur
-    dans le dashboard ``/admin/eb-outbox``). Itérer si besoin.
+    Cohérent avec la saisie manuelle du responsable d'atelier qui choisit
+    presque toujours l'affectation "Carton de X" dans l'interface EB.
+
+    NOTE V1→V2 : on N'inclut toujours PAS ``idStockBouteille`` (le stock
+    de contenant vide consommé). EB devra auto-résoudre, ou rejeter le
+    payload (visible dans ``/admin/eb-outbox`` dead-letter).
     """
     warnings: list[str] = []
 
@@ -214,10 +218,27 @@ def build_mise_en_bouteille_payload(
             warnings.append(f"pcb=0 for ({marque}, {fmt}) — skip")
             continue
 
-        quantite_bouteilles = cartons_int * resolution.pcb
+        # Stratégie d'affectation : Carton si dispo, sinon fallback Unité
+        if resolution.id_contenant_carton is not None:
+            id_contenant = resolution.id_contenant_carton
+            quantite = cartons_int  # en cartons
+        elif resolution.id_contenant_bouteille is not None:
+            id_contenant = resolution.id_contenant_bouteille
+            quantite = cartons_int * resolution.pcb  # en bouteilles
+            warnings.append(
+                f"({marque}, {fmt}): no carton in EB matrice — fallback Unité "
+                f"(qty={quantite} bouteilles)",
+            )
+        else:
+            warnings.append(
+                f"({marque}, {fmt}): no idContenant (ni carton ni bouteille) — skip",
+            )
+            continue
+
         entry: dict[str, Any] = {
             "modeleProduit": {"idProduit": resolution.id_produit},
-            "quantiteMiseEnBouteille": quantite_bouteilles,
+            "modeleContenant": {"idContenant": id_contenant},
+            "quantiteMiseEnBouteille": quantite,
         }
         if resolution.contenance_l is not None:
             entry["contenance"] = resolution.contenance_l

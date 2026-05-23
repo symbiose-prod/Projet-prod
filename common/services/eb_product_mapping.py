@@ -41,12 +41,22 @@ class GtinIndexEntry:
 
 @dataclass(frozen=True)
 class LotMarqueFmtResolution:
-    """Résolution d'un item (marque, fmt) sur un lot donné vers EB."""
+    """Résolution d'un item (marque, fmt) sur un lot donné vers EB.
+
+    Deux référentiels EB co-existent pour un même format :
+    - **Bouteille** (unité) : ``id_contenant_bouteille`` + ``contenance_l``
+      résolus via ``gtin_uvc`` (GTIN de l'unité de vente consommateur)
+    - **Carton** (regroupement) : ``id_contenant_carton`` résolu via ``ean``
+      (GTIN du colis). C'est l'affectation par défaut côté EB selon la
+      pratique du responsable d'atelier.
+    """
     id_produit: int
-    id_contenant: int | None
+    id_contenant_bouteille: int | None
+    id_contenant_carton: int | None
     contenance_l: float | None
     pcb: int
     gtin_uvc: str
+    ean: str
 
 
 # ─── Normalisation ────────────────────────────────────────────────────────
@@ -158,11 +168,16 @@ def resolve_lot_marque_fmt(
 
     Stratégie :
     1. Cherche dans ``etiquette_palette_history`` une étiquette générée pour
-       ce (lot, marque, fmt) — récupère ``gtin_uvc`` et ``pcb``.
-    2. Lookup ``gtin_uvc`` dans la matrice EB → ``(idProduit, idContenant, contenance)``.
+       ce (lot, marque, fmt) — récupère ``gtin_uvc``, ``ean`` et ``pcb``.
+    2. Lookup ``gtin_uvc`` dans la matrice EB → ``(idProduit, id_contenant_bouteille, contenance)``.
+    3. Lookup ``ean`` dans la matrice EB → ``id_contenant_carton`` (le carton
+       a généralement le même ``idProduit`` que la bouteille, mais un
+       ``idContenant`` distinct pour l'affectation "Carton de X").
 
-    Retourne ``None`` si l'étiquette n'existe pas ou si le gtin n'est pas
-    dans la matrice. L'appelant log un warning et skip ce item.
+    Retourne ``None`` si l'étiquette n'existe pas, ou si **aucun** des deux
+    GTIN (uvc ou ean) ne mappe vers EB.
+    L'appelant peut choisir l'affectation (Unité vs Carton) selon les deux
+    ``id_contenant_*`` retournés.
     """
     if not (lot and marque and fmt):
         return None
@@ -176,27 +191,34 @@ def resolve_lot_marque_fmt(
         return None
 
     gtin_uvc = str(eph.get("gtin_uvc") or "")
-    if not gtin_uvc:
-        # Fallback sur le ean (GTIN colis carton) si pas de gtin_uvc — moins
-        # précis car le carton ≠ la bouteille côté EB, mais mieux que rien.
-        gtin_uvc = str(eph.get("ean") or "")
-    if not gtin_uvc:
-        return None
+    ean = str(eph.get("ean") or "")
 
-    entry = lookup_gtin(gtin_index, gtin_uvc)
-    if entry is None:
+    bouteille_entry = lookup_gtin(gtin_index, gtin_uvc) if gtin_uvc else None
+    carton_entry = lookup_gtin(gtin_index, ean) if ean else None
+
+    if bouteille_entry is None and carton_entry is None:
         _log.debug(
-            "EB mapping: gtin %s introuvable dans la matrice EB pour (lot=%s, marque=%s, fmt=%s)",
-            gtin_uvc, lot, marque, fmt,
+            "EB mapping: neither gtin_uvc=%s nor ean=%s found in matrice "
+            "(lot=%s, marque=%s, fmt=%s)",
+            gtin_uvc, ean, lot, marque, fmt,
         )
         return None
 
+    # idProduit : on prend prioritairement celui de la bouteille (référentiel
+    # de base). Si seule la version carton est dans la matrice, on prend celui-là.
+    id_produit = (bouteille_entry or carton_entry).id_produit
+    contenance_l = (
+        bouteille_entry.contenance_l if bouteille_entry else carton_entry.contenance_l
+    )
+
     return LotMarqueFmtResolution(
-        id_produit=entry.id_produit,
-        id_contenant=entry.id_contenant,
-        contenance_l=entry.contenance_l,
+        id_produit=id_produit,
+        id_contenant_bouteille=bouteille_entry.id_contenant if bouteille_entry else None,
+        id_contenant_carton=carton_entry.id_contenant if carton_entry else None,
+        contenance_l=contenance_l,
         pcb=int(eph.get("pcb") or 0),
         gtin_uvc=gtin_uvc,
+        ean=ean,
     )
 
 

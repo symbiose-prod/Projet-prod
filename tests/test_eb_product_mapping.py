@@ -126,10 +126,11 @@ class TestLookupGtin:
 class TestResolveLotMarqueFmt:
 
     @patch("common.services.eb_product_mapping.run_sql")
-    def test_resolves_via_gtin_uvc(self, mock_sql: MagicMock):
+    def test_resolves_both_bouteille_and_carton(self, mock_sql: MagicMock):
+        """Cas nominal : gtin_uvc (bouteille) ET ean (carton) sont dans la matrice EB."""
         mock_sql.return_value = [{
-            "ean": "3770014427014",
-            "gtin_uvc": "3770014427021",
+            "ean": "3770014427014",       # GTIN carton
+            "gtin_uvc": "3770014427021",  # GTIN bouteille
             "lot": "KMA15052026",
             "fmt": "12x33",
             "marque": "NIKO",
@@ -139,7 +140,10 @@ class TestResolveLotMarqueFmt:
         gtin_index = {
             "3770014427021": GtinIndexEntry(
                 id_produit=200, id_contenant=60, contenance_l=0.33, lot_libelle=None,
-            )
+            ),
+            "3770014427014": GtinIndexEntry(
+                id_produit=200, id_contenant=999, contenance_l=0.33, lot_libelle="Carton de 12",
+            ),
         }
 
         result = resolve_lot_marque_fmt(
@@ -152,34 +156,55 @@ class TestResolveLotMarqueFmt:
 
         assert isinstance(result, LotMarqueFmtResolution)
         assert result.id_produit == 200
-        assert result.id_contenant == 60
+        assert result.id_contenant_bouteille == 60
+        assert result.id_contenant_carton == 999  # Carton de 12
         assert result.contenance_l == 0.33
         assert result.pcb == 12
         assert result.gtin_uvc == "3770014427021"
+        assert result.ean == "3770014427014"
 
     @patch("common.services.eb_product_mapping.run_sql")
-    def test_fallback_to_ean_if_no_gtin_uvc(self, mock_sql: MagicMock):
-        """Si gtin_uvc absent (ancien enregistrement), on fallback sur ean."""
+    def test_only_bouteille_in_matrice(self, mock_sql: MagicMock):
+        """Si seul le gtin_uvc est dans la matrice (ean non synchronisé), on
+        retourne id_contenant_bouteille mais id_contenant_carton = None."""
         mock_sql.return_value = [{
             "ean": "3770014427014",
-            "gtin_uvc": "",
-            "lot": "L1",
-            "fmt": "12x33",
-            "marque": "NIKO",
-            "designation": "X",
+            "gtin_uvc": "3770014427021",
             "pcb": 12,
         }]
         gtin_index = {
-            "3770014427014": GtinIndexEntry(
-                id_produit=300, id_contenant=70, contenance_l=0.33, lot_libelle=None,
-            )
+            "3770014427021": GtinIndexEntry(
+                id_produit=200, id_contenant=60, contenance_l=0.33, lot_libelle=None,
+            ),
+            # ean absent
         }
         result = resolve_lot_marque_fmt(
             tenant_id="t1", lot="L1", marque="NIKO", fmt="12x33",
             gtin_index=gtin_index,
         )
-        assert result.id_produit == 300
-        assert result.gtin_uvc == "3770014427014"
+        assert result.id_contenant_bouteille == 60
+        assert result.id_contenant_carton is None
+
+    @patch("common.services.eb_product_mapping.run_sql")
+    def test_only_carton_in_matrice(self, mock_sql: MagicMock):
+        """Symétrique : seul l'ean (carton) est dans la matrice."""
+        mock_sql.return_value = [{
+            "ean": "3770014427014",
+            "gtin_uvc": "3770014427021",
+            "pcb": 12,
+        }]
+        gtin_index = {
+            "3770014427014": GtinIndexEntry(
+                id_produit=200, id_contenant=999, contenance_l=0.33, lot_libelle=None,
+            ),
+        }
+        result = resolve_lot_marque_fmt(
+            tenant_id="t1", lot="L1", marque="NIKO", fmt="12x33",
+            gtin_index=gtin_index,
+        )
+        assert result.id_contenant_bouteille is None
+        assert result.id_contenant_carton == 999
+        assert result.id_produit == 200
 
     @patch("common.services.eb_product_mapping.run_sql")
     def test_returns_none_if_no_etiquette(self, mock_sql: MagicMock):
@@ -191,13 +216,14 @@ class TestResolveLotMarqueFmt:
         assert result is None
 
     @patch("common.services.eb_product_mapping.run_sql")
-    def test_returns_none_if_gtin_not_in_matrice(self, mock_sql: MagicMock):
+    def test_returns_none_if_no_gtin_in_matrice(self, mock_sql: MagicMock):
+        """Ni gtin_uvc ni ean trouvés dans la matrice → None."""
         mock_sql.return_value = [{
             "ean": "3770014427014",
             "gtin_uvc": "3770014427021",
             "pcb": 12,
         }]
-        # gtin_index vide → gtin pas trouvable
+        # gtin_index vide → ni l'un ni l'autre trouvable
         result = resolve_lot_marque_fmt(
             tenant_id="t1", lot="L1", marque="NIKO", fmt="12x33",
             gtin_index={},
