@@ -95,32 +95,93 @@ class TestTerminerBrassin:
 
     @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
     @patch("common.easybeer.production_writes.execute_endpoint")
-    def test_calls_execute_endpoint_with_correct_path(
+    def test_full_mode_pushes_as_is(
         self,
         mock_execute: MagicMock,
         _mock_invalidate: MagicMock,
     ):
+        """Mode 'full' : payload déjà complet, push tel quel."""
         mock_execute.return_value = {"id": 42, "archive": True}
-        payload = {"id": 42, "archive": True}
+        payload = {"_full": True, "id": 42, "archive": True, "name": "X", "degreAlcool": 5.5}
 
-        result = terminer_brassin(payload)
+        terminer_brassin(payload)
 
-        assert result == {"id": 42, "archive": True}
-        mock_execute.assert_called_once_with(
-            method="POST",
-            path="brassin/terminer",
-            payload=payload,
-        )
+        called = mock_execute.call_args.kwargs["payload"]
+        assert "_full" not in called  # marker retiré
+        assert called["id"] == 42
+        assert called["archive"] is True
+        assert called["name"] == "X"
 
     @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
     @patch("common.easybeer.production_writes.execute_endpoint")
+    @patch("common.easybeer.brassins.get_brassin_detail")
+    def test_lazy_mode_loads_and_merges(
+        self,
+        mock_load: MagicMock,
+        mock_execute: MagicMock,
+        _mock_invalidate: MagicMock,
+    ):
+        """Mode 'lazy' (par défaut) : on charge le brassin EB et on merge les overrides."""
+        mock_load.return_value = {
+            "id": 42,
+            "name": "Brassin Test",
+            "degreAlcool": 5.0,
+            "annule": False,
+            "archive": False,
+            "dateFin": None,
+            "commentaire": "ancien",
+        }
+        mock_execute.return_value = {"ok": True}
+
+        overrides = {"id": 42, "archive": True, "dateFin": 1700000000000, "commentaire": "nouveau"}
+        terminer_brassin(overrides)
+
+        mock_load.assert_called_once_with(42)
+        called = mock_execute.call_args.kwargs["payload"]
+        # Champs originaux préservés
+        assert called["name"] == "Brassin Test"
+        assert called["degreAlcool"] == 5.0
+        assert called["annule"] is False
+        # Overrides appliqués
+        assert called["archive"] is True
+        assert called["dateFin"] == 1700000000000
+        assert called["commentaire"] == "nouveau"
+
+    @patch("common.easybeer.production_writes.execute_endpoint")
+    @patch("common.easybeer.brassins.get_brassin_detail")
+    def test_lazy_mode_raises_if_no_id(
+        self,
+        _mock_load: MagicMock,
+        _mock_execute: MagicMock,
+    ):
+        import pytest
+        with pytest.raises(ValueError, match="id"):
+            terminer_brassin({"archive": True})
+
+    @patch("common.easybeer.production_writes.execute_endpoint")
+    @patch("common.easybeer.brassins.get_brassin_detail")
+    def test_lazy_mode_raises_if_brassin_not_found(
+        self,
+        mock_load: MagicMock,
+        _mock_execute: MagicMock,
+    ):
+        import pytest
+        mock_load.return_value = {}  # introuvable
+        with pytest.raises(ValueError, match="introuvable"):
+            terminer_brassin({"id": 42, "archive": True})
+
+    @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
+    @patch("common.easybeer.production_writes.execute_endpoint")
+    @patch("common.easybeer.brassins.get_brassin_detail")
     def test_invalidates_brassin_listings(
         self,
+        mock_load: MagicMock,
         mock_execute: MagicMock,
         mock_invalidate: MagicMock,
     ):
+        mock_load.return_value = {"id": 1, "name": "x"}
         mock_execute.return_value = {}
-        terminer_brassin({"id": 1})
+        terminer_brassin({"id": 1, "archive": False})
 
         keys = mock_invalidate.call_args[0][0]
         assert "brassins_en_cours" in keys

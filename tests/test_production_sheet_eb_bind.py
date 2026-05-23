@@ -11,6 +11,7 @@ from common.services.production_sheet_eb_bind import (
     _safe_float,
     build_mesure_payload,
     build_mise_en_bouteille_payload,
+    build_terminer_payload,
     enqueue_eb_events_from_sheet,
     is_eb_bind_enabled,
 )
@@ -406,6 +407,58 @@ class TestBuildMiseEnBouteillePayload:
         payload, warnings = build_mise_en_bouteille_payload(sheet, tenant_id="t1")
         assert payload is None
         assert any("pcb=0" in w for w in warnings)
+
+
+# ─── build_terminer_payload ──────────────────────────────────────────────
+
+
+class TestBuildTerminerPayload:
+
+    def test_no_brassin_id_returns_none(self):
+        sheet = _FakeSheet(brassin_id=None, data={"brassin_termine": True})
+        assert build_terminer_payload(sheet) is None
+
+    def test_no_flag_returns_none(self):
+        """Sans data.brassin_termine, on ne touche pas au brassin EB."""
+        sheet = _FakeSheet(data={})
+        assert build_terminer_payload(sheet) is None
+
+    def test_flag_false_returns_none(self):
+        sheet = _FakeSheet(data={"brassin_termine": False})
+        assert build_terminer_payload(sheet) is None
+
+    def test_flag_true_builds_overrides(self):
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "remarques": "Brassin nominal, fin de production",
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        assert payload is not None
+        assert payload["id"] == 12345
+        assert payload["archive"] is False  # default
+        assert "dateFin" in payload
+        assert isinstance(payload["dateFin"], int)  # timestamp ms
+        assert "Brassin nominal" in payload["commentaire"]
+
+    def test_archiver_flag(self):
+        sheet = _FakeSheet(
+            data={"brassin_termine": True, "archiver": True},
+        )
+        payload = build_terminer_payload(sheet)
+        assert payload["archive"] is True
+
+    def test_remarques_empty(self):
+        sheet = _FakeSheet(data={"brassin_termine": True, "remarques": ""})
+        payload = build_terminer_payload(sheet)
+        assert "commentaire" not in payload
+
+    def test_remarques_truncated(self):
+        long = "x" * 2000
+        sheet = _FakeSheet(data={"brassin_termine": True, "remarques": long})
+        payload = build_terminer_payload(sheet)
+        assert len(payload["commentaire"]) == 1000
 
 
 # ─── enqueue_eb_events_from_sheet ────────────────────────────────────────
