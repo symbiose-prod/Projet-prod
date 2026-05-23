@@ -19,7 +19,9 @@ format A4 portrait multi-page. Layout :
   10. Footer : opérateur + date de génération
 
 PDF généré via FPDF (cohérence avec common/xlsx_fill/bl_pdf et étiquettes
-palette). Photos décodées depuis base64 et insérées via images temporaires.
+palette). Photos décodées depuis base64 OU téléchargées depuis OVH Object
+Storage (via la clé S3, après migration Phase B), puis insérées dans le PDF
+via fichiers temporaires.
 """
 from __future__ import annotations
 
@@ -391,12 +393,8 @@ def _section_incidents(pdf, sheet) -> None:
     tmp_files: list[Path] = []
     try:
         for idx, photo in enumerate(photos):
-            b64 = photo.get("base64") or ""
-            if not b64:
-                continue
-            try:
-                img_bytes = base64.b64decode(b64)
-            except Exception:
+            img_bytes = _load_photo_bytes(photo)
+            if img_bytes is None:
                 continue
             # Écriture en fichier temporaire pour FPDF (qui veut un path)
             suffix = ".jpg"
@@ -435,3 +433,70 @@ def _section_incidents(pdf, sheet) -> None:
                 tmp_path.unlink(missing_ok=True)
             except Exception:
                 pass
+
+
+# ─── Chargement des bytes d'une photo (legacy base64 OU OVH S3 via key) ────
+
+
+def _load_photo_bytes(photo: dict) -> bytes | None:
+    """Charge les bytes d'une photo d'incident.
+
+    Deux formats supportés (compatibilité durant la migration Phase B) :
+
+    1. **OVH S3 (key)** — format post-migration :
+       Photo a un champ ``key`` (chemin S3). On télécharge via une URL
+       signée puis on récupère les bytes via HTTP.
+
+    2. **Base64 (legacy)** — format pré-migration :
+       Photo a un champ ``base64``. On décode directement.
+
+    Priorité à ``key`` (S3) car post-migration la source de vérité est S3.
+    Retourne ``None`` si aucun des deux formats n'est exploitable.
+    """
+    if not isinstance(photo, dict):
+        return None
+
+    # 1. Priorité S3
+    key = (photo.get("key") or "").strip()
+    if key:
+        try:
+            from common.object_storage import OVHStorageError, get_presigned_url
+
+            try:
+                url = get_presigned_url(key, ttl_seconds=300)
+            except OVHStorageError as exc:
+                _log.warning(
+                    "PDF photo: get_presigned_url failed (key=%s) : %s",
+                    key[-30:], exc,
+                )
+                return _fallback_base64(photo)
+
+            import requests
+            resp = requests.get(url, timeout=15)
+            if resp.status_code == 200 and resp.content:
+                return resp.content
+            _log.warning(
+                "PDF photo: HTTP %d en téléchargement (key=%s)",
+                resp.status_code, key[-30:],
+            )
+            return _fallback_base64(photo)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("PDF photo: S3 download failed (key=%s) : %s", key[-30:], exc)
+            return _fallback_base64(photo)
+
+    # 2. Fallback legacy base64
+    return _fallback_base64(photo)
+
+
+def _fallback_base64(photo: dict) -> bytes | None:
+    """Décodage de la photo depuis le champ base64 (legacy). None si absent/invalide."""
+    b64 = photo.get("base64") or ""
+    if not b64:
+        return None
+    try:
+        # Supporte les data-URLs (data:image/jpeg;base64,...)
+        if "," in b64 and b64.startswith("data:"):
+            b64 = b64.split(",", 1)[1]
+        return base64.b64decode(b64)
+    except Exception:  # noqa: BLE001
+        return None
