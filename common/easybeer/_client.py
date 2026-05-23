@@ -229,10 +229,22 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
 
 
 def _safe_json(r: requests.Response, endpoint: str) -> Any:
-    """Parse JSON en toute sécurité. Lève EasyBeerError si le body n'est pas du JSON."""
+    """Parse JSON en toute sécurité. Lève EasyBeerError si le body n'est pas du JSON.
+
+    Cas particulier : certains endpoints d'écriture EasyBeer (ex. ``brassin/
+    mise-en-bouteille``, ``brassin/terminer``) confirment le succès par un
+    HTTP 200/204 **avec body vide**. On tolère ce cas et on retourne ``{}``
+    pour ne pas faire échouer le push dans l'outbox.
+    """
     try:
         return r.json()
     except (ValueError, TypeError) as exc:
+        # Body vide sur 2xx = succès silencieux (cas des endpoints d'écriture
+        # EB). On retourne {} plutôt que de lever pour ne pas faire échouer
+        # le push de l'outbox. Tout autre cas (body non-vide non-JSON,
+        # ou erreur HTTP) reste une vraie erreur.
+        if 200 <= r.status_code < 300 and not r.text.strip():
+            return {}
         raise EasyBeerError(
             f"EasyBeer {endpoint} : réponse non-JSON (HTTP {r.status_code}) — {r.text[:200]}"
         ) from exc
