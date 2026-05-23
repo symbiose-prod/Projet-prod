@@ -1,4 +1,4 @@
-.PHONY: test lint fix typecheck audit ci
+.PHONY: test lint fix typecheck audit ci refresh-eb-swagger
 
 ## Lancer les tests
 test:
@@ -22,3 +22,9 @@ audit:
 
 ## Pipeline CI locale (lint + typecheck + tests)
 ci: lint typecheck test
+
+## Rafraîchit la doc API Easybeer depuis api.easybeer.fr/v2/api-docs
+## (regénère docs/easybeer-api.swagger.json + docs/easybeer/*.json + INDEX.md)
+## Requiert : jq, et EASYBEER_API_USER/PASS dans .env ou env vars.
+refresh-eb-swagger:
+	bash scripts/refresh_eb_swagger.sh
