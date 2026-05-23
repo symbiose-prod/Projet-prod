@@ -586,6 +586,81 @@ class TestBuildTerminerPayload:
         payload = build_terminer_payload(sheet, user_email="op@ferment.fr")
         assert "op@ferment.fr" in payload["commentaire"]
 
+    @patch("db.conn.run_sql")
+    def test_includes_sscc_section_when_tenant_id_provided(
+        self, mock_sql: MagicMock,
+    ):
+        """Quand tenant_id est passé, on liste les SSCC du lot dans le commentaire."""
+        from datetime import datetime
+        mock_sql.return_value = [
+            {
+                "sscc": "377001442700000001",
+                "gtin_palette": "3770014427014",
+                "lot": "KMA15052026",
+                "ddm": None,
+                "case_count": 60,
+                "generated_at": datetime(2026, 5, 20, 14, 30),
+                "marque": "NIKO",
+                "fmt": "12x33",
+                "designation": "Kéfir Mangue Passion",
+                "gout": "Mangue",
+            },
+            {
+                "sscc": "377001442700000002",
+                "gtin_palette": "3770014427014",
+                "lot": "KMA15052026",
+                "ddm": None,
+                "case_count": 60,
+                "generated_at": datetime(2026, 5, 20, 14, 35),
+                "marque": "NIKO",
+                "fmt": "12x33",
+                "designation": "Kéfir Mangue Passion",
+                "gout": "Mangue",
+            },
+        ]
+        sheet = _FakeSheet(data={"brassin_termine": True})
+        payload = build_terminer_payload(
+            sheet, tenant_id="t1", user_email="x@y.com",
+        )
+        c = payload["commentaire"]
+        assert "Palettes / SSCC" in c
+        assert "2 palettes" in c
+        assert "377001442700000001" in c
+        assert "377001442700000002" in c
+        assert "NIKO 12x33" in c
+        assert "60 cartons" in c
+
+    @patch("db.conn.run_sql")
+    def test_no_sscc_section_if_empty(self, mock_sql: MagicMock):
+        """Pas de SSCC pour ce lot → pas de section (silencieux)."""
+        mock_sql.return_value = []
+        sheet = _FakeSheet(data={"brassin_termine": True})
+        payload = build_terminer_payload(
+            sheet, tenant_id="t1", user_email="x@y.com",
+        )
+        assert "Palettes / SSCC" not in payload["commentaire"]
+
+    def test_no_sscc_section_without_tenant_id(self):
+        """Sans tenant_id → pas de fetch SSCC (skip propre)."""
+        sheet = _FakeSheet(data={"brassin_termine": True})
+        payload = build_terminer_payload(sheet, user_email="x@y.com")
+        # Pas de tenant_id, donc pas de fetch SSCC
+        assert "Palettes / SSCC" not in payload["commentaire"]
+
+    @patch("db.conn.run_sql", side_effect=RuntimeError("DB down"))
+    def test_sscc_fetch_failure_does_not_break_commentaire(
+        self, _mock_sql: MagicMock,
+    ):
+        """Si la DB est down pour fetch SSCC, on continue (best-effort)."""
+        sheet = _FakeSheet(data={"brassin_termine": True})
+        payload = build_terminer_payload(
+            sheet, tenant_id="t1", user_email="x@y.com",
+        )
+        # Le commentaire doit être généré quand même, juste sans la section SSCC
+        assert payload is not None
+        assert "<h3>" in payload["commentaire"]
+        assert "Palettes / SSCC" not in payload["commentaire"]
+
 
 # ─── enqueue_eb_events_from_sheet ────────────────────────────────────────
 
