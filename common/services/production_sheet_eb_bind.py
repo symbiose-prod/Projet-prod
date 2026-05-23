@@ -271,8 +271,10 @@ def build_mise_en_bouteille_payload(
 
 def build_terminer_payload(
     sheet: ProductionSheetDetail,
+    *,
+    user_email: str = "",
 ) -> dict[str, Any] | None:
-    """Construit un payload léger (overrides) pour ``POST /brassin/terminer``.
+    """Construit un payload riche (overrides) pour ``POST /brassin/terminer``.
 
     **Conditions de déclenchement** :
     - sheet.brassin_id numérique
@@ -280,11 +282,17 @@ def build_terminer_payload(
       (sinon retourne None pour skipper)
 
     Le worker outbox chargera le ModeleBrassin EB complet au moment du push
-    (lazy load via ``terminer_brassin``), puis appliquera ces overrides :
+    (lazy load via ``terminer_brassin``), puis appliquera ces overrides.
+
+    Champs poussés (cf. UI Archivage du brassin dans EB) :
     - ``id`` : identifiant brassin (obligatoire pour le lazy load)
-    - ``archive`` : ``True`` si ``data.archiver`` est à True (sinon False)
-    - ``dateFin`` : timestamp ms (= now si pas dans la fiche)
-    - ``commentaire`` : remarques + statut fermentation
+    - ``archive`` : ``True`` si ``data.archiver`` est à True
+    - ``dateFin`` : timestamp ms (= finalized_at ou now)
+    - ``volumeFinal`` : Σ (cartons × pcb × contenance) depuis conditionnement_reel
+    - ``densiteInitiale`` : première mesure de fermentation
+    - ``densiteFinale`` : dernière mesure de fermentation
+    - ``ph``, ``temperature``, ``degreAlcool`` : dernière mesure
+    - ``commentaire`` : récap HTML riche (mesures, incidents, conditionnement, remarques)
     """
     if not sheet.brassin_id:
         return None
@@ -309,12 +317,190 @@ def build_terminer_payload(
         "archive": bool(data.get("archiver", False)),
     }
 
-    # Commentaire : remarques + statut + auteur
-    remarques = (data.get("remarques") or "").strip()
-    if remarques:
-        overrides["commentaire"] = remarques[:1000]
+    # ─── Mesures finales depuis fermentation (dernière mesure) ─────────
+    fermentation = data.get("fermentation") or {}
+    mesures = fermentation.get("mesures") or []
+    if mesures:
+        first = mesures[0] if isinstance(mesures[0], dict) else {}
+        last = mesures[-1] if isinstance(mesures[-1], dict) else {}
+
+        # Densités : première = initiale, dernière = finale
+        if (di := _safe_float(first.get("brix"))) is not None:
+            overrides["densiteInitiale"] = di
+        if (df := _safe_float(last.get("brix"))) is not None:
+            overrides["densiteFinale"] = df
+        if (ph := _safe_float(last.get("ph"))) is not None:
+            overrides["ph"] = ph
+        if (temp := _safe_float(last.get("temperature"))) is not None:
+            overrides["temperature"] = temp
+
+    # ─── Volume final depuis conditionnement_reel ─────────────────────
+    volume_final = _compute_volume_final(data)
+    if volume_final is not None:
+        overrides["volumeFinal"] = volume_final
+
+    # ─── Commentaire HTML riche ───────────────────────────────────────
+    html_commentaire = _build_commentaire_html(
+        sheet, data=data, user_email=user_email,
+    )
+    if html_commentaire:
+        overrides["commentaire"] = html_commentaire
 
     return overrides
+
+
+def _compute_volume_final(data: dict[str, Any]) -> float | None:
+    """Calcule le volume final conditionné en L depuis ``conditionnement_reel.items``.
+
+    Formule : Σ (cartons × pcb × contenance_l) pour chaque format.
+    Retourne None si pas calculable (pas d'items ou pas d'info contenance).
+
+    Note : contenance dérivée de ``fmt`` (ex : "12x33" → 0.33 L).
+    """
+    cond_reel = data.get("conditionnement_reel") or {}
+    items = cond_reel.get("items") or []
+    if not items:
+        return None
+
+    total_l = 0.0
+    found_any = False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        cartons = _safe_float(item.get("cartons"))
+        if cartons is None or cartons <= 0:
+            continue
+        fmt = (item.get("fmt") or "").lower().replace(" ", "")
+        # fmt format "Nxcc" ex: "12x33" → 12 bouteilles de 33cl
+        if "x" not in fmt:
+            continue
+        try:
+            pcb_str, vol_cl_str = fmt.split("x", 1)
+            pcb = int(pcb_str)
+            vol_cl = int(vol_cl_str)
+            if pcb <= 0 or vol_cl <= 0:
+                continue
+            contenance_l = vol_cl / 100.0
+            total_l += cartons * pcb * contenance_l
+            found_any = True
+        except (ValueError, TypeError):
+            continue
+
+    return round(total_l, 2) if found_any else None
+
+
+def _build_commentaire_html(
+    sheet: ProductionSheetDetail,
+    *,
+    data: dict[str, Any],
+    user_email: str,
+) -> str:
+    """Construit un commentaire HTML riche pour l'archivage du brassin.
+
+    Sections :
+    1. Méta (auteur, date, lot)
+    2. Mesures de fermentation (liste chronologique)
+    3. Incidents éventuels
+    4. Conditionnement réel (récap)
+    5. Remarques libres
+    """
+    from html import escape
+
+    parts: list[str] = []
+
+    # 1. Méta
+    parts.append("<h3>Récapitulatif fiche production</h3>")
+    meta_lines = [f"<b>Lot</b> : {escape(sheet.lot or '—')}"]
+    if user_email:
+        meta_lines.append(f"<b>Auteur</b> : {escape(user_email)}")
+    if sheet.finalized_at:
+        meta_lines.append(
+            f"<b>Finalisé le</b> : {sheet.finalized_at.strftime('%d/%m/%Y %H:%M')}",
+        )
+    parts.append("<p>" + " — ".join(meta_lines) + "</p>")
+
+    # 2. Mesures fermentation
+    fermentation = data.get("fermentation") or {}
+    mesures = fermentation.get("mesures") or []
+    if mesures:
+        parts.append("<h4>Mesures de fermentation</h4>")
+        parts.append("<ul>")
+        for m in mesures:
+            if not isinstance(m, dict):
+                continue
+            date_str = (m.get("date") or "") + " " + (m.get("heure") or "")
+            measures_parts = []
+            if (brix := m.get("brix")):
+                measures_parts.append(f"Densité {escape(str(brix))}")
+            if (ph := m.get("ph")):
+                measures_parts.append(f"pH {escape(str(ph))}")
+            if (temp := m.get("temperature")):
+                measures_parts.append(f"T° {escape(str(temp))}°C")
+            obs = (m.get("observation") or "").strip()
+            gout = (m.get("gout") or "").strip()
+            note_extra = []
+            if gout:
+                note_extra.append(f"Goût : {escape(gout)}")
+            if obs:
+                note_extra.append(f"Obs : {escape(obs)}")
+            line = (
+                f"<li><i>{escape(date_str.strip())}</i> — "
+                f"{' / '.join(measures_parts) if measures_parts else '—'}"
+            )
+            if note_extra:
+                line += f" — {' ; '.join(note_extra)}"
+            line += "</li>"
+            parts.append(line)
+        parts.append("</ul>")
+        # Statut fermentation
+        statut = (fermentation.get("statut") or "").strip()
+        if statut:
+            parts.append(f"<p><b>Statut fermentation</b> : {escape(statut)}</p>")
+
+    # 3. Incidents
+    incidents = data.get("incidents") or {}
+    notes = (incidents.get("notes") or "").strip()
+    photos = incidents.get("photos") or []
+    if notes or photos:
+        parts.append("<h4>Incidents</h4>")
+        if notes:
+            parts.append(f"<p>{escape(notes)}</p>")
+        if photos:
+            parts.append(
+                f"<p><i>{len(photos)} photo(s) attachée(s) à la fiche locale</i></p>",
+            )
+
+    # 4. Conditionnement réel
+    cond_reel = data.get("conditionnement_reel") or {}
+    items = cond_reel.get("items") or []
+    if items:
+        parts.append("<h4>Conditionnement réel</h4>")
+        parts.append("<ul>")
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            marque = item.get("marque") or "?"
+            fmt = item.get("fmt") or "?"
+            cartons = item.get("cartons") or 0
+            designation = (item.get("designation") or "").strip()
+            line = f"<li><b>{escape(str(marque))} {escape(str(fmt))}</b> — {escape(str(cartons))} cartons"
+            if designation:
+                line += f" ({escape(designation)})"
+            line += "</li>"
+            parts.append(line)
+        parts.append("</ul>")
+
+    # 5. Remarques libres
+    remarques = (data.get("remarques") or "").strip()
+    if remarques:
+        parts.append("<h4>Remarques</h4>")
+        parts.append(f"<p>{escape(remarques)}</p>")
+
+    html = "".join(parts)
+    # Safety cap (EB n'a pas de limite documentée mais on évite les payloads géants)
+    if len(html) > 10_000:
+        html = html[:10_000] + "<p><i>(commentaire tronqué)</i></p>"
+    return html
 
 
 # ─── Point d'entrée principal ─────────────────────────────────────────────
@@ -430,7 +616,7 @@ def enqueue_eb_events_from_sheet(
     try:
         from common.easybeer.queued import enqueue_brassin_terminer
 
-        terminer_payload = build_terminer_payload(sheet)
+        terminer_payload = build_terminer_payload(sheet, user_email=user_email)
         if terminer_payload is None:
             summary["skipped"].append(
                 "brassin.terminer (no data.brassin_termine flag — skip)",
