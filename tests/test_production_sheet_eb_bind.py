@@ -427,20 +427,17 @@ class TestBuildTerminerPayload:
         sheet = _FakeSheet(data={"brassin_termine": False})
         assert build_terminer_payload(sheet) is None
 
-    def test_flag_true_builds_overrides(self):
-        sheet = _FakeSheet(
-            data={
-                "brassin_termine": True,
-                "remarques": "Brassin nominal, fin de production",
-            },
-        )
+    def test_flag_true_builds_minimal_overrides(self):
+        """Avec juste le flag, on a id + dateFin + archive (commentaire généré)."""
+        sheet = _FakeSheet(data={"brassin_termine": True})
         payload = build_terminer_payload(sheet)
         assert payload is not None
         assert payload["id"] == 12345
         assert payload["archive"] is False  # default
-        assert "dateFin" in payload
         assert isinstance(payload["dateFin"], int)  # timestamp ms
-        assert "Brassin nominal" in payload["commentaire"]
+        # Commentaire HTML généré même sans remarques (avec lot + récap)
+        assert "<h3>" in payload["commentaire"]
+        assert "Lot" in payload["commentaire"]
 
     def test_archiver_flag(self):
         sheet = _FakeSheet(
@@ -449,16 +446,145 @@ class TestBuildTerminerPayload:
         payload = build_terminer_payload(sheet)
         assert payload["archive"] is True
 
-    def test_remarques_empty(self):
-        sheet = _FakeSheet(data={"brassin_termine": True, "remarques": ""})
+    def test_extracts_first_and_last_mesure(self):
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "fermentation": {
+                    "mesures": [
+                        {"brix": "12.0", "ph": "4.5", "temperature": "22"},
+                        {"brix": "11.5", "ph": "4.3", "temperature": "21"},
+                        {"brix": "11.0", "ph": "4.2", "temperature": "20"},  # last
+                    ],
+                },
+            },
+        )
         payload = build_terminer_payload(sheet)
-        assert "commentaire" not in payload
+        assert payload["densiteInitiale"] == 12.0  # première
+        assert payload["densiteFinale"] == 11.0    # dernière
+        assert payload["ph"] == 4.2                # dernière
+        assert payload["temperature"] == 20.0      # dernière
 
-    def test_remarques_truncated(self):
-        long = "x" * 2000
-        sheet = _FakeSheet(data={"brassin_termine": True, "remarques": long})
+    def test_volume_final_calculated(self):
+        """volumeFinal = Σ (cartons × pcb × contenance)."""
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "conditionnement_reel": {
+                    "items": [
+                        {"fmt": "12x33", "cartons": 10},  # 10 × 12 × 0.33 = 39.6 L
+                        {"fmt": "6x75",  "cartons": 5},   # 5 × 6 × 0.75 = 22.5 L
+                    ],
+                },
+            },
+        )
         payload = build_terminer_payload(sheet)
-        assert len(payload["commentaire"]) == 1000
+        assert payload["volumeFinal"] == 62.1  # 39.6 + 22.5
+
+    def test_no_volume_final_if_invalid_fmt(self):
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "conditionnement_reel": {
+                    "items": [{"fmt": "", "cartons": 10}],
+                },
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        assert "volumeFinal" not in payload
+
+    def test_commentaire_includes_mesures(self):
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "fermentation": {
+                    "mesures": [{"date": "2026-05-23", "heure": "14:30", "brix": "12", "gout": "fruité"}],
+                    "statut": "Conforme",
+                },
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        c = payload["commentaire"]
+        assert "<h4>Mesures de fermentation</h4>" in c
+        assert "Densité 12" in c
+        assert "fruité" in c
+        assert "Conforme" in c
+
+    def test_commentaire_includes_incidents(self):
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "incidents": {
+                    "notes": "Contamination détectée jour 3",
+                    "photos": [{}, {}, {}],
+                },
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        c = payload["commentaire"]
+        assert "Incidents" in c
+        assert "Contamination" in c
+        assert "3 photo" in c
+
+    def test_commentaire_includes_conditionnement(self):
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "conditionnement_reel": {
+                    "items": [
+                        {"marque": "NIKO", "fmt": "12x33", "cartons": 10, "designation": "Kéfir Mangue"},
+                    ],
+                },
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        c = payload["commentaire"]
+        assert "Conditionnement réel" in c
+        assert "NIKO" in c
+        assert "12x33" in c
+        assert "10 cartons" in c
+
+    def test_commentaire_includes_remarques(self):
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "remarques": "RAS, brassin nominal",
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        c = payload["commentaire"]
+        assert "Remarques" in c
+        assert "RAS" in c
+
+    def test_commentaire_escapes_html(self):
+        """Sécurité : pas d'injection HTML possible via les champs utilisateur."""
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "remarques": "<script>alert('xss')</script>",
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        c = payload["commentaire"]
+        assert "<script>" not in c
+        assert "&lt;script&gt;" in c
+
+    def test_commentaire_truncated_if_huge(self):
+        """Si le commentaire devient trop gros, on tronque (safety)."""
+        sheet = _FakeSheet(
+            data={
+                "brassin_termine": True,
+                "remarques": "x" * 50_000,
+            },
+        )
+        payload = build_terminer_payload(sheet)
+        assert len(payload["commentaire"]) <= 10_100
+        assert "tronqué" in payload["commentaire"]
+
+    def test_user_email_in_commentaire(self):
+        sheet = _FakeSheet(data={"brassin_termine": True})
+        payload = build_terminer_payload(sheet, user_email="op@ferment.fr")
+        assert "op@ferment.fr" in payload["commentaire"]
 
 
 # ─── enqueue_eb_events_from_sheet ────────────────────────────────────────
