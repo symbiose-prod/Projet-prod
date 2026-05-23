@@ -208,22 +208,40 @@ class TestBuildMesurePayload:
 
 class TestBuildMiseEnBouteillePayload:
 
-    def _gtin_index(self):
+    def _gtin_index_full(self):
+        """Index avec bouteille ET carton pour chaque format — cas nominal."""
         return {
-            "3770014427014": GtinIndexEntry(
+            # Format 12x33 NIKO
+            "3770014427021": GtinIndexEntry(  # gtin_uvc bouteille
                 id_produit=100, id_contenant=50, contenance_l=0.33, lot_libelle=None,
             ),
-            "3770014427021": GtinIndexEntry(
+            "3770014427014": GtinIndexEntry(  # ean carton (Carton de 12)
+                id_produit=100, id_contenant=999, contenance_l=0.33,
+                lot_libelle="Carton de 12",
+            ),
+            # Format 6x75 NIKO
+            "3770014427038": GtinIndexEntry(  # gtin_uvc bouteille
                 id_produit=101, id_contenant=60, contenance_l=0.75, lot_libelle=None,
+            ),
+            "3770014427045": GtinIndexEntry(  # ean carton
+                id_produit=101, id_contenant=888, contenance_l=0.75,
+                lot_libelle="Carton de 6",
             ),
         }
 
-    def _eph_row(self, gtin_uvc: str, pcb: int = 12) -> dict[str, Any]:
+    def _eph_row(
+        self,
+        *,
+        gtin_uvc: str = "3770014427021",
+        ean: str = "3770014427014",
+        pcb: int = 12,
+        fmt: str = "12x33",
+    ) -> dict[str, Any]:
         return {
-            "ean": gtin_uvc,
+            "ean": ean,
             "gtin_uvc": gtin_uvc,
             "lot": "KMA15052026",
-            "fmt": "12x33",
+            "fmt": fmt,
             "marque": "NIKO",
             "designation": "Kéfir Mangue Passion",
             "pcb": pcb,
@@ -248,11 +266,44 @@ class TestBuildMiseEnBouteillePayload:
 
     @patch("common.services.eb_product_mapping.load_gtin_index_from_eb")
     @patch("common.services.eb_product_mapping.run_sql")
-    def test_resolves_single_item(
+    def test_pushes_in_carton_when_available(
         self, mock_sql: MagicMock, mock_load: MagicMock,
     ):
-        mock_load.return_value = self._gtin_index()
-        mock_sql.return_value = [self._eph_row("3770014427014", pcb=12)]
+        """Cas nominal V2 : on pousse en 'Carton de X' (idContenant carton,
+        quantite = cartons, pas cartons × pcb)."""
+        mock_load.return_value = self._gtin_index_full()
+        mock_sql.return_value = [self._eph_row(pcb=12)]
+        sheet = _FakeSheet(
+            data={
+                "conditionnement_reel": {
+                    "items": [{"marque": "NIKO", "fmt": "12x33", "cartons": 10}],
+                },
+            },
+        )
+        payload, _ = build_mise_en_bouteille_payload(sheet, tenant_id="t1")
+        assert payload is not None
+        entries = payload["modelesStockProduitBouteille"]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["modeleProduit"]["idProduit"] == 100
+        assert entry["modeleContenant"]["idContenant"] == 999  # Carton de 12
+        assert entry["quantiteMiseEnBouteille"] == 10  # cartons, PAS bouteilles
+        assert entry["contenance"] == 0.33
+
+    @patch("common.services.eb_product_mapping.load_gtin_index_from_eb")
+    @patch("common.services.eb_product_mapping.run_sql")
+    def test_fallback_unite_if_no_carton(
+        self, mock_sql: MagicMock, mock_load: MagicMock,
+    ):
+        """Si le carton n'est pas dans la matrice EB, fallback sur Unité avec warning."""
+        # Index avec seulement la bouteille (pas le carton)
+        gtin_index = {
+            "3770014427021": GtinIndexEntry(
+                id_produit=100, id_contenant=50, contenance_l=0.33, lot_libelle=None,
+            ),
+        }
+        mock_load.return_value = gtin_index
+        mock_sql.return_value = [self._eph_row(pcb=12)]
         sheet = _FakeSheet(
             data={
                 "conditionnement_reel": {
@@ -262,30 +313,29 @@ class TestBuildMiseEnBouteillePayload:
         )
         payload, warnings = build_mise_en_bouteille_payload(sheet, tenant_id="t1")
         assert payload is not None
-        assert payload["numeroLot"] == "KMA15052026"
-        assert payload["modeleBrassin"]["id"] == 12345
-        entries = payload["modelesStockProduitBouteille"]
-        assert len(entries) == 1
-        entry = entries[0]
-        assert entry["modeleProduit"]["idProduit"] == 100
-        assert entry["quantiteMiseEnBouteille"] == 120  # 10 cartons × 12 pcb
-        assert entry["contenance"] == 0.33
+        entry = payload["modelesStockProduitBouteille"][0]
+        assert entry["modeleContenant"]["idContenant"] == 50  # bouteille
+        assert entry["quantiteMiseEnBouteille"] == 120  # cartons × pcb
+        assert any("fallback Unité" in w for w in warnings)
 
     @patch("common.services.eb_product_mapping.load_gtin_index_from_eb")
     @patch("common.services.eb_product_mapping.run_sql")
     def test_multiple_items_resolved(
         self, mock_sql: MagicMock, mock_load: MagicMock,
     ):
-        """Plusieurs formats dans le même finalize → plusieurs entries."""
-        mock_load.return_value = self._gtin_index()
-        # Le mock retourne le bon eph selon le fmt demandé
+        """Plusieurs formats dans le même finalize → plusieurs entries (en Carton)."""
+        mock_load.return_value = self._gtin_index_full()
         def sql_side_effect(_sql: str, params: dict):
             if params["fmt"] == "12x33":
-                return [self._eph_row("3770014427014", pcb=12)]
+                return [self._eph_row(
+                    gtin_uvc="3770014427021", ean="3770014427014",
+                    pcb=12, fmt="12x33",
+                )]
             if params["fmt"] == "6x75":
-                row = self._eph_row("3770014427021", pcb=6)
-                row["fmt"] = "6x75"
-                return [row]
+                return [self._eph_row(
+                    gtin_uvc="3770014427038", ean="3770014427045",
+                    pcb=6, fmt="6x75",
+                )]
             return []
         mock_sql.side_effect = sql_side_effect
 
@@ -302,15 +352,19 @@ class TestBuildMiseEnBouteillePayload:
         payload, _ = build_mise_en_bouteille_payload(sheet, tenant_id="t1")
         entries = payload["modelesStockProduitBouteille"]
         assert len(entries) == 2
-        produits = [e["modeleProduit"]["idProduit"] for e in entries]
-        assert 100 in produits and 101 in produits
+        # Chaque entry a son propre idContenant carton
+        contenants = {e["modeleContenant"]["idContenant"] for e in entries}
+        assert contenants == {999, 888}
+        # Et quantites = cartons (pas bouteilles)
+        qtys = {e["quantiteMiseEnBouteille"] for e in entries}
+        assert qtys == {10, 5}
 
     @patch("common.services.eb_product_mapping.load_gtin_index_from_eb")
     @patch("common.services.eb_product_mapping.run_sql")
     def test_unresolved_item_skipped_with_warning(
         self, mock_sql: MagicMock, mock_load: MagicMock,
     ):
-        mock_load.return_value = self._gtin_index()
+        mock_load.return_value = self._gtin_index_full()
         mock_sql.return_value = []  # pas d'étiquette
         sheet = _FakeSheet(
             data={
@@ -340,8 +394,8 @@ class TestBuildMiseEnBouteillePayload:
     @patch("common.services.eb_product_mapping.load_gtin_index_from_eb")
     @patch("common.services.eb_product_mapping.run_sql")
     def test_pcb_zero_skipped(self, mock_sql: MagicMock, mock_load: MagicMock):
-        mock_load.return_value = self._gtin_index()
-        mock_sql.return_value = [self._eph_row("3770014427014", pcb=0)]
+        mock_load.return_value = self._gtin_index_full()
+        mock_sql.return_value = [self._eph_row(pcb=0)]
         sheet = _FakeSheet(
             data={
                 "conditionnement_reel": {
