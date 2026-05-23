@@ -1,23 +1,29 @@
 """
 common/services/loading_eb_bind.py
 ==================================
-Branchement du finalize ramasse vers Easybeer via l'outbox.
+⚠️  MODULE DÉPRÉCIÉ — NE PAS ACTIVER EN PROD  ⚠️
 
-Quand le chauffeur valide une ramasse (passage prévisionnel → définitif),
-ce module enqueue automatiquement un event ``stock.sortie`` qui sera poussé
-vers ``POST /stock/sortie/enregistrer`` par le worker outbox.
+Premier essai (Sprint 2 quinque, 2026-05-23) de branchement finalize ramasse
+→ event ``stock.sortie`` vers EB. **Conceptuellement faux** : ce code modélise
+SOFRIPA comme un *client* EB destinataire d'un mouvement de sortie.
 
-Mapping appliqué :
-- 1 ramasse → 1 event ``stock.sortie`` (1 appel EB, plusieurs éléments)
-- 1 palette chargée → 1 élément dans ``ModeleStockSortieForm.elements[]``
-- ``gtin_palette`` → ``idProduit`` via la matrice code-barre EB (cache local)
+Modèle métier réel (clarifié 2026-05-23) :
+- SOFRIPA est le **stock déporté de Ferment Station**, PAS un client.
+- Easybeer ne gère pas de double entrepôt : le stock EB = le stock SOFRIPA.
+- Une ramasse (transport Ferment → SOFRIPA) n'a PAS d'impact comptable EB.
+- Le vrai mouvement comptable se fait au Conditionner (cf. Sprint 2 ter à venir,
+  qui poussera un POST /brassin/mise-en-bouteille).
 
-Configuration requise (env vars) :
-- ``EB_OUTBOX_BIND_LOADINGS`` (true/false) — feature flag
-- ``EB_DEFAULT_WAREHOUSE_ID`` (int) — idEntrepot Ferment source
-- ``EB_SOFRIPA_CLIENT_ID`` (int) — idClient SOFRIPA destinataire
+Le module est conservé pour :
+1. Référence (mapping gtin → idProduit via la matrice code-barre, qui pourra
+   être réutilisé pour le Conditionner)
+2. Tests qui restent verts (n'importe pas le module dans le finalize_loading)
 
-Si l'une de ces vars manque, le branchement est skippé avec un log explicite.
+Mais **le feature flag ``EB_OUTBOX_BIND_LOADINGS`` ne doit JAMAIS être activé
+en prod tel quel**. Il n'y a plus de caller actif depuis le commit qui a retiré
+le hook dans common/services/loading_service.py.
+
+Cf. docs/architecture-audit.md §3.2 — SOFRIPA = stock déporté.
 """
 from __future__ import annotations
 
