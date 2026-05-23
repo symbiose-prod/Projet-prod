@@ -840,7 +840,8 @@ BEGIN
                        print_jobs, sscc_log, palette_loadings,
                        carton_count_evals,
                        mobile_api_tokens,
-                       production_sheets TO shark;
+                       production_sheets,
+                       eb_outbox TO shark;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;
