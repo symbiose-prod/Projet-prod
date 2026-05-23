@@ -1,11 +1,11 @@
-"""Tests for common/storage/ovh_s3.py."""
+"""Tests for common/object_storage/ovh_s3.py."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from common.storage.ovh_s3 import (
+from common.object_storage.ovh_s3 import (
     OVHStorageError,
     _detect_extension,
     delete_photo,
@@ -116,7 +116,7 @@ class TestUploadPhoto:
 
     def setup_method(self):
         # Reset le singleton client à chaque test pour ne pas garder un mock entre tests
-        import common.storage.ovh_s3 as mod
+        import common.object_storage.ovh_s3 as mod
         mod._client = None
 
     def test_raises_on_empty_bytes(self):
@@ -135,7 +135,7 @@ class TestUploadPhoto:
             upload_photo(b"x", tenant_id="t1", sheet_id="s1")
 
     @patch.dict("os.environ", _CFG)
-    @patch("common.storage.ovh_s3._import_boto3")
+    @patch("common.object_storage.ovh_s3._import_boto3")
     def test_happy_path(self, mock_import: MagicMock):
         fake_boto3 = MagicMock()
         fake_client = MagicMock()
@@ -160,7 +160,7 @@ class TestUploadPhoto:
         assert kwargs["Metadata"]["sheet-id"] == "sheet-123"
 
     @patch.dict("os.environ", _CFG)
-    @patch("common.storage.ovh_s3._import_boto3")
+    @patch("common.object_storage.ovh_s3._import_boto3")
     def test_wraps_boto_errors(self, mock_import: MagicMock):
         fake_boto3 = MagicMock()
         fake_client = MagicMock()
@@ -178,7 +178,7 @@ class TestUploadPhoto:
 class TestGetPresignedUrl:
 
     def setup_method(self):
-        import common.storage.ovh_s3 as mod
+        import common.object_storage.ovh_s3 as mod
         mod._client = None
 
     def test_raises_on_empty_key(self):
@@ -192,7 +192,7 @@ class TestGetPresignedUrl:
             get_presigned_url("some-key", ttl_seconds=86400 * 8)  # > 7 jours
 
     @patch.dict("os.environ", _CFG)
-    @patch("common.storage.ovh_s3._import_boto3")
+    @patch("common.object_storage.ovh_s3._import_boto3")
     def test_happy_path(self, mock_import: MagicMock):
         fake_boto3 = MagicMock()
         fake_client = MagicMock()
@@ -213,14 +213,14 @@ class TestGetPresignedUrl:
 class TestDeletePhoto:
 
     def setup_method(self):
-        import common.storage.ovh_s3 as mod
+        import common.object_storage.ovh_s3 as mod
         mod._client = None
 
     def test_returns_false_on_empty_key(self):
         assert delete_photo("") is False
 
     @patch.dict("os.environ", _CFG)
-    @patch("common.storage.ovh_s3._import_boto3")
+    @patch("common.object_storage.ovh_s3._import_boto3")
     def test_happy_path(self, mock_import: MagicMock):
         fake_boto3 = MagicMock()
         fake_client = MagicMock()
@@ -232,7 +232,7 @@ class TestDeletePhoto:
         )
 
     @patch.dict("os.environ", _CFG)
-    @patch("common.storage.ovh_s3._import_boto3")
+    @patch("common.object_storage.ovh_s3._import_boto3")
     def test_returns_false_on_boto_error(self, mock_import: MagicMock):
         fake_boto3 = MagicMock()
         fake_client = MagicMock()

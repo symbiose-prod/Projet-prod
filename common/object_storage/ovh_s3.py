@@ -1,5 +1,5 @@
 """
-common/storage/ovh_s3.py
+common/object_storage/ovh_s3.py
 ========================
 Client S3-compatible pour OVH Object Storage.
 

@@ -2167,7 +2167,7 @@ async def _v1_upload_photo(request: Request):
             status_code=413,
         )
 
-    from common.storage import OVHStorageError, get_presigned_url, upload_photo
+    from common.object_storage import OVHStorageError, get_presigned_url, upload_photo
 
     try:
         key = await asyncio.to_thread(
@@ -2213,7 +2213,7 @@ async def _v1_photo_presigned_url(request: Request, key: str):
         # Note : on cache le tenant_id réel dans l'erreur pour ne pas leaker
         return _forbidden("Key does not belong to your tenant")
 
-    from common.storage import OVHStorageError, get_presigned_url
+    from common.object_storage import OVHStorageError, get_presigned_url
 
     ttl = 3600
     try:
