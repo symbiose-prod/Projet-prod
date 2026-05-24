@@ -1,0 +1,1491 @@
+{
+  "idBrassin": 259288,
+  "dateDebutFormulaire": 1779350261051,
+  "dateModification": 1779558094684,
+  "type": {},
+  "nom": "KDF18052026",
+  "deduireMatierePremiere": true,
+  "changementEtapeAutomatique": true,
+  "etapeSuivante": {},
+  "etapePrecedente": {
+    "idBrassageEtape": 9093,
+    "ordre": 6,
+    "nom": "Transfert",
+    "description": ""
+  },
+  "ingredients": [],
+  "planificationsEtapes": [],
+  "volume": 1300,
+  "pourcentageVolumeRestant": 0,
+  "volumeRestant": 8.5,
+  "volumeFinal": 1291.5,
+  "produit": {
+    "idProduit": 42397,
+    "nom": "Kéfir de fruits Original",
+    "nomCommercial": "Kéfir de fruits Original*",
+    "degreAlcool": 0,
+    "tavDouane": 0,
+    "degrePlato": 0,
+    "tauxSucre": 3,
+    "brassageAFacon": false,
+    "type": {
+      "id": 3863,
+      "libelle": "Kéfir de fruits",
+      "libelleAnglais": "Water Kefir"
+    },
+    "categorie": {
+      "id": 3278,
+      "libelle": "Kéfir de fruits - SYMBIOSE"
+    },
+    "couleur": {
+      "code": "AUCUNE",
+      "libelle": "Aucune"
+    },
+    "couleurAffichage": "#979797",
+    "description": "<p>Produit issu de l'agriculture Biologique certifié par FR_BIO_01<br/></p>",
+    "imageUri": "image/produit/42397?uid=1715074837506",
+    "compte": {
+      "journal": {}
+    },
+    "compteUE": {
+      "journal": {}
+    },
+    "compteHorsUE": {
+      "journal": {}
+    },
+    "compteRetour": {
+      "journal": {}
+    },
+    "categorieFiscale": {
+      "code": "BOISSON_SUCREE",
+      "libelle": "Boisson sucrée"
+    },
+    "supprime": false,
+    "tauxTVA": {
+      "compte": {
+        "journal": {}
+      },
+      "type": {}
+    },
+    "libelle": "Kéfir de fruits Original - 0.0°"
+  },
+  "historique": [
+    {
+      "idBrassinHistorique": 760005,
+      "dateEtape": 1779350261051,
+      "produitEtape": {
+        "idProduitEtape": 97574,
+        "brassageEtape": {
+          "idBrassageEtape": 9074,
+          "ordre": 1,
+          "nom": "Préparation sirop",
+          "description": ""
+        },
+        "ordre": 1,
+        "duree": 1,
+        "unite": {
+          "idUnite": 2,
+          "nom": "Jour",
+          "symbole": "j",
+          "coefficient": 24
+        },
+        "etapeTerminee": false,
+        "etapeEnCours": false
+      },
+      "dureeReelle": 1458,
+      "coutMainOeuvre": 0,
+      "materielAffecte": "",
+      "utilisateur": "Nicolas Pradignac"
+    },
+    {
+      "idBrassinHistorique": 760036,
+      "dateEtape": 1779351719764,
+      "produitEtape": {
+        "idProduitEtape": 97575,
+        "brassageEtape": {
+          "idBrassageEtape": 9075,
+          "ordre": 2,
+          "nom": "Fermentation",
+          "description": ""
+        },
+        "ordre": 2,
+        "duree": 2,
+        "unite": {
+          "idUnite": 2,
+          "nom": "Jour",
+          "symbole": "j",
+          "coefficient": 24
+        },
+        "etapeTerminee": false,
+        "etapeEnCours": false
+      },
+      "dureeReelle": 175173,
+      "coutMainOeuvre": 0,
+      "materielAffecte": "",
+      "utilisateur": "Nicolas Pradignac"
+    },
+    {
+      "idBrassinHistorique": 760922,
+      "dateEtape": 1779526892868,
+      "produitEtape": {
+        "idProduitEtape": 98250,
+        "brassageEtape": {
+          "idBrassageEtape": 9091,
+          "ordre": 4,
+          "nom": "Aromatisation jus de fruit / arômes",
+          "description": ""
+        },
+        "ordre": 3,
+        "duree": 1,
+        "unite": {
+          "idUnite": 1,
+          "nom": "Heure",
+          "symbole": "h",
+          "coefficient": 1
+        },
+        "etapeTerminee": false,
+        "etapeEnCours": false
+      },
+      "dureeReelle": 7197,
+      "coutMainOeuvre": 0,
+      "materielAffecte": "",
+      "utilisateur": ""
+    },
+    {
+      "idBrassinHistorique": 760931,
+      "dateEtape": 1779534089947,
+      "produitEtape": {
+        "idProduitEtape": 97576,
+        "brassageEtape": {
+          "idBrassageEtape": 9077,
+          "ordre": 5,
+          "nom": "Filtration",
+          "description": ""
+        },
+        "ordre": 4,
+        "duree": 8,
+        "unite": {
+          "idUnite": 1,
+          "nom": "Heure",
+          "symbole": "h",
+          "coefficient": 1
+        },
+        "etapeTerminee": false,
+        "etapeEnCours": false
+      },
+      "dureeReelle": 23788,
+      "coutMainOeuvre": 0,
+      "materielAffecte": "",
+      "utilisateur": ""
+    },
+    {
+      "idBrassinHistorique": 760968,
+      "dateEtape": 1779557878140,
+      "produitEtape": {
+        "idProduitEtape": 97579,
+        "brassageEtape": {
+          "idBrassageEtape": 9076,
+          "ordre": 7,
+          "nom": "Garde",
+          "description": ""
+        },
+        "ordre": 6,
+        "duree": 34,
+        "unite": {
+          "idUnite": 1,
+          "nom": "Heure",
+          "symbole": "h",
+          "coefficient": 1
+        },
+        "etapeTerminee": false,
+        "etapeEnCours": false
+      },
+      "dureeReelle": 47850,
+      "coutMainOeuvre": 0,
+      "materielAffecte": "",
+      "utilisateur": "Nicolas Pradignac"
+    }
+  ],
+  "productions": [
+    {
+      "idProduction": 4797757,
+      "date": 1779605681063,
+      "dateFormulaire": 1779605681063,
+      "typeContenant": "Bouteille",
+      "entrepot": "FERMENT STATION",
+      "produit": {
+        "idProduit": 42397,
+        "nom": "Kéfir de fruits Original",
+        "nomCommercial": "Kéfir de fruits Original*",
+        "degreAlcool": 0,
+        "tavDouane": 0,
+        "degrePlato": 0,
+        "tauxSucre": 3,
+        "brassageAFacon": false,
+        "type": {
+          "id": 3863,
+          "libelle": "Kéfir de fruits",
+          "libelleAnglais": "Water Kefir"
+        },
+        "categorie": {
+          "id": 3278,
+          "libelle": "Kéfir de fruits - SYMBIOSE"
+        },
+        "couleur": {
+          "code": "AUCUNE",
+          "libelle": "Aucune"
+        },
+        "couleurAffichage": "#979797",
+        "description": "<p>Produit issu de l'agriculture Biologique certifié par FR_BIO_01<br/></p>",
+        "imageUri": "image/produit/42397?uid=1715074837506",
+        "compte": {
+          "journal": {}
+        },
+        "compteUE": {
+          "journal": {}
+        },
+        "compteHorsUE": {
+          "journal": {}
+        },
+        "compteRetour": {
+          "journal": {}
+        },
+        "categorieFiscale": {
+          "code": "BOISSON_SUCREE",
+          "libelle": "Boisson sucrée"
+        },
+        "supprime": false,
+        "tauxTVA": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "libelle": "Kéfir de fruits Original - 0.0°"
+      },
+      "conditionnement": "Carton de 6 Bouteilles - 0.33L",
+      "quantite": 200,
+      "volumeTotal": 396,
+      "numeroLot": "KDF18052026",
+      "dateLimiteUtilisationOptimale": 1810623281028,
+      "dateLimiteUtilisationOptimaleFormulaire": 1810623281028,
+      "estBouteille": true,
+      "estVrac": false,
+      "estEnRefermentation": false,
+      "droitsDejaAcquittes": false,
+      "typeEntree": "Conditionnement",
+      "auteur": "Nicolas Pradignac",
+      "estDisponible": true,
+      "productionsFuts": []
+    },
+    {
+      "idProduction": 4797758,
+      "date": 1779605681063,
+      "dateFormulaire": 1779605681063,
+      "typeContenant": "Bouteille",
+      "entrepot": "FERMENT STATION",
+      "produit": {
+        "idProduit": 42397,
+        "nom": "Kéfir de fruits Original",
+        "nomCommercial": "Kéfir de fruits Original*",
+        "degreAlcool": 0,
+        "tavDouane": 0,
+        "degrePlato": 0,
+        "tauxSucre": 3,
+        "brassageAFacon": false,
+        "type": {
+          "id": 3863,
+          "libelle": "Kéfir de fruits",
+          "libelleAnglais": "Water Kefir"
+        },
+        "categorie": {
+          "id": 3278,
+          "libelle": "Kéfir de fruits - SYMBIOSE"
+        },
+        "couleur": {
+          "code": "AUCUNE",
+          "libelle": "Aucune"
+        },
+        "couleurAffichage": "#979797",
+        "description": "<p>Produit issu de l'agriculture Biologique certifié par FR_BIO_01<br/></p>",
+        "imageUri": "image/produit/42397?uid=1715074837506",
+        "compte": {
+          "journal": {}
+        },
+        "compteUE": {
+          "journal": {}
+        },
+        "compteHorsUE": {
+          "journal": {}
+        },
+        "compteRetour": {
+          "journal": {}
+        },
+        "categorieFiscale": {
+          "code": "BOISSON_SUCREE",
+          "libelle": "Boisson sucrée"
+        },
+        "supprime": false,
+        "tauxTVA": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "libelle": "Kéfir de fruits Original - 0.0°"
+      },
+      "conditionnement": "Carton de 6 Bouteilles 75cl Verralia - 0.75L",
+      "quantite": 199,
+      "volumeTotal": 895.5,
+      "numeroLot": "KDF18052026",
+      "dateLimiteUtilisationOptimale": 1810623281028,
+      "dateLimiteUtilisationOptimaleFormulaire": 1810623281028,
+      "estBouteille": true,
+      "estVrac": false,
+      "estEnRefermentation": false,
+      "droitsDejaAcquittes": false,
+      "typeEntree": "Conditionnement",
+      "auteur": "Nicolas Pradignac",
+      "estDisponible": true,
+      "productionsFuts": []
+    }
+  ],
+  "planificationsProductions": [],
+  "materielsAffectes": [],
+  "volumeEau": 4550,
+  "prixUnitaireEau": 0.0049,
+  "coutEau": 22.29,
+  "cout": 830.99,
+  "pourcentageAvancement": 39,
+  "tempsRestant": "20 heures restant",
+  "dateFinTheoriqueEtapeCourante": 1779680278140,
+  "idEtapeCourante": 9076,
+  "idBrassinEtape": 9076,
+  "dateConditionnementPrevue": 1779400800000,
+  "planifie": false,
+  "enCours": true,
+  "termine": false,
+  "annule": false,
+  "archive": false,
+  "stick": true,
+  "editable": false,
+  "dateDebut": 1779350261051,
+  "etat": {
+    "code": "EN_COURS",
+    "libelle": "En cours",
+    "couleur": "#21b6cd"
+  },
+  "numeroLot": "KDF18052026",
+  "dateMiseEnBouteille": 1779605681063,
+  "dateLimiteUtilisationOptimale": 1810623281028,
+  "estChezEmbouteilleur": false,
+  "matieresPremieresConditionnement": [
+    {
+      "idBrassinIngredient": 4644534,
+      "matierePremiere": {
+        "unite": {},
+        "type": {},
+        "tauxTVA": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "tauxTVAAchat": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "compte": {
+          "journal": {}
+        },
+        "compteVente": {
+          "journal": {}
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "idStockBouteille": 111377,
+        "codeArticle": "BAVARIAN 33",
+        "contenant": {
+          "idContenant": 12,
+          "nom": "Bouteille",
+          "nomPluriel": "Bouteilles",
+          "nomAnglais": "Bottle",
+          "contenance": 0.33,
+          "type": "BOUTEILLE",
+          "couleur": "#027bdf",
+          "libelleAvecContenance": "Bouteille - 0.33L",
+          "estBouteille": true,
+          "estFutRecyclable": false,
+          "estCanette": false,
+          "estFut": false,
+          "estVrac": false,
+          "poidsUnitaire": 0.2366,
+          "libelle": "Bouteille - 0.33L"
+        },
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "quantite": 139557,
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false,
+        "libelle": "Bouteille - 0.33L",
+        "volume": 0.33
+      },
+      "quantite": 1200,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 195.78,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "B111377"
+    },
+    {
+      "idBrassinIngredient": 4644535,
+      "matierePremiere": {
+        "idMatierePremiere": 95498,
+        "code": "11A000042A",
+        "libelle": "Capsules",
+        "quantite": 236858,
+        "quantiteVirtuelle": 236858,
+        "valorisation": 5009.279999999998,
+        "valorisationUnitaire": 0.02,
+        "valorisationGlobale": 5009.28,
+        "modeValorisation": "GLOBALE",
+        "unite": {},
+        "type": {
+          "code": "CONDITIONNEMENT_CAPSULE",
+          "uri": "capsules",
+          "libelle": "Capsule",
+          "icone": "icon icon-capsule-o"
+        },
+        "tauxTVA": {
+          "idTauxTVA": 13546,
+          "libelle": "Pas de TVA - 0%",
+          "compte": {
+            "journal": {}
+          },
+          "taux": 0,
+          "type": {}
+        },
+        "tauxTVAAchat": {
+          "idTauxTVA": 13546,
+          "libelle": "Pas de TVA - 0%",
+          "compte": {
+            "journal": {}
+          },
+          "taux": 0,
+          "type": {}
+        },
+        "compte": {
+          "idPlanComptable": 142,
+          "numero": "601000",
+          "libelle": "Achats matières premières",
+          "libelleComplet": "601000 - Achats matières premières",
+          "journal": {
+            "code": "ACHATS",
+            "libelle": "Achats"
+          }
+        },
+        "compteVente": {
+          "journal": {}
+        },
+        "seuilBas": 70000,
+        "seuilHaut": 100000,
+        "actif": true,
+        "entrepot": {
+          "idEntrepot": 2362,
+          "nom": "FERMENT STATION",
+          "principal": true,
+          "faitGenerateur": {
+            "code": "CONDITIONNEMENT",
+            "libelle": "Droits acquittés",
+            "calculAcciseSurVente": false
+          },
+          "libelle": "FERMENT STATION"
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "quantite": 1200,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 25.38,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "MP95498"
+    },
+    {
+      "idBrassinIngredient": 4644536,
+      "matierePremiere": {
+        "idMatierePremiere": 129522,
+        "libelle": "Cartons 6x33cl SYMBIOSE",
+        "quantite": 9032,
+        "quantiteVirtuelle": 9032,
+        "valorisation": 1277.529999999999,
+        "valorisationUnitaire": 0.14,
+        "valorisationGlobale": 1277.53,
+        "modeValorisation": "GLOBALE",
+        "unite": {},
+        "type": {
+          "code": "CONDITIONNEMENT_CARTON",
+          "uri": "cartons",
+          "libelle": "Carton",
+          "icone": "icon icon-carton"
+        },
+        "tauxTVA": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "tauxTVAAchat": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "compte": {
+          "idPlanComptable": 142,
+          "numero": "601000",
+          "libelle": "Achats matières premières",
+          "libelleComplet": "601000 - Achats matières premières",
+          "journal": {
+            "code": "ACHATS",
+            "libelle": "Achats"
+          }
+        },
+        "compteVente": {
+          "journal": {}
+        },
+        "actif": true,
+        "entrepot": {
+          "idEntrepot": 2362,
+          "nom": "FERMENT STATION",
+          "principal": true,
+          "faitGenerateur": {
+            "code": "CONDITIONNEMENT",
+            "libelle": "Droits acquittés",
+            "calculAcciseSurVente": false
+          },
+          "libelle": "FERMENT STATION"
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "quantite": 200,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 28.29,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "MP129522"
+    },
+    {
+      "idBrassinIngredient": 4644537,
+      "matierePremiere": {
+        "idMatierePremiere": 95552,
+        "libelle": "Etiquette KEFIR Original 33",
+        "quantite": 14546,
+        "quantiteVirtuelle": 14546,
+        "valorisation": 656.1899999999999,
+        "valorisationUnitaire": 0.05,
+        "valorisationGlobale": 656.19,
+        "modeValorisation": "GLOBALE",
+        "unite": {},
+        "type": {
+          "code": "CONDITIONNEMENT_ETIQUETTE",
+          "uri": "etiquettes",
+          "libelle": "Etiquette",
+          "icone": "icon icon-sticker"
+        },
+        "tauxTVA": {
+          "idTauxTVA": 13540,
+          "libelle": "TVA collectée - 20%",
+          "compte": {
+            "idPlanComptable": 107,
+            "numero": "445710",
+            "libelle": "TVA collectée 20%",
+            "libelleComplet": "445710 - TVA collectée 20%",
+            "journal": {}
+          },
+          "taux": 20,
+          "type": {
+            "code": "COLLECTEE",
+            "libelle": "Collectée"
+          }
+        },
+        "tauxTVAAchat": {
+          "idTauxTVA": 13541,
+          "libelle": "TVA déductible - 20%",
+          "compte": {
+            "idPlanComptable": 104,
+            "numero": "445660",
+            "libelle": "TVA sur autres biens & services",
+            "libelleComplet": "445660 - TVA sur autres biens & services",
+            "journal": {}
+          },
+          "taux": 20,
+          "type": {
+            "code": "DEDUCTIBLE",
+            "libelle": "Déductible"
+          }
+        },
+        "compte": {
+          "idPlanComptable": 142,
+          "numero": "601000",
+          "libelle": "Achats matières premières",
+          "libelleComplet": "601000 - Achats matières premières",
+          "journal": {
+            "code": "ACHATS",
+            "libelle": "Achats"
+          }
+        },
+        "compteVente": {
+          "journal": {}
+        },
+        "actif": true,
+        "entrepot": {
+          "idEntrepot": 2362,
+          "nom": "FERMENT STATION",
+          "principal": true,
+          "faitGenerateur": {
+            "code": "CONDITIONNEMENT",
+            "libelle": "Droits acquittés",
+            "calculAcciseSurVente": false
+          },
+          "libelle": "FERMENT STATION"
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "quantite": 1200,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 54.13,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "MP95552"
+    },
+    {
+      "idBrassinIngredient": 4644538,
+      "matierePremiere": {
+        "unite": {},
+        "type": {},
+        "tauxTVA": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "tauxTVAAchat": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "compte": {
+          "journal": {}
+        },
+        "compteVente": {
+          "journal": {}
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "idStockBouteille": 111687,
+        "codeArticle": "9061395",
+        "contenant": {
+          "idContenant": 3383,
+          "nom": "Bouteille 75cl EAU GAZEUSE",
+          "nomPluriel": "Bouteilles 75cl Verralia",
+          "contenance": 0.75,
+          "type": "BOUTEILLE",
+          "libelleAvecContenance": "Bouteille 75cl EAU GAZEUSE - 0.75L",
+          "estBouteille": true,
+          "estFutRecyclable": false,
+          "estCanette": false,
+          "estFut": false,
+          "estVrac": false,
+          "poidsUnitaire": 0.47,
+          "brasserie": {
+            "idBrasserie": 2013,
+            "nom": "FERMENT STATION",
+            "authentificationBoxtal": {
+              "identifiant": null,
+              "motDePasse": null
+            },
+            "relancePreventiveIdsTypes": [],
+            "relanceClientIdsTypes": [],
+            "relanceCommercialeIdsTypes": [],
+            "contactsAvisPrelevementClient": []
+          },
+          "libelle": "Bouteille 75cl EAU GAZEUSE - 0.75L"
+        },
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "quantite": 2060,
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false,
+        "libelle": "Bouteille 75cl EAU GAZEUSE - 0.75L",
+        "volume": 0.75
+      },
+      "quantite": 1194,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 114.99,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "B111687"
+    },
+    {
+      "idBrassinIngredient": 4644539,
+      "matierePremiere": {
+        "idMatierePremiere": 95498,
+        "code": "11A000042A",
+        "libelle": "Capsules",
+        "quantite": 236858,
+        "quantiteVirtuelle": 236858,
+        "valorisation": 5009.279999999998,
+        "valorisationUnitaire": 0.02,
+        "valorisationGlobale": 5009.28,
+        "modeValorisation": "GLOBALE",
+        "unite": {},
+        "type": {
+          "code": "CONDITIONNEMENT_CAPSULE",
+          "uri": "capsules",
+          "libelle": "Capsule",
+          "icone": "icon icon-capsule-o"
+        },
+        "tauxTVA": {
+          "idTauxTVA": 13546,
+          "libelle": "Pas de TVA - 0%",
+          "compte": {
+            "journal": {}
+          },
+          "taux": 0,
+          "type": {}
+        },
+        "tauxTVAAchat": {
+          "idTauxTVA": 13546,
+          "libelle": "Pas de TVA - 0%",
+          "compte": {
+            "journal": {}
+          },
+          "taux": 0,
+          "type": {}
+        },
+        "compte": {
+          "idPlanComptable": 142,
+          "numero": "601000",
+          "libelle": "Achats matières premières",
+          "libelleComplet": "601000 - Achats matières premières",
+          "journal": {
+            "code": "ACHATS",
+            "libelle": "Achats"
+          }
+        },
+        "compteVente": {
+          "journal": {}
+        },
+        "seuilBas": 70000,
+        "seuilHaut": 100000,
+        "actif": true,
+        "entrepot": {
+          "idEntrepot": 2362,
+          "nom": "FERMENT STATION",
+          "principal": true,
+          "faitGenerateur": {
+            "code": "CONDITIONNEMENT",
+            "libelle": "Droits acquittés",
+            "calculAcciseSurVente": false
+          },
+          "libelle": "FERMENT STATION"
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "quantite": 1194,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 25.25,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "MP95498"
+    },
+    {
+      "idBrassinIngredient": 4644540,
+      "matierePremiere": {
+        "idMatierePremiere": 95550,
+        "code": "48876",
+        "libelle": "Cartons 6x75cl SYMBIOSE",
+        "quantite": 8473,
+        "quantiteVirtuelle": 8473,
+        "valorisation": 2044.69,
+        "valorisationUnitaire": 0.24,
+        "valorisationGlobale": 2044.69,
+        "modeValorisation": "GLOBALE",
+        "unite": {},
+        "type": {
+          "code": "CONDITIONNEMENT_CARTON",
+          "uri": "cartons",
+          "libelle": "Carton",
+          "icone": "icon icon-carton"
+        },
+        "tauxTVA": {
+          "idTauxTVA": 13540,
+          "libelle": "TVA collectée - 20%",
+          "compte": {
+            "idPlanComptable": 107,
+            "numero": "445710",
+            "libelle": "TVA collectée 20%",
+            "libelleComplet": "445710 - TVA collectée 20%",
+            "journal": {}
+          },
+          "taux": 20,
+          "type": {
+            "code": "COLLECTEE",
+            "libelle": "Collectée"
+          }
+        },
+        "tauxTVAAchat": {
+          "idTauxTVA": 13541,
+          "libelle": "TVA déductible - 20%",
+          "compte": {
+            "idPlanComptable": 104,
+            "numero": "445660",
+            "libelle": "TVA sur autres biens & services",
+            "libelleComplet": "445660 - TVA sur autres biens & services",
+            "journal": {}
+          },
+          "taux": 20,
+          "type": {
+            "code": "DEDUCTIBLE",
+            "libelle": "Déductible"
+          }
+        },
+        "compte": {
+          "idPlanComptable": 142,
+          "numero": "601000",
+          "libelle": "Achats matières premières",
+          "libelleComplet": "601000 - Achats matières premières",
+          "journal": {
+            "code": "ACHATS",
+            "libelle": "Achats"
+          }
+        },
+        "compteVente": {
+          "journal": {}
+        },
+        "actif": true,
+        "entrepot": {
+          "idEntrepot": 2362,
+          "nom": "FERMENT STATION",
+          "principal": true,
+          "faitGenerateur": {
+            "code": "CONDITIONNEMENT",
+            "libelle": "Droits acquittés",
+            "calculAcciseSurVente": false
+          },
+          "libelle": "FERMENT STATION"
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "quantite": 199,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 48.02,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "MP95550"
+    },
+    {
+      "idBrassinIngredient": 4644541,
+      "matierePremiere": {
+        "idMatierePremiere": 96105,
+        "code": "EBF062949",
+        "libelle": "Etiquette KEFIR Original 75",
+        "quantite": 806,
+        "quantiteVirtuelle": 806,
+        "certificationBio": {
+          "code": "BIOLOGIQUE",
+          "libelle": ""
+        },
+        "valorisation": 76.11999999999999,
+        "valorisationUnitaire": 0.09,
+        "valorisationGlobale": 76.12,
+        "modeValorisation": "GLOBALE",
+        "unite": {},
+        "type": {
+          "code": "CONDITIONNEMENT_ETIQUETTE",
+          "uri": "etiquettes",
+          "libelle": "Etiquette",
+          "icone": "icon icon-sticker"
+        },
+        "tauxTVA": {
+          "idTauxTVA": 13540,
+          "libelle": "TVA collectée - 20%",
+          "compte": {
+            "idPlanComptable": 107,
+            "numero": "445710",
+            "libelle": "TVA collectée 20%",
+            "libelleComplet": "445710 - TVA collectée 20%",
+            "journal": {}
+          },
+          "taux": 20,
+          "type": {
+            "code": "COLLECTEE",
+            "libelle": "Collectée"
+          }
+        },
+        "tauxTVAAchat": {
+          "idTauxTVA": 13541,
+          "libelle": "TVA déductible - 20%",
+          "compte": {
+            "idPlanComptable": 104,
+            "numero": "445660",
+            "libelle": "TVA sur autres biens & services",
+            "libelleComplet": "445660 - TVA sur autres biens & services",
+            "journal": {}
+          },
+          "taux": 20,
+          "type": {
+            "code": "DEDUCTIBLE",
+            "libelle": "Déductible"
+          }
+        },
+        "compte": {
+          "idPlanComptable": 142,
+          "numero": "601000",
+          "libelle": "Achats matières premières",
+          "libelleComplet": "601000 - Achats matières premières",
+          "journal": {
+            "code": "ACHATS",
+            "libelle": "Achats"
+          }
+        },
+        "compteVente": {
+          "journal": {}
+        },
+        "actif": true,
+        "entrepot": {
+          "idEntrepot": 2362,
+          "nom": "FERMENT STATION",
+          "principal": true,
+          "faitGenerateur": {
+            "code": "CONDITIONNEMENT",
+            "libelle": "Droits acquittés",
+            "calculAcciseSurVente": false
+          },
+          "libelle": "FERMENT STATION"
+        }
+      },
+      "stockProduitIntermediaire": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "stockBouteille": {
+        "contenant": {},
+        "lot": {},
+        "produit": {
+          "compte": {
+            "journal": {}
+          },
+          "compteUE": {
+            "journal": {}
+          },
+          "compteHorsUE": {
+            "journal": {}
+          },
+          "compteRetour": {
+            "journal": {}
+          },
+          "supprime": false,
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "libelle": "null - null°"
+        },
+        "entrepot": {
+          "faitGenerateur": {
+            "calculAcciseSurVente": false
+          }
+        },
+        "disponiblePourCommande": false
+      },
+      "quantite": 1194,
+      "quantiteManquante": 388,
+      "modeleNumerosLots": [],
+      "unite": {},
+      "cout": 112.76,
+      "destock": false,
+      "brassageEtape": {},
+      "uniqueID": "MP96105"
+    }
+  ],
+  "matieresPremieresPlanificationConditionnement": [],
+  "dateFinFormulaire": "2026-05-21T22:00:00.000Z",
+  "densiteInitiale": 4,
+  "densiteFinale": 3,
+  "attenuationLimite": 123,
+  "ph": 3.8,
+  "commentaire": "<p>Test des éléments </p>",
+  "rendementBrassin": 1,
+  "rendementCentrifugeuse": 2,
+  "rendementConditionnement": 3
+}
