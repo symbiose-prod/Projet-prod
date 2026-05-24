@@ -428,13 +428,17 @@ class TestBuildTerminerPayload:
         assert build_terminer_payload(sheet) is None
 
     def test_flag_true_builds_minimal_overrides(self):
-        """Avec juste le flag, on a id + dateFin + archive (commentaire généré)."""
+        """Avec juste le flag, on a idBrassin + dateFinFormulaire + archive."""
         sheet = _FakeSheet(data={"brassin_termine": True})
         payload = build_terminer_payload(sheet)
         assert payload is not None
-        assert payload["id"] == 12345
+        # idBrassin au top-level (conforme EB UI — pas "id")
+        assert payload["idBrassin"] == 12345
+        assert "id" not in payload, "should send idBrassin, not id (EB ignores 'id')"
         assert payload["archive"] is False  # default
-        assert isinstance(payload["dateFin"], int)  # timestamp ms
+        # dateFinFormulaire en ISO (format EB UI : "...T...:...:...000Z")
+        assert isinstance(payload["dateFinFormulaire"], str)
+        assert payload["dateFinFormulaire"].endswith("Z")
         # Commentaire HTML généré même sans remarques (avec lot + récap)
         assert "<h3>" in payload["commentaire"]
         assert "Lot" in payload["commentaire"]

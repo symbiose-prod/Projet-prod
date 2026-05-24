@@ -285,14 +285,16 @@ def build_terminer_payload(
     Le worker outbox chargera le ModeleBrassin EB complet au moment du push
     (lazy load via ``terminer_brassin``), puis appliquera ces overrides.
 
-    Champs poussés (cf. UI Archivage du brassin dans EB) :
-    - ``id`` : identifiant brassin (obligatoire pour le lazy load)
+    Champs poussés (cf. payload de référence EB UI dans
+    ``docs/easybeer-write-payloads/terminer.request.json``) :
+    - ``idBrassin`` : identifiant brassin (top-level, conforme EB ;
+      attention, EB n'utilise PAS ``id`` mais ``idBrassin``)
     - ``archive`` : ``True`` si ``data.archiver`` est à True
-    - ``dateFin`` : timestamp ms (= finalized_at ou now)
+    - ``dateFinFormulaire`` : ISO date de fin (format EB UI)
     - ``volumeFinal`` : Σ (cartons × pcb × contenance) depuis conditionnement_reel
     - ``densiteInitiale`` : première mesure de fermentation
     - ``densiteFinale`` : dernière mesure de fermentation
-    - ``ph``, ``temperature``, ``degreAlcool`` : dernière mesure
+    - ``ph`` : dernière mesure
     - ``commentaire`` : récap HTML riche (mesures, incidents, conditionnement,
       **liste des SSCC** pour traçabilité GS1, remarques)
     """
@@ -308,14 +310,16 @@ def build_terminer_payload(
         # Pas de flag explicite → on ne touche pas au brassin EB
         return None
 
-    # Timestamp ms (format EB)
+    # Date ISO (format EB UI : "2026-05-21T22:00:00.000Z")
     from datetime import UTC, datetime
     dt = sheet.finalized_at or datetime.now(UTC)
-    date_fin_ms = int(dt.timestamp() * 1000)
+    date_fin_iso = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     overrides: dict[str, Any] = {
-        "id": brassin_id,
-        "dateFin": date_fin_ms,
+        # EB UI envoie idBrassin au top-level (PAS id). Notre worker en lazy
+        # mode utilisera cette valeur pour fetch + merge le brassin complet.
+        "idBrassin": brassin_id,
+        "dateFinFormulaire": date_fin_iso,
         "archive": bool(data.get("archiver", False)),
     }
 
