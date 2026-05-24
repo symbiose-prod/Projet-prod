@@ -37,17 +37,27 @@ def _light_payload(**overrides):
 
 
 def _brassin_full(**overrides):
-    """Brassin EB complet (épuré pour tests)."""
+    """Réponse mockée de GET /brassin/preparation-conditionnement/brassin/{id}.
+
+    Cf. ``docs/easybeer-write-payloads/preparation-conditionnement.response.json``
+    pour la structure réelle (28 KB en prod).
+    """
     base = {
-        "idBrassin": 259288,
-        "nom": "KDF18052026",
-        "produit": {"idProduit": 42397, "libelle": "Kéfir de fruits Original"},
-        "volume": 1300,
-        "volumeRestant": 1300,
+        "modeleBrassin": {
+            "idBrassin": 259288,
+            "nom": "KDF18052026",
+            "produit": {"idProduit": 42397, "libelle": "Kéfir de fruits Original"},
+            "volume": 1300,
+            "volumeRestant": 1300,
+        },
         "modeleElevage": {},
+        "produitsDerives": [{"idProduit": 42397, "libelle": "Kéfir de fruits Original"}],
+        "volumeRestant": 1300,
+        "dateLimiteUtilisationOptimale": "2027-05-18T00:00:00.000Z",
         "modelesStockProduitBouteille": [
             {
                 "libelle": "FERMENT STATION",
+                "quantiteDisponible": 170000,
                 "modelesFils": [
                     {
                         "idStockBouteille": 111377,
@@ -62,6 +72,8 @@ def _brassin_full(**overrides):
                 ],
             },
         ],
+        "modelesStockProduitFutContenant": [],
+        "modelesStocksMiseEnBouteille": [],
     }
     base.update(overrides)
     return base
@@ -116,7 +128,7 @@ class TestBrassinFetchAndValidation:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_raises_if_brassin_not_found(
         self,
         mock_get_brassin: MagicMock,
@@ -129,7 +141,7 @@ class TestBrassinFetchAndValidation:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_raises_if_no_modelesStockProduitBouteille(
         self,
         mock_get_brassin: MagicMock,
@@ -144,7 +156,7 @@ class TestBrassinFetchAndValidation:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_raises_if_no_idProduit(
         self,
         mock_get_brassin: MagicMock,
@@ -152,7 +164,8 @@ class TestBrassinFetchAndValidation:
         _mock_execute: MagicMock,
     ):
         brassin = _brassin_full()
-        brassin["produit"] = {}
+        brassin["modeleBrassin"]["produit"] = {}
+        brassin["produitsDerives"] = []  # fallback aussi vide
         mock_get_brassin.return_value = brassin
         with pytest.raises(ValueError, match="idProduit"):
             execute_mise_en_bouteille(_light_payload())
@@ -165,7 +178,7 @@ class TestPipeline:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_happy_path_two_eb_calls_in_order(
         self,
         mock_get_brassin: MagicMock,
@@ -197,7 +210,7 @@ class TestPipeline:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_deduction_bom_is_injected_in_mise_en_bouteille(
         self,
         mock_get_brassin: MagicMock,
@@ -223,7 +236,7 @@ class TestPipeline:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_unresolved_item_raises_value_error(
         self,
         mock_get_brassin: MagicMock,
@@ -239,7 +252,7 @@ class TestPipeline:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_mise_en_bouteille_uses_allow_empty_2xx(
         self,
         mock_get_brassin: MagicMock,
@@ -259,7 +272,7 @@ class TestPipeline:
 
     @patch("common.services.mise_en_bouteille_orchestrator.execute_endpoint")
     @patch("common.services.mise_en_bouteille_orchestrator.resolve_bottle_stock")
-    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_detail")
+    @patch("common.services.mise_en_bouteille_orchestrator.get_brassin_preparation_conditionnement")
     def test_unused_fils_are_sent_with_null_quantite(
         self,
         mock_get_brassin: MagicMock,

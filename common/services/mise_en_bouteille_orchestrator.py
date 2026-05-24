@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from common.easybeer.brassins import get_brassin_detail
+from common.easybeer.brassins import get_brassin_preparation_conditionnement
 from common.easybeer.endpoint import execute_endpoint
 from common.services.bottle_stock_resolver import resolve_bottle_stock
 
@@ -91,19 +91,26 @@ def execute_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
             "execute_mise_en_bouteille: numeroLot ou dateMiseEnBouteille manquant",
         )
 
-    # ── 1. Fetch brassin complet (lazy load) ─────────────────────────────
-    brassin_full = get_brassin_detail(int(brassin_id))
-    if not brassin_full:
+    # ── 1. Fetch le squelette de payload pré-rempli par EB ───────────────
+    # GET /brassin/preparation-conditionnement/brassin/{id} retourne une
+    # struct prête à l'emploi avec modeleBrassin complet + modeleElevage +
+    # produitsDerives + modelesStockProduitBouteille (avec les fils + leurs
+    # idStockBouteille) + volumeRestant + dateLimiteUtilisationOptimale.
+    # Cf. docs/easybeer-write-payloads/preparation-conditionnement.response.json
+    base_payload = get_brassin_preparation_conditionnement(int(brassin_id))
+    if not base_payload:
         raise ValueError(
-            f"execute_mise_en_bouteille: brassin idBrassin={brassin_id} introuvable",
+            f"execute_mise_en_bouteille: brassin idBrassin={brassin_id} "
+            "introuvable via preparation-conditionnement",
         )
 
     # Récupère les fils du brassin (stocks bouteille dispo pour ce produit)
-    msb_list = brassin_full.get("modelesStockProduitBouteille") or []
+    msb_list = base_payload.get("modelesStockProduitBouteille") or []
     if not msb_list:
         raise ValueError(
             f"execute_mise_en_bouteille: brassin {brassin_id} sans "
-            "modelesStockProduitBouteille",
+            "modelesStockProduitBouteille même via preparation-conditionnement "
+            "(produit sans stock bouteille configuré côté EB ?)",
         )
     # Premier élément = entrepôt principal (ex "FERMENT STATION")
     entrepot_root = msb_list[0]
@@ -114,15 +121,33 @@ def execute_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
             "(stocks bouteille)",
         )
 
-    id_produit = (brassin_full.get("produit") or {}).get("idProduit")
+    id_produit = (base_payload.get("modeleBrassin") or {}).get("produit", {}).get(
+        "idProduit",
+    )
+    if not id_produit:
+        # Fallback : produitsDerives[0].idProduit
+        produits_derives = base_payload.get("produitsDerives") or []
+        if produits_derives:
+            id_produit = produits_derives[0].get("idProduit")
     if not id_produit:
         raise ValueError(
-            f"execute_mise_en_bouteille: brassin {brassin_id} sans produit.idProduit",
+            f"execute_mise_en_bouteille: brassin {brassin_id} sans idProduit "
+            "détectable (ni dans modeleBrassin.produit ni dans produitsDerives)",
         )
 
-    # ── 2-3. Résoudre chaque item & construire les fils ──────────────────
-    sent_fils: list[dict[str, Any]] = []
-    used_id_stocks: set[int] = set()
+    # ── 2-3. Résoudre chaque item & mettre à jour les fils ──────────────
+    # On part des fils tels que EB les a fournis, et on set
+    # ``quantiteMiseEnBouteille`` sur ceux qu'on utilise.
+    fils_by_id: dict[int, dict[str, Any]] = {}
+    for fil in brassin_fils:
+        sid = fil.get("idStockBouteille")
+        if sid:
+            # Copie pour ne pas muter la réponse EB et pour ajouter le champ
+            # quantiteMiseEnBouteille (None par défaut = pas utilisé).
+            new_fil = dict(fil)
+            new_fil["quantiteMiseEnBouteille"] = None
+            fils_by_id[int(sid)] = new_fil
+
     for item in items:
         resolution = resolve_bottle_stock(
             tenant_id=tenant_id,
@@ -138,48 +163,30 @@ def execute_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
                 f"marque={item.get('marque')}). Vérifier que "
                 f"eb_stock_product_templates est à jour.",
             )
-        sent_fils.append({
-            "idStockBouteille": resolution.id_stock_bouteille,
-            "libelle": resolution.contenant_libelle,
-            "contenance": resolution.contenance,
-            "quantiteMiseEnBouteille": int(item["cartons"]),
-        })
-        used_id_stocks.add(resolution.id_stock_bouteille)
+        target = fils_by_id.get(resolution.id_stock_bouteille)
+        if target is None:
+            raise ValueError(
+                f"execute_mise_en_bouteille: idStockBouteille "
+                f"{resolution.id_stock_bouteille} (depuis resolver) absent des "
+                "fils EB. Incohérence eb_stock_product_templates vs EB live.",
+            )
+        target["quantiteMiseEnBouteille"] = int(item["cartons"])
 
-    # Ajoute les fils non utilisés (quantité None) — EB UI les envoie tous,
-    # on s'aligne pour ne pas surprendre.
-    for fil in brassin_fils:
-        sid = fil.get("idStockBouteille")
-        if sid and sid not in used_id_stocks:
-            sent_fils.append({
-                "idStockBouteille": sid,
-                "libelle": fil.get("libelle") or "",
-                "contenance": float(fil.get("contenance") or 0),
-                "quantiteMiseEnBouteille": None,  # pas utilisé dans ce conditionnement
-            })
+    # Reconstruit l'arbre modelesStockProduitBouteille avec nos quantites
+    new_root = dict(entrepot_root)
+    new_root["modelesFils"] = list(fils_by_id.values())
+    base_payload["modelesStockProduitBouteille"] = [new_root]
 
-    modeles_stock_produit_bouteille = [{
-        "libelle": entrepot_root.get("libelle") or "FERMENT STATION",
-        "modelesFils": sent_fils,
-    }]
-
-    # ── 4. POST deduction-stocks-conditionnement → BOM ───────────────────
-    base_payload: dict[str, Any] = {
-        "modeleBrassin": brassin_full,
-        "modeleElevage": brassin_full.get("modeleElevage") or {},
-        "produitsDerives": (
-            [brassin_full["produit"]] if brassin_full.get("produit") else []
-        ),
-        "volumeRestant": brassin_full.get("volumeRestant") or brassin_full.get("volume") or 0,
-        "numeroLot": numero_lot,
-        "dateMiseEnBouteille": date_mise,
-        "modelesStockProduitBouteille": modeles_stock_produit_bouteille,
-        "modelesStockProduitFutContenant": [],
-        "modelesStocksMiseEnBouteille": [],  # EB va le calculer
-    }
+    # Inject les valeurs métier de l'event
+    base_payload["numeroLot"] = numero_lot
+    base_payload["dateMiseEnBouteille"] = date_mise
     if dluo := payload.get("dateLimiteUtilisationOptimale"):
         base_payload["dateLimiteUtilisationOptimale"] = dluo
+    # Toujours forcer ces deux champs (EB UI fait pareil)
+    base_payload["modelesStocksMiseEnBouteille"] = []
+    base_payload.setdefault("modelesStockProduitFutContenant", [])
 
+    # ── 4. POST deduction-stocks-conditionnement → BOM ───────────────────
     deduction_result = execute_endpoint(
         method="POST",
         path="brassin/deduction-stocks-conditionnement",
@@ -191,7 +198,7 @@ def execute_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
         brassin_id, len(stocks_destock),
     )
 
-    # ── 5-6. POST mise-en-bouteille avec la BOM ──────────────────────────
+    # ── 5. POST mise-en-bouteille avec la BOM ────────────────────────────
     final_payload = {**base_payload, "modelesStocksMiseEnBouteille": stocks_destock}
 
     return execute_endpoint(
