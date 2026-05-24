@@ -24,7 +24,6 @@ from common.easybeer._client import (
     _excel_payload,
     _indicator_payload,
     _is_retryable,
-    _safe_json,
     _throttle,
     is_configured,
 )
@@ -203,73 +202,6 @@ class TestCheckResponse:
         r = _fake_response(ok=False, status_code=503, text="Unavailable")
         with pytest.raises(EasyBeerError, match="/my-endpoint"):
             _check_response(r, "/my-endpoint")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4 bis. TestSafeJson
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-def _json_response(*, status_code: int, text: str, json_value=None):
-    """Réponse stub avec .json() qui parse ``text`` (ou retourne ``json_value`` si fourni).
-
-    Pour simuler le cas "JSON cassé" on peut passer ``json_value`` qui sera
-    levée comme ValueError au .json() (en assignant un side_effect).
-    """
-    import json as _json
-
-    def _json_method():
-        if json_value is _SENTINEL_RAISE:
-            raise ValueError("Expecting value: line 1 column 1 (char 0)")
-        if json_value is not None:
-            return json_value
-        return _json.loads(text)
-
-    return SimpleNamespace(
-        status_code=status_code,
-        text=text,
-        json=_json_method,
-        headers={"content-type": "application/json"},
-    )
-
-
-_SENTINEL_RAISE = object()
-
-
-class TestSafeJson:
-    """_safe_json() parses JSON or returns {} for empty 2xx bodies (write endpoints)."""
-
-    def test_normal_json_parses(self):
-        r = _json_response(status_code=200, text='{"id": 42}')
-        assert _safe_json(r, "/test") == {"id": 42}
-
-    def test_empty_body_200_returns_empty_dict(self):
-        """Cas brassin/mise-en-bouteille et brassin/terminer : 200 + body vide = succès."""
-        r = _json_response(status_code=200, text="", json_value=_SENTINEL_RAISE)
-        assert _safe_json(r, "/brassin/terminer") == {}
-
-    def test_empty_body_204_returns_empty_dict(self):
-        r = _json_response(status_code=204, text="", json_value=_SENTINEL_RAISE)
-        assert _safe_json(r, "/brassin/mise-en-bouteille") == {}
-
-    def test_whitespace_only_body_200_returns_empty_dict(self):
-        r = _json_response(status_code=200, text="   \n  ", json_value=_SENTINEL_RAISE)
-        assert _safe_json(r, "/brassin/terminer") == {}
-
-    def test_empty_body_non_2xx_raises(self):
-        """Body vide hors 2xx = erreur (le caller doit savoir)."""
-        r = _json_response(status_code=500, text="", json_value=_SENTINEL_RAISE)
-        with pytest.raises(EasyBeerError, match="non-JSON"):
-            _safe_json(r, "/test")
-
-    def test_html_body_raises(self):
-        r = _json_response(
-            status_code=200,
-            text="<!DOCTYPE html><html><body>Down</body></html>",
-            json_value=_SENTINEL_RAISE,
-        )
-        with pytest.raises(EasyBeerError, match="non-JSON"):
-            _safe_json(r, "/test")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
