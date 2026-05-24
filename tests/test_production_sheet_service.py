@@ -112,6 +112,45 @@ class TestComputeRealConditionnementByLot:
         # Le lot transmis à SQL est trimmé
         assert mock_sql.call_args[0][1]["lot"] == "15052027"
 
+    def test_produit_filter_adds_designation_clause(self):
+        """Filtre traçabilité : si 2 brassins partagent une DDM (= lot),
+        ``produit_filter`` doit ajouter une clause ILIKE designation."""
+        with mock.patch.object(
+            production_sheet_service, "run_sql", return_value=[],
+        ) as mock_sql:
+            compute_real_conditionnement_by_lot(
+                "tenant-A", "150527",
+                produit_filter="Kéfir Mangue Passion",
+            )
+        # La clause ILIKE doit être présente dans le SQL généré
+        sql_text = mock_sql.call_args[0][0]
+        assert "ILIKE :designation_pattern" in sql_text
+        # Le param doit être au format `%pattern%`
+        params = mock_sql.call_args[0][1]
+        assert params["designation_pattern"] == "%Kéfir Mangue Passion%"
+
+    def test_no_produit_filter_keeps_original_behavior(self):
+        """Backward compat : sans produit_filter, pas de clause ILIKE."""
+        with mock.patch.object(
+            production_sheet_service, "run_sql", return_value=[],
+        ) as mock_sql:
+            compute_real_conditionnement_by_lot("tenant-A", "150527")
+        sql_text = mock_sql.call_args[0][0]
+        assert "ILIKE" not in sql_text
+        params = mock_sql.call_args[0][1]
+        assert "designation_pattern" not in params
+
+    def test_empty_produit_filter_ignored(self):
+        """produit_filter='' ou whitespace est traité comme absent."""
+        with mock.patch.object(
+            production_sheet_service, "run_sql", return_value=[],
+        ) as mock_sql:
+            compute_real_conditionnement_by_lot(
+                "tenant-A", "150527", produit_filter="   ",
+            )
+        sql_text = mock_sql.call_args[0][0]
+        assert "ILIKE" not in sql_text
+
 
 # ─── finalize_sheet (Sprint 4) ─────────────────────────────────────────────
 
