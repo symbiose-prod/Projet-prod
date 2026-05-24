@@ -50,6 +50,7 @@ class BottleStockResolution:
     code_article: str
     id_stock_produit: int
     lot_quantite: int                # PCB (ex 6 pour Carton de 6)
+    id_lot: int | None               # idLot EB (ex 3 = "Carton de 6"), requis dans payload mise-en-bouteille
     elements_conditionnement: list[dict[str, Any]]
 
 
@@ -116,6 +117,7 @@ def _find_templates_by_contenance(
         """,
         {"tid": tenant_id, "ip": id_produit, "ct": contenance, "lq": lot_quantite},
     ) or []
+    # `id_lot` est déjà dans le SELECT — pas de modif nécessaire.
     return [dict(r) for r in rows]
 
 
@@ -314,5 +316,6 @@ def resolve_bottle_stock(
         code_article=template["code_article"],
         id_stock_produit=int(template["id_stock_produit"]),
         lot_quantite=pcb,
+        id_lot=int(template["id_lot"]) if template.get("id_lot") is not None else None,
         elements_conditionnement=template.get("elements_conditionnement") or [],
     )
