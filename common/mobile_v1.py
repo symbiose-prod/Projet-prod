@@ -1618,13 +1618,19 @@ async def _v1_admin_conditionnement_by_lot(request: Request):
     lot = (request.query_params.get("lot") or "").strip()
     if not lot:
         return JSONResponse({"error": "Missing 'lot' query param"}, status_code=400)
+    # Filtre optionnel par libellé produit : permet de désambiguïser quand
+    # 2 brassins partagent la même DDM (= même lot). iOS passe sheet.produit
+    # à la création/refresh de la section Conditionnement.
+    produit_filter = (request.query_params.get("produit") or "").strip() or None
 
     from common.services.production_sheet_service import (
         compute_real_conditionnement_by_lot,
     )
 
     result = await asyncio.to_thread(
-        compute_real_conditionnement_by_lot, user["tenant_id"], lot,
+        compute_real_conditionnement_by_lot,
+        user["tenant_id"], lot,
+        produit_filter=produit_filter,
     )
     return JSONResponse({
         "lot": result.lot,

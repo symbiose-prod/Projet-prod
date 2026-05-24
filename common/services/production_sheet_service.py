@@ -577,12 +577,15 @@ class ConditionnementByLot:
 def compute_real_conditionnement_by_lot(
     tenant_id: str,
     lot: str,
+    *,
+    produit_filter: str | None = None,
 ) -> ConditionnementByLot:
     """Agrège les palettes étiquetées pour un lot donné en lignes (fmt, marque).
 
     Source de vérité : ``sscc_log`` (palettes générées) JOIN
     ``etiquette_palette_history`` (infos produit) — filtre par tenant + lot
-    + ``voided_at IS NULL`` (palettes annulées exclues).
+    + ``voided_at IS NULL`` (palettes annulées exclues) + optionnellement par
+    ``designation`` (libellé produit).
 
     Pré-remplit la section "Conditionnement réel" de la fiche papier :
     cartons + palettes par (format × marque) calculés à partir des scans SSCC
@@ -594,17 +597,34 @@ def compute_real_conditionnement_by_lot(
 
     Args:
         tenant_id: scope multi-tenant.
-        lot: ex "15052027" (format DDMMYYYY) ou tout autre format de lot.
+        lot: ex "150527" (DDMMYY de la DDM, format réel sscc_log en prod
+            2026-05).
+        produit_filter: si fourni, filtre par ``ILIKE '%{produit}%'`` sur
+            ``etiquette_palette_history.designation``. **Crucial pour la
+            traçabilité** : si 2 brassins partagent une DDM identique, ils
+            ont le même lot ; ce filtre évite que la fiche du brassin A
+            n'affiche les palettes du brassin B.
 
     Returns:
         ``ConditionnementByLot`` avec ``items`` triés par (fmt, marque) et
-        ``total_cartons`` / ``total_palettes`` agrégés sur tout le lot.
+        ``total_cartons`` / ``total_palettes`` agrégés.
     """
     if not lot or not lot.strip():
         return ConditionnementByLot(lot="", items=[], total_cartons=0, total_palettes=0)
 
+    # Garde-fou traçabilité : si 2 brassins partagent une même DDM (donc
+    # même lot DDMMYY), filtrer aussi par ``designation`` (libellé produit
+    # côté etiquette_palette_history) pour ne retourner QUE les SSCCs du
+    # produit de la fiche courante. Sans ce filtre, la section
+    # Conditionnement mélangerait les palettes des 2 brassins.
+    sql_filter = ""
+    params: dict[str, Any] = {"tid": tenant_id, "lot": lot.strip()}
+    if produit_filter and produit_filter.strip():
+        sql_filter = " AND eph.designation ILIKE :designation_pattern"
+        params["designation_pattern"] = f"%{produit_filter.strip()}%"
+
     rows = run_sql(
-        """
+        f"""
         SELECT eph.fmt, eph.marque, eph.designation,
                COALESCE(SUM(sl.case_count), 0) AS total_cartons,
                COUNT(*) AS total_palettes
@@ -614,10 +634,11 @@ def compute_real_conditionnement_by_lot(
          WHERE sl.tenant_id = :tid
            AND sl.lot = :lot
            AND sl.voided_at IS NULL
+           {sql_filter}
          GROUP BY eph.fmt, eph.marque, eph.designation
          ORDER BY eph.fmt, eph.marque
         """,
-        {"tid": tenant_id, "lot": lot.strip()},
+        params,
     ) or []
 
     items = [
