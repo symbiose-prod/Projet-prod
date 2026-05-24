@@ -1,0 +1,2178 @@
+# HTTP 200
+{
+  "listeStocksBouteillesVides": [
+    {
+      "idStockBouteille": 111377,
+      "codeArticle": "BAVARIAN 33",
+      "contenant": {},
+      "lot": {},
+      "produit": {
+        "compte": {
+          "journal": {}
+        },
+        "compteUE": {
+          "journal": {}
+        },
+        "compteHorsUE": {
+          "journal": {}
+        },
+        "compteRetour": {
+          "journal": {}
+        },
+        "supprime": false,
+        "tauxTVA": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "libelle": "null - null°"
+      },
+      "quantite": 140757,
+      "entrepot": {
+        "faitGenerateur": {
+          "calculAcciseSurVente": false
+        }
+      },
+      "disponiblePourCommande": false,
+      "libelle": "Bouteille - 0.33L",
+      "volume": 0.33
+    },
+    {
+      "idStockBouteille": 111687,
+      "codeArticle": "9061395",
+      "contenant": {},
+      "lot": {},
+      "produit": {
+        "compte": {
+          "journal": {}
+        },
+        "compteUE": {
+          "journal": {}
+        },
+        "compteHorsUE": {
+          "journal": {}
+        },
+        "compteRetour": {
+          "journal": {}
+        },
+        "supprime": false,
+        "tauxTVA": {
+          "compte": {
+            "journal": {}
+          },
+          "type": {}
+        },
+        "libelle": "null - null°"
+      },
+      "quantite": 3254,
+      "entrepot": {
+        "faitGenerateur": {
+          "calculAcciseSurVente": false
+        }
+      },
+      "disponiblePourCommande": false,
+      "libelle": "Bouteille 75cl EAU GAZEUSE - 0.75L",
+      "volume": 0.75
+    }
+  ],
+  "listeMatieresPremieresConditionnement": [
+    {
+      "idMatierePremiere": 95498,
+      "code": "11A000042A",
+      "libelle": "Capsules",
+      "quantite": 239252.0,
+      "quantiteVirtuelle": 239252.0,
+      "valorisation": 5059.909999999998,
+      "valorisationUnitaire": 0.02,
+      "valorisationGlobale": 5059.91,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_CAPSULE",
+        "uri": "capsules",
+        "libelle": "Capsule",
+        "icone": "icon icon-capsule-o"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13546,
+        "libelle": "Pas de TVA - 0%",
+        "compte": {
+          "journal": {}
+        },
+        "taux": 0.0,
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13546,
+        "libelle": "Pas de TVA - 0%",
+        "compte": {
+          "journal": {}
+        },
+        "taux": 0.0,
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "seuilBas": 70000.0,
+      "seuilHaut": 100000.0,
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 121997,
+      "libelle": "Carton 6x75cl Saft NIKO",
+      "quantite": 4847.0,
+      "quantiteVirtuelle": 4847.0,
+      "valorisation": 1381.71,
+      "valorisationUnitaire": 0.29,
+      "valorisationGlobale": 1381.71,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_CARTON",
+        "uri": "cartons",
+        "libelle": "Carton",
+        "icone": "icon icon-carton"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 129523,
+      "libelle": "Cartons 12x33cl NIKO",
+      "quantite": 10616.0,
+      "quantiteVirtuelle": 10616.0,
+      "valorisation": 2578.97968,
+      "valorisationUnitaire": 0.24,
+      "valorisationGlobale": 2578.98,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_CARTON",
+        "uri": "cartons",
+        "libelle": "Carton",
+        "icone": "icon icon-carton"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95553,
+      "code": "48508",
+      "libelle": "Cartons 12x33cl SYMBIOSE",
+      "quantite": 11.0,
+      "quantiteVirtuelle": 11.0,
+      "valorisation": 1.9999999999999858,
+      "valorisationUnitaire": 0.18,
+      "valorisationGlobale": 2.0,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_CARTON",
+        "uri": "cartons",
+        "libelle": "Carton",
+        "icone": "icon icon-carton"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 108851,
+      "libelle": "Cartons 4x75cl SYMBIOSE",
+      "quantite": 9034.0,
+      "quantiteVirtuelle": 9034.0,
+      "valorisation": 1804.33,
+      "valorisationUnitaire": 0.2,
+      "valorisationGlobale": 1804.33,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_CARTON",
+        "uri": "cartons",
+        "libelle": "Carton",
+        "icone": "icon icon-carton"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 129522,
+      "libelle": "Cartons 6x33cl SYMBIOSE",
+      "quantite": 9232.0,
+      "quantiteVirtuelle": 9232.0,
+      "valorisation": 1305.819999999999,
+      "valorisationUnitaire": 0.14,
+      "valorisationGlobale": 1305.82,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_CARTON",
+        "uri": "cartons",
+        "libelle": "Carton",
+        "icone": "icon icon-carton"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95550,
+      "code": "48876",
+      "libelle": "Cartons 6x75cl SYMBIOSE",
+      "quantite": 8672.0,
+      "quantiteVirtuelle": 8672.0,
+      "valorisation": 2092.71,
+      "valorisationUnitaire": 0.24,
+      "valorisationGlobale": 2092.71,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_CARTON",
+        "uri": "cartons",
+        "libelle": "Carton",
+        "icone": "icon icon-carton"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95826,
+      "code": "EBF064639",
+      "libelle": "Etiquette KEFIR Gingembre 33",
+      "quantite": 13401.0,
+      "quantiteVirtuelle": 13401.0,
+      "valorisation": 622.02,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 622.02,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95827,
+      "code": "EBF062951",
+      "libelle": "Etiquette KEFIR Gingembre 75",
+      "quantite": 11409.0,
+      "quantiteVirtuelle": 11409.0,
+      "valorisation": 714.6727200000001,
+      "valorisationUnitaire": 0.06,
+      "valorisationGlobale": 714.67,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95830,
+      "code": "EBF072318",
+      "libelle": "Etiquette KEFIR Mangue-Passion 33",
+      "quantite": 23556.0,
+      "quantiteVirtuelle": 23556.0,
+      "valorisation": 834.3600000000001,
+      "valorisationUnitaire": 0.04,
+      "valorisationGlobale": 834.36,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95831,
+      "code": "EBF072320",
+      "libelle": "Etiquette KEFIR Mangue-Passion 75",
+      "quantite": 11037.0,
+      "quantiteVirtuelle": 11037.0,
+      "valorisation": 613.7599999999999,
+      "valorisationUnitaire": 0.06,
+      "valorisationGlobale": 613.76,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95828,
+      "code": "EBF064638",
+      "libelle": "Etiquette KEFIR Menthe-Citron Vert 33",
+      "quantite": 18070.0,
+      "quantiteVirtuelle": 18070.0,
+      "valorisation": 768.26,
+      "valorisationUnitaire": 0.04,
+      "valorisationGlobale": 768.26,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95829,
+      "code": "EBF062950",
+      "libelle": "Etiquette KEFIR Menthe-Citron Vert 75",
+      "quantite": 15188.0,
+      "quantiteVirtuelle": 15188.0,
+      "valorisation": 810.1500000000001,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 810.15,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95552,
+      "libelle": "Etiquette KEFIR Original 33",
+      "quantite": 15746.0,
+      "quantiteVirtuelle": 15746.0,
+      "valorisation": 710.3199999999999,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 710.32,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 96105,
+      "code": "EBF062949",
+      "libelle": "Etiquette KEFIR Original 75",
+      "quantite": 2000.0,
+      "quantiteVirtuelle": 2000.0,
+      "certificationBio": {
+        "code": "BIOLOGIQUE",
+        "libelle": ""
+      },
+      "valorisation": 188.88,
+      "valorisationUnitaire": 0.09,
+      "valorisationGlobale": 188.88,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 96107,
+      "libelle": "Etiquette KEFIR Pamplemousse 33",
+      "quantite": 394.0,
+      "quantiteVirtuelle": 394.0,
+      "valorisation": 19.440000000000055,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 19.44,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 96108,
+      "libelle": "Etiquette KEFIR Pamplemousse 75",
+      "quantite": 63.0,
+      "quantiteVirtuelle": 63.0,
+      "valorisation": 4.480000000000018,
+      "valorisationUnitaire": 0.07,
+      "valorisationGlobale": 4.48,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 124744,
+      "libelle": "Etiquette KEFIR Pêche 33",
+      "quantite": 7680.0,
+      "quantiteVirtuelle": 7680.0,
+      "valorisation": 504.96,
+      "valorisationUnitaire": 0.07,
+      "valorisationGlobale": 504.96,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 128302,
+      "libelle": "Etiquette KEFIR Pêche 75",
+      "quantite": 2961.0,
+      "quantiteVirtuelle": 2961.0,
+      "valorisation": 193.91,
+      "valorisationUnitaire": 0.07,
+      "valorisationGlobale": 193.91,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95834,
+      "code": "EBF060242",
+      "libelle": "Étiquette INFUSION Menthe poivrée 33cl",
+      "quantite": 8950.0,
+      "quantiteVirtuelle": 8950.0,
+      "valorisation": 290.27,
+      "valorisationUnitaire": 0.03,
+      "valorisationGlobale": 290.27,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 95836,
+      "code": "EBF072316",
+      "libelle": "Étiquette INFUSION Mélisse 33cl",
+      "quantite": 16573.0,
+      "quantiteVirtuelle": 16573.0,
+      "valorisation": 949.4,
+      "valorisationUnitaire": 0.06,
+      "valorisationGlobale": 949.4,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 109153,
+      "code": "EBF082373",
+      "libelle": "Étiquette INFUSION Zests d'agrumes 33",
+      "quantite": 12120.0,
+      "quantiteVirtuelle": 12120.0,
+      "valorisation": 426.2700000000002,
+      "valorisationUnitaire": 0.04,
+      "valorisationGlobale": 426.27,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 117000,
+      "libelle": "Étiquette NIKO - Kéfir Gingembre 33",
+      "quantite": 34538.0,
+      "quantiteVirtuelle": 34538.0,
+      "valorisation": 1770.4800000000002,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 1770.48,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 121998,
+      "libelle": "Étiquette NIKO - Kéfir Gingembre 75",
+      "quantite": 15573.0,
+      "quantiteVirtuelle": 15573.0,
+      "valorisation": 904.05,
+      "valorisationUnitaire": 0.06,
+      "valorisationGlobale": 904.05,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 117002,
+      "libelle": "Étiquette NIKO - Kéfir Mangue Passion 33",
+      "quantite": 24784.0,
+      "quantiteVirtuelle": 24784.0,
+      "valorisation": 1218.93,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 1218.93,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 121999,
+      "libelle": "Étiquette NIKO - Kéfir Mangue Passion 75",
+      "quantite": 15583.0,
+      "quantiteVirtuelle": 15583.0,
+      "valorisation": 892.9200000000001,
+      "valorisationUnitaire": 0.06,
+      "valorisationGlobale": 892.92,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 128308,
+      "libelle": "Étiquette NIKO - Kéfir Pêche 33cl",
+      "quantite": 35124.0,
+      "quantiteVirtuelle": 35124.0,
+      "valorisation": 1787.54,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 1787.54,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 128304,
+      "libelle": "Étiquette NIKO - Kéfir Pêche 75cl",
+      "quantite": 16259.0,
+      "quantiteVirtuelle": 16259.0,
+      "valorisation": 934.77,
+      "valorisationUnitaire": 0.06,
+      "valorisationGlobale": 934.77,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "tauxTVAAchat": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 117001,
+      "libelle": "Étiquette NIKO - Kéfir menthe Citron Vert 33",
+      "quantite": 25580.0,
+      "quantiteVirtuelle": 25580.0,
+      "valorisation": 1248.8300000000002,
+      "valorisationUnitaire": 0.05,
+      "valorisationGlobale": 1248.83,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    },
+    {
+      "idMatierePremiere": 122000,
+      "libelle": "Étiquette NIKO - Kéfir menthe Citron Vert 75",
+      "quantite": 14815.0,
+      "quantiteVirtuelle": 14815.0,
+      "valorisation": 847.61,
+      "valorisationUnitaire": 0.06,
+      "valorisationGlobale": 847.61,
+      "modeValorisation": "GLOBALE",
+      "unite": {},
+      "type": {
+        "code": "CONDITIONNEMENT_ETIQUETTE",
+        "uri": "etiquettes",
+        "libelle": "Etiquette",
+        "icone": "icon icon-sticker"
+      },
+      "tauxTVA": {
+        "idTauxTVA": 13540,
+        "libelle": "TVA collectée - 20%",
+        "compte": {
+          "idPlanComptable": 107,
+          "numero": "445710",
+          "libelle": "TVA collectée 20%",
+          "libelleComplet": "445710 - TVA collectée 20%",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "tauxTVAAchat": {
+        "idTauxTVA": 13541,
+        "libelle": "TVA déductible - 20%",
+        "compte": {
+          "idPlanComptable": 104,
+          "numero": "445660",
+          "libelle": "TVA sur autres biens & services",
+          "libelleComplet": "445660 - TVA sur autres biens & services",
+          "journal": {}
+        },
+        "taux": 20.0,
+        "type": {
+          "code": "DEDUCTIBLE",
+          "libelle": "Déductible"
+        }
+      },
+      "compte": {
+        "idPlanComptable": 142,
+        "numero": "601000",
+        "libelle": "Achats matières premières",
+        "libelleComplet": "601000 - Achats matières premières",
+        "journal": {
+          "code": "ACHATS",
+          "libelle": "Achats"
+        }
+      },
+      "compteVente": {
+        "journal": {}
+      },
+      "actif": true,
+      "entrepot": {
+        "idEntrepot": 2362,
+        "nom": "FERMENT STATION",
+        "principal": true,
+        "faitGenerateur": {
+          "code": "CONDITIONNEMENT",
+          "libelle": "Droits acquittés",
+          "calculAcciseSurVente": false
+        },
+        "libelle": "FERMENT STATION"
+      }
+    }
+  ],
+  "modelesStocksMiseEnBouteille": [
+    {
+      "type": "BOUTEILLE",
+      "idStockBouteille": 111377,
+      "quantite": 1200.0
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95498,
+      "quantite": 1200.0
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 129522,
+      "quantite": 200.0
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95552,
+      "quantite": 1200.0
+    },
+    {
+      "type": "BOUTEILLE",
+      "idStockBouteille": 111687,
+      "quantite": 1194.0
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95498,
+      "quantite": 1194.0
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95550,
+      "quantite": 199.0
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 96105,
+      "quantite": 1194.0
+    }
+  ]
+}

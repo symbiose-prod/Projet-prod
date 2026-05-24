@@ -1,0 +1,1968 @@
+{
+  "dateLimiteUtilisationOptimale": "2027-05-18T06:54:41.028Z",
+  "produitsDerives": [
+    {
+      "idProduit": 42397,
+      "nom": "Kéfir de fruits Original",
+      "nomCommercial": "Kéfir de fruits Original*",
+      "degreAlcool": 0,
+      "tavDouane": 0,
+      "degrePlato": 0,
+      "tauxSucre": 3,
+      "brassageAFacon": false,
+      "type": {
+        "id": 3863,
+        "libelle": "Kéfir de fruits",
+        "libelleAnglais": "Water Kefir"
+      },
+      "categorie": {
+        "id": 3278,
+        "libelle": "Kéfir de fruits - SYMBIOSE"
+      },
+      "couleur": {
+        "code": "AUCUNE",
+        "libelle": "Aucune"
+      },
+      "couleurAffichage": "#979797",
+      "description": "<p>Produit issu de l'agriculture Biologique certifié par FR_BIO_01<br/></p>",
+      "imageUri": "image/produit/42397?uid=1715074837506",
+      "compte": {
+        "journal": {}
+      },
+      "compteUE": {
+        "journal": {}
+      },
+      "compteHorsUE": {
+        "journal": {}
+      },
+      "compteRetour": {
+        "journal": {}
+      },
+      "categorieFiscale": {
+        "code": "BOISSON_SUCREE",
+        "libelle": "Boisson sucrée"
+      },
+      "supprime": false,
+      "tauxTVA": {
+        "compte": {
+          "journal": {}
+        },
+        "type": {}
+      },
+      "libelle": "Kéfir de fruits Original - 0.0°"
+    }
+  ],
+  "modeleBrassin": {
+    "idBrassin": 259288,
+    "dateDebutFormulaire": 1779350261051,
+    "dateModification": 1779558094684,
+    "type": {},
+    "nom": "KDF18052026",
+    "deduireMatierePremiere": true,
+    "changementEtapeAutomatique": true,
+    "etapeSuivante": {},
+    "etapePrecedente": {
+      "idBrassageEtape": 9093,
+      "ordre": 6,
+      "nom": "Transfert",
+      "description": ""
+    },
+    "ingredients": [
+      {
+        "idBrassinIngredient": 4644371,
+        "matierePremiere": {
+          "idMatierePremiere": 94942,
+          "code": "11260",
+          "libelle": "Figues",
+          "quantite": 2076.45,
+          "quantiteVirtuelle": 2076.45,
+          "certificationBio": {
+            "code": "BIOLOGIQUE",
+            "libelle": ""
+          },
+          "valorisation": 11343.500000000002,
+          "valorisationUnitaire": 5.46,
+          "valorisationGlobale": 11343.5,
+          "modeValorisation": "GLOBALE",
+          "unite": {
+            "idUnite": 7,
+            "nom": "Kilogramme",
+            "symbole": "kg",
+            "coefficient": 1
+          },
+          "type": {
+            "code": "INGREDIENT_FRUIT",
+            "uri": "fruits",
+            "libelle": "Fruit",
+            "icone": "mdi mdi-fruit-pineapple"
+          },
+          "tauxTVA": {
+            "idTauxTVA": 13544,
+            "libelle": "TVA collectée - 5.5%",
+            "compte": {
+              "idPlanComptable": 109,
+              "numero": "445712",
+              "libelle": "TVA collectée 5.5%",
+              "libelleComplet": "445712 - TVA collectée 5.5%",
+              "journal": {}
+            },
+            "taux": 5.5,
+            "type": {
+              "code": "COLLECTEE",
+              "libelle": "Collectée"
+            }
+          },
+          "tauxTVAAchat": {
+            "idTauxTVA": 13545,
+            "libelle": "TVA déductible - 5.5%",
+            "compte": {
+              "idPlanComptable": 104,
+              "numero": "445660",
+              "libelle": "TVA sur autres biens & services",
+              "libelleComplet": "445660 - TVA sur autres biens & services",
+              "journal": {}
+            },
+            "taux": 5.5,
+            "type": {
+              "code": "DEDUCTIBLE",
+              "libelle": "Déductible"
+            }
+          },
+          "compte": {
+            "idPlanComptable": 142,
+            "numero": "601000",
+            "libelle": "Achats matières premières",
+            "libelleComplet": "601000 - Achats matières premières",
+            "journal": {
+              "code": "ACHATS",
+              "libelle": "Achats"
+            }
+          },
+          "compteVente": {
+            "journal": {}
+          },
+          "caracteristiques": "FIGUES ENTIERES INDUSTRIE BIO° 10 KG",
+          "actif": true,
+          "entrepot": {
+            "idEntrepot": 2362,
+            "nom": "FERMENT STATION",
+            "principal": true,
+            "faitGenerateur": {
+              "code": "CONDITIONNEMENT",
+              "libelle": "Droits acquittés",
+              "calculAcciseSurVente": false
+            },
+            "libelle": "FERMENT STATION"
+          }
+        },
+        "stockProduitIntermediaire": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "stockBouteille": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "quantite": 20.8,
+        "identifiantLot": "02-835",
+        "modeleNumerosLots": [
+          {
+            "code": "02-835"
+          }
+        ],
+        "unite": {
+          "idUnite": 7,
+          "nom": "Kilogramme",
+          "symbole": "kg",
+          "coefficient": 1
+        },
+        "cout": 113.63,
+        "destock": true,
+        "brassageEtape": {
+          "idBrassageEtape": 9074,
+          "ordre": 1,
+          "nom": "Préparation sirop",
+          "description": ""
+        },
+        "uniqueID": "MP94942"
+      },
+      {
+        "idBrassinIngredient": 4644372,
+        "matierePremiere": {
+          "idMatierePremiere": 94943,
+          "code": "CS Item 000287",
+          "libelle": "Jus de citron Jaune",
+          "quantite": 90.8,
+          "quantiteVirtuelle": 90.8,
+          "certificationBio": {
+            "code": "BIOLOGIQUE",
+            "libelle": ""
+          },
+          "valorisation": 195.48999999999978,
+          "valorisationUnitaire": 2.15,
+          "valorisationGlobale": 195.49,
+          "modeValorisation": "GLOBALE",
+          "unite": {
+            "idUnite": 7,
+            "nom": "Kilogramme",
+            "symbole": "kg",
+            "coefficient": 1
+          },
+          "type": {
+            "code": "INGREDIENT_FRUIT",
+            "uri": "fruits",
+            "libelle": "Fruit",
+            "icone": "mdi mdi-fruit-pineapple"
+          },
+          "tauxTVA": {
+            "idTauxTVA": 13546,
+            "libelle": "Pas de TVA - 0%",
+            "compte": {
+              "journal": {}
+            },
+            "taux": 0,
+            "type": {}
+          },
+          "tauxTVAAchat": {
+            "idTauxTVA": 13546,
+            "libelle": "Pas de TVA - 0%",
+            "compte": {
+              "journal": {}
+            },
+            "taux": 0,
+            "type": {}
+          },
+          "compte": {
+            "idPlanComptable": 142,
+            "numero": "601000",
+            "libelle": "Achats matières premières",
+            "libelleComplet": "601000 - Achats matières premières",
+            "journal": {
+              "code": "ACHATS",
+              "libelle": "Achats"
+            }
+          },
+          "compteVente": {
+            "journal": {}
+          },
+          "caracteristiques": "Lemon Juice NFC Organic, aseptic",
+          "actif": true,
+          "entrepot": {
+            "idEntrepot": 2362,
+            "nom": "FERMENT STATION",
+            "principal": true,
+            "faitGenerateur": {
+              "code": "CONDITIONNEMENT",
+              "libelle": "Droits acquittés",
+              "calculAcciseSurVente": false
+            },
+            "libelle": "FERMENT STATION"
+          }
+        },
+        "stockProduitIntermediaire": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "stockBouteille": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "quantite": 5.2,
+        "identifiantLot": "LNF25330",
+        "modeleNumerosLots": [
+          {
+            "code": "LNF25330"
+          }
+        ],
+        "unite": {
+          "idUnite": 7,
+          "nom": "Kilogramme",
+          "symbole": "kg",
+          "coefficient": 1
+        },
+        "cout": 11.2,
+        "destock": true,
+        "brassageEtape": {
+          "idBrassageEtape": 9074,
+          "ordre": 1,
+          "nom": "Préparation sirop",
+          "description": ""
+        },
+        "uniqueID": "MP94943"
+      },
+      {
+        "idBrassinIngredient": 4644373,
+        "matierePremiere": {
+          "idMatierePremiere": 94941,
+          "code": "10440031",
+          "libelle": "Sucre de betterave française Bio",
+          "quantite": 3765.8,
+          "quantiteVirtuelle": 3765.8,
+          "certificationBio": {
+            "code": "BIOLOGIQUE",
+            "libelle": ""
+          },
+          "valorisation": 5634.0599999999995,
+          "valorisationUnitaire": 1.5,
+          "valorisationGlobale": 5634.06,
+          "modeValorisation": "GLOBALE",
+          "unite": {
+            "idUnite": 7,
+            "nom": "Kilogramme",
+            "symbole": "kg",
+            "coefficient": 1
+          },
+          "type": {
+            "code": "INGREDIENT_SUCRE",
+            "uri": "sucres",
+            "libelle": "Sucre",
+            "icone": "mdi mdi-spoon-sugar"
+          },
+          "tauxTVA": {
+            "idTauxTVA": 13544,
+            "libelle": "TVA collectée - 5.5%",
+            "compte": {
+              "idPlanComptable": 109,
+              "numero": "445712",
+              "libelle": "TVA collectée 5.5%",
+              "libelleComplet": "445712 - TVA collectée 5.5%",
+              "journal": {}
+            },
+            "taux": 5.5,
+            "type": {
+              "code": "COLLECTEE",
+              "libelle": "Collectée"
+            }
+          },
+          "tauxTVAAchat": {
+            "idTauxTVA": 13545,
+            "libelle": "TVA déductible - 5.5%",
+            "compte": {
+              "idPlanComptable": 104,
+              "numero": "445660",
+              "libelle": "TVA sur autres biens & services",
+              "libelleComplet": "445660 - TVA sur autres biens & services",
+              "journal": {}
+            },
+            "taux": 5.5,
+            "type": {
+              "code": "DEDUCTIBLE",
+              "libelle": "Déductible"
+            }
+          },
+          "compte": {
+            "idPlanComptable": 142,
+            "numero": "601000",
+            "libelle": "Achats matières premières",
+            "libelleComplet": "601000 - Achats matières premières",
+            "journal": {
+              "code": "ACHATS",
+              "libelle": "Achats"
+            }
+          },
+          "compteVente": {
+            "journal": {}
+          },
+          "caracteristiques": "ORGANIC BEET SUGAR G45 FR 25KG 900 B8E",
+          "actif": true,
+          "entrepot": {
+            "idEntrepot": 2362,
+            "nom": "FERMENT STATION",
+            "principal": true,
+            "faitGenerateur": {
+              "code": "CONDITIONNEMENT",
+              "libelle": "Droits acquittés",
+              "calculAcciseSurVente": false
+            },
+            "libelle": "FERMENT STATION"
+          }
+        },
+        "stockProduitIntermediaire": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "stockBouteille": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "quantite": 45.5,
+        "identifiantLot": "L26C181",
+        "modeleNumerosLots": [
+          {
+            "code": "L26C181"
+          }
+        ],
+        "unite": {
+          "idUnite": 7,
+          "nom": "Kilogramme",
+          "symbole": "kg",
+          "coefficient": 1
+        },
+        "cout": 68.07,
+        "destock": true,
+        "brassageEtape": {
+          "idBrassageEtape": 9074,
+          "ordre": 1,
+          "nom": "Préparation sirop",
+          "description": ""
+        },
+        "uniqueID": "MP94941"
+      },
+      {
+        "idBrassinIngredient": 4644374,
+        "matierePremiere": {
+          "idMatierePremiere": 95821,
+          "libelle": "Grains de Kéfir",
+          "quantite": 96494.49,
+          "quantiteVirtuelle": 96494.49,
+          "valorisation": 0,
+          "valorisationUnitaire": 0,
+          "modeValorisation": "GLOBALE",
+          "unite": {
+            "idUnite": 7,
+            "nom": "Kilogramme",
+            "symbole": "kg",
+            "coefficient": 1
+          },
+          "type": {
+            "code": "INGREDIENT_GRAIN",
+            "uri": "grains",
+            "libelle": "Grain",
+            "icone": "icon icon-malt"
+          },
+          "tauxTVA": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "tauxTVAAchat": {
+            "compte": {
+              "journal": {}
+            },
+            "type": {}
+          },
+          "compte": {
+            "idPlanComptable": 142,
+            "numero": "601000",
+            "libelle": "Achats matières premières",
+            "libelleComplet": "601000 - Achats matières premières",
+            "journal": {
+              "code": "ACHATS",
+              "libelle": "Achats"
+            }
+          },
+          "compteVente": {
+            "journal": {}
+          },
+          "actif": true,
+          "entrepot": {
+            "idEntrepot": 2362,
+            "nom": "FERMENT STATION",
+            "principal": true,
+            "faitGenerateur": {
+              "code": "CONDITIONNEMENT",
+              "libelle": "Droits acquittés",
+              "calculAcciseSurVente": false
+            },
+            "libelle": "FERMENT STATION"
+          }
+        },
+        "stockProduitIntermediaire": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "stockBouteille": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "quantite": 7.8,
+        "modeleNumerosLots": [],
+        "unite": {
+          "idUnite": 7,
+          "nom": "Kilogramme",
+          "symbole": "kg",
+          "coefficient": 1
+        },
+        "cout": 0,
+        "destock": true,
+        "brassageEtape": {
+          "idBrassageEtape": 9075,
+          "ordre": 2,
+          "nom": "Fermentation",
+          "description": ""
+        },
+        "uniqueID": "MP95821"
+      },
+      {
+        "idBrassinIngredient": 4644375,
+        "matierePremiere": {
+          "idMatierePremiere": 94943,
+          "code": "CS Item 000287",
+          "libelle": "Jus de citron Jaune",
+          "quantite": 90.8,
+          "quantiteVirtuelle": 90.8,
+          "certificationBio": {
+            "code": "BIOLOGIQUE",
+            "libelle": ""
+          },
+          "valorisation": 195.48999999999978,
+          "valorisationUnitaire": 2.15,
+          "valorisationGlobale": 195.49,
+          "modeValorisation": "GLOBALE",
+          "unite": {
+            "idUnite": 7,
+            "nom": "Kilogramme",
+            "symbole": "kg",
+            "coefficient": 1
+          },
+          "type": {
+            "code": "INGREDIENT_FRUIT",
+            "uri": "fruits",
+            "libelle": "Fruit",
+            "icone": "mdi mdi-fruit-pineapple"
+          },
+          "tauxTVA": {
+            "idTauxTVA": 13546,
+            "libelle": "Pas de TVA - 0%",
+            "compte": {
+              "journal": {}
+            },
+            "taux": 0,
+            "type": {}
+          },
+          "tauxTVAAchat": {
+            "idTauxTVA": 13546,
+            "libelle": "Pas de TVA - 0%",
+            "compte": {
+              "journal": {}
+            },
+            "taux": 0,
+            "type": {}
+          },
+          "compte": {
+            "idPlanComptable": 142,
+            "numero": "601000",
+            "libelle": "Achats matières premières",
+            "libelleComplet": "601000 - Achats matières premières",
+            "journal": {
+              "code": "ACHATS",
+              "libelle": "Achats"
+            }
+          },
+          "compteVente": {
+            "journal": {}
+          },
+          "caracteristiques": "Lemon Juice NFC Organic, aseptic",
+          "actif": true,
+          "entrepot": {
+            "idEntrepot": 2362,
+            "nom": "FERMENT STATION",
+            "principal": true,
+            "faitGenerateur": {
+              "code": "CONDITIONNEMENT",
+              "libelle": "Droits acquittés",
+              "calculAcciseSurVente": false
+            },
+            "libelle": "FERMENT STATION"
+          }
+        },
+        "stockProduitIntermediaire": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "stockBouteille": {
+          "contenant": {},
+          "lot": {},
+          "produit": {
+            "compte": {
+              "journal": {}
+            },
+            "compteUE": {
+              "journal": {}
+            },
+            "compteHorsUE": {
+              "journal": {}
+            },
+            "compteRetour": {
+              "journal": {}
+            },
+            "supprime": false,
+            "tauxTVA": {
+              "compte": {
+                "journal": {}
+              },
+              "type": {}
+            },
+            "libelle": "null - null°"
+          },
+          "entrepot": {
+            "faitGenerateur": {
+              "calculAcciseSurVente": false
+            }
+          },
+          "disponiblePourCommande": false
+        },
+        "quantite": 5.2,
+        "identifiantLot": "LNF25330",
+        "modeleNumerosLots": [
+          {
+            "code": "LNF25330"
+          }
+        ],
+        "unite": {
+          "idUnite": 7,
+          "nom": "Kilogramme",
+          "symbole": "kg",
+          "coefficient": 1
+        },
+        "cout": 11.2,
+        "destock": true,
+        "brassageEtape": {
+          "idBrassageEtape": 9091,
+          "ordre": 4,
+          "nom": "Aromatisation jus de fruit / arômes",
+          "description": ""
+        },
+        "uniqueID": "MP94943"
+      }
+    ],
+    "planificationsEtapes": [
+      {
+        "produitEtape": {
+          "idProduitEtape": 97574,
+          "brassageEtape": {
+            "idBrassageEtape": 9074,
+            "ordre": 1,
+            "nom": "Préparation sirop",
+            "description": ""
+          },
+          "ordre": 1,
+          "duree": 1,
+          "unite": {
+            "idUnite": 2,
+            "nom": "Jour",
+            "symbole": "j",
+            "coefficient": 24
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "materiel": {
+          "etatCourant": {},
+          "type": {},
+          "historiques": []
+        }
+      },
+      {
+        "produitEtape": {
+          "idProduitEtape": 97575,
+          "brassageEtape": {
+            "idBrassageEtape": 9075,
+            "ordre": 2,
+            "nom": "Fermentation",
+            "description": ""
+          },
+          "ordre": 2,
+          "duree": 2,
+          "unite": {
+            "idUnite": 2,
+            "nom": "Jour",
+            "symbole": "j",
+            "coefficient": 24
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "materiel": {
+          "etatCourant": {},
+          "type": {},
+          "historiques": []
+        }
+      },
+      {
+        "produitEtape": {
+          "idProduitEtape": 98250,
+          "brassageEtape": {
+            "idBrassageEtape": 9091,
+            "ordre": 4,
+            "nom": "Aromatisation jus de fruit / arômes",
+            "description": ""
+          },
+          "ordre": 3,
+          "duree": 1,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "materiel": {
+          "etatCourant": {},
+          "type": {},
+          "historiques": []
+        }
+      },
+      {
+        "produitEtape": {
+          "idProduitEtape": 97576,
+          "brassageEtape": {
+            "idBrassageEtape": 9077,
+            "ordre": 5,
+            "nom": "Filtration",
+            "description": ""
+          },
+          "ordre": 4,
+          "duree": 8,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "materiel": {
+          "etatCourant": {},
+          "type": {},
+          "historiques": []
+        }
+      },
+      {
+        "produitEtape": {
+          "idProduitEtape": 105984,
+          "brassageEtape": {
+            "idBrassageEtape": 9093,
+            "ordre": 6,
+            "nom": "Transfert",
+            "description": ""
+          },
+          "ordre": 5,
+          "duree": 1,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "materiel": {
+          "etatCourant": {},
+          "type": {},
+          "historiques": []
+        }
+      },
+      {
+        "produitEtape": {
+          "idProduitEtape": 97579,
+          "brassageEtape": {
+            "idBrassageEtape": 9076,
+            "ordre": 7,
+            "nom": "Garde",
+            "description": ""
+          },
+          "ordre": 6,
+          "duree": 34,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "materiel": {
+          "etatCourant": {},
+          "type": {},
+          "historiques": []
+        }
+      }
+    ],
+    "ficheBrassage": "",
+    "volume": 1300,
+    "pourcentageVolumeRestant": 100,
+    "volumeRestant": 1300,
+    "volumeFinal": 1294.02,
+    "produit": {
+      "idProduit": 42397,
+      "dateCreationFormulaire": 1712495029946,
+      "nom": "Kéfir de fruits Original",
+      "nomCommercial": "Kéfir de fruits Original*",
+      "degreAlcool": 0,
+      "tavDouane": 0,
+      "degrePlato": 0,
+      "tauxSucre": 3,
+      "durabiliteMinimale": 365,
+      "brassageAFacon": false,
+      "couleurCalendrier": "#979797",
+      "type": {
+        "id": 3863,
+        "libelle": "Kéfir de fruits",
+        "libelleAnglais": "Water Kefir"
+      },
+      "categorie": {
+        "id": 3278,
+        "libelle": "Kéfir de fruits - SYMBIOSE"
+      },
+      "couleur": {
+        "code": "AUCUNE",
+        "libelle": "Aucune"
+      },
+      "couleurAffichage": "#979797",
+      "description": "<p>Produit issu de l'agriculture Biologique certifié par FR_BIO_01<br/></p>",
+      "ficheBrassage": "",
+      "imageUri": "image/produit/42397?uid=1715074837506",
+      "compte": {
+        "idPlanComptable": 273,
+        "numero": "701000",
+        "libelle": "Ventes produits finis",
+        "libelleComplet": "701000 - Ventes produits finis",
+        "journal": {
+          "code": "VENTES",
+          "libelle": "Ventes"
+        }
+      },
+      "compteUE": {
+        "journal": {}
+      },
+      "compteHorsUE": {
+        "journal": {}
+      },
+      "compteRetour": {
+        "journal": {}
+      },
+      "etapes": [
+        {
+          "idProduitEtape": 97574,
+          "brassageEtape": {
+            "idBrassageEtape": 9074,
+            "ordre": 1,
+            "nom": "Préparation sirop",
+            "description": ""
+          },
+          "ordre": 1,
+          "duree": 1,
+          "unite": {
+            "idUnite": 2,
+            "nom": "Jour",
+            "symbole": "j",
+            "coefficient": 24
+          },
+          "etapeTerminee": true,
+          "etapeEnCours": false
+        },
+        {
+          "idProduitEtape": 97575,
+          "brassageEtape": {
+            "idBrassageEtape": 9075,
+            "ordre": 2,
+            "nom": "Fermentation",
+            "description": ""
+          },
+          "ordre": 2,
+          "duree": 2,
+          "unite": {
+            "idUnite": 2,
+            "nom": "Jour",
+            "symbole": "j",
+            "coefficient": 24
+          },
+          "etapeTerminee": true,
+          "etapeEnCours": false
+        },
+        {
+          "idProduitEtape": 98250,
+          "brassageEtape": {
+            "idBrassageEtape": 9091,
+            "ordre": 4,
+            "nom": "Aromatisation jus de fruit / arômes",
+            "description": ""
+          },
+          "ordre": 3,
+          "duree": 1,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": true,
+          "etapeEnCours": false
+        },
+        {
+          "idProduitEtape": 97576,
+          "brassageEtape": {
+            "idBrassageEtape": 9077,
+            "ordre": 5,
+            "nom": "Filtration",
+            "description": ""
+          },
+          "ordre": 4,
+          "duree": 8,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": true,
+          "etapeEnCours": false
+        },
+        {
+          "idProduitEtape": 105984,
+          "brassageEtape": {
+            "idBrassageEtape": 9093,
+            "ordre": 6,
+            "nom": "Transfert",
+            "description": ""
+          },
+          "ordre": 5,
+          "duree": 1,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": true,
+          "etapeEnCours": false
+        },
+        {
+          "idProduitEtape": 97579,
+          "brassageEtape": {
+            "idBrassageEtape": 9076,
+            "ordre": 7,
+            "nom": "Garde",
+            "description": ""
+          },
+          "ordre": 6,
+          "duree": 34,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": true
+        }
+      ],
+      "recettes": [
+        {
+          "volumeRecette": 1,
+          "ingredients": [
+            {
+              "idProduitIngredient": 192867,
+              "matierePremiere": {
+                "idMatierePremiere": 94942,
+                "code": "11260",
+                "libelle": "Figues",
+                "quantite": 2076.45,
+                "quantiteVirtuelle": 2076.45,
+                "certificationBio": {
+                  "code": "BIOLOGIQUE",
+                  "libelle": ""
+                },
+                "valorisation": 11343.500000000002,
+                "valorisationUnitaire": 5.46,
+                "valorisationGlobale": 11343.5,
+                "modeValorisation": "GLOBALE",
+                "unite": {
+                  "idUnite": 7,
+                  "nom": "Kilogramme",
+                  "symbole": "kg",
+                  "coefficient": 1
+                },
+                "type": {
+                  "code": "INGREDIENT_FRUIT",
+                  "uri": "fruits",
+                  "libelle": "Fruit",
+                  "icone": "mdi mdi-fruit-pineapple"
+                },
+                "tauxTVA": {
+                  "idTauxTVA": 13544,
+                  "libelle": "TVA collectée - 5.5%",
+                  "compte": {
+                    "idPlanComptable": 109,
+                    "numero": "445712",
+                    "libelle": "TVA collectée 5.5%",
+                    "libelleComplet": "445712 - TVA collectée 5.5%",
+                    "journal": {}
+                  },
+                  "taux": 5.5,
+                  "type": {
+                    "code": "COLLECTEE",
+                    "libelle": "Collectée"
+                  }
+                },
+                "tauxTVAAchat": {
+                  "idTauxTVA": 13545,
+                  "libelle": "TVA déductible - 5.5%",
+                  "compte": {
+                    "idPlanComptable": 104,
+                    "numero": "445660",
+                    "libelle": "TVA sur autres biens & services",
+                    "libelleComplet": "445660 - TVA sur autres biens & services",
+                    "journal": {}
+                  },
+                  "taux": 5.5,
+                  "type": {
+                    "code": "DEDUCTIBLE",
+                    "libelle": "Déductible"
+                  }
+                },
+                "compte": {
+                  "idPlanComptable": 142,
+                  "numero": "601000",
+                  "libelle": "Achats matières premières",
+                  "libelleComplet": "601000 - Achats matières premières",
+                  "journal": {
+                    "code": "ACHATS",
+                    "libelle": "Achats"
+                  }
+                },
+                "compteVente": {
+                  "journal": {}
+                },
+                "caracteristiques": "FIGUES ENTIERES INDUSTRIE BIO° 10 KG",
+                "actif": true,
+                "entrepot": {
+                  "idEntrepot": 2362,
+                  "nom": "FERMENT STATION",
+                  "principal": true,
+                  "faitGenerateur": {
+                    "code": "CONDITIONNEMENT",
+                    "libelle": "Droits acquittés",
+                    "calculAcciseSurVente": false
+                  },
+                  "libelle": "FERMENT STATION"
+                }
+              },
+              "quantite": 0.016,
+              "unite": {
+                "idUnite": 7,
+                "nom": "Kilogramme",
+                "symbole": "kg",
+                "coefficient": 1
+              },
+              "brassageEtape": {
+                "idBrassageEtape": 9074,
+                "ordre": 1,
+                "nom": "Préparation sirop",
+                "description": ""
+              },
+              "modeleNumerosLots": []
+            },
+            {
+              "idProduitIngredient": 192868,
+              "matierePremiere": {
+                "idMatierePremiere": 94943,
+                "code": "CS Item 000287",
+                "libelle": "Jus de citron Jaune",
+                "quantite": 90.8,
+                "quantiteVirtuelle": 90.8,
+                "certificationBio": {
+                  "code": "BIOLOGIQUE",
+                  "libelle": ""
+                },
+                "valorisation": 195.48999999999978,
+                "valorisationUnitaire": 2.15,
+                "valorisationGlobale": 195.49,
+                "modeValorisation": "GLOBALE",
+                "unite": {
+                  "idUnite": 7,
+                  "nom": "Kilogramme",
+                  "symbole": "kg",
+                  "coefficient": 1
+                },
+                "type": {
+                  "code": "INGREDIENT_FRUIT",
+                  "uri": "fruits",
+                  "libelle": "Fruit",
+                  "icone": "mdi mdi-fruit-pineapple"
+                },
+                "tauxTVA": {
+                  "idTauxTVA": 13546,
+                  "libelle": "Pas de TVA - 0%",
+                  "compte": {
+                    "journal": {}
+                  },
+                  "taux": 0,
+                  "type": {}
+                },
+                "tauxTVAAchat": {
+                  "idTauxTVA": 13546,
+                  "libelle": "Pas de TVA - 0%",
+                  "compte": {
+                    "journal": {}
+                  },
+                  "taux": 0,
+                  "type": {}
+                },
+                "compte": {
+                  "idPlanComptable": 142,
+                  "numero": "601000",
+                  "libelle": "Achats matières premières",
+                  "libelleComplet": "601000 - Achats matières premières",
+                  "journal": {
+                    "code": "ACHATS",
+                    "libelle": "Achats"
+                  }
+                },
+                "compteVente": {
+                  "journal": {}
+                },
+                "caracteristiques": "Lemon Juice NFC Organic, aseptic",
+                "actif": true,
+                "entrepot": {
+                  "idEntrepot": 2362,
+                  "nom": "FERMENT STATION",
+                  "principal": true,
+                  "faitGenerateur": {
+                    "code": "CONDITIONNEMENT",
+                    "libelle": "Droits acquittés",
+                    "calculAcciseSurVente": false
+                  },
+                  "libelle": "FERMENT STATION"
+                }
+              },
+              "quantite": 0.004,
+              "unite": {
+                "idUnite": 7,
+                "nom": "Kilogramme",
+                "symbole": "kg",
+                "coefficient": 1
+              },
+              "brassageEtape": {
+                "idBrassageEtape": 9074,
+                "ordre": 1,
+                "nom": "Préparation sirop",
+                "description": ""
+              },
+              "modeleNumerosLots": []
+            },
+            {
+              "idProduitIngredient": 192869,
+              "matierePremiere": {
+                "idMatierePremiere": 94941,
+                "code": "10440031",
+                "libelle": "Sucre de betterave française Bio",
+                "quantite": 3765.8,
+                "quantiteVirtuelle": 3765.8,
+                "certificationBio": {
+                  "code": "BIOLOGIQUE",
+                  "libelle": ""
+                },
+                "valorisation": 5634.0599999999995,
+                "valorisationUnitaire": 1.5,
+                "valorisationGlobale": 5634.06,
+                "modeValorisation": "GLOBALE",
+                "unite": {
+                  "idUnite": 7,
+                  "nom": "Kilogramme",
+                  "symbole": "kg",
+                  "coefficient": 1
+                },
+                "type": {
+                  "code": "INGREDIENT_SUCRE",
+                  "uri": "sucres",
+                  "libelle": "Sucre",
+                  "icone": "mdi mdi-spoon-sugar"
+                },
+                "tauxTVA": {
+                  "idTauxTVA": 13544,
+                  "libelle": "TVA collectée - 5.5%",
+                  "compte": {
+                    "idPlanComptable": 109,
+                    "numero": "445712",
+                    "libelle": "TVA collectée 5.5%",
+                    "libelleComplet": "445712 - TVA collectée 5.5%",
+                    "journal": {}
+                  },
+                  "taux": 5.5,
+                  "type": {
+                    "code": "COLLECTEE",
+                    "libelle": "Collectée"
+                  }
+                },
+                "tauxTVAAchat": {
+                  "idTauxTVA": 13545,
+                  "libelle": "TVA déductible - 5.5%",
+                  "compte": {
+                    "idPlanComptable": 104,
+                    "numero": "445660",
+                    "libelle": "TVA sur autres biens & services",
+                    "libelleComplet": "445660 - TVA sur autres biens & services",
+                    "journal": {}
+                  },
+                  "taux": 5.5,
+                  "type": {
+                    "code": "DEDUCTIBLE",
+                    "libelle": "Déductible"
+                  }
+                },
+                "compte": {
+                  "idPlanComptable": 142,
+                  "numero": "601000",
+                  "libelle": "Achats matières premières",
+                  "libelleComplet": "601000 - Achats matières premières",
+                  "journal": {
+                    "code": "ACHATS",
+                    "libelle": "Achats"
+                  }
+                },
+                "compteVente": {
+                  "journal": {}
+                },
+                "caracteristiques": "ORGANIC BEET SUGAR G45 FR 25KG 900 B8E",
+                "actif": true,
+                "entrepot": {
+                  "idEntrepot": 2362,
+                  "nom": "FERMENT STATION",
+                  "principal": true,
+                  "faitGenerateur": {
+                    "code": "CONDITIONNEMENT",
+                    "libelle": "Droits acquittés",
+                    "calculAcciseSurVente": false
+                  },
+                  "libelle": "FERMENT STATION"
+                }
+              },
+              "quantite": 0.035,
+              "unite": {
+                "idUnite": 7,
+                "nom": "Kilogramme",
+                "symbole": "kg",
+                "coefficient": 1
+              },
+              "brassageEtape": {
+                "idBrassageEtape": 9074,
+                "ordre": 1,
+                "nom": "Préparation sirop",
+                "description": ""
+              },
+              "modeleNumerosLots": []
+            },
+            {
+              "idProduitIngredient": 192870,
+              "matierePremiere": {
+                "idMatierePremiere": 95821,
+                "libelle": "Grains de Kéfir",
+                "quantite": 96494.49,
+                "quantiteVirtuelle": 96494.49,
+                "valorisation": 0,
+                "valorisationUnitaire": 0,
+                "modeValorisation": "GLOBALE",
+                "unite": {
+                  "idUnite": 7,
+                  "nom": "Kilogramme",
+                  "symbole": "kg",
+                  "coefficient": 1
+                },
+                "type": {
+                  "code": "INGREDIENT_GRAIN",
+                  "uri": "grains",
+                  "libelle": "Grain",
+                  "icone": "icon icon-malt"
+                },
+                "tauxTVA": {
+                  "compte": {
+                    "journal": {}
+                  },
+                  "type": {}
+                },
+                "tauxTVAAchat": {
+                  "compte": {
+                    "journal": {}
+                  },
+                  "type": {}
+                },
+                "compte": {
+                  "idPlanComptable": 142,
+                  "numero": "601000",
+                  "libelle": "Achats matières premières",
+                  "libelleComplet": "601000 - Achats matières premières",
+                  "journal": {
+                    "code": "ACHATS",
+                    "libelle": "Achats"
+                  }
+                },
+                "compteVente": {
+                  "journal": {}
+                },
+                "actif": true,
+                "entrepot": {
+                  "idEntrepot": 2362,
+                  "nom": "FERMENT STATION",
+                  "principal": true,
+                  "faitGenerateur": {
+                    "code": "CONDITIONNEMENT",
+                    "libelle": "Droits acquittés",
+                    "calculAcciseSurVente": false
+                  },
+                  "libelle": "FERMENT STATION"
+                }
+              },
+              "quantite": 0.006,
+              "unite": {
+                "idUnite": 7,
+                "nom": "Kilogramme",
+                "symbole": "kg",
+                "coefficient": 1
+              },
+              "brassageEtape": {
+                "idBrassageEtape": 9075,
+                "ordre": 2,
+                "nom": "Fermentation",
+                "description": ""
+              },
+              "modeleNumerosLots": []
+            },
+            {
+              "idProduitIngredient": 192871,
+              "matierePremiere": {
+                "idMatierePremiere": 94943,
+                "code": "CS Item 000287",
+                "libelle": "Jus de citron Jaune",
+                "quantite": 90.8,
+                "quantiteVirtuelle": 90.8,
+                "certificationBio": {
+                  "code": "BIOLOGIQUE",
+                  "libelle": ""
+                },
+                "valorisation": 195.48999999999978,
+                "valorisationUnitaire": 2.15,
+                "valorisationGlobale": 195.49,
+                "modeValorisation": "GLOBALE",
+                "unite": {
+                  "idUnite": 7,
+                  "nom": "Kilogramme",
+                  "symbole": "kg",
+                  "coefficient": 1
+                },
+                "type": {
+                  "code": "INGREDIENT_FRUIT",
+                  "uri": "fruits",
+                  "libelle": "Fruit",
+                  "icone": "mdi mdi-fruit-pineapple"
+                },
+                "tauxTVA": {
+                  "idTauxTVA": 13546,
+                  "libelle": "Pas de TVA - 0%",
+                  "compte": {
+                    "journal": {}
+                  },
+                  "taux": 0,
+                  "type": {}
+                },
+                "tauxTVAAchat": {
+                  "idTauxTVA": 13546,
+                  "libelle": "Pas de TVA - 0%",
+                  "compte": {
+                    "journal": {}
+                  },
+                  "taux": 0,
+                  "type": {}
+                },
+                "compte": {
+                  "idPlanComptable": 142,
+                  "numero": "601000",
+                  "libelle": "Achats matières premières",
+                  "libelleComplet": "601000 - Achats matières premières",
+                  "journal": {
+                    "code": "ACHATS",
+                    "libelle": "Achats"
+                  }
+                },
+                "compteVente": {
+                  "journal": {}
+                },
+                "caracteristiques": "Lemon Juice NFC Organic, aseptic",
+                "actif": true,
+                "entrepot": {
+                  "idEntrepot": 2362,
+                  "nom": "FERMENT STATION",
+                  "principal": true,
+                  "faitGenerateur": {
+                    "code": "CONDITIONNEMENT",
+                    "libelle": "Droits acquittés",
+                    "calculAcciseSurVente": false
+                  },
+                  "libelle": "FERMENT STATION"
+                }
+              },
+              "quantite": 0.004,
+              "unite": {
+                "idUnite": 7,
+                "nom": "Kilogramme",
+                "symbole": "kg",
+                "coefficient": 1
+              },
+              "brassageEtape": {
+                "idBrassageEtape": 9091,
+                "ordre": 4,
+                "nom": "Aromatisation jus de fruit / arômes",
+                "description": ""
+              },
+              "modeleNumerosLots": []
+            }
+          ]
+        }
+      ],
+      "categorieFiscale": {
+        "code": "BOISSON_SUCREE",
+        "libelle": "Boisson sucrée"
+      },
+      "libelleFiscalProdouane": {
+        "code": "BOISSONS_FERMENTEES_AUTRES",
+        "libelle": ""
+      },
+      "supprime": false,
+      "tauxTVA": {
+        "idTauxTVA": 13544,
+        "libelle": "TVA collectée - 5.5%",
+        "compte": {
+          "idPlanComptable": 109,
+          "numero": "445712",
+          "libelle": "TVA collectée 5.5%",
+          "libelleComplet": "445712 - TVA collectée 5.5%",
+          "journal": {}
+        },
+        "taux": 5.5,
+        "type": {
+          "code": "COLLECTEE",
+          "libelle": "Collectée"
+        }
+      },
+      "certificationBio": {
+        "code": "BIOLOGIQUE",
+        "libelle": ""
+      },
+      "libelle": "Kéfir de fruits Original - 0.0°"
+    },
+    "historique": [
+      {
+        "idBrassinHistorique": 760005,
+        "dateEtape": 1779350261051,
+        "produitEtape": {
+          "idProduitEtape": 97574,
+          "brassageEtape": {
+            "idBrassageEtape": 9074,
+            "ordre": 1,
+            "nom": "Préparation sirop",
+            "description": ""
+          },
+          "ordre": 1,
+          "duree": 1,
+          "unite": {
+            "idUnite": 2,
+            "nom": "Jour",
+            "symbole": "j",
+            "coefficient": 24
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "dureeReelle": 1458,
+        "coutMainOeuvre": 0,
+        "materielAffecte": "",
+        "utilisateur": "Nicolas Pradignac"
+      },
+      {
+        "idBrassinHistorique": 760036,
+        "dateEtape": 1779351719764,
+        "produitEtape": {
+          "idProduitEtape": 97575,
+          "brassageEtape": {
+            "idBrassageEtape": 9075,
+            "ordre": 2,
+            "nom": "Fermentation",
+            "description": ""
+          },
+          "ordre": 2,
+          "duree": 2,
+          "unite": {
+            "idUnite": 2,
+            "nom": "Jour",
+            "symbole": "j",
+            "coefficient": 24
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "dureeReelle": 175173,
+        "coutMainOeuvre": 0,
+        "materielAffecte": "",
+        "utilisateur": "Nicolas Pradignac"
+      },
+      {
+        "idBrassinHistorique": 760922,
+        "dateEtape": 1779526892868,
+        "produitEtape": {
+          "idProduitEtape": 98250,
+          "brassageEtape": {
+            "idBrassageEtape": 9091,
+            "ordre": 4,
+            "nom": "Aromatisation jus de fruit / arômes",
+            "description": ""
+          },
+          "ordre": 3,
+          "duree": 1,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "dureeReelle": 7197,
+        "coutMainOeuvre": 0,
+        "materielAffecte": "",
+        "utilisateur": ""
+      },
+      {
+        "idBrassinHistorique": 760931,
+        "dateEtape": 1779534089947,
+        "produitEtape": {
+          "idProduitEtape": 97576,
+          "brassageEtape": {
+            "idBrassageEtape": 9077,
+            "ordre": 5,
+            "nom": "Filtration",
+            "description": ""
+          },
+          "ordre": 4,
+          "duree": 8,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "dureeReelle": 23788,
+        "coutMainOeuvre": 0,
+        "materielAffecte": "",
+        "utilisateur": ""
+      },
+      {
+        "idBrassinHistorique": 760968,
+        "dateEtape": 1779557878140,
+        "produitEtape": {
+          "idProduitEtape": 97579,
+          "brassageEtape": {
+            "idBrassageEtape": 9076,
+            "ordre": 7,
+            "nom": "Garde",
+            "description": ""
+          },
+          "ordre": 6,
+          "duree": 34,
+          "unite": {
+            "idUnite": 1,
+            "nom": "Heure",
+            "symbole": "h",
+            "coefficient": 1
+          },
+          "etapeTerminee": false,
+          "etapeEnCours": false
+        },
+        "dureeReelle": 47802,
+        "coutMainOeuvre": 0,
+        "materielAffecte": "",
+        "utilisateur": "Nicolas Pradignac"
+      }
+    ],
+    "productions": [],
+    "planificationsProductions": [],
+    "materielsAffectes": [],
+    "volumeEau": 4550,
+    "prixUnitaireEau": 0.0049,
+    "coutEau": 22.29,
+    "cout": 226.39,
+    "pourcentageAvancement": 39,
+    "tempsRestant": "20 heures restant",
+    "dateFinTheoriqueEtapeCourante": 1779680278140,
+    "idEtapeCourante": 9076,
+    "dateConditionnementPrevue": 1779400800000,
+    "planifie": false,
+    "enCours": true,
+    "termine": false,
+    "annule": false,
+    "archive": false,
+    "stick": true,
+    "editable": false,
+    "dateDebut": 1779350261051,
+    "etat": {
+      "code": "EN_COURS",
+      "libelle": "En cours",
+      "couleur": "#21b6cd"
+    },
+    "estChezEmbouteilleur": false,
+    "matieresPremieresConditionnement": [],
+    "matieresPremieresPlanificationConditionnement": []
+  },
+  "modeleElevage": {
+    "type": {},
+    "etat": {},
+    "distillats": [],
+    "historiques": [],
+    "productions": [],
+    "matieresPremieresConditionnement": []
+  },
+  "volumeRestant": 1300,
+  "modelesStockProduitBouteille": [
+    {
+      "libelle": "FERMENT STATION",
+      "quantiteDisponible": 170109,
+      "volumeDisponible": 68463.81,
+      "modelesFils": [
+        {
+          "idStockBouteille": 111377,
+          "libelle": "Bouteille - 0.33L",
+          "quantiteDisponible": 140757,
+          "volumeDisponible": 46449.810000000005,
+          "contenance": 0.33,
+          "modelesFils": [],
+          "lot": {
+            "idLot": 3
+          },
+          "dateDisponibilite": "2026-05-21T22:00:00.000Z",
+          "quantiteMiseEnBouteille": 200
+        },
+        {
+          "idStockBouteille": 111687,
+          "libelle": "Bouteille 75cl EAU GAZEUSE - 0.75L",
+          "quantiteDisponible": 3254,
+          "volumeDisponible": 2440.5,
+          "contenance": 0.75,
+          "modelesFils": [],
+          "lot": {
+            "idLot": 3
+          },
+          "dateDisponibilite": "2026-05-21T22:00:00.000Z",
+          "quantiteMiseEnBouteille": 199
+        },
+        {
+          "idStockBouteille": 131955,
+          "libelle": "Bouteille 75cl SAFT - 0.75L",
+          "quantiteDisponible": 26098,
+          "volumeDisponible": 19573.5,
+          "contenance": 0.75,
+          "modelesFils": [],
+          "lot": {
+            "idLot": 1
+          }
+        }
+      ]
+    }
+  ],
+  "modelesStockProduitFutContenant": [],
+  "modelesStocksMiseEnBouteille": [
+    {
+      "type": "BOUTEILLE",
+      "idStockBouteille": 111377,
+      "quantite": 1200
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95498,
+      "quantite": 1200
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 129522,
+      "quantite": 200
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95552,
+      "quantite": 1200
+    },
+    {
+      "type": "BOUTEILLE",
+      "idStockBouteille": 111687,
+      "quantite": 1194
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95498,
+      "quantite": 1194
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 95550,
+      "quantite": 199
+    },
+    {
+      "type": "MP",
+      "idMatierePremiere": 96105,
+      "quantite": 1194
+    }
+  ],
+  "numeroLot": "KDF18052026",
+  "dateMiseEnBouteille": "2026-05-24T06:54:41.063Z"
+}
