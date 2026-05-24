@@ -115,25 +115,32 @@ class TestTerminerBrassin:
     @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
     @patch("common.easybeer.production_writes.execute_endpoint")
     @patch("common.easybeer.brassins.get_brassin_detail")
-    def test_lazy_mode_loads_and_merges(
+    def test_lazy_mode_loads_and_merges_with_idBrassin(
         self,
         mock_load: MagicMock,
         mock_execute: MagicMock,
         _mock_invalidate: MagicMock,
     ):
-        """Mode 'lazy' (par défaut) : on charge le brassin EB et on merge les overrides."""
+        """Mode 'lazy' (par défaut) : on charge le brassin EB et on merge les overrides.
+
+        Le payload outbox utilise ``idBrassin`` au top-level (conforme au
+        format de référence EB UI ``docs/easybeer-write-payloads/``).
+        """
         mock_load.return_value = {
-            "id": 42,
+            "idBrassin": 42,
             "name": "Brassin Test",
             "degreAlcool": 5.0,
             "annule": False,
             "archive": False,
-            "dateFin": None,
             "commentaire": "ancien",
         }
-        mock_execute.return_value = {"ok": True}
+        mock_execute.return_value = {}
 
-        overrides = {"id": 42, "archive": True, "dateFin": 1700000000000, "commentaire": "nouveau"}
+        overrides = {
+            "idBrassin": 42, "archive": True,
+            "dateFinFormulaire": "2026-05-21T22:00:00.000Z",
+            "commentaire": "nouveau",
+        }
         terminer_brassin(overrides)
 
         mock_load.assert_called_once_with(42)
@@ -143,19 +150,44 @@ class TestTerminerBrassin:
         assert called["degreAlcool"] == 5.0
         assert called["annule"] is False
         # Overrides appliqués
+        assert called["idBrassin"] == 42
         assert called["archive"] is True
-        assert called["dateFin"] == 1700000000000
+        assert called["dateFinFormulaire"] == "2026-05-21T22:00:00.000Z"
         assert called["commentaire"] == "nouveau"
+        # allow_empty_2xx activé pour cet endpoint (EB renvoie body vide sur succès)
+        assert mock_execute.call_args.kwargs["allow_empty_2xx"] is True
+
+    @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
+    @patch("common.easybeer.production_writes.execute_endpoint")
+    @patch("common.easybeer.brassins.get_brassin_detail")
+    def test_lazy_mode_legacy_id_key_still_works(
+        self,
+        mock_load: MagicMock,
+        mock_execute: MagicMock,
+        _mock_invalidate: MagicMock,
+    ):
+        """Backward compat : events outbox enqueued avec 'id' (avant migration)
+        doivent continuer à marcher. terminer_brassin normalise 'id' → 'idBrassin'."""
+        mock_load.return_value = {"idBrassin": 42, "name": "x"}
+        mock_execute.return_value = {}
+
+        terminer_brassin({"id": 42, "archive": True})
+
+        mock_load.assert_called_once_with(42)
+        called = mock_execute.call_args.kwargs["payload"]
+        # Doit avoir idBrassin (pas le legacy 'id')
+        assert called["idBrassin"] == 42
+        assert "id" not in called
 
     @patch("common.easybeer.production_writes.execute_endpoint")
     @patch("common.easybeer.brassins.get_brassin_detail")
-    def test_lazy_mode_raises_if_no_id(
+    def test_lazy_mode_raises_if_no_idBrassin(
         self,
         _mock_load: MagicMock,
         _mock_execute: MagicMock,
     ):
         import pytest
-        with pytest.raises(ValueError, match="id"):
+        with pytest.raises(ValueError, match="idBrassin"):
             terminer_brassin({"archive": True})
 
     @patch("common.easybeer.production_writes.execute_endpoint")
@@ -168,7 +200,7 @@ class TestTerminerBrassin:
         import pytest
         mock_load.return_value = {}  # introuvable
         with pytest.raises(ValueError, match="introuvable"):
-            terminer_brassin({"id": 42, "archive": True})
+            terminer_brassin({"idBrassin": 42, "archive": True})
 
     @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
     @patch("common.easybeer.production_writes.execute_endpoint")
@@ -179,9 +211,9 @@ class TestTerminerBrassin:
         mock_execute: MagicMock,
         mock_invalidate: MagicMock,
     ):
-        mock_load.return_value = {"id": 1, "name": "x"}
+        mock_load.return_value = {"idBrassin": 1, "name": "x"}
         mock_execute.return_value = {}
-        terminer_brassin({"id": 1, "archive": False})
+        terminer_brassin({"idBrassin": 1, "archive": False})
 
         keys = mock_invalidate.call_args[0][0]
         assert "brassins_en_cours" in keys

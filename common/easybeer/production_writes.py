@@ -106,10 +106,10 @@ def terminer_brassin(payload: dict[str, Any]) -> dict[str, Any]:
     **Mode "full"** : le payload est déjà un ModeleBrassin complet (60+ champs).
     Indiqué par ``payload.pop("_full") == True``. On push tel quel.
 
-    **Mode "lazy"** (par défaut) : le payload contient juste l'idBrassin +
+    **Mode "lazy"** (par défaut) : le payload contient juste ``idBrassin`` +
     quelques overrides (``dateFin``, ``archive``, ``commentaire``, etc.).
     La fonction :
-    1. Charge le ModeleBrassin complet via ``get_brassin_detail(id)``
+    1. Charge le ModeleBrassin complet via ``get_brassin_detail(idBrassin)``
     2. Applique les overrides au-dessus
     3. Push le résultat à EB
 
@@ -119,13 +119,20 @@ def terminer_brassin(payload: dict[str, Any]) -> dict[str, Any]:
       l'enqueue et le push (retry-safe)
     - Le brassin EB est forcément à jour au moment du push
 
-    Champs notables d'override (cf. swagger ModeleBrassin) :
+    Champs notables d'override (cf. swagger ModeleBrassin et payload de
+    référence ``docs/easybeer-write-payloads/terminer.request.json``) :
     - ``archive`` (bool) : si True, termine ET archive en une opération
-    - ``dateFin`` (timestamp ms) : timestamp de fin de production
-    - ``commentaire``, ``description`` (str)
-    - ``degreAlcool``, ``densiteFinale`` (float)
+    - ``commentaire`` (str) : HTML, peut contenir le récap
+    - ``densiteInitiale``, ``densiteFinale``, ``ph`` (float)
+    - ``volumeFinal`` (float)
+    - ``dateFinFormulaire`` (str ISO)
+
+    **Compatibilité** : accepte aussi bien ``payload["idBrassin"]`` (nouveau,
+    payload conforme à EB) que ``payload["id"]`` (ancien format, pour les
+    events en queue avant la migration de naming). ``idBrassin`` a priorité.
 
     Effet côté EB : passe le brassin en état "terminé" (et "archivé" si flag).
+    Réponse EB sur succès : body vide (HTTP 200) — d'où ``allow_empty_2xx``.
     """
     # Mode "full" : payload est déjà complet, on push tel quel
     if payload.pop("_full", False):
@@ -134,27 +141,35 @@ def terminer_brassin(payload: dict[str, Any]) -> dict[str, Any]:
         # Mode "lazy" : on charge le brassin EB complet et on applique les overrides
         from .brassins import get_brassin_detail
 
-        brassin_id = payload.get("id")
+        # Accept both "idBrassin" (nouveau, conforme EB) et "id" (legacy events)
+        brassin_id = payload.get("idBrassin") or payload.get("id")
         if not brassin_id:
             raise ValueError(
-                "terminer_brassin (lazy mode) requires payload['id'] (idBrassin)",
+                "terminer_brassin (lazy mode) requires payload['idBrassin']",
             )
         brassin_full = get_brassin_detail(int(brassin_id))
         if not brassin_full:
             raise ValueError(
                 f"terminer_brassin: brassin id={brassin_id} introuvable dans EB",
             )
+        # Normalize : enlève "id" (qui n'existe pas dans ModeleBrassin EB) et
+        # garantit "idBrassin" au top-level (cf. payload de référence EB UI).
+        overrides = {k: v for k, v in payload.items() if k != "id"}
+        overrides["idBrassin"] = int(brassin_id)
         # Merge : full d'abord, overrides écrasent (sans modifier le cache shared)
-        full_payload = {**brassin_full, **payload}
+        full_payload = {**brassin_full, **overrides}
         _log.debug(
-            "terminer_brassin lazy: brassin id=%s overrides=%s",
-            brassin_id, list(payload.keys()),
+            "terminer_brassin lazy: brassin idBrassin=%s overrides=%s",
+            brassin_id, list(overrides.keys()),
         )
 
     result = execute_endpoint(
         method="POST",
         path="brassin/terminer",
         payload=full_payload,
+        # EB confirme le succès par un HTTP 200 + body vide (cf.
+        # docs/easybeer-write-payloads/terminer.response.json)
+        allow_empty_2xx=True,
     )
     # Le brassin n'est plus dans les listes "en cours" ni "planifiés"
     _invalidate_caches_after_production_write(

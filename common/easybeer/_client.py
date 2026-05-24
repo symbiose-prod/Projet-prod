@@ -228,11 +228,33 @@ def _check_response(r: requests.Response, endpoint: str) -> None:
     )
 
 
-def _safe_json(r: requests.Response, endpoint: str) -> Any:
-    """Parse JSON en toute sécurité. Lève EasyBeerError si le body n'est pas du JSON."""
+def _safe_json(
+    r: requests.Response,
+    endpoint: str,
+    *,
+    allow_empty_2xx: bool = False,
+) -> Any:
+    """Parse JSON en toute sécurité. Lève EasyBeerError si le body n'est pas du JSON.
+
+    Args:
+        allow_empty_2xx: si True, retourne ``{}`` au lieu de lever quand la
+            réponse a un statut 2xx ET un body vide. À activer uniquement
+            pour les endpoints d'écriture EasyBeer qui confirment leur succès
+            par un body vide (ex. ``POST /brassin/terminer``). Source de
+            vérité : capture HAR EB UI, cf. ``docs/easybeer-write-payloads/``.
+
+    Le défaut (``False``) garde l'ancien comportement strict : tout body
+    non-JSON est une erreur, même sur 2xx. C'est important pour les reads
+    où un body vide signale un vrai problème (silent rejection).
+    """
     try:
         return r.json()
     except (ValueError, TypeError) as exc:
+        # Whitelist explicite : certains endpoints d'écriture EB confirment
+        # le succès par un body vide. On retourne {} pour ne pas faire
+        # échouer le push outbox. Tout autre cas reste une erreur.
+        if allow_empty_2xx and 200 <= r.status_code < 300 and not r.text.strip():
+            return {}
         raise EasyBeerError(
             f"EasyBeer {endpoint} : réponse non-JSON (HTTP {r.status_code}) — {r.text[:200]}"
         ) from exc

@@ -24,6 +24,7 @@ from common.easybeer._client import (
     _excel_payload,
     _indicator_payload,
     _is_retryable,
+    _safe_json,
     _throttle,
     is_configured,
 )
@@ -202,6 +203,93 @@ class TestCheckResponse:
         r = _fake_response(ok=False, status_code=503, text="Unavailable")
         with pytest.raises(EasyBeerError, match="/my-endpoint"):
             _check_response(r, "/my-endpoint")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4 bis. TestSafeJson
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _json_response(*, status_code: int, text: str, json_value=None):
+    """Stub de Response avec .json() configurable.
+
+    Si ``json_value=_RAISE``, .json() lève ValueError (body non-JSON).
+    Sinon retourne ``json_value`` ou parse ``text``.
+    """
+    import json as _json
+
+    def _json_method():
+        if json_value is _RAISE:
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+        if json_value is not None:
+            return json_value
+        return _json.loads(text)
+
+    return SimpleNamespace(
+        status_code=status_code,
+        text=text,
+        json=_json_method,
+        headers={"content-type": "application/json"},
+    )
+
+
+_RAISE = object()  # sentinelle
+
+
+class TestSafeJson:
+    """_safe_json() parse JSON ou (avec allow_empty_2xx) retourne {} sur body vide.
+
+    Le param ``allow_empty_2xx`` est une whitelist explicite pour les endpoints
+    d'écriture EB qui confirment le succès par body vide (ex. brassin/terminer).
+    Cf. ``docs/easybeer-write-payloads/terminer.response.json``.
+    """
+
+    def test_parses_normal_json(self):
+        r = _json_response(status_code=200, text='{"id": 42}')
+        assert _safe_json(r, "/test") == {"id": 42}
+
+    def test_default_raises_on_empty_body(self):
+        """Sans allow_empty_2xx, body vide = erreur (sémantique stricte par défaut)."""
+        r = _json_response(status_code=200, text="", json_value=_RAISE)
+        with pytest.raises(EasyBeerError, match="non-JSON"):
+            _safe_json(r, "/brassin/terminer")
+
+    def test_allow_empty_2xx_returns_empty_dict_on_empty_body(self):
+        """Avec allow_empty_2xx, 200 + body vide = succès silencieux ({} retourné)."""
+        r = _json_response(status_code=200, text="", json_value=_RAISE)
+        assert _safe_json(r, "/brassin/terminer", allow_empty_2xx=True) == {}
+
+    def test_allow_empty_2xx_returns_empty_dict_on_204(self):
+        r = _json_response(status_code=204, text="", json_value=_RAISE)
+        assert _safe_json(r, "/brassin/terminer", allow_empty_2xx=True) == {}
+
+    def test_allow_empty_2xx_returns_empty_dict_on_whitespace(self):
+        r = _json_response(status_code=200, text="   \n  ", json_value=_RAISE)
+        assert _safe_json(r, "/brassin/terminer", allow_empty_2xx=True) == {}
+
+    def test_allow_empty_2xx_still_raises_on_non_2xx_empty(self):
+        """allow_empty_2xx ne tolère QUE les 2xx, pas les 5xx vides."""
+        r = _json_response(status_code=500, text="", json_value=_RAISE)
+        with pytest.raises(EasyBeerError, match="non-JSON"):
+            _safe_json(r, "/test", allow_empty_2xx=True)
+
+    def test_allow_empty_2xx_still_raises_on_html_body(self):
+        """allow_empty_2xx ne tolère QUE les body vides, pas les HTML."""
+        r = _json_response(
+            status_code=200,
+            text="<!DOCTYPE html><html></html>",
+            json_value=_RAISE,
+        )
+        with pytest.raises(EasyBeerError, match="non-JSON"):
+            _safe_json(r, "/test", allow_empty_2xx=True)
+
+    def test_normal_json_parses_regardless_of_allow_empty_2xx(self):
+        """Si JSON valide, allow_empty_2xx n'a aucun effet — on retourne le dict."""
+        r = _json_response(status_code=200, text='{"message": "", "map": {}}')
+        # Sans flag
+        assert _safe_json(r, "/test") == {"message": "", "map": {}}
+        # Avec flag
+        assert _safe_json(r, "/test", allow_empty_2xx=True) == {"message": "", "map": {}}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

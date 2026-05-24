@@ -85,6 +85,7 @@ def execute_endpoint(
     cache_item_id: str = "",
     cache_ttl: int = 1800,
     timeout: int = TIMEOUT,
+    allow_empty_2xx: bool = False,
 ) -> Any:
     """Exécute un endpoint EasyBeer avec tous les garde-fous.
 
@@ -113,6 +114,10 @@ def execute_endpoint(
             la même clé (ex: ``str(window_days)``).
         cache_ttl: TTL cache L2 en secondes (défaut 30 min).
         timeout: HTTP timeout (défaut ``TIMEOUT`` du client).
+        allow_empty_2xx: si True, traite un HTTP 2xx avec body vide comme
+            un succès (retourne ``{}``). À activer uniquement pour les
+            endpoints d'écriture EB qui confirment succès par body vide
+            (whitelist). Le défaut ``False`` garde la sémantique stricte.
 
     Returns:
         - Instance de ``response_model`` si fourni ET ``from_dict`` dispo.
@@ -156,7 +161,7 @@ def execute_endpoint(
         r = get_session().post(f"{BASE}/{path}", **kwargs)
 
     _check_response(r, path)
-    data = _safe_json(r, path)
+    data = _safe_json(r, path, allow_empty_2xx=allow_empty_2xx)
 
     # ── Persist cache L2 si activé et réponse utile ───────────────────────
     if cache_key and data:
