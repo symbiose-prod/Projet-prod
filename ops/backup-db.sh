@@ -79,7 +79,9 @@ fi
 # (cf. docstring de backup-db-s3-upload.py). Ne BLOQUE PAS le backup local
 # en cas d'échec d'upload — on a déjà la copie locale qui est l'essentiel.
 APP_DIR="${APP_DIR:-/home/ubuntu/app}"
-VENV_PY="${VENV_PY:-${APP_DIR}/.venv/bin/python3}"
+# Venv prod : /home/ubuntu/app/venv (sans point). Override via VENV_PY si
+# autre layout (dev local : .venv/bin/python).
+VENV_PY="${VENV_PY:-${APP_DIR}/venv/bin/python3}"
 S3_UPLOAD_SCRIPT="${APP_DIR}/ops/backup-db-s3-upload.py"
 if [[ -x "$VENV_PY" && -f "$S3_UPLOAD_SCRIPT" ]]; then
     echo "[$(date -Iseconds)] Upload S3 : $S3_UPLOAD_SCRIPT"
