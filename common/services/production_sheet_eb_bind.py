@@ -136,26 +136,41 @@ def build_mise_en_bouteille_payload(
     *,
     tenant_id: str,
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    """Construit le payload ModeleStockProduit depuis la section ``conditionnement_reel``.
+    """Construit le payload **léger** pour l'event outbox ``brassin.mise-en-bouteille``.
 
-    Retourne ``(payload, warnings)``. ``payload`` peut être None si la fiche
-    n'a pas de brassin_id ou si aucun item n'est résolvable côté EB.
-    ``warnings`` liste les items qui ont été skipped (mapping EB manquant).
+    Le worker ``mise_en_bouteille_brassin`` (cf. ``common.easybeer.production_writes``)
+    se charge ensuite, au moment du push à EB, de :
 
-    Mapping appliqué pour chaque item (V2 — affectation "Carton de X") :
-    - ``(lot, marque, fmt)`` → ``LotMarqueFmtResolution`` (idProduit +
-      idContenant bouteille + idContenant carton + contenance + pcb)
-    - Si ``id_contenant_carton`` dispo → push en **Carton** :
-      idContenant = carton, quantite = cartons
-    - Sinon → fallback en **Unité** avec warning : idContenant = bouteille,
-      quantite = cartons × pcb
+    1. ``get_brassin_detail(idBrassin)`` → brassin complet
+    2. Résoudre ``idStockBouteille`` pour chaque item (via
+       ``common.services.bottle_stock_resolver.resolve_bottle_stock``)
+    3. ``POST /brassin/deduction-stocks-conditionnement`` → EB calcule
+       ``modelesStocksMiseEnBouteille`` (capsules, étiquettes, cartons à débiter)
+    4. ``POST /brassin/mise-en-bouteille`` avec le payload complet
 
-    Cohérent avec la saisie manuelle du responsable d'atelier qui choisit
-    presque toujours l'affectation "Carton de X" dans l'interface EB.
+    Cette séparation builder/worker garde le payload outbox léger (~500 octets
+    au lieu de 50+ KB), évite la stale data, et survit aux retries.
 
-    NOTE V1→V2 : on N'inclut toujours PAS ``idStockBouteille`` (le stock
-    de contenant vide consommé). EB devra auto-résoudre, ou rejeter le
-    payload (visible dans ``/admin/eb-outbox`` dead-letter).
+    Args:
+        sheet: la fiche finalisée (status=completed, data.conditionnement_reel
+            non vide).
+        tenant_id: scope multi-tenant. Pas utilisé directement ici mais
+            propagé dans le payload outbox pour le worker (qui s'en sert
+            pour les lookups de la table eb_stock_product_templates).
+
+    Returns:
+        Tuple ``(payload, warnings)`` :
+        - ``payload`` : ``dict`` à enqueue dans outbox, ou ``None`` si
+          conditions de déclenchement non remplies.
+        - ``warnings`` : liste de messages pour observabilité / dead-letter
+          report (items skippés, configuration manquante, etc.).
+
+    Conditions de skip (retourne None) :
+    - ``sheet.brassin_id`` absent ou non-numérique
+    - ``sheet.data.conditionnement_reel.items`` vide
+    - ``sheet.lot`` vide (EB exige ``numeroLot``)
+
+    Source de vérité du format : ``docs/easybeer-write-payloads/mise-en-bouteille.request.json``.
     """
     warnings: list[str] = []
 
@@ -168,32 +183,27 @@ def build_mise_en_bouteille_payload(
 
     data = sheet.data or {}
     cond_reel = data.get("conditionnement_reel") or {}
-    items = cond_reel.get("items") or []
-    if not items:
+    items_raw = cond_reel.get("items") or []
+    if not items_raw:
         return None, ["no conditionnement_reel.items"]
 
     lot = sheet.lot or ""
     if not lot:
-        return None, ["sheet.lot is empty (Conditionner requires numeroLot)"]
+        return None, ["sheet.lot is empty (mise-en-bouteille requires numeroLot)"]
 
-    # Charger la matrice EB une seule fois pour tous les items
-    from common.services.eb_product_mapping import (
-        load_gtin_index_from_eb,
-        resolve_lot_marque_fmt,
-    )
-    gtin_index = load_gtin_index_from_eb()
-    if not gtin_index:
-        return None, ["code-barre matrice unavailable"]
-
-    bouteille_entries: list[dict[str, Any]] = []
-    for item in items:
+    # On normalise les items : (fmt, marque, cartons). Le worker s'occupera
+    # de la résolution idStockBouteille via la table eb_stock_product_templates.
+    normalized_items: list[dict[str, Any]] = []
+    for item in items_raw:
         if not isinstance(item, dict):
             continue
         marque = (item.get("marque") or "").strip()
         fmt = (item.get("fmt") or "").strip()
         cartons = item.get("cartons")
         if not (marque and fmt and cartons):
-            warnings.append(f"item incomplete (marque={marque!r}, fmt={fmt!r}, cartons={cartons!r})")
+            warnings.append(
+                f"item incomplete (marque={marque!r}, fmt={fmt!r}, cartons={cartons!r})",
+            )
             continue
         try:
             cartons_int = int(cartons)
@@ -202,69 +212,33 @@ def build_mise_en_bouteille_payload(
             continue
         if cartons_int <= 0:
             continue
+        normalized_items.append({
+            "marque": marque,
+            "fmt": fmt,
+            "cartons": cartons_int,
+        })
 
-        resolution = resolve_lot_marque_fmt(
-            tenant_id=tenant_id,
-            lot=lot,
-            marque=marque,
-            fmt=fmt,
-            gtin_index=gtin_index,
-        )
-        if resolution is None:
-            warnings.append(
-                f"unresolved (lot={lot}, marque={marque}, fmt={fmt}): "
-                "no etiquette_palette_history match or gtin not in EB matrice",
-            )
-            continue
-        if resolution.pcb <= 0:
-            warnings.append(f"pcb=0 for ({marque}, {fmt}) — skip")
-            continue
+    if not normalized_items:
+        return None, warnings + ["no valid item in conditionnement_reel"]
 
-        # Stratégie d'affectation : Carton si dispo, sinon fallback Unité
-        if resolution.id_contenant_carton is not None:
-            id_contenant = resolution.id_contenant_carton
-            quantite = cartons_int  # en cartons
-        elif resolution.id_contenant_bouteille is not None:
-            id_contenant = resolution.id_contenant_bouteille
-            quantite = cartons_int * resolution.pcb  # en bouteilles
-            warnings.append(
-                f"({marque}, {fmt}): no carton in EB matrice — fallback Unité "
-                f"(qty={quantite} bouteilles)",
-            )
-        else:
-            warnings.append(
-                f"({marque}, {fmt}): no idContenant (ni carton ni bouteille) — skip",
-            )
-            continue
-
-        entry: dict[str, Any] = {
-            "modeleProduit": {"idProduit": resolution.id_produit},
-            "modeleContenant": {"idContenant": id_contenant},
-            "quantiteMiseEnBouteille": quantite,
-        }
-        if resolution.contenance_l is not None:
-            entry["contenance"] = resolution.contenance_l
-        bouteille_entries.append(entry)
-
-    if not bouteille_entries:
-        return None, warnings + ["no item resolvable to EB references"]
-
-    # Date de mise en bouteille = finalized_at si dispo, sinon now
+    # Date ISO format EB UI (ex "2026-05-24T06:54:41.063Z")
     from datetime import UTC, datetime
-    if sheet.finalized_at:
-        date_mise = sheet.finalized_at.strftime("%Y-%m-%dT%H:%M:%S")
-    else:
-        date_mise = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    dt = sheet.finalized_at or datetime.now(UTC)
+    date_mise_iso = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
+    # DDM : préférer la valeur figée de la fiche, sinon laisser le worker la
+    # dériver depuis brassin.produit.durabiliteMinimale au moment du push.
     payload: dict[str, Any] = {
-        "dateMiseEnBouteille": date_mise,
+        "idBrassin": brassin_id,
+        "tenantId": tenant_id,  # nécessaire au worker pour le lookup DB templates
         "numeroLot": lot,
-        "modeleBrassin": {"id": brassin_id},
-        "modelesStockProduitBouteille": bouteille_entries,
+        "dateMiseEnBouteille": date_mise_iso,
+        "items": normalized_items,
     }
     if sheet.ddm:
+        # Format ISO "YYYY-MM-DDTHH:MM:SS.000Z" (cohérent avec EB UI)
         payload["dateLimiteUtilisationOptimale"] = sheet.ddm.strftime(
-            "%Y-%m-%dT00:00:00",
+            "%Y-%m-%dT00:00:00.000Z",
         )
     return payload, warnings
 

@@ -32,33 +32,44 @@ from .endpoint import execute_endpoint
 
 @retry_api
 def conditionner_brassin(payload: dict[str, Any]) -> dict[str, Any]:
-    """POST /brassin/mise-en-bouteille → Crée les stocks produits (bouteilles+fûts).
+    """Wrapper transport pour ``POST /brassin/mise-en-bouteille``.
+
+    Cette fonction est **un wrapper HTTP fin**. L'orchestration (résolution
+    idStockBouteille via templates DB + appel deduction-stocks préalable)
+    se fait côté domaine dans
+    ``common.services.mise_en_bouteille_orchestrator.execute_mise_en_bouteille``,
+    qui est ce que l'handler outbox appelle réellement.
+
+    Cette fonction reste disponible pour push direct d'un payload complet
+    (ex. depuis un test d'intégration ou un script ad-hoc). Le payload doit
+    déjà contenir tous les champs requis par EB (cf. ``docs/easybeer-write-payloads/
+    mise-en-bouteille.request.json``).
 
     Body attendu (ModeleStockProduit, cf. swagger v2.3.0) :
-    - dateMiseEnBouteille (datetime ISO)
-    - dateLimiteUtilisationOptimale (datetime ISO) — DDM
-    - idProduitConditionnement (int) — référence produit fini
+
+    - dateMiseEnBouteille (ISO)
+    - dateLimiteUtilisationOptimale (ISO) — DDM
     - numeroLot (str)
-    - numeroDAE (str) — Document Administratif Électronique douane
-    - volumeRestant (float) — volume non conditionné restant
-    - modelesStockProduitBouteille (list) — bouteilles produites
-    - modelesStockProduitFutContenant (list) — fûts produits
-    - modelesStocksMiseEnBouteille (list) — stocks MP consommés
-    - modeleBrassin (dict) — référence brassin parent
-    - modeleElevage (dict|None) — référence élevage si applicable
-    - produitsDerives (list) — produits dérivés éventuels
+    - volumeRestant (float)
+    - modelesStockProduitBouteille (list, arbre entrepot/fils)
+    - modelesStocksMiseEnBouteille (list, déjà calculé via deduction-stocks)
+    - modeleBrassin (dict — ModeleBrassin complet, pas ``{id: X}``)
+    - modeleElevage (dict, ``{}`` si pas d'élevage)
+    - produitsDerives (list)
 
     Effet côté EB : génère les entrées stock produit fini + déduit MP du stock.
+    Réponse typique : ``{"message": "", "map": {}}`` ou body vide.
     """
     result = execute_endpoint(
         method="POST",
         path="brassin/mise-en-bouteille",
         payload=payload,
+        allow_empty_2xx=True,  # EB peut renvoyer body vide sur succès
     )
     # Invalider les caches DB pour que les prochaines lectures reflètent le
     # nouveau stock produit et la mise à jour du brassin.
     _invalidate_caches_after_production_write(
-        ("brassins_en_cours", "brassins_planifies", "stocks_produits", "autonomie_stocks")
+        ("brassins_en_cours", "brassins_planifies", "stocks_produits", "autonomie_stocks"),
     )
     return result
 

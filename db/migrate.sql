@@ -515,6 +515,46 @@ CREATE INDEX IF NOT EXISTS idx_eb_outbox_tenant_status
   ON eb_outbox(tenant_id, status, created_at DESC);
 
 -- =========================
+-- Templates "stock produit fini" EasyBeer (pour reconstruire payloads writes)
+-- =========================
+-- Une ligne par codeArticle EB (ex: SK-KDF-33-ORI, NIKO-KDF-75-GIN...).
+-- Source : GET /stock/produit/edition/{id} agrégé par sync périodique.
+--
+-- Utilité : reconstruire le payload POST /brassin/mise-en-bouteille qui exige
+-- de connaître, pour chaque combinaison (idProduit, contenance, marque), le
+-- idStockBouteille (empty bottle stock) et les elementsConditionnement
+-- (capsules / cartons / étiquettes à décrémenter).
+--
+-- Cf. docs/easybeer-write-payloads/ pour les payloads de référence.
+CREATE TABLE IF NOT EXISTS eb_stock_product_templates (
+  tenant_id                UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  id_stock_produit         INTEGER NOT NULL,                -- ex: 113833
+  code_article             TEXT NOT NULL,                   -- "SK-IGB-33-PECHE"
+  id_produit               INTEGER NOT NULL,                -- 42514 (côté EB)
+  produit_libelle          TEXT,                            -- "IGEBA Pêche - 0.0°"
+  id_contenant             INTEGER,                         -- 12 (Bouteille 0.33L)
+  contenant_libelle        TEXT,                            -- "Bouteille - 0.33L"
+  contenance               NUMERIC(6,3),                    -- 0.33 / 0.75
+  id_lot                   INTEGER,                         -- 4 (Carton de 12)
+  lot_libelle              TEXT,                            -- "Carton de 12"
+  lot_quantite             INTEGER,                         -- 12 (PCB)
+  -- BOM packaging (capsules + cartons + étiquettes par carton/pack)
+  -- Format JSONB : [{"idMatierePremiere": 95498, "quantite": 12, "libelle": "Capsules"}, ...]
+  elements_conditionnement JSONB NOT NULL DEFAULT '[]'::jsonb,
+  raw_data                 JSONB,                           -- snapshot complet GET edition/{id}
+  synced_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, id_stock_produit)
+);
+
+-- Lookup principal : trouver le template depuis (id_produit, contenance, lot_quantite)
+CREATE INDEX IF NOT EXISTS idx_eb_stock_templates_lookup
+  ON eb_stock_product_templates(tenant_id, id_produit, contenance, lot_quantite);
+
+-- Lookup secondaire : par codeArticle (pour debug / admin UI)
+CREATE INDEX IF NOT EXISTS idx_eb_stock_templates_code_article
+  ON eb_stock_product_templates(tenant_id, code_article);
+
+-- =========================
 -- Cache ventes mensuelles par goût (pour la page Prévisions)
 -- =========================
 -- Une ligne par (tenant, année, mois, goût canon). Évite les appels API
@@ -841,7 +881,8 @@ BEGIN
                        carton_count_evals,
                        mobile_api_tokens,
                        production_sheets,
-                       eb_outbox TO shark;
+                       eb_outbox,
+                       eb_stock_product_templates TO shark;
     GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO shark;
   END IF;
 END $$;

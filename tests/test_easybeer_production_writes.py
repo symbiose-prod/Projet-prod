@@ -15,24 +15,32 @@ from common.easybeer.production_writes import (
 
 
 class TestConditionnerBrassin:
+    """Tests du wrapper HTTP fin ``conditionner_brassin``.
+
+    L'orchestration smart (résolution + 2 appels EB) est testée dans
+    ``test_mise_en_bouteille_orchestrator.py``. Ici on teste juste le
+    wrapper qui fait un POST direct avec le payload complet.
+    """
 
     @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
     @patch("common.easybeer.production_writes.execute_endpoint")
-    def test_calls_execute_endpoint_with_correct_path(
+    def test_calls_execute_endpoint_with_allow_empty_2xx(
         self,
         mock_execute: MagicMock,
         _mock_invalidate: MagicMock,
     ):
-        mock_execute.return_value = {"id": 42}
-        payload = {"numeroLot": "LOT123", "volumeRestant": 100.0}
+        """EB renvoie souvent body vide ou {message:'',map:{}} sur succès."""
+        mock_execute.return_value = {"message": "", "map": {}}
+        full_payload = {"numeroLot": "LOT123", "modeleBrassin": {"idBrassin": 1}}
 
-        result = conditionner_brassin(payload)
+        result = conditionner_brassin(full_payload)
 
-        assert result == {"id": 42}
+        assert result == {"message": "", "map": {}}
         mock_execute.assert_called_once_with(
             method="POST",
             path="brassin/mise-en-bouteille",
-            payload=payload,
+            payload=full_payload,
+            allow_empty_2xx=True,
         )
 
     @patch("common.easybeer.production_writes._invalidate_caches_after_production_write")
