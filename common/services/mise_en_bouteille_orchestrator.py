@@ -137,15 +137,21 @@ def execute_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
 
     # ── 2-3. Résoudre chaque item & mettre à jour les fils ──────────────
     # On part des fils tels que EB les a fournis, et on set
-    # ``quantiteMiseEnBouteille`` sur ceux qu'on utilise.
+    # ``quantiteMiseEnBouteille`` + ``lot.idLot`` + ``dateDisponibilite``
+    # sur ceux qu'on utilise. Les fils non utilisés gardent ``quantite=None``
+    # mais ont AUSSI besoin d'un ``lot`` (avec idLot=1 par défaut = Pack de 4)
+    # pour que EB accepte le payload — cf. HAR de référence.
+    DEFAULT_UNUSED_LOT = {"idLot": 1}
+
     fils_by_id: dict[int, dict[str, Any]] = {}
     for fil in brassin_fils:
         sid = fil.get("idStockBouteille")
         if sid:
-            # Copie pour ne pas muter la réponse EB et pour ajouter le champ
-            # quantiteMiseEnBouteille (None par défaut = pas utilisé).
+            # Copie pour ne pas muter la réponse EB
             new_fil = dict(fil)
             new_fil["quantiteMiseEnBouteille"] = None
+            new_fil["lot"] = DEFAULT_UNUSED_LOT
+            new_fil["dateDisponibilite"] = None
             fils_by_id[int(sid)] = new_fil
 
     for item in items:
@@ -171,14 +177,35 @@ def execute_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
                 "fils EB. Incohérence eb_stock_product_templates vs EB live.",
             )
         target["quantiteMiseEnBouteille"] = int(item["cartons"])
+        # lot.idLot vient du template eb_stock_product_templates (ex idLot=3
+        # pour Carton de 6, idLot=4 pour Carton de 12).
+        if resolution.id_lot is not None:
+            target["lot"] = {"idLot": int(resolution.id_lot)}
+        # dateDisponibilite = date de mise en bouteille (les bouteilles sont
+        # dispo dès qu'elles sont conditionnées).
+        target["dateDisponibilite"] = date_mise
 
     # Reconstruit l'arbre modelesStockProduitBouteille avec nos quantites
     new_root = dict(entrepot_root)
     new_root["modelesFils"] = list(fils_by_id.values())
     base_payload["modelesStockProduitBouteille"] = [new_root]
 
-    # Inject les valeurs métier de l'event
-    base_payload["numeroLot"] = numero_lot
+    # Vide les planificationsProductions résiduelles dans modeleBrassin :
+    # quand un brassin a été déconditionné (cas observé en debug), il garde
+    # des entrées résiduelles que EB refuse de retraiter. EB UI envoie
+    # toujours une liste vide pour ce champ lors d'une nouvelle mise-en-bouteille.
+    mb = base_payload.get("modeleBrassin")
+    if isinstance(mb, dict):
+        mb_copy = dict(mb)
+        mb_copy["planificationsProductions"] = []
+        base_payload["modeleBrassin"] = mb_copy
+
+    # Inject les valeurs métier de l'event.
+    # Pour ``numeroLot`` : EB attend le nom du brassin (ex "KDF18052026"),
+    # PAS le DDM ou un autre lot. On override avec ``modeleBrassin.nom`` si
+    # disponible, sinon on conserve la valeur de l'event (rétro-compat).
+    brassin_nom = (base_payload.get("modeleBrassin") or {}).get("nom")
+    base_payload["numeroLot"] = brassin_nom or numero_lot
     base_payload["dateMiseEnBouteille"] = date_mise
     if dluo := payload.get("dateLimiteUtilisationOptimale"):
         base_payload["dateLimiteUtilisationOptimale"] = dluo

@@ -79,7 +79,7 @@ def _brassin_full(**overrides):
     return base
 
 
-def _mock_resolution(*, id_stock=111377, contenance=0.33):
+def _mock_resolution(*, id_stock=111377, contenance=0.33, id_lot=3):
     from common.services.bottle_stock_resolver import BottleStockResolution
     return BottleStockResolution(
         id_stock_bouteille=id_stock,
@@ -88,6 +88,7 @@ def _mock_resolution(*, id_stock=111377, contenance=0.33):
         code_article="SK-KDF-33-ORI",
         id_stock_produit=167607,
         lot_quantite=6,
+        id_lot=id_lot,
         elements_conditionnement=[],
     )
 
