@@ -270,3 +270,116 @@ def delete_photo(key: str) -> bool:
     except Exception:  # noqa: BLE001
         _log.exception("OVH S3 delete failed: key=%s", key)
         return False
+
+
+# ─── Upload générique (fichiers arbitraires : backups DB, exports, etc.) ──
+
+
+def upload_file(
+    src_path: str,
+    *,
+    key: str,
+    content_type: str = "application/octet-stream",
+    metadata: dict[str, str] | None = None,
+) -> str:
+    """Upload un fichier local vers le bucket sous une clé arbitraire.
+
+    Contrairement à ``upload_photo`` (qui génère sa clé et est spécifique
+    aux photos d'incidents), cette fonction est générique : le caller
+    fournit la clé S3 exacte. Utilisée pour les backups DB, exports, etc.
+
+    Args:
+        src_path: chemin du fichier local à uploader.
+        key: clé S3 (ex. ``"backups/postgres/2026-05-24_ferment.sql.gz"``).
+        content_type: ``Content-Type`` HTTP (par défaut octet-stream).
+        metadata: méta arbitraires (limité à des string ASCII, S3 le requiert).
+
+    Returns:
+        La clé S3 utilisée (= argument ``key``, pour symétrie avec
+        ``upload_photo``).
+
+    Raises:
+        OVHStorageError: pas configuré, fichier introuvable, ou échec S3.
+    """
+    import os as _os
+    if not src_path or not _os.path.isfile(src_path):
+        raise OVHStorageError(f"upload_file: source introuvable: {src_path}")
+    if not key:
+        raise OVHStorageError("upload_file: key vide")
+
+    client = _get_client()
+    size = _os.path.getsize(src_path)
+    full_metadata = {
+        "size-bytes": str(size),
+        "uploaded-at": datetime.now(UTC).isoformat(),
+        **(metadata or {}),
+    }
+
+    try:
+        with open(src_path, "rb") as f:
+            client.put_object(  # type: ignore[attr-defined]
+                Bucket=_bucket(),
+                Key=key,
+                Body=f,
+                ContentType=content_type,
+                Metadata=full_metadata,
+            )
+    except Exception as exc:  # noqa: BLE001
+        raise OVHStorageError(
+            f"upload_file failed: {type(exc).__name__}: {exc}",
+        ) from exc
+
+    _log.info(
+        "OVH S3 upload OK : key=%s size=%dKo (from %s)",
+        key, size // 1024, src_path,
+    )
+    return key
+
+
+def list_objects(prefix: str) -> list[dict[str, object]]:
+    """Liste les objets d'un préfixe donné. Retourne ``[{Key, Size, LastModified}]``.
+
+    Utilisé pour la rotation distante (cleanup des vieux backups S3).
+    Pagination automatique (gère >1000 objets).
+    """
+    if not prefix:
+        raise OVHStorageError("list_objects: prefix vide")
+    client = _get_client()
+    result: list[dict[str, object]] = []
+    continuation_token = None
+    while True:
+        kwargs: dict[str, object] = {"Bucket": _bucket(), "Prefix": prefix}
+        if continuation_token:
+            kwargs["ContinuationToken"] = continuation_token
+        try:
+            resp = client.list_objects_v2(**kwargs)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            raise OVHStorageError(
+                f"list_objects failed: {type(exc).__name__}: {exc}",
+            ) from exc
+        for obj in resp.get("Contents", []) or []:
+            result.append({
+                "Key": obj.get("Key", ""),
+                "Size": int(obj.get("Size", 0) or 0),
+                "LastModified": obj.get("LastModified"),
+            })
+        if not resp.get("IsTruncated"):
+            break
+        continuation_token = resp.get("NextContinuationToken")
+    return result
+
+
+def delete_object(key: str) -> bool:
+    """Supprime un objet arbitraire (générique, vs ``delete_photo`` legacy).
+
+    Idempotent : retourne True même si l'objet n'existe pas.
+    """
+    if not key:
+        return False
+    try:
+        client = _get_client()
+        client.delete_object(Bucket=_bucket(), Key=key)  # type: ignore[attr-defined]
+        return True
+    except Exception:  # noqa: BLE001
+        _log.exception("OVH S3 delete failed: key=%s", key)
+        return False
