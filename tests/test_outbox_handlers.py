@@ -35,12 +35,15 @@ class TestDispatch:
         with pytest.raises(UnknownEventType):
             dispatch("brassin.weird-action", {})
 
-    @patch("common.easybeer.production_writes.conditionner_brassin")
+    @patch("common.services.mise_en_bouteille_orchestrator.execute_mise_en_bouteille")
     def test_dispatch_brassin_mise_en_bouteille(self, mock_fn: MagicMock):
-        mock_fn.return_value = {"id": 42}
-        result = dispatch("brassin.mise-en-bouteille", {"numeroLot": "L1"})
-        assert result == {"id": 42}
-        mock_fn.assert_called_once_with({"numeroLot": "L1"})
+        """Le handler délègue à l'orchestrator (couche service)."""
+        mock_fn.return_value = {"message": "", "map": {}}
+        payload = {"idBrassin": 1, "tenantId": "t", "numeroLot": "L1",
+                   "dateMiseEnBouteille": "now", "items": [{}]}
+        result = dispatch("brassin.mise-en-bouteille", payload)
+        assert result == {"message": "", "map": {}}
+        mock_fn.assert_called_once_with(payload)
 
     @patch("common.easybeer.production_writes.enregistrer_mesure_brassin")
     def test_dispatch_brassin_mesure(self, mock_fn: MagicMock):

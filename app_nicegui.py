@@ -329,6 +329,7 @@ app.add_middleware(RequestLoggingMiddleware)
 import pages.accueil  # noqa: F401 — /accueil
 import pages.admin  # noqa: F401 — /admin (admin only)
 import pages.admin_eb_outbox  # noqa: F401 — /admin/eb-outbox (admin only)
+import pages.admin_eb_stock_templates  # noqa: F401 — /admin/eb-stock-templates (admin only)
 import pages.auth  # noqa: F401 — /login, /reset/{token}
 import pages.chargement_camion  # noqa: F401 — /chargement-camion
 import pages.commercial  # noqa: F401 — /commercial

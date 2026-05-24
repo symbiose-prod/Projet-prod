@@ -63,12 +63,19 @@ def _handle_brassin_planification_delete(payload: dict[str, Any]) -> dict[str, A
 
 
 def _handle_brassin_mise_en_bouteille(payload: dict[str, Any]) -> dict[str, Any]:
-    """event_type='brassin.mise-en-bouteille' → POST /brassin/mise-en-bouteille.
+    """event_type='brassin.mise-en-bouteille' → orchestrer 2 calls EB.
 
-    Crée les stocks produits (bouteilles + fûts) côté EB depuis un brassin.
+    Pipeline (cf. ``common.services.mise_en_bouteille_orchestrator``) :
+
+    1. ``get_brassin_detail(idBrassin)`` → brassin complet
+    2. ``resolve_bottle_stock`` pour chaque item → idStockBouteille
+    3. ``POST /brassin/deduction-stocks-conditionnement`` → BOM
+    4. ``POST /brassin/mise-en-bouteille`` → crée le stock produit fini
     """
-    from common.easybeer.production_writes import conditionner_brassin
-    return conditionner_brassin(payload)
+    from common.services.mise_en_bouteille_orchestrator import (
+        execute_mise_en_bouteille,
+    )
+    return execute_mise_en_bouteille(payload)
 
 
 def _handle_brassin_mesure(payload: dict[str, Any]) -> dict[str, Any]:
