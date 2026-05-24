@@ -233,6 +233,43 @@ def invalidate_brassin_detail_cache(id_brassin: int | None = None) -> None:
             _BRASSIN_DETAIL_TS.clear()
 
 
+# ─── Préparation conditionnement (brassin pré-rempli pour mise-en-bouteille) ─
+
+
+@retry_api
+def get_brassin_preparation_conditionnement(id_brassin: int) -> dict[str, Any]:
+    """``GET /brassin/preparation-conditionnement/brassin/{id}``.
+
+    Endpoint "préparation à la mise en bouteille" — retourne le squelette
+    de payload attendu par ``POST /brassin/deduction-stocks-conditionnement``
+    et ``POST /brassin/mise-en-bouteille``, avec notamment :
+
+    - ``modeleBrassin`` : ModeleBrassin complet (42 clés)
+    - ``modeleElevage`` : dict ``{}`` si pas d'élevage
+    - ``produitsDerives`` : ``[ModeleProduit du brassin]``
+    - ``volumeRestant`` : volume non encore conditionné
+    - **``modelesStockProduitBouteille``** : arbre ``[{libelle: "FERMENT
+      STATION", modelesFils: [{idStockBouteille, libelle, contenance, ...}]}]``
+      — ce champ N'EST PAS dans la réponse de ``GET /brassin/{id}`` brute,
+      d'où ce endpoint dédié.
+    - ``modelesStocksMiseEnBouteille: []`` (vide, sera rempli par
+      ``deduction-stocks-conditionnement``)
+    - ``dateLimiteUtilisationOptimale`` : DDM calculée
+
+    Cf. ``docs/easybeer-write-payloads/preparation-conditionnement.response.json``
+    pour la structure de référence (capturée via HAR EB UI).
+
+    Pas de cache côté client : on veut toujours la dernière vue (stocks
+    bouteille dispo peuvent changer entre deux conditionnements).
+    """
+    from .endpoint import execute_endpoint
+    return execute_endpoint(
+        method="GET",
+        path=f"brassin/preparation-conditionnement/brassin/{id_brassin}",
+        timeout=20,
+    )
+
+
 # ─── Brassins planifiés (cache L2 d'un résultat processé) ───────────────────
 
 @retry_api
