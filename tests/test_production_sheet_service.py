@@ -316,7 +316,12 @@ class TestPDFBuilder:
                 "items": [
                     {"id": "1", "fmt": "12x33", "marque": "SYMBIOSE",
                      "designation": "K. Mangue",
-                     "cartons": 840, "palettes": 12},
+                     "cartons": 840, "palettes": 12,
+                     "echantillons_cartons": 8, "tracabilite_cartons": 2},
+                    {"id": "2", "fmt": "6x75", "marque": "NIKO",
+                     "designation": "K. Mangue NIKO",
+                     "cartons": 268, "palettes": 4,
+                     "echantillons_cartons": 4, "tracabilite_cartons": 1},
                 ],
                 "sourced_from_sscc": True,
                 "lot_used": "15052027",
@@ -324,9 +329,11 @@ class TestPDFBuilder:
             },
             "repartition": {
                 "antoine_cartons": 5,
-                "echantillons_cartons": 12,
-                "tracabilite_cartons": 3,
+                "echantillons_cartons": 0,  # sera ignoré (items prioritaires)
+                "tracabilite_cartons": 0,
             },
+            "brassin_termine": True,
+            "archiver": True,
             "remarques": "Rien à signaler. Bon brassin.",
             "incidents": {
                 "notes": "Petit débordement à la dilution.",
@@ -350,6 +357,66 @@ class TestPDFBuilder:
                 "remarques": "Brassage avec température élevée (28°C)…",
             },
         )
+        pdf = build_production_sheet_pdf(sheet)
+        assert pdf.startswith(b"%PDF")
+
+    def test_repartition_aggregates_from_items(self):
+        """Échantillons + Traçabilité sont agrégés depuis les items
+        conditionnement_reel (nouveau modèle post-refonte 2026-05), pas
+        depuis le champ legacy data.repartition."""
+        from common.production_sheet_pdf import build_production_sheet_pdf
+
+        sheet = _make_sheet(data={
+            "conditionnement_reel": {
+                "items": [
+                    {"id": "a", "fmt": "12x33", "marque": "SYMBIOSE",
+                     "cartons": 100, "palettes": 2,
+                     "echantillons_cartons": 6, "tracabilite_cartons": 2},
+                    {"id": "b", "fmt": "6x75", "marque": "NIKO",
+                     "cartons": 50, "palettes": 1,
+                     "echantillons_cartons": 4, "tracabilite_cartons": 1},
+                ],
+            },
+            # legacy repartition ignoré si les items portent les valeurs
+            "repartition": {
+                "echantillons_cartons": 99,
+                "tracabilite_cartons": 99,
+            },
+        })
+        # Smoke: doit générer un PDF valide (pas de crash)
+        pdf = build_production_sheet_pdf(sheet)
+        assert pdf.startswith(b"%PDF")
+
+    def test_brassin_flags_in_pdf(self):
+        """brassin_termine + archiver apparaissent dans le PDF sans crash."""
+        from common.production_sheet_pdf import build_production_sheet_pdf
+
+        sheet = _make_sheet(data={
+            "brassin_termine": True,
+            "archiver": True,
+        })
+        pdf = build_production_sheet_pdf(sheet)
+        assert pdf.startswith(b"%PDF")
+
+    def test_repartition_legacy_fallback(self):
+        """Si les items conditionnement_reel n'ont pas echantillons_cartons,
+        on lit le fallback dans data.repartition (fiches historiques)."""
+        from common.production_sheet_pdf import build_production_sheet_pdf
+
+        sheet = _make_sheet(data={
+            "conditionnement_reel": {
+                "items": [
+                    {"id": "a", "fmt": "12x33", "marque": "SYMBIOSE",
+                     "cartons": 100, "palettes": 2},
+                    # pas de echantillons_cartons / tracabilite_cartons
+                ],
+            },
+            "repartition": {
+                "echantillons_cartons": 10,
+                "tracabilite_cartons": 3,
+                "antoine_cartons": 5,
+            },
+        })
         pdf = build_production_sheet_pdf(sheet)
         assert pdf.startswith(b"%PDF")
 

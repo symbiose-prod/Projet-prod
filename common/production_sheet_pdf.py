@@ -296,8 +296,16 @@ def _section_conditionnement(
         pdf.cell(0, 5, _latin1("Aucune ligne."), ln=True)
         return
 
-    col_widths = [30, 30, 60, 25, 25]
-    headers = ["Format", "Marque", "Designation", "Cartons", "Palettes"]
+    # Conditionnement réel : colonnes supplémentaires Echantillons + Tracabilite
+    # (saisies par produit dans la vue iOS unifiée — refonte 2026-05).
+    # Pour le prévisionnel ces champs n'existent pas.
+    if with_sscc_meta:
+        col_widths = [20, 22, 36, 20, 16, 22, 22]
+        headers = ["Format", "Marque", "Designation", "Cartons", "Palettes",
+                   "Echant.", "Tracab."]
+    else:
+        col_widths = [30, 30, 60, 25, 25]
+        headers = ["Format", "Marque", "Designation", "Cartons", "Palettes"]
 
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(*_COLOR_MUTED)
@@ -310,14 +318,31 @@ def _section_conditionnement(
     pdf.set_text_color(*_COLOR_INK)
     total_cartons = 0
     total_palettes = 0
+    total_echantillons = 0
+    total_tracabilite = 0
     for item in items:
-        row = [
-            item.get("fmt") or "-",
-            item.get("marque") or "-",
-            (item.get("designation") or "")[:50],
-            str(int(item.get("cartons") or 0)),
-            str(int(item.get("palettes") or 0)),
-        ]
+        if with_sscc_meta:
+            echant = int(item.get("echantillons_cartons") or 0)
+            tracab = int(item.get("tracabilite_cartons") or 0)
+            row = [
+                item.get("fmt") or "-",
+                item.get("marque") or "-",
+                (item.get("designation") or "")[:35],
+                str(int(item.get("cartons") or 0)),
+                str(int(item.get("palettes") or 0)),
+                str(echant) if echant else "-",
+                str(tracab) if tracab else "-",
+            ]
+            total_echantillons += echant
+            total_tracabilite += tracab
+        else:
+            row = [
+                item.get("fmt") or "-",
+                item.get("marque") or "-",
+                (item.get("designation") or "")[:50],
+                str(int(item.get("cartons") or 0)),
+                str(int(item.get("palettes") or 0)),
+            ]
         for w, val in zip(col_widths, row):
             pdf.cell(w, 6, _latin1(val), border=1, ln=False)
         pdf.ln(6)
@@ -327,19 +352,75 @@ def _section_conditionnement(
     # Ligne total
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_fill_color(*_COLOR_BG_LIGHT)
-    pdf.cell(sum(col_widths[:3]), 6, _latin1("Total"), border=1, fill=True, ln=False)
-    pdf.cell(col_widths[3], 6, _latin1(str(total_cartons)), border=1, fill=True, ln=False)
-    pdf.cell(col_widths[4], 6, _latin1(str(total_palettes)), border=1, fill=True, ln=True)
+    if with_sscc_meta:
+        pdf.cell(sum(col_widths[:3]), 6, _latin1("Total"), border=1, fill=True, ln=False)
+        pdf.cell(col_widths[3], 6, _latin1(str(total_cartons)), border=1, fill=True, ln=False)
+        pdf.cell(col_widths[4], 6, _latin1(str(total_palettes)), border=1, fill=True, ln=False)
+        pdf.cell(col_widths[5], 6, _latin1(str(total_echantillons) if total_echantillons else "-"),
+                 border=1, fill=True, ln=False)
+        pdf.cell(col_widths[6], 6, _latin1(str(total_tracabilite) if total_tracabilite else "-"),
+                 border=1, fill=True, ln=True)
+    else:
+        pdf.cell(sum(col_widths[:3]), 6, _latin1("Total"), border=1, fill=True, ln=False)
+        pdf.cell(col_widths[3], 6, _latin1(str(total_cartons)), border=1, fill=True, ln=False)
+        pdf.cell(col_widths[4], 6, _latin1(str(total_palettes)), border=1, fill=True, ln=True)
 
 
 # ─── Répartition ───────────────────────────────────────────────────────────
 
 def _section_repartition(pdf, sheet) -> None:
+    """Répartition des cartons.
+
+    Source de vérité (post-refonte 2026-05) : champs par item dans
+    ``data.conditionnement_reel.items[].echantillons_cartons`` /
+    ``tracabilite_cartons``.
+
+    Fallback legacy : ``data.repartition.{echantillons,tracabilite}_cartons``
+    (fiches antérieures à la refonte, jamais migrées automatiquement).
+
+    ``antoine_cartons`` reste dans le legacy mais n'est plus saisi via l'UI ;
+    on l'affiche s'il est non nul (fiches historiques).
+    """
     _section_title(pdf, "Repartition des cartons")
+
+    # Aggrège depuis les items conditionnement_reel (nouveau modèle)
+    reel = (sheet.data or {}).get("conditionnement_reel") or {}
+    items = reel.get("items") or []
+    echantillons = sum(int(it.get("echantillons_cartons") or 0) for it in items)
+    tracabilite = sum(int(it.get("tracabilite_cartons") or 0) for it in items)
+
+    # Fallback legacy si les items ne portent pas ces champs
     r = (sheet.data or {}).get("repartition") or {}
-    _kv_row(pdf, "Antoine", str(r.get("antoine_cartons") or 0))
-    _kv_row(pdf, "Echantillons", str(r.get("echantillons_cartons") or 0))
-    _kv_row(pdf, "Tracabilite", str(r.get("tracabilite_cartons") or 0))
+    if echantillons == 0 and r.get("echantillons_cartons"):
+        echantillons = int(r.get("echantillons_cartons") or 0)
+    if tracabilite == 0 and r.get("tracabilite_cartons"):
+        tracabilite = int(r.get("tracabilite_cartons") or 0)
+
+    _kv_row(pdf, "Echantillons", str(echantillons))
+    _kv_row(pdf, "Tracabilite", str(tracabilite))
+
+    # Antoine : champ legacy uniquement — affiché s'il est non nul
+    antoine = int(r.get("antoine_cartons") or 0)
+    if antoine:
+        _kv_row(pdf, "Antoine (legacy)", str(antoine))
+
+    # Flags clôture brassin (cochés avant finalisation)
+    data = sheet.data or {}
+    brassin_termine = data.get("brassin_termine")
+    archiver = data.get("archiver")
+    if brassin_termine or archiver:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(*_COLOR_INK)
+        pdf.cell(0, 5, _latin1("Cloture EasyBeer"), ln=True)
+        pdf.set_font("Helvetica", "", 9)
+        if brassin_termine:
+            pdf.set_text_color(*_COLOR_GREEN)
+            pdf.cell(0, 5, _latin1("Brassin termine : OUI"), ln=True)
+        if archiver:
+            pdf.set_text_color(*_COLOR_GREEN)
+            pdf.cell(0, 5, _latin1("Brassin archive : OUI"), ln=True)
+        pdf.set_text_color(*_COLOR_INK)
 
 
 # ─── Remarques ─────────────────────────────────────────────────────────────
