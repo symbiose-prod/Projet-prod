@@ -72,6 +72,8 @@ class TestUnauthorized:
         ("get", "/api/v1/sscc-log"),
         ("get", "/api/v1/cold-room-palettes"),
         ("get", "/api/v1/last-packaging"),
+        ("get", "/api/v1/packaging-requests"),
+        ("post", "/api/v1/packaging-requests/42/mark-delivered"),
         ("get", "/api/v1/active-ramasses"),
         ("post", "/api/v1/loadings/previsionnel"),
         ("get", "/api/v1/loadings/abc-123"),
@@ -768,6 +770,90 @@ class TestActiveRamasses:
         assert r["version"] == 1
         # Tenant scoping
         assert mock_get.call_args[0] == ("SOFRIPA", "tenant-A")
+
+
+class TestPendingPackagingRequests:
+    """GET /api/v1/packaging-requests — délègue à list_pending_packaging_requests."""
+
+    @patch("common.services.loading_service.list_pending_packaging_requests")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_pending_requests(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_list.return_value = [
+            {
+                "id": "42",
+                "created_at": "2026-05-20T10:00:00+00:00",
+                "user_email": "ops@symbiose.fr",
+                "destinataire": "SOFRIPA",
+                "date_ramasse": "2026-05-28",
+                "items": [
+                    {"label": "Palette Bouteilles 33cl", "qty": 2, "unit": "palette"},
+                ],
+            },
+        ]
+        resp = client.get("/api/v1/packaging-requests", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["requests"]) == 1
+        req = body["requests"][0]
+        assert req["destinataire"] == "SOFRIPA"
+        assert req["date_ramasse"] == "2026-05-28"
+        assert req["items"][0]["qty"] == 2
+        # Tenant scoping + filtre destinataire (par défaut None)
+        assert mock_list.call_args.kwargs["destinataire"] is None
+        assert mock_list.call_args.args[0] == "tenant-A"
+
+    @patch("common.services.loading_service.list_pending_packaging_requests")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_filters_by_destinataire_query(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_list.return_value = []
+        resp = client.get(
+            "/api/v1/packaging-requests?destinataire=SOFRIPA",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"requests": []}
+        assert mock_list.call_args.kwargs["destinataire"] == "SOFRIPA"
+
+
+class TestMarkPackagingRequestDelivered:
+    """POST /api/v1/packaging-requests/{id}/mark-delivered."""
+
+    @patch("common.services.loading_service.mark_packaging_request_delivered")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_marks_request_as_delivered(
+        self, mock_verify, mock_mark, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_mark.return_value = True
+        resp = client.post(
+            "/api/v1/packaging-requests/42/mark-delivered",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True, "request_id": "42"}
+        # Tenant scoping + email propagés au service
+        assert mock_mark.call_args.args[0] == "tenant-A"
+        assert mock_mark.call_args.kwargs["request_id"] == "42"
+        assert mock_mark.call_args.kwargs["user_email"] == "test@symbiose.fr"
+
+    @patch("common.services.loading_service.mark_packaging_request_delivered")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_404_when_request_not_found(
+        self, mock_verify, mock_mark, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_mark.return_value = False
+        resp = client.post(
+            "/api/v1/packaging-requests/999/mark-delivered",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
 
 
 class TestCreatePrevisionnel:

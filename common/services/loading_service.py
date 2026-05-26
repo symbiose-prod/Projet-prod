@@ -957,6 +957,134 @@ def send_packaging_request(
     }
 
 
+def list_pending_packaging_requests(
+    tenant_id: str,
+    *,
+    destinataire: str | None = None,
+) -> list[dict]:
+    """Liste les demandes d'emballages envoyées et pas encore marquées livrées.
+
+    Source : table ``audit_log``. Une demande est "en cours" tant qu'aucune
+    action ``packaging_request_delivered`` ne porte le même ``request_id``.
+    Le passage à l'état livré est explicite (bouton "Marquer comme reçu"
+    côté iOS) — pas d'auto-cleanup basé sur la date, parce que SOFRIPA peut
+    livrer en retard et l'opérateur doit conserver la trace tant qu'il n'a
+    pas vraiment reçu les emballages.
+
+    Args :
+      ``tenant_id`` : tenant courant (isolement strict).
+      ``destinataire`` : filtre optionnel (par défaut tous destinataires du tenant).
+
+    Retourne une liste ``[{id, created_at, user_email, destinataire,
+    date_ramasse, items}]`` triée par date de livraison souhaitée croissante
+    (plus urgentes en premier).
+    """
+    sql = """
+        SELECT a.id, a.created_at, a.user_email,
+               a.details->>'destinataire' AS destinataire,
+               a.details->>'date_ramasse' AS date_ramasse,
+               a.details->'items'         AS items
+        FROM audit_log a
+        WHERE a.tenant_id = :tid
+          AND a.action = 'packaging_request_sent'
+          AND NOT EXISTS (
+            SELECT 1 FROM audit_log d
+            WHERE d.tenant_id = :tid
+              AND d.action = 'packaging_request_delivered'
+              AND d.details->>'request_id' = a.id::text
+          )
+    """
+    params: dict = {"tid": tenant_id}
+    if destinataire:
+        sql += " AND a.details->>'destinataire' = :dest"
+        params["dest"] = destinataire
+    sql += " ORDER BY (a.details->>'date_ramasse'), a.created_at DESC"
+
+    rows = run_sql(sql, params) or []
+    out: list[dict] = []
+    for row in rows:
+        items_raw = row.get("items") or []
+        # Le JSONB peut revenir sous forme de string si le driver n'a pas décodé.
+        if isinstance(items_raw, str):
+            import json as _json
+            try:
+                items_raw = _json.loads(items_raw)
+            except (_json.JSONDecodeError, ValueError):
+                items_raw = []
+        items: list[dict] = []
+        for it in items_raw if isinstance(items_raw, list) else []:
+            if not isinstance(it, dict):
+                continue
+            items.append({
+                "label": str(it.get("label") or ""),
+                "qty": int(it.get("qty") or 0),
+                "unit": str(it.get("unit") or "palette"),
+            })
+        created_at = row.get("created_at")
+        out.append({
+            "id": str(row.get("id") or ""),
+            "created_at": created_at.isoformat() if created_at else None,
+            "user_email": row.get("user_email") or "",
+            "destinataire": row.get("destinataire") or "",
+            "date_ramasse": row.get("date_ramasse") or "",
+            "items": items,
+        })
+    return out
+
+
+def mark_packaging_request_delivered(
+    tenant_id: str,
+    *,
+    request_id: str,
+    user_email: str,
+) -> bool:
+    """Marque une demande d'emballages comme livrée (= reçue par l'opérateur).
+
+    On insère une nouvelle ligne ``audit_log`` avec action
+    ``packaging_request_delivered`` et ``details.request_id`` pointant sur
+    l'id de la demande d'origine. Le list_pending exclut automatiquement
+    les demandes ayant une ligne "delivered" correspondante.
+
+    Vérifie d'abord que la demande d'origine existe pour ce tenant
+    (isolement) — refuse silencieusement sinon (retourne False).
+
+    Args :
+      ``tenant_id`` : tenant courant.
+      ``request_id`` : id audit_log de la demande d'origine (chaîne).
+      ``user_email`` : email de l'opérateur qui valide la réception (audit).
+
+    Retourne True si la marque a été insérée, False si la demande n'existe
+    pas pour ce tenant (404 côté API).
+    """
+    # Vérifie l'existence + isolement tenant. On accepte aussi les rows
+    # déjà marquées livrées (idempotent : un retap sur le bouton iOS ne
+    # casse rien et ne crée pas de doublon parce que la list_pending les
+    # filtre déjà).
+    try:
+        rid_int = int(request_id)
+    except (TypeError, ValueError):
+        return False
+    found = run_sql(
+        """
+        SELECT 1 FROM audit_log
+        WHERE id = :rid AND tenant_id = :tid
+          AND action = 'packaging_request_sent'
+        """,
+        {"rid": rid_int, "tid": tenant_id},
+    )
+    if not found:
+        return False
+
+    from common.audit import log_event
+    log_event(
+        tenant_id=tenant_id,
+        user_email=user_email or None,
+        action="packaging_request_delivered",
+        details={"request_id": request_id},
+    )
+    return True
+
+
 def send_previsionnel(
     tenant_id: str,
     *,

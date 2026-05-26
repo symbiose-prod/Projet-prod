@@ -20,6 +20,9 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/sscc-log``             | Tk*  | journal SSCC (admin uniquement)            |
 | GET     | ``/api/v1/cold-room-palettes``   | Tk   | palettes étiquetées non encore chargées    |
 | GET     | ``/api/v1/last-packaging``       | Tk   | emballages habituels du destinataire + items configurés |
+| POST    | ``/api/v1/packaging-request``    | Tk   | demande d'emballages à ramener (sans ramasse, email best-effort) |
+| GET     | ``/api/v1/packaging-requests``   | Tk   | demandes d'emballages encore "à recevoir" (non livrées) |
+| POST    | ``/api/v1/packaging-requests/{id}/mark-delivered`` | Tk | marque une demande comme reçue (audit log) |
 | GET     | ``/api/v1/active-ramasses``      | Tk   | ramasses ``previsionnel`` ouvertes (J2 reprise) |
 | POST    | ``/api/v1/loadings/previsionnel`` | Tk  | crée + envoie BL prévisionnel (J1 soir)    |
 | GET     | ``/api/v1/loadings/{id}``        | Tk   | détail d'un chargement (palettes liées + totaux) |
@@ -865,6 +868,72 @@ async def _v1_packaging_request(request: Request):
         user["tenant_id"], user.get("email"),
     )
     return JSONResponse(result)
+
+
+async def _v1_pending_packaging_requests(request: Request):
+    """Liste les demandes d'emballages encore à honorer (date >= aujourd'hui).
+
+    Query : ``?destinataire=SOFRIPA`` (optionnel — sinon tous destinataires).
+
+    Sert au bloc "Emballages à ramener" du home iOS : montre à l'opérateur
+    les demandes envoyées pour lesquelles SOFRIPA n'a pas encore livré
+    (jour de la prochaine ramasse). Auto-nettoyage : passé la date, la ligne
+    disparaît automatiquement (on suppose que la livraison a eu lieu).
+
+    Retour 200 :
+      ``{"requests": [{id, created_at, user_email, destinataire,
+                       date_ramasse, items: [{label, qty, unit}, ...]}, ...]}``.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    destinataire = request.query_params.get("destinataire")
+    if destinataire is not None:
+        destinataire = destinataire.strip() or None
+
+    from common.services.loading_service import list_pending_packaging_requests
+
+    rows = await asyncio.to_thread(
+        list_pending_packaging_requests,
+        user["tenant_id"],
+        destinataire=destinataire,
+    )
+    return JSONResponse({"requests": rows})
+
+
+async def _v1_mark_packaging_request_delivered(request: Request):
+    """Marque une demande d'emballages comme livrée (reçue par l'opérateur).
+
+    Path : ``request_id`` = id audit_log de la demande d'origine.
+    Body : ignoré (action atomique sans paramètre).
+
+    Côté serveur : insère une ligne ``audit_log`` action
+    ``packaging_request_delivered`` qui supersede la demande d'origine ;
+    la liste pending l'exclut automatiquement.
+
+    Retour 200 : ``{"ok": true, "request_id": "..."}``.
+    Retour 404 : demande introuvable pour ce tenant.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    request_id = request.path_params.get("request_id") or ""
+
+    from common.services.loading_service import mark_packaging_request_delivered
+
+    ok = await asyncio.to_thread(
+        mark_packaging_request_delivered,
+        user["tenant_id"],
+        request_id=request_id,
+        user_email=user.get("email") or "",
+    )
+    if not ok:
+        return JSONResponse(
+            {"error": "Packaging request not found"}, status_code=404,
+        )
+    return JSONResponse({"ok": True, "request_id": request_id})
 
 
 async def _v1_active_ramasses(request: Request):
@@ -2254,6 +2323,10 @@ def register_routes(app) -> None:
     app.get("/api/v1/cold-room-palettes")(_v1_cold_room_palettes)
     app.get("/api/v1/last-packaging")(_v1_last_packaging)
     app.post("/api/v1/packaging-request")(_v1_packaging_request)
+    app.get("/api/v1/packaging-requests")(_v1_pending_packaging_requests)
+    app.post(
+        "/api/v1/packaging-requests/{request_id}/mark-delivered",
+    )(_v1_mark_packaging_request_delivered)
     app.get("/api/v1/active-ramasses")(_v1_active_ramasses)
     app.post("/api/v1/loadings/previsionnel")(_v1_create_previsionnel)
     app.get("/api/v1/loadings/{ramasse_id}")(_v1_get_loading)
