@@ -28,11 +28,57 @@ def _get_api_key() -> str:
 
 
 def _get_sender_email() -> str:
-    return os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL") or "hello@symbiose-kefir.fr"
+    return os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL") or "max@symbiose-kefir.fr"
 
 
 def _get_sender_name() -> str:
     return os.getenv("EMAIL_SENDER_NAME") or os.getenv("SENDER_NAME") or "Symbiose Kefir"
+
+
+def _get_always_cc() -> list[str]:
+    """Adresses toujours mises en copie de TOUT email sortant de l'app.
+
+    Configurable via ``EMAIL_ALWAYS_CC`` (liste séparée par virgules) ;
+    défaut = Max + Nicolas pour garder une trace interne de chaque envoi
+    (demandes emballages, BL ramasse, reset mdp, alertes erreur…).
+    Mettre ``EMAIL_ALWAYS_CC=`` (vide) désactive le CC systématique.
+    """
+    raw = os.getenv("EMAIL_ALWAYS_CC")
+    if raw is None:
+        raw = "max@symbiose-kefir.fr,nicolas@symbiose-kefir.fr"
+    return [addr.strip() for addr in raw.split(",") if addr.strip()]
+
+
+def _apply_default_cc(payload: dict) -> dict:
+    """Injecte le CC systématique dans un payload email Brevo (idempotent).
+
+    Dédoublonne contre les destinataires ``to`` ET les ``cc`` déjà présents
+    (insensible à la casse) pour ne pas envoyer deux fois au même contact ni
+    écraser un CC explicite passé par l'appelant.
+    """
+    always = _get_always_cc()
+    if not always:
+        return payload
+
+    def _email_of(entry: object) -> str:
+        if isinstance(entry, dict):
+            return str(entry.get("email") or "").strip().lower()
+        return ""
+
+    to_emails = {_email_of(e) for e in payload.get("to", []) or []}
+    existing_cc = list(payload.get("cc") or [])
+    seen = {_email_of(e) for e in existing_cc}
+
+    for addr in always:
+        low = addr.lower()
+        if low in to_emails or low in seen:
+            continue
+        existing_cc.append({"email": addr})
+        seen.add(low)
+
+    if existing_cc:
+        payload["cc"] = existing_cc
+    return payload
 
 
 def _require_env() -> tuple[str, str, str]:
@@ -80,6 +126,12 @@ _retry_brevo = retry(
 def _post_brevo(path: str, payload: dict) -> dict:
     """POST JSON vers l'API Brevo et renvoie le JSON de reponse."""
     api_key, _, _ = _require_env()
+    # Point de passage UNIQUE de tous les emails de l'app : on y injecte le
+    # CC systématique (Max + Nicolas) pour garantir la couverture de tous
+    # les chemins d'envoi (reset mdp, BL ramasse, demandes emballages,
+    # alertes erreur) sans avoir à modifier chaque appelant.
+    if path == "/v3/smtp/email" and isinstance(payload, dict):
+        payload = _apply_default_cc(payload)
     body = json.dumps(payload)
     headers = {
         "api-key": api_key,

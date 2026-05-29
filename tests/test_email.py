@@ -10,7 +10,9 @@ import pytest
 
 from common.email import (
     EmailSendError,
+    _apply_default_cc,
     _encode_attachments,
+    _get_always_cc,
     _get_api_key,
     _get_sender_email,
     _get_sender_name,
@@ -52,7 +54,7 @@ class TestGetSenderEmail:
     def test_default_when_neither_set(self, monkeypatch):
         monkeypatch.delenv("EMAIL_SENDER", raising=False)
         monkeypatch.delenv("SENDER_EMAIL", raising=False)
-        assert _get_sender_email() == "hello@symbiose-kefir.fr"
+        assert _get_sender_email() == "max@symbiose-kefir.fr"
 
 
 class TestGetSenderName:
@@ -71,6 +73,72 @@ class TestGetSenderName:
         monkeypatch.delenv("EMAIL_SENDER_NAME", raising=False)
         monkeypatch.delenv("SENDER_NAME", raising=False)
         assert _get_sender_name() == "Symbiose Kefir"
+
+
+# ─── _get_always_cc / _apply_default_cc (CC systématique Max + Nicolas) ──────
+
+
+class TestGetAlwaysCc:
+
+    def test_default_is_max_and_nicolas(self, monkeypatch):
+        monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
+        assert _get_always_cc() == [
+            "max@symbiose-kefir.fr",
+            "nicolas@symbiose-kefir.fr",
+        ]
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("EMAIL_ALWAYS_CC", "a@x.com, b@x.com")
+        assert _get_always_cc() == ["a@x.com", "b@x.com"]
+
+    def test_empty_env_disables_cc(self, monkeypatch):
+        monkeypatch.setenv("EMAIL_ALWAYS_CC", "")
+        assert _get_always_cc() == []
+
+
+class TestApplyDefaultCc:
+
+    def test_injects_default_cc(self, monkeypatch):
+        monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
+        payload = {"to": [{"email": "dest@sofripa.fr"}]}
+        out = _apply_default_cc(payload)
+        cc_emails = {e["email"] for e in out["cc"]}
+        assert cc_emails == {"max@symbiose-kefir.fr", "nicolas@symbiose-kefir.fr"}
+
+    def test_dedupes_against_to(self, monkeypatch):
+        monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
+        # Nicolas est déjà destinataire (cas alerte erreur) → pas re-CC
+        payload = {"to": [{"email": "nicolas@symbiose-kefir.fr"}]}
+        out = _apply_default_cc(payload)
+        cc_emails = {e["email"] for e in out["cc"]}
+        assert cc_emails == {"max@symbiose-kefir.fr"}
+
+    def test_dedupe_is_case_insensitive(self, monkeypatch):
+        monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
+        payload = {"to": [{"email": "MAX@Symbiose-Kefir.FR"}]}
+        out = _apply_default_cc(payload)
+        cc_emails = {e["email"] for e in out["cc"]}
+        assert cc_emails == {"nicolas@symbiose-kefir.fr"}
+
+    def test_preserves_existing_cc(self, monkeypatch):
+        monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
+        payload = {
+            "to": [{"email": "dest@sofripa.fr"}],
+            "cc": [{"email": "compta@symbiose-kefir.fr"}],
+        }
+        out = _apply_default_cc(payload)
+        cc_emails = {e["email"] for e in out["cc"]}
+        assert cc_emails == {
+            "compta@symbiose-kefir.fr",
+            "max@symbiose-kefir.fr",
+            "nicolas@symbiose-kefir.fr",
+        }
+
+    def test_no_cc_when_disabled(self, monkeypatch):
+        monkeypatch.setenv("EMAIL_ALWAYS_CC", "")
+        payload = {"to": [{"email": "dest@sofripa.fr"}]}
+        out = _apply_default_cc(payload)
+        assert "cc" not in out
 
 
 # ─── _require_env ─────────────────────────────────────────────────────────────
@@ -99,7 +167,7 @@ class TestRequireEnv:
         monkeypatch.delenv("EMAIL_SENDER", raising=False)
         monkeypatch.delenv("SENDER_EMAIL", raising=False)
         api_key, sender_email, _ = _require_env()
-        assert sender_email == "hello@symbiose-kefir.fr"
+        assert sender_email == "max@symbiose-kefir.fr"
 
     def test_only_api_key_missing_raises(self, monkeypatch):
         """When only BREVO_API_KEY is missing, raises for API key only (sender has fallback)."""
@@ -114,7 +182,7 @@ class TestRequireEnv:
         monkeypatch.delenv("EMAIL_SENDER", raising=False)
         monkeypatch.delenv("SENDER_EMAIL", raising=False)
         api_key, sender_email, sender_name = _require_env()
-        assert sender_email == "hello@symbiose-kefir.fr"
+        assert sender_email == "max@symbiose-kefir.fr"
 
     def test_uses_default_sender_name(self, monkeypatch):
         monkeypatch.setenv("BREVO_API_KEY", "key123")
@@ -438,6 +506,21 @@ class TestPostBrevo:
         monkeypatch.setenv("EMAIL_SENDER", "test@example.com")
         with pytest.raises(EmailSendError, match="BREVO_API_KEY"):
             self._fn("/v3/smtp/email", {})
+
+    def test_default_cc_injected_into_sent_body(self, monkeypatch):
+        """Le CC systématique doit être présent dans le body POST réellement
+        envoyé à Brevo (couvre tous les chemins via le chokepoint unique)."""
+        monkeypatch.setenv("BREVO_API_KEY", "test-key")
+        monkeypatch.setenv("EMAIL_SENDER", "test@example.com")
+        monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
+        mock_conn = _make_mock_conn(201, {"messageId": "cc-ok"})
+        with patch("common.email.http.client.HTTPSConnection", return_value=mock_conn):
+            self._fn("/v3/smtp/email", {"to": [{"email": "dest@sofripa.fr"}]})
+        call = mock_conn.request.call_args
+        raw_body = call.kwargs.get("body") if call.kwargs.get("body") else call[0][2]
+        sent_body = json.loads(raw_body)
+        cc_emails = {e["email"] for e in sent_body["cc"]}
+        assert cc_emails == {"max@symbiose-kefir.fr", "nicolas@symbiose-kefir.fr"}
 
 
 # ─── send_reset_email ────────────────────────────────────────────────────────
