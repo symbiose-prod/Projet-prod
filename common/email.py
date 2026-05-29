@@ -28,7 +28,7 @@ def _get_api_key() -> str:
 
 
 def _get_sender_email() -> str:
-    return os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL") or "max@symbiose-kefir.fr"
+    return os.getenv("EMAIL_SENDER") or os.getenv("SENDER_EMAIL") or "maxime@symbiose-kefir.fr"
 
 
 def _get_sender_name() -> str:
@@ -45,7 +45,7 @@ def _get_always_cc() -> list[str]:
     """
     raw = os.getenv("EMAIL_ALWAYS_CC")
     if raw is None:
-        raw = "max@symbiose-kefir.fr,nicolas@symbiose-kefir.fr"
+        raw = "maxime@symbiose-kefir.fr,nicolas@symbiose-kefir.fr"
     return [addr.strip() for addr in raw.split(",") if addr.strip()]
 
 

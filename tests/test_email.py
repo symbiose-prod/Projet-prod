@@ -54,7 +54,7 @@ class TestGetSenderEmail:
     def test_default_when_neither_set(self, monkeypatch):
         monkeypatch.delenv("EMAIL_SENDER", raising=False)
         monkeypatch.delenv("SENDER_EMAIL", raising=False)
-        assert _get_sender_email() == "max@symbiose-kefir.fr"
+        assert _get_sender_email() == "maxime@symbiose-kefir.fr"
 
 
 class TestGetSenderName:
@@ -83,7 +83,7 @@ class TestGetAlwaysCc:
     def test_default_is_max_and_nicolas(self, monkeypatch):
         monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
         assert _get_always_cc() == [
-            "max@symbiose-kefir.fr",
+            "maxime@symbiose-kefir.fr",
             "nicolas@symbiose-kefir.fr",
         ]
 
@@ -103,7 +103,7 @@ class TestApplyDefaultCc:
         payload = {"to": [{"email": "dest@sofripa.fr"}]}
         out = _apply_default_cc(payload)
         cc_emails = {e["email"] for e in out["cc"]}
-        assert cc_emails == {"max@symbiose-kefir.fr", "nicolas@symbiose-kefir.fr"}
+        assert cc_emails == {"maxime@symbiose-kefir.fr", "nicolas@symbiose-kefir.fr"}
 
     def test_dedupes_against_to(self, monkeypatch):
         monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
@@ -111,11 +111,11 @@ class TestApplyDefaultCc:
         payload = {"to": [{"email": "nicolas@symbiose-kefir.fr"}]}
         out = _apply_default_cc(payload)
         cc_emails = {e["email"] for e in out["cc"]}
-        assert cc_emails == {"max@symbiose-kefir.fr"}
+        assert cc_emails == {"maxime@symbiose-kefir.fr"}
 
     def test_dedupe_is_case_insensitive(self, monkeypatch):
         monkeypatch.delenv("EMAIL_ALWAYS_CC", raising=False)
-        payload = {"to": [{"email": "MAX@Symbiose-Kefir.FR"}]}
+        payload = {"to": [{"email": "MAXIME@Symbiose-Kefir.FR"}]}
         out = _apply_default_cc(payload)
         cc_emails = {e["email"] for e in out["cc"]}
         assert cc_emails == {"nicolas@symbiose-kefir.fr"}
@@ -130,7 +130,7 @@ class TestApplyDefaultCc:
         cc_emails = {e["email"] for e in out["cc"]}
         assert cc_emails == {
             "compta@symbiose-kefir.fr",
-            "max@symbiose-kefir.fr",
+            "maxime@symbiose-kefir.fr",
             "nicolas@symbiose-kefir.fr",
         }
 
@@ -167,7 +167,7 @@ class TestRequireEnv:
         monkeypatch.delenv("EMAIL_SENDER", raising=False)
         monkeypatch.delenv("SENDER_EMAIL", raising=False)
         api_key, sender_email, _ = _require_env()
-        assert sender_email == "max@symbiose-kefir.fr"
+        assert sender_email == "maxime@symbiose-kefir.fr"
 
     def test_only_api_key_missing_raises(self, monkeypatch):
         """When only BREVO_API_KEY is missing, raises for API key only (sender has fallback)."""
@@ -182,7 +182,7 @@ class TestRequireEnv:
         monkeypatch.delenv("EMAIL_SENDER", raising=False)
         monkeypatch.delenv("SENDER_EMAIL", raising=False)
         api_key, sender_email, sender_name = _require_env()
-        assert sender_email == "max@symbiose-kefir.fr"
+        assert sender_email == "maxime@symbiose-kefir.fr"
 
     def test_uses_default_sender_name(self, monkeypatch):
         monkeypatch.setenv("BREVO_API_KEY", "key123")
@@ -520,7 +520,7 @@ class TestPostBrevo:
         raw_body = call.kwargs.get("body") if call.kwargs.get("body") else call[0][2]
         sent_body = json.loads(raw_body)
         cc_emails = {e["email"] for e in sent_body["cc"]}
-        assert cc_emails == {"max@symbiose-kefir.fr", "nicolas@symbiose-kefir.fr"}
+        assert cc_emails == {"maxime@symbiose-kefir.fr", "nicolas@symbiose-kefir.fr"}
 
 
 # ─── send_reset_email ────────────────────────────────────────────────────────
