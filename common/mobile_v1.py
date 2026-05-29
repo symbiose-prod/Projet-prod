@@ -1246,7 +1246,8 @@ async def _v1_get_loading(ramasse_id: str, request: Request):
     Retour 200 :
       ``{"id": "...", "date_ramasse": "...", "destinataire": "...",
          "status": "...", "palettes": [...], "total_palettes": N,
-         "total_cartons": M, "total_poids_kg": P}``.
+         "total_cartons": M, "total_poids_kg": P,
+         "driver_passed": bool, "driver_passed_at": "..."|null}``.
     Retour 404 : ramasse inconnue ou hors tenant.
     """
     user = await _resolve_mobile_user(request)
@@ -1282,6 +1283,14 @@ async def _v1_get_loading(ramasse_id: str, request: Request):
         "total_palettes": int(ramasse.get("total_palettes") or 0),
         "total_cartons": int(ramasse.get("total_cartons") or 0),
         "total_poids_kg": int(ramasse.get("total_poids_kg") or 0),
+        # État livraison : indispensable pour que le détail iOS verrouille le
+        # bouton "chauffeur passé" quand c'est déjà fait (sinon l'opérateur
+        # peut re-marquer une ramasse déjà livrée depuis l'historique).
+        "driver_passed": bool(ramasse.get("driver_passed")),
+        "driver_passed_at": (
+            ramasse["driver_passed_at"].isoformat()
+            if ramasse.get("driver_passed_at") else None
+        ),
         "palettes": [_palette_to_dict(p) for p in palettes],
         "previsionnel_sscc_list": previsionnel_sscc_list,
         "previsionnel_count": len(previsionnel_sscc_list),

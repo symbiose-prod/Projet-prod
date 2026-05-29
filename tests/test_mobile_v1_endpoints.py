@@ -1210,6 +1210,36 @@ class TestGetLoading:
         assert body["date_ramasse"] == "2026-05-20"
         assert body["total_palettes"] == 2
         assert len(body["palettes"]) == 2
+        # driver_passed absent du mock → défaut False / None
+        assert body["driver_passed"] is False
+        assert body["driver_passed_at"] is None
+
+    @patch("common.services.loading_service.list_linked_palettes")
+    @patch("common.ramasse_history.get_ramasse")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_exposes_driver_passed_state(
+        self, mock_verify, mock_get, mock_list, client, auth_headers
+    ):
+        """Le détail doit refléter l'état livré pour verrouiller le bouton
+        'chauffeur passé' côté iOS (sinon re-marquage possible depuis l'histo)."""
+        mock_verify.return_value = _user()
+        mock_get.return_value = {
+            "id": "ramasse-livree",
+            "date_ramasse": _dt.date(2026, 5, 20),
+            "destinataire": "SOFRIPA",
+            "status": "definitif",
+            "total_palettes": 1,
+            "total_cartons": 96,
+            "total_poids_kg": 800,
+            "driver_passed": True,
+            "driver_passed_at": _dt.datetime(2026, 5, 21, 9, 0, tzinfo=_dt.UTC),
+        }
+        mock_list.return_value = [_fake_palette(sscc="333333333333333333")]
+        resp = client.get("/api/v1/loadings/ramasse-livree", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["driver_passed"] is True
+        assert body["driver_passed_at"] == "2026-05-21T09:00:00+00:00"
 
 
 class TestUnlinkPalette:
