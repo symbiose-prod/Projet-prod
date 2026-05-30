@@ -1032,6 +1032,105 @@ def list_pending_packaging_requests(
     return out
 
 
+def list_all_packaging_requests(
+    tenant_id: str,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    destinataire: str | None = None,
+) -> tuple[list[dict], int]:
+    """Liste paginée de TOUTES les demandes d'emballages (pending + livrées).
+
+    À la différence de ``list_pending_packaging_requests`` (qui exclut les
+    livrées), ici on retourne aussi les demandes marquées reçues, avec
+    ``delivered_at`` + ``delivered_by_email`` issus du premier audit_log
+    ``packaging_request_delivered`` correspondant.
+
+    LATERAL JOIN pour éviter la duplication de lignes si une même demande
+    a (par erreur) plusieurs lignes de livraison — on prend la plus ancienne.
+
+    Retourne ``(rows, total)`` — ``total`` = nombre total côté tenant pour
+    la pagination iOS (style ``RamassesListResponse``).
+    """
+    extra = ""
+    extra_params: dict = {}
+    if destinataire:
+        extra = " AND a.details->>'destinataire' = :dest"
+        extra_params["dest"] = destinataire
+
+    list_sql = f"""
+        SELECT a.id, a.created_at, a.user_email,
+               a.details->>'destinataire' AS destinataire,
+               a.details->>'date_ramasse' AS date_ramasse,
+               a.details->'items'         AS items,
+               d.delivered_at, d.delivered_by_email
+        FROM audit_log a
+        LEFT JOIN LATERAL (
+            SELECT created_at AS delivered_at, user_email AS delivered_by_email
+            FROM audit_log
+            WHERE tenant_id = a.tenant_id
+              AND action = 'packaging_request_delivered'
+              AND details->>'request_id' = a.id::text
+            ORDER BY created_at ASC
+            LIMIT 1
+        ) d ON true
+        WHERE a.tenant_id = :tid
+          AND a.action = 'packaging_request_sent'
+          {extra}
+        ORDER BY a.created_at DESC
+        LIMIT :limit OFFSET :offset
+    """
+    list_params: dict = {
+        "tid": tenant_id, "limit": limit, "offset": offset, **extra_params,
+    }
+    rows = run_sql(list_sql, list_params) or []
+
+    count_sql = f"""
+        SELECT COUNT(*) AS n FROM audit_log a
+        WHERE a.tenant_id = :tid
+          AND a.action = 'packaging_request_sent'
+          {extra}
+    """
+    count_params: dict = {"tid": tenant_id, **extra_params}
+    count_rows = run_sql(count_sql, count_params) or [{"n": 0}]
+    total = int(count_rows[0].get("n") or 0)
+
+    out: list[dict] = []
+    for row in rows:
+        items_raw = row.get("items") or []
+        if isinstance(items_raw, str):
+            import json as _json
+            try:
+                items_raw = _json.loads(items_raw)
+            except (_json.JSONDecodeError, ValueError):
+                items_raw = []
+        items: list[dict] = []
+        for it in items_raw if isinstance(items_raw, list) else []:
+            if not isinstance(it, dict):
+                continue
+            items.append({
+                "label": str(it.get("label") or ""),
+                "qty": int(it.get("qty") or 0),
+                "unit": str(it.get("unit") or "palette"),
+            })
+        created_at = row.get("created_at")
+        delivered_at = row.get("delivered_at")
+        out.append({
+            "id": str(row.get("id") or ""),
+            "created_at": created_at.isoformat() if created_at else None,
+            "user_email": row.get("user_email") or "",
+            "destinataire": row.get("destinataire") or "",
+            "date_ramasse": row.get("date_ramasse") or "",
+            "items": items,
+            "delivered": delivered_at is not None,
+            "delivered_at": (
+                delivered_at.isoformat() if delivered_at else None
+            ),
+            "delivered_by_email": row.get("delivered_by_email") or None,
+        })
+    return out, total
+
+
 def mark_packaging_request_delivered(
     tenant_id: str,
     *,

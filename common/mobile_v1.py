@@ -22,6 +22,7 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/last-packaging``       | Tk   | emballages habituels du destinataire + items configurés |
 | POST    | ``/api/v1/packaging-request``    | Tk   | demande d'emballages à ramener (sans ramasse, email best-effort) |
 | GET     | ``/api/v1/packaging-requests``   | Tk   | demandes d'emballages encore "à recevoir" (non livrées) |
+| GET     | ``/api/v1/packaging-requests/history`` | Tk | historique paginé des demandes (avec état livraison) |
 | POST    | ``/api/v1/packaging-requests/{id}/mark-delivered`` | Tk | marque une demande comme reçue (audit log) |
 | GET     | ``/api/v1/active-ramasses``      | Tk   | ramasses ``previsionnel`` ouvertes (J2 reprise) |
 | POST    | ``/api/v1/loadings/previsionnel`` | Tk  | crée + envoie BL prévisionnel (J1 soir)    |
@@ -900,6 +901,56 @@ async def _v1_pending_packaging_requests(request: Request):
         destinataire=destinataire,
     )
     return JSONResponse({"requests": rows})
+
+
+async def _v1_packaging_requests_history(request: Request):
+    """Historique paginé des demandes d'emballages (avec état de livraison).
+
+    Query : ``?limit=20&offset=0&destinataire=SOFRIPA`` (tous optionnels).
+
+    Retour 200 :
+      ``{"requests": [{id, created_at, user_email, destinataire,
+                       date_ramasse, items: [...],
+                       delivered: bool, delivered_at: "..."|null,
+                       delivered_by_email: "..."|null}, ...],
+         "total": N, "limit": 20, "offset": 0}``.
+
+    Sert au bouton "Historique" depuis l'écran des demandes en attente —
+    l'opérateur peut voir l'ensemble des demandes émises avec leur état.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    params = request.query_params
+    try:
+        limit = int(params.get("limit") or "20")
+    except ValueError:
+        limit = 20
+    limit = max(1, min(limit, 100))
+    try:
+        offset = int(params.get("offset") or "0")
+    except ValueError:
+        offset = 0
+    offset = max(0, offset)
+
+    destinataire = params.get("destinataire")
+    if destinataire is not None:
+        destinataire = destinataire.strip() or None
+
+    from common.services.loading_service import list_all_packaging_requests
+
+    rows, total = await asyncio.to_thread(
+        list_all_packaging_requests,
+        user["tenant_id"],
+        limit=limit, offset=offset, destinataire=destinataire,
+    )
+    return JSONResponse({
+        "requests": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
 
 
 async def _v1_mark_packaging_request_delivered(request: Request):
@@ -2333,6 +2384,9 @@ def register_routes(app) -> None:
     app.get("/api/v1/last-packaging")(_v1_last_packaging)
     app.post("/api/v1/packaging-request")(_v1_packaging_request)
     app.get("/api/v1/packaging-requests")(_v1_pending_packaging_requests)
+    app.get(
+        "/api/v1/packaging-requests/history",
+    )(_v1_packaging_requests_history)
     app.post(
         "/api/v1/packaging-requests/{request_id}/mark-delivered",
     )(_v1_mark_packaging_request_delivered)

@@ -73,6 +73,7 @@ class TestUnauthorized:
         ("get", "/api/v1/cold-room-palettes"),
         ("get", "/api/v1/last-packaging"),
         ("get", "/api/v1/packaging-requests"),
+        ("get", "/api/v1/packaging-requests/history"),
         ("post", "/api/v1/packaging-requests/42/mark-delivered"),
         ("get", "/api/v1/active-ramasses"),
         ("post", "/api/v1/loadings/previsionnel"),
@@ -819,6 +820,81 @@ class TestPendingPackagingRequests:
         assert resp.status_code == 200
         assert resp.json() == {"requests": []}
         assert mock_list.call_args.kwargs["destinataire"] == "SOFRIPA"
+
+
+class TestPackagingRequestsHistory:
+    """GET /api/v1/packaging-requests/history — délègue à list_all_packaging_requests."""
+
+    @patch("common.services.loading_service.list_all_packaging_requests")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_paginated_history_with_delivery_state(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_list.return_value = (
+            [
+                {
+                    "id": "1",
+                    "created_at": "2026-05-20T10:00:00+00:00",
+                    "user_email": "ops@symbiose.fr",
+                    "destinataire": "SOFRIPA",
+                    "date_ramasse": "2026-05-22",
+                    "items": [{"label": "Palette 33cl", "qty": 2, "unit": "palette"}],
+                    "delivered": True,
+                    "delivered_at": "2026-05-22T09:30:00+00:00",
+                    "delivered_by_email": "maxime@symbiose-kefir.fr",
+                },
+                {
+                    "id": "2",
+                    "created_at": "2026-05-25T10:00:00+00:00",
+                    "user_email": "ops@symbiose.fr",
+                    "destinataire": "SOFRIPA",
+                    "date_ramasse": "2026-05-28",
+                    "items": [{"label": "Palette 75cl", "qty": 1, "unit": "palette"}],
+                    "delivered": False,
+                    "delivered_at": None,
+                    "delivered_by_email": None,
+                },
+            ],
+            12,
+        )
+        resp = client.get(
+            "/api/v1/packaging-requests/history?limit=2&offset=0",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 12
+        assert body["limit"] == 2
+        assert body["offset"] == 0
+        assert len(body["requests"]) == 2
+        assert body["requests"][0]["delivered"] is True
+        assert body["requests"][0]["delivered_at"] == "2026-05-22T09:30:00+00:00"
+        assert body["requests"][1]["delivered"] is False
+        # tenant scoping
+        assert mock_list.call_args.args[0] == "tenant-A"
+        assert mock_list.call_args.kwargs["limit"] == 2
+        assert mock_list.call_args.kwargs["offset"] == 0
+        assert mock_list.call_args.kwargs["destinataire"] is None
+
+    @patch("common.services.loading_service.list_all_packaging_requests")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_clamps_limit_and_defaults(
+        self, mock_verify, mock_list, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_list.return_value = ([], 0)
+        # limit > 100 doit être clampé à 100
+        resp = client.get(
+            "/api/v1/packaging-requests/history?limit=500", headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert mock_list.call_args.kwargs["limit"] == 100
+        # offset négatif → 0
+        client.get(
+            "/api/v1/packaging-requests/history?offset=-5", headers=auth_headers,
+        )
+        assert mock_list.call_args.kwargs["offset"] == 0
 
 
 class TestMarkPackagingRequestDelivered:
