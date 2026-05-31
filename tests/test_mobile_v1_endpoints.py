@@ -96,6 +96,7 @@ class TestUnauthorized:
         ("get", "/api/v1/admin/production-sheets/abc-123/pdf"),
         ("get", "/api/v1/auth/devices"),
         ("delete", "/api/v1/auth/devices/abc-123"),
+        ("delete", "/api/v1/auth/me"),
         ("get", "/api/v1/admin/cuves"),
     ])
     def test_no_token_returns_401(self, client, method, path):
@@ -162,6 +163,48 @@ class TestLogin:
         assert body["tenant_id"] == "tenant-A"
         assert body["user"]["email"] == "ok@test.fr"
         assert body["user"]["role"] == "admin"
+
+
+# ─── Suppression compte ───────────────────────────────────────────────────
+
+class TestDeleteAccount:
+    """DELETE /api/v1/auth/me — Apple iOS 14.5+ + RGPD art.17."""
+
+    @patch("common.mobile_auth.delete_mobile_user_account")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_success(self, mock_verify, mock_delete, client, auth_headers):
+        mock_verify.return_value = _user(tenant="tenant-A")
+        mock_delete.return_value = True
+        resp = client.delete("/api/v1/auth/me", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        # Tenant scoping + user_id propagés au service
+        assert mock_delete.call_args.kwargs["user_id"] == "user-1"
+        assert mock_delete.call_args.kwargs["tenant_id"] == "tenant-A"
+
+    @patch("common.mobile_auth.delete_mobile_user_account")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_idempotent_when_already_deleted(
+        self, mock_verify, mock_delete, client, auth_headers
+    ):
+        """Compte déjà supprimé → le service renvoie False → endpoint
+        renvoie quand même 200 (idempotent côté client iOS)."""
+        mock_verify.return_value = _user()
+        mock_delete.return_value = False
+        resp = client.delete("/api/v1/auth/me", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+    @patch("common.mobile_auth.delete_mobile_user_account")
+    @patch("common.mobile_v1.verify_mobile_token")
+    def test_returns_500_on_db_failure(
+        self, mock_verify, mock_delete, client, auth_headers
+    ):
+        mock_verify.return_value = _user()
+        mock_delete.side_effect = RuntimeError("DB unreachable")
+        resp = client.delete("/api/v1/auth/me", headers=auth_headers)
+        assert resp.status_code == 500
+        assert "failed" in resp.json()["error"].lower()
 
 
 # ─── Mes appareils (devices) ───────────────────────────────────────────────

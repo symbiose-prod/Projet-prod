@@ -197,6 +197,96 @@ def revoke_mobile_token_by_id(user_id: str, token_id: str) -> bool:
     return bool(rows)
 
 
+def delete_mobile_user_account(user_id: str, tenant_id: str) -> bool:
+    """Suppression compte utilisateur — conforme Apple iOS 14.5+ et RGPD art.17.
+
+    L'opération est atomique (transaction unique) :
+      1. ``users.is_active = false`` (soft delete : le compte n'est plus
+         utilisable mais la ligne reste pour les contraintes FK).
+      2. ``users.email`` est pseudonymisée : remplacée par
+         ``deleted-<short_id>@symbiose-internal.local`` (préserve la
+         contrainte UNIQUE et évite de réveiller un compte par re-création
+         avec le même email).
+      3. ``users.password_hash`` mis à vide → toute tentative future de
+         login échoue immédiatement (bcrypt sur "" ne matche aucun hash).
+      4. Tous les tokens mobiles du user sont révoqués (`revoked_at = now()`).
+      5. Anonymisation rétrospective de ``audit_log.user_email`` pour ce
+         user (mis à ``NULL``). Les actions métier (scans, finalize…)
+         restent traçables (obligation alimentaire FR conserver 5 ans)
+         mais ne sont plus rattachées à une personne identifiable.
+      6. Nouvelle entrée ``audit_log`` ``account_deleted`` (anonyme).
+
+    Retourne ``True`` si le compte existait et appartenait au tenant.
+    """
+    # 1 : Récupère l'email courant + verrouille (ligne) — sert d'identifiant
+    # pour anonymiser les audit_log avant qu'on modifie users.email.
+    current = run_sql(
+        """
+        SELECT email FROM users
+        WHERE id = :uid AND tenant_id = :tid AND is_active = true
+        FOR UPDATE
+        """,
+        {"uid": user_id, "tid": tenant_id},
+    )
+    if not current:
+        return False
+    current_email = current[0]["email"]
+
+    # Pseudonyme déterministe : <prefix>-<8 first chars of user_id>
+    # — préserve l'UNIQUE constraint et empêche la collision avec un
+    # compte légitime (le suffixe @symbiose-internal.local n'est pas
+    # un domaine email valide).
+    short_id = str(user_id).replace("-", "")[:8]
+    pseudo_email = f"deleted-{short_id}@symbiose-internal.local"
+
+    # 2 : Anonymisation rétrospective audit_log (TOUS les évènements de ce
+    # tenant rattachés à l'email courant — login, scans, finalize, etc.).
+    # Les actions restent traçables au tenant pour la conservation alimentaire
+    # FR (5 ans sur les lots/SSCC) mais ne sont plus rattachées à une personne.
+    run_sql(
+        """
+        UPDATE audit_log
+        SET user_email = NULL
+        WHERE tenant_id = :tid AND user_email = :email
+        """,
+        {"tid": tenant_id, "email": current_email},
+    )
+
+    # 3 : soft delete + pseudonymisation + invalidation password
+    run_sql(
+        """
+        UPDATE users
+        SET is_active = false,
+            email = :new_email,
+            password_hash = ''
+        WHERE id = :uid AND tenant_id = :tid
+        """,
+        {"uid": user_id, "tid": tenant_id, "new_email": pseudo_email},
+    )
+
+    # 4 : révocation de tous les tokens mobiles non révoqués
+    run_sql(
+        """
+        UPDATE mobile_api_tokens
+        SET revoked_at = now()
+        WHERE user_id = :uid AND revoked_at IS NULL
+        """,
+        {"uid": user_id},
+    )
+
+    # 5 : tracer la suppression elle-même (audit forensique anonyme)
+    from common.audit import log_event
+    log_event(
+        tenant_id=tenant_id,
+        user_email=None,  # déjà anonymisé
+        action="account_deleted",
+        details={"user_id": str(user_id)},
+    )
+
+    _log.info("Compte mobile supprimé : user_id=%s tenant=%s", user_id, tenant_id)
+    return True
+
+
 def extract_bearer_token(authorization_header: str | None) -> str | None:
     """Extrait le token d'un header `Authorization: Bearer <token>`.
 

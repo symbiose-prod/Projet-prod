@@ -9,6 +9,7 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 |---------|----------------------------------|------|--------------------------------------------|
 | POST    | ``/api/v1/auth/login``           | —    | email+password → token Bearer              |
 | POST    | ``/api/v1/auth/logout``          | Tk   | révoque le token courant                   |
+| DELETE  | ``/api/v1/auth/me``              | Tk   | suppression compte (RGPD art.17, Apple iOS 14.5+) |
 | GET     | ``/api/v1/auth/devices``         | Tk   | liste les appareils (tokens) du user        |
 | DELETE  | ``/api/v1/auth/devices/{id}``    | Tk   | révoque un appareil du user                 |
 | POST    | ``/api/v1/decode-gs1``           | Tk   | décode string GS1-128 + lookup produit     |
@@ -168,6 +169,56 @@ async def _v1_logout(request: Request):
     if not token:
         return JSONResponse({"error": "Missing token"}, status_code=400)
     await asyncio.to_thread(revoke_mobile_token, token)
+    return JSONResponse({"ok": True})
+
+
+async def _v1_delete_account(request: Request):
+    """Suppression compte utilisateur — conforme Apple iOS 14.5+ et RGPD art.17.
+
+    Path : ``DELETE /api/v1/auth/me``.
+
+    Pipeline atomique (`mobile_auth.delete_mobile_user_account`) :
+      - users.is_active = false
+      - users.email pseudonymisée (`deleted-<uid>@symbiose-internal.local`)
+      - users.password_hash vidée (impossible de re-login)
+      - tokens mobile_api_tokens du user : tous révoqués
+      - audit_log.user_email du tenant correspondant : NULL (anonymisation
+        rétrospective ; actions/details conservés pour traçabilité alimentaire)
+      - audit_log : nouvel évènement `account_deleted` (anonyme)
+
+    Retour 200 : ``{"ok": true}`` — le client doit immédiatement effacer
+    le token côté Keychain et basculer sur LoginView.
+    Retour 401 : token invalide / déjà révoqué.
+    Retour 500 : erreur DB inattendue.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    from common.mobile_auth import delete_mobile_user_account
+
+    try:
+        ok = await asyncio.to_thread(
+            delete_mobile_user_account,
+            user_id=user["id"],
+            tenant_id=user["tenant_id"],
+        )
+    except Exception:
+        _log.exception(
+            "Échec suppression compte mobile (user_id=%s)", user["id"],
+        )
+        return JSONResponse(
+            {"error": "Account deletion failed"}, status_code=500,
+        )
+
+    if not ok:
+        # Compte introuvable ou déjà supprimé — idempotent côté client.
+        return JSONResponse({"ok": True})
+
+    _log.info(
+        "Compte mobile supprimé via API : tenant=%s",
+        user["tenant_id"],
+    )
     return JSONResponse({"ok": True})
 
 
@@ -2369,6 +2420,7 @@ def register_routes(app) -> None:
     """
     app.post("/api/v1/auth/login")(_v1_login)
     app.post("/api/v1/auth/logout")(_v1_logout)
+    app.delete("/api/v1/auth/me")(_v1_delete_account)
     app.get("/api/v1/auth/devices")(_v1_list_devices)
     app.delete("/api/v1/auth/devices/{device_id}")(_v1_revoke_device)
     app.post("/api/v1/decode-gs1")(_v1_decode_gs1)

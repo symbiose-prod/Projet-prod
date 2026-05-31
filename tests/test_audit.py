@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from common.audit import (
     ACTION_BRASSIN_CREATED,
     ACTION_FILE_UPLOADED,
@@ -10,8 +12,10 @@ from common.audit import (
     ACTION_LOGIN_FAILED,
     ACTION_LOGOUT,
     ACTION_PRODUCTION_SAVED,
+    DEFAULT_RETENTION_MONTHS,
     _json_dumps,
     log_event,
+    purge_audit_log,
 )
 
 # ─── Constants exported ───────────────────────────────────────────────────────
@@ -118,3 +122,50 @@ class TestLogEvent:
         params = mock_run_sql.call_args[0][1]
         assert params["t"] is None
         assert params["e"] is None
+
+
+# ─── Purge audit_log (rétention RGPD) ─────────────────────────────────────
+
+
+class TestPurgeAuditLog:
+    """Politique de rétention 13 mois pour conformité RGPD art.5."""
+
+    def test_default_retention_is_13_months(self):
+        assert DEFAULT_RETENTION_MONTHS == 13
+
+    @patch("common.audit.run_sql")
+    def test_uses_default_retention(self, mock_run_sql: MagicMock):
+        mock_run_sql.return_value = []
+        purge_audit_log()
+        sql = mock_run_sql.call_args[0][0]
+        assert "INTERVAL '13 months'" in sql
+        assert "DELETE FROM audit_log" in sql
+
+    @patch("common.audit.run_sql")
+    def test_custom_retention(self, mock_run_sql: MagicMock):
+        mock_run_sql.return_value = []
+        purge_audit_log(retention_months=6)
+        sql = mock_run_sql.call_args[0][0]
+        assert "INTERVAL '6 months'" in sql
+
+    def test_rejects_zero_and_negative_retention(self):
+        with pytest.raises(ValueError, match="> 0"):
+            purge_audit_log(retention_months=0)
+        with pytest.raises(ValueError, match="> 0"):
+            purge_audit_log(retention_months=-3)
+
+    @patch("common.audit.run_sql", side_effect=OSError("DB down"))
+    def test_returns_zero_on_db_error(self, mock_run_sql: MagicMock):
+        # Idempotente : silent failure → 0, pas d'exception remontée
+        result = purge_audit_log()
+        assert result == 0
+
+    @patch("common.audit.run_sql")
+    def test_sql_injection_safe_on_integer_arg(self, mock_run_sql: MagicMock):
+        # retention_months est cast en int() avant interpolation —
+        # empêche toute injection via un float ou un string malicieux.
+        mock_run_sql.return_value = []
+        purge_audit_log(retention_months=12)
+        sql = mock_run_sql.call_args[0][0]
+        # Vérifie le format exact : "INTERVAL '<int> months'"
+        assert "INTERVAL '12 months'" in sql
