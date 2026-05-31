@@ -34,6 +34,18 @@ ACTION_RAMASSE_DELETED = "ramasse_deleted"
 ACTION_RAMASSE_RESTORED = "ramasse_restored"
 ACTION_RAMASSE_DRIVER_PASSED = "ramasse_driver_passed"
 ACTION_RAMASSE_DRIVER_UNMARKED = "ramasse_driver_unmarked"
+# Demandes d'emballages (côté mobile)
+ACTION_PACKAGING_REQUEST_SENT = "packaging_request_sent"
+ACTION_PACKAGING_REQUEST_DELIVERED = "packaging_request_delivered"
+# Gestion des appareils mobiles (révocation côté Mes appareils, login,
+# suppression compte). Permet de retrouver "qui s'est connecté depuis
+# quel iPad" + "quand un opérateur a perdu un device et l'a révoqué".
+ACTION_DEVICE_REGISTERED = "device_registered"
+ACTION_DEVICE_REVOKED = "device_revoked"
+ACTION_ACCOUNT_DELETED = "account_deleted"
+# Téléchargements de documents officiels (BL ramasse, fiche production).
+# Traçabilité métier : qui a téléchargé quel BL et quand.
+ACTION_PDF_DOWNLOADED = "pdf_downloaded"
 
 
 def log_event(

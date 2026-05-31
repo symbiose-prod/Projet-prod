@@ -1530,6 +1530,22 @@ async def _v1_ramasse_pdf(ramasse_id: str, request: Request):
         "ramasse-pdf : id=%s status=%s tenant=%s user=%s",
         ramasse_id, status, user["tenant_id"], _scrub_email(user.get("email")),
     )
+
+    # Audit : qui a téléchargé quel BL, quand. Traçabilité métier sur les
+    # documents officiels envoyés à SOFRIPA.
+    from common.audit import ACTION_PDF_DOWNLOADED, log_event
+    log_event(
+        tenant_id=user["tenant_id"],
+        user_email=user.get("email") or None,
+        action=ACTION_PDF_DOWNLOADED,
+        details={
+            "type": "ramasse_bl",
+            "ramasse_id": ramasse_id,
+            "status": status,
+            "filename": fname,
+        },
+    )
+
     return Response(
         content=bytes(pdf_bytes),
         media_type="application/pdf",
@@ -2188,6 +2204,21 @@ async def _v1_get_production_sheet_pdf(sheet_id: str, request: Request):
     )[:40] or "sheet"
     lot_part = f"_{detail.lot}" if detail and detail.lot else ""
     fname = f"Production_{produit_slug}{lot_part}.pdf"
+
+    # Audit : qui a téléchargé quelle fiche prod, quand. Admin-only mais
+    # traçable comme tout document officiel.
+    from common.audit import ACTION_PDF_DOWNLOADED, log_event
+    log_event(
+        tenant_id=user["tenant_id"],
+        user_email=user.get("email") or None,
+        action=ACTION_PDF_DOWNLOADED,
+        details={
+            "type": "production_sheet",
+            "sheet_id": sheet_id,
+            "lot": (detail.lot if detail else None),
+            "filename": fname,
+        },
+    )
 
     return Response(
         content=pdf_bytes,

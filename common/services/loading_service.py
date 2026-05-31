@@ -934,11 +934,11 @@ def send_packaging_request(
         )
 
     # Trace audit (best-effort, ne lève jamais)
-    from common.audit import log_event
+    from common.audit import ACTION_PACKAGING_REQUEST_SENT, log_event
     log_event(
         tenant_id=tenant_id,
         user_email=user_email or None,
-        action="packaging_request_sent",
+        action=ACTION_PACKAGING_REQUEST_SENT,
         details={
             "destinataire": destinataire,
             "date_ramasse": date_ramasse.isoformat(),
@@ -1174,11 +1174,11 @@ def mark_packaging_request_delivered(
     if not found:
         return False
 
-    from common.audit import log_event
+    from common.audit import ACTION_PACKAGING_REQUEST_DELIVERED, log_event
     log_event(
         tenant_id=tenant_id,
         user_email=user_email or None,
-        action="packaging_request_delivered",
+        action=ACTION_PACKAGING_REQUEST_DELIVERED,
         details={"request_id": request_id},
     )
     return True

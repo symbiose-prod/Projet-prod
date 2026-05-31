@@ -6,11 +6,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from common.audit import (
+    ACTION_ACCOUNT_DELETED,
     ACTION_BRASSIN_CREATED,
+    ACTION_DEVICE_REGISTERED,
+    ACTION_DEVICE_REVOKED,
     ACTION_FILE_UPLOADED,
     ACTION_LOGIN,
     ACTION_LOGIN_FAILED,
     ACTION_LOGOUT,
+    ACTION_PACKAGING_REQUEST_DELIVERED,
+    ACTION_PACKAGING_REQUEST_SENT,
+    ACTION_PDF_DOWNLOADED,
     ACTION_PRODUCTION_SAVED,
     DEFAULT_RETENTION_MONTHS,
     _json_dumps,
@@ -37,6 +43,24 @@ class TestAuditConstants:
 
     def test_action_brassin_created(self):
         assert ACTION_BRASSIN_CREATED == "brassin_created"
+
+    def test_action_packaging_request_sent(self):
+        assert ACTION_PACKAGING_REQUEST_SENT == "packaging_request_sent"
+
+    def test_action_packaging_request_delivered(self):
+        assert ACTION_PACKAGING_REQUEST_DELIVERED == "packaging_request_delivered"
+
+    def test_action_device_registered(self):
+        assert ACTION_DEVICE_REGISTERED == "device_registered"
+
+    def test_action_device_revoked(self):
+        assert ACTION_DEVICE_REVOKED == "device_revoked"
+
+    def test_action_account_deleted(self):
+        assert ACTION_ACCOUNT_DELETED == "account_deleted"
+
+    def test_action_pdf_downloaded(self):
+        assert ACTION_PDF_DOWNLOADED == "pdf_downloaded"
 
     def test_action_file_uploaded(self):
         assert ACTION_FILE_UPLOADED == "file_uploaded"

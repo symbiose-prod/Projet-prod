@@ -55,11 +55,12 @@ def create_mobile_token(
     token_hash = _hash_token(token)
     expires_at = _dt.datetime.now(_dt.UTC) + _dt.timedelta(days=ttl_days)
 
-    run_sql(
+    rows = run_sql(
         """
         INSERT INTO mobile_api_tokens
             (user_id, tenant_id, token_hash, device_name, expires_at)
         VALUES (:u, :t, :h, :d, :e)
+        RETURNING id
         """,
         {
             "u": user_id,
@@ -69,7 +70,25 @@ def create_mobile_token(
             "e": expires_at,
         },
     )
+    token_id = str(rows[0]["id"]) if rows else None
     _log.info("Mobile token créé pour user=%s device=%r", user_id, device_name)
+
+    # Audit : trace l'enregistrement d'un nouvel appareil. Permet de
+    # détecter les compromissions ("3 nouveaux iPad inconnus en 1 nuit")
+    # et garder un historique pour les revues sécurité.
+    from common.audit import ACTION_DEVICE_REGISTERED, log_event
+    log_event(
+        tenant_id=tenant_id,
+        user_email=None,  # pas dispo ici — le service log_event peut le résoudre via user_id si besoin
+        action=ACTION_DEVICE_REGISTERED,
+        details={
+            "user_id": str(user_id),
+            "token_id": token_id,
+            "device_name": (device_name or "")[:120],
+            "expires_at": expires_at.isoformat(),
+        },
+    )
+
     return token, expires_at
 
 
@@ -190,11 +209,27 @@ def revoke_mobile_token_by_id(user_id: str, token_id: str) -> bool:
         UPDATE mobile_api_tokens
         SET revoked_at = now()
         WHERE id = :id AND user_id = :u AND revoked_at IS NULL
-        RETURNING id
+        RETURNING id, tenant_id, device_name
         """,
         {"id": token_id, "u": user_id},
     )
-    return bool(rows)
+    if not rows:
+        return False
+
+    # Audit : trace la révocation. Important pour incidents sécurité
+    # (« j'ai perdu mon iPhone hier soir » → on retrouve l'event).
+    from common.audit import ACTION_DEVICE_REVOKED, log_event
+    log_event(
+        tenant_id=str(rows[0].get("tenant_id") or ""),
+        user_email=None,  # caller a déjà l'email si besoin, on garde anonyme
+        action=ACTION_DEVICE_REVOKED,
+        details={
+            "user_id": str(user_id),
+            "token_id": str(token_id),
+            "device_name": str(rows[0].get("device_name") or ""),
+        },
+    )
+    return True
 
 
 def delete_mobile_user_account(user_id: str, tenant_id: str) -> bool:
@@ -275,11 +310,11 @@ def delete_mobile_user_account(user_id: str, tenant_id: str) -> bool:
     )
 
     # 5 : tracer la suppression elle-même (audit forensique anonyme)
-    from common.audit import log_event
+    from common.audit import ACTION_ACCOUNT_DELETED, log_event
     log_event(
         tenant_id=tenant_id,
         user_email=None,  # déjà anonymisé
-        action="account_deleted",
+        action=ACTION_ACCOUNT_DELETED,
         details={"user_id": str(user_id)},
     )
 
