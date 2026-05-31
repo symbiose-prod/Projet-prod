@@ -28,6 +28,12 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+      # Mypy : type checking. Non-bloquant pour l'instant (continue-on-error)
+      # le temps de nettoyer les findings existants. À durcir dès qu'on a
+      # rame.   À durcir = retirer `|| true` quand le baseline est clean.
+      - name: Type check (mypy, non-blocking)
+        run: mypy common/ db/ pages/ || echo "::warning::mypy found type issues (non-blocking — to clean progressively)"
+
       - name: Tests (pytest)
         run: pytest tests/ -v --tb=short
 

@@ -1,0 +1,44 @@
+# Pre-commit hooks — Ferment Station backend
+# ============================================
+# Bloque les commits qui auraient cassé la CI pour cause de lint.
+# Évite la boucle infinie "push → CI rouge → fix → push" qui pollue
+# l'historique.
+#
+# Installation :
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run manuel sur tous les fichiers :
+#   pre-commit run --all-files
+
+repos:
+  # ───── Ruff : lint + format Python ─────
+  # Pinné à une version stable pour éviter les surprises quand ruff
+  # publie une nouvelle règle activée par défaut.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      # 1) Format (ex-isort + black combinés) — applique les changements
+      - id: ruff-format
+      # 2) Lint — applique --fix automatiquement quand possible
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+
+  # ───── Hooks génériques ─────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Évite les commits avec des conflits non résolus
+      - id: check-merge-conflict
+      # Trailing whitespace, EOF newline — hygiène basique
+      - id: trailing-whitespace
+        exclude: ^docs/.*\.swagger\.json$  # JSON spec : laisser tel quel
+      - id: end-of-file-fixer
+        exclude: ^docs/.*\.swagger\.json$
+      # YAML / JSON syntaxe valide
+      - id: check-yaml
+        args: ["--unsafe"]  # `!Ref` style CloudFormation accepté
+      - id: check-json
+      # Évite les commits de gros fichiers par erreur (>500 KB)
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
