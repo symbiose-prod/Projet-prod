@@ -91,6 +91,24 @@ from common.mobile_auth import (
 _log = logging.getLogger("ferment.mobile_v1")
 
 
+def _scrub_email(email: str | None) -> str:
+    """Hash court (8 hex chars) d'un email pour les logs applicatifs.
+
+    Évite la PII dans journalctl/Console.app/Sentry breadcrumbs tout en
+    permettant de corréler les events d'un même utilisateur via le même
+    hash. À utiliser dans ``_log.info(...)`` partout où on identifiait
+    l'opérateur par son email.
+
+    L'email entier reste dans ``audit_log`` (table dédiée traçabilité,
+    accès restreint) — c'est uniquement les logs applicatifs verbeux qu'on
+    pseudonymise ici.
+    """
+    if not email:
+        return "anonymous"
+    import hashlib
+    return "u:" + hashlib.sha256(email.encode("utf-8")).hexdigest()[:8]
+
+
 # ─── Authentification — helper partagé ─────────────────────────────────────
 
 async def _resolve_mobile_user(request: Request) -> dict | None:
@@ -352,7 +370,7 @@ async def _v1_decode_gs1(request: Request):
         ean,
         parsed.get("lot") or "—",
         (product or {}).get("designation") or "(non trouvé EB)",
-        user.get("email"),
+        _scrub_email(user.get("email")),
     )
 
     return JSONResponse({
@@ -430,7 +448,7 @@ async def _v1_preview_palette(request: Request):
 
     _log.info(
         "preview-palette : ean=%s qty=%d user=%s (no SSCC, no history)",
-        ean, case_count, user.get("email"),
+        ean, case_count, _scrub_email(user.get("email")),
     )
 
     return Response(
@@ -510,7 +528,7 @@ async def _v1_print_palette(request: Request):
 
     _log.info(
         "print-palette : ean=%s qty=%d copies=%d sscc=%s label_id=%s user=%s",
-        ean, case_count, n_copies, sscc, label_id, user.get("email"),
+        ean, case_count, n_copies, sscc, label_id, _scrub_email(user.get("email")),
     )
 
     return Response(
@@ -554,7 +572,7 @@ async def _v1_archive_label(label_id: int, request: Request):
     archived_at = result if hasattr(result, "isoformat") else None
     _log.info(
         "label archive : id=%s archived=%s tenant=%s user=%s",
-        label_id, archived_at is not None, user["tenant_id"], user.get("email"),
+        label_id, archived_at is not None, user["tenant_id"], _scrub_email(user.get("email")),
     )
     return JSONResponse({
         "id": label_id,
@@ -605,7 +623,7 @@ async def _v1_reprint_label(label_id: int, request: Request):
 
     _log.info(
         "label reprint : id=%s tenant=%s user=%s",
-        label_id, user["tenant_id"], user.get("email"),
+        label_id, user["tenant_id"], _scrub_email(user.get("email")),
     )
     return Response(
         content=pdf_bytes,
@@ -917,7 +935,7 @@ async def _v1_packaging_request(request: Request):
         "packaging_request : dest=%s items=%d email_sent=%s "
         "tenant=%s user=%s",
         destinataire, result["items_count"], result["email_sent"],
-        user["tenant_id"], user.get("email"),
+        user["tenant_id"], _scrub_email(user.get("email")),
     )
     return JSONResponse(result)
 
@@ -1169,7 +1187,7 @@ async def _v1_create_previsionnel(request: Request):
         "previsionnel : ramasse=%s dest=%s palettes=%d email_sent=%s "
         "tenant=%s user=%s",
         result["id"], destinataire, result["total_palettes"],
-        result["email_sent"], user["tenant_id"], user.get("email"),
+        result["email_sent"], user["tenant_id"], _scrub_email(user.get("email")),
     )
     return JSONResponse(result)
 
@@ -1270,7 +1288,7 @@ async def _v1_scan_palette_to_loading(ramasse_id: str, request: Request):
         })
     _log.info(
         "scan-to-loading : sscc=%s ramasse=%s tenant=%s user=%s",
-        result.palette.sscc, ramasse_id, user["tenant_id"], user.get("email"),
+        result.palette.sscc, ramasse_id, user["tenant_id"], _scrub_email(user.get("email")),
     )
     return JSONResponse({
         "status": "ok",
@@ -1323,7 +1341,7 @@ async def _v1_finalize_loading(ramasse_id: str, request: Request):
         "finalize-loading : ramasse=%s palettes=%d cartons=%d email_sent=%s "
         "tenant=%s user=%s",
         info["id"], info["total_palettes"], info["total_cartons"],
-        info["email_sent"], user["tenant_id"], user.get("email"),
+        info["email_sent"], user["tenant_id"], _scrub_email(user.get("email")),
     )
     return Response(
         content=pdf_bytes,
@@ -1510,7 +1528,7 @@ async def _v1_ramasse_pdf(ramasse_id: str, request: Request):
 
     _log.info(
         "ramasse-pdf : id=%s status=%s tenant=%s user=%s",
-        ramasse_id, status, user["tenant_id"], user.get("email"),
+        ramasse_id, status, user["tenant_id"], _scrub_email(user.get("email")),
     )
     return Response(
         content=bytes(pdf_bytes),
@@ -1555,7 +1573,7 @@ async def _v1_mark_driver_passed(ramasse_id: str, request: Request):
     )
     _log.info(
         "mark-driver-passed : id=%s changed=%s tenant=%s user=%s",
-        ramasse_id, changed, user["tenant_id"], user.get("email"),
+        ramasse_id, changed, user["tenant_id"], _scrub_email(user.get("email")),
     )
     return JSONResponse({"ok": True, "changed": changed})
 
@@ -1597,7 +1615,7 @@ async def _v1_unlink_palette(ramasse_id: str, sscc: str, request: Request):
         )
     _log.info(
         "unlink-palette : sscc=%s ramasse=%s tenant=%s user=%s",
-        sscc, ramasse_id, user["tenant_id"], user.get("email"),
+        sscc, ramasse_id, user["tenant_id"], _scrub_email(user.get("email")),
     )
     return JSONResponse({"ok": True})
 
