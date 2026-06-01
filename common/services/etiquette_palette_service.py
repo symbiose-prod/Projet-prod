@@ -1108,12 +1108,17 @@ def set_label_archived(
     label_id: int,
     *,
     archived: bool | None = None,
+    reason: str | None = None,
 ) -> _dt.datetime | None | bool:
     """Archive/désarchive une étiquette palette historisée.
 
     - ``archived=True`` : force l'archivage (set archived_at = now())
     - ``archived=False`` : désarchive (set archived_at = NULL)
     - ``archived=None`` : toggle (utilisé par mobile pour le bouton uniforme)
+
+    ``reason`` : motif d'archivage (Doublon, Erreur, Perte, texte libre…).
+    Stocké uniquement quand la ligne finit *archivée* ; au désarchivage le
+    motif est vidé (NULL) pour ne pas laisser un motif orphelin.
 
     L'étiquette doit appartenir au ``tenant_id`` fourni — sinon retourne False
     (sécurité multi-tenant : pas d'archivage cross-tenant).
@@ -1122,22 +1127,30 @@ def set_label_archived(
         - datetime de l'archivage (ou None si désarchivée) si succès
         - False si label introuvable ou pas dans le bon tenant
     """
+    reason_clean = (reason or "").strip() or None
     if archived is None:
+        # Toggle : on calcule le nouvel état dans la même requête. Le motif
+        # n'est conservé que si la ligne devient archivée.
         sql = """
             UPDATE etiquette_palette_history
-            SET archived_at = CASE WHEN archived_at IS NULL THEN now() ELSE NULL END
+            SET archived_at = CASE WHEN archived_at IS NULL THEN now() ELSE NULL END,
+                archived_reason = CASE WHEN archived_at IS NULL THEN :r ELSE NULL END
             WHERE id = :id AND tenant_id = :t
             RETURNING archived_at
         """
-        params = {"id": int(label_id), "t": tenant_id}
+        params = {"id": int(label_id), "t": tenant_id, "r": reason_clean}
     else:
         sql = """
             UPDATE etiquette_palette_history
-            SET archived_at = CASE WHEN :a THEN now() ELSE NULL END
+            SET archived_at = CASE WHEN :a THEN now() ELSE NULL END,
+                archived_reason = CASE WHEN :a THEN :r ELSE NULL END
             WHERE id = :id AND tenant_id = :t
             RETURNING archived_at
         """
-        params = {"id": int(label_id), "t": tenant_id, "a": bool(archived)}
+        params = {
+            "id": int(label_id), "t": tenant_id,
+            "a": bool(archived), "r": reason_clean,
+        }
 
     try:
         rows = run_sql(sql, params)

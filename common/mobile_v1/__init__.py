@@ -27,6 +27,7 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | POST    | ``/api/v1/packaging-requests/{id}/mark-delivered`` | Tk | marque une demande comme reçue (audit log) |
 | GET     | ``/api/v1/active-ramasses``      | Tk   | ramasses ``previsionnel`` ouvertes (J2 reprise) |
 | POST    | ``/api/v1/loadings/previsionnel`` | Tk  | crée + envoie BL prévisionnel (J1 soir)    |
+| POST    | ``/api/v1/loadings/retroactive`` | Tk   | BL « a posteriori » (ramasse non scannée), PDF sans email |
 | GET     | ``/api/v1/loadings/{id}``        | Tk   | détail d'un chargement (palettes liées + totaux) |
 | POST    | ``/api/v1/loadings/{id}/scan``   | Tk   | scan SSCC + lien à la ramasse (chargement J2) |
 | POST    | ``/api/v1/loadings/{id}/finalize`` | Tk | finalise prévisionnel → définitif + PDF BL + email |
@@ -353,6 +354,7 @@ from common.mobile_v1.production_sheets import (
 from common.mobile_v1.ramasse import (
     _v1_active_ramasses,
     _v1_create_previsionnel,
+    _v1_create_retroactive,
     _v1_events_loadings,
     _v1_finalize_loading,
     _v1_get_loading,
@@ -397,6 +399,7 @@ def register_routes(app) -> None:
     )(_v1_mark_packaging_request_delivered)
     app.get("/api/v1/active-ramasses")(_v1_active_ramasses)
     app.post("/api/v1/loadings/previsionnel")(_v1_create_previsionnel)
+    app.post("/api/v1/loadings/retroactive")(_v1_create_retroactive)
     app.get("/api/v1/loadings/{ramasse_id}")(_v1_get_loading)
     app.post("/api/v1/loadings/{ramasse_id}/scan")(_v1_scan_palette_to_loading)
     app.post("/api/v1/loadings/{ramasse_id}/finalize")(_v1_finalize_loading)

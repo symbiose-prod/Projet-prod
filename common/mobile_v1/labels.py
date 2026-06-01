@@ -250,19 +250,27 @@ async def _v1_print_palette(request: Request):
 async def _v1_archive_label(label_id: int, request: Request):
     """Toggle l'état archivé d'une étiquette.
 
-    Body JSON optionnel : ``{"archived": true|false}`` pour forcer la valeur.
-    Sans body → toggle simple. L'étiquette doit appartenir au tenant du token
-    (sinon 404 silencieux, pas d'info leak).
+    Body JSON optionnel :
+      - ``{"archived": true|false}`` pour forcer la valeur (sans → toggle) ;
+      - ``{"reason": "Doublon"|"Erreur"|"Perte"|"<libre>"}`` motif conservé
+        quand la ligne finit archivée (vidé au désarchivage).
+    L'étiquette doit appartenir au tenant du token (sinon 404 silencieux,
+    pas d'info leak).
     """
     user = await _resolve_mobile_user(request)
     if user is None:
         return _unauthorized()
 
     desired: bool | None = None
+    reason: str | None = None
     try:
         body = await request.json()
-        if isinstance(body, dict) and "archived" in body:
-            desired = bool(body["archived"])
+        if isinstance(body, dict):
+            if "archived" in body:
+                desired = bool(body["archived"])
+            raw_reason = body.get("reason")
+            if isinstance(raw_reason, str):
+                reason = raw_reason.strip()[:200] or None
     except Exception:
         pass
 
@@ -273,6 +281,7 @@ async def _v1_archive_label(label_id: int, request: Request):
         user["tenant_id"],
         label_id,
         archived=desired,
+        reason=reason,
     )
     if result is False:
         return JSONResponse({"error": "Label not found"}, status_code=404)
@@ -456,6 +465,7 @@ async def _v1_sscc_log(request: Request):
             "loaded_at": e.loaded_at.isoformat() if e.loaded_at else None,
             "label_id": e.label_id,
             "label_archived_at": e.label_archived_at.isoformat() if e.label_archived_at else None,
+            "label_archived_reason": e.label_archived_reason,
             "designation": e.designation,
             "marque": e.marque,
             "gout": e.gout,

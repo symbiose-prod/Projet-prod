@@ -22,6 +22,9 @@ build/
 *.swp
 *.swo
 
+# Claude Code (worktrees temporaires, ne jamais commiter)
+.claude/worktrees/
+
 # Data caches
 data/_*_cache.json
 

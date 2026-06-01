@@ -493,6 +493,7 @@ def list_unscanned_recent_palettes(
              AND sl.voided_at IS NULL
              AND pl.id IS NULL
              AND eph.designation IS NOT NULL
+             AND eph.archived_at IS NULL
            ORDER BY sl.generated_at DESC
            LIMIT :lim""",
         {"t": tenant_id, "d": int(days), "lim": int(limit)},
@@ -651,6 +652,7 @@ def list_palettes_in_cold_room(tenant_id: str) -> list[PaletteInfo]:
              AND sl.voided_at IS NULL
              AND pl.id IS NULL
              AND eph.designation IS NOT NULL
+             AND eph.archived_at IS NULL
            ORDER BY sl.generated_at ASC""",
         {"t": tenant_id},
     ) or []
@@ -1529,6 +1531,136 @@ def finalize_loading(
     # module est conservé mais déprécié — ne pas activer EB_OUTBOX_BIND_LOADINGS.
     # Voir Sprint 2 ter pour le vrai branchement (Conditionner).
 
+    return (info, pdf_bytes)
+
+
+def create_retroactive_ramasse(
+    tenant_id: str,
+    *,
+    user_id: str,
+    user_email: str,
+    destinataire: str,
+    date_ramasse: _dt.date,
+    sscc_list: list[str],
+) -> tuple[dict, bytes]:
+    """Crée un BL « a posteriori » pour une ramasse non scannée.
+
+    Cas d'usage : la douchette n'a pas pu scanner les palettes le jour J, le
+    camion est parti, mais les palettes restent affichées en chambre froide.
+    L'opérateur sélectionne manuellement (sans scan) les palettes réellement
+    parties → on les lie à une ramasse créée pour la date passée, on génère un
+    BL marqué « établi a posteriori », et les palettes sortent de la CF.
+
+    Contrairement à ``finalize_loading``, AUCUN email n'est envoyé : l'opérateur
+    relit le PDF dans l'app puis décide de le partager (choix produit 2026-06).
+
+    Réutilise le pipeline existant : ``save_ramasse`` (placeholder, hérite du
+    verrou « 1 ramasse active par destinataire ») → ``link_palettes_to_ramasse``
+    → ``rebuild_lines_from_palettes`` → BL ``kind="retroactif"`` →
+    ``update_ramasse(target_status="definitif")``.
+
+    Args:
+        sscc_list: SSCC sélectionnés manuellement depuis la CF.
+
+    Returns:
+        Tuple ``(info_dict, pdf_bytes)`` — ``info`` = ``{"id", "total_palettes",
+        "total_cartons", "total_poids_kg", "inserted", "conflicts"}``.
+
+    Raises:
+        ValueError: destinataire inconnu, sans emails, ramasse active déjà
+            ouverte (verrou métier), ou aucune palette valide.
+    """
+    from common.ramasse_history import save_ramasse, update_ramasse
+
+    dest_obj = _resolve_destinataire(destinataire)
+    if dest_obj is None:
+        raise ValueError(f"Destinataire inconnu : {destinataire}")
+    recipients = list(dest_obj.get("email_recipients", []) or [])
+    if user_email and user_email not in recipients:
+        recipients.append(user_email)
+    address_lines = dest_obj.get("address_lines", []) or []
+
+    # 1. Placeholder ramasse vide → verrou métier remonte en ValueError si une
+    #    ramasse est déjà active pour ce destinataire.
+    ramasse_id = save_ramasse(
+        date_ramasse=date_ramasse,
+        destinataire=destinataire,
+        recipients=recipients,
+        lines=[],
+        total_cartons=0,
+        total_palettes=0,
+        total_poids_kg=0,
+        packaging=[],
+        status="previsionnel",
+        tenant_id=tenant_id,
+        user_id=user_id,
+    )
+
+    # 2. Lien des palettes sélectionnées manuellement (= sortie de CF).
+    inserted, conflicts = link_palettes_to_ramasse(
+        tenant_id,
+        sscc_list=sscc_list,
+        ramasse_id=ramasse_id,
+        user_email=user_email,
+    )
+    if inserted == 0:
+        raise ValueError(
+            "Aucune palette valide à inclure (déjà chargées ou SSCC inconnus)",
+        )
+
+    # 3. Lignes depuis palette_loadings (= ce qu'on vient de lier).
+    lines, total_cartons, total_palettes, total_poids = rebuild_lines_from_palettes(
+        ramasse_id, tenant_id,
+    )
+
+    # 4. BL « a posteriori » (pas de diff prévu/réel — previous_lines vide).
+    from common.xlsx_fill.bl_pdf import build_bl_enlevements_pdf
+    df_lines = _build_df_for_pdf(lines)
+    pdf_bytes = build_bl_enlevements_pdf(
+        date_creation=_dt.date.today(),
+        date_ramasse=date_ramasse,
+        destinataire_title=destinataire,
+        destinataire_lines=address_lines,
+        df_lines=df_lines,
+        packaging_lines=[],
+        kind="retroactif",
+    )
+
+    # 5. Transition → definitif + persistance lignes/totaux/PDF.
+    result = update_ramasse(
+        ramasse_id,
+        date_ramasse=date_ramasse,
+        destinataire=destinataire,
+        recipients=recipients,
+        lines=lines,
+        total_cartons=total_cartons,
+        total_palettes=total_palettes,
+        total_poids_kg=total_poids,
+        packaging=[],
+        pdf_bytes=pdf_bytes,
+        target_status="definitif",
+        tenant_id=tenant_id,
+    )
+    if result is None:
+        raise ValueError("Transition refusée (ramasse verrouillée)")
+
+    _rt_broadcast(tenant_id, {
+        "type": "loading_finalized",
+        "ramasse_id": ramasse_id,
+        "total_palettes": total_palettes,
+        "total_cartons": total_cartons,
+        "version": 1,
+        "finalized_by": user_email or "",
+    })
+
+    info = {
+        "id": ramasse_id,
+        "total_palettes": total_palettes,
+        "total_cartons": total_cartons,
+        "total_poids_kg": total_poids,
+        "inserted": inserted,
+        "conflicts": conflicts,
+    }
     return (info, pdf_bytes)
 
 

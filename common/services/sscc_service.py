@@ -99,6 +99,7 @@ class SsccLogEntry:
     # via le SSCC. Permet d'archiver/désarchiver depuis le log SSCC.
     label_id: int | None = None
     label_archived_at: _dt.datetime | None = None
+    label_archived_reason: str = ""
     # Désignation du produit (depuis etiquette_palette_history.designation).
     designation: str = ""
     # Marque ("SYMBIOSE" | "NIKO" | "") — affichée sur chaque card individuelle.
@@ -286,6 +287,7 @@ def list_sscc_log(
                rh.numero       AS rh_numero,
                eph.id AS eph_label_id,
                eph.archived_at AS eph_archived_at,
+               eph.archived_reason AS eph_archived_reason,
                eph.designation AS eph_designation,
                eph.marque AS eph_marque,
                eph.gout AS eph_gout
@@ -330,6 +332,7 @@ def list_sscc_log(
                 loaded_at=r.get("pl_loaded_at"),
                 label_id=int(r["eph_label_id"]) if r.get("eph_label_id") is not None else None,
                 label_archived_at=r.get("eph_archived_at"),
+                label_archived_reason=str(r.get("eph_archived_reason") or ""),
                 designation=str(r.get("eph_designation") or ""),
                 marque=str(r.get("eph_marque") or ""),
                 gout=str(r.get("eph_gout") or ""),

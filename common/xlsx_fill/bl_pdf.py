@@ -77,6 +77,10 @@ def build_bl_enlevements_pdf(
     #   - legacy (kind vide) avec version > 1 (anciennes ramasses /ramasse)
     is_definitif = (kind == "definitif")
     is_previsionnel = (kind == "previsionnel")
+    # BL retroactif : aucun bon n'a pu etre emis lors de la ramasse (douchette
+    # HS, oubli de scan...). Reconstitue a posteriori les palettes parties.
+    # Se comporte comme un definitif (1 ligne / SSCC) mais sans diff prevu/reel.
+    is_retroactif = (kind == "retroactif")
     is_legacy_update = (not kind) and bool(previous_lines) and version > 1
     is_update = (is_definitif and bool(previous_lines)) or is_legacy_update
     old_cartons_by_ref: dict[str, int] = {}
@@ -207,6 +211,18 @@ def build_bl_enlevements_pdf(
             subtitle=subtitle,
             fill_rgb=FILL_DEF_BANNER,
             border_rgb=BORDER_DEF_BANNER,
+        )
+    elif is_retroactif:
+        _draw_banner(
+            title="  BL ETABLI A POSTERIORI",
+            subtitle=(
+                f"Aucun bon n'a pu etre emis lors de la ramasse du "
+                f"{date_ramasse:%d/%m/%Y}. Document recapitulatif des "
+                f"palettes effectivement parties."
+            ),
+            fill_rgb=FILL_UPDATE_BANNER,
+            border_rgb=BORDER_UPDATE_BANNER,
+            subtitle_height=10,
         )
     elif is_legacy_update:
         _draw_banner(

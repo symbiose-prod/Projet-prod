@@ -84,6 +84,40 @@ class TestSetLabelArchivedTenantIsolation:
         assert params["t"] == "tenant-A"
 
 
+class TestSetLabelArchivedReason:
+    """Motif d'archivage (Doublon, Erreur, Perte, libre) — passé en param SQL."""
+
+    @patch("common.services.etiquette_palette_service.run_sql")
+    def test_reason_passed_in_force_mode(self, mock_sql: MagicMock):
+        mock_sql.return_value = [{"archived_at": _dt.datetime.now(_dt.UTC)}]
+        set_label_archived("tenant-A", 42, archived=True, reason="Doublon")
+        params = mock_sql.call_args[0][1]
+        assert params["r"] == "Doublon"
+        sql_arg = mock_sql.call_args[0][0]
+        assert "archived_reason" in sql_arg
+
+    @patch("common.services.etiquette_palette_service.run_sql")
+    def test_reason_passed_in_toggle_mode(self, mock_sql: MagicMock):
+        mock_sql.return_value = [{"archived_at": _dt.datetime.now(_dt.UTC)}]
+        set_label_archived("tenant-A", 42, archived=None, reason="Perte")
+        params = mock_sql.call_args[0][1]
+        assert params["r"] == "Perte"
+
+    @patch("common.services.etiquette_palette_service.run_sql")
+    def test_blank_reason_normalized_to_none(self, mock_sql: MagicMock):
+        mock_sql.return_value = [{"archived_at": None}]
+        set_label_archived("tenant-A", 42, archived=False, reason="   ")
+        params = mock_sql.call_args[0][1]
+        assert params["r"] is None
+
+    @patch("common.services.etiquette_palette_service.run_sql")
+    def test_reason_defaults_to_none_when_omitted(self, mock_sql: MagicMock):
+        mock_sql.return_value = [{"archived_at": None}]
+        set_label_archived("tenant-A", 42, archived=None)
+        params = mock_sql.call_args[0][1]
+        assert params["r"] is None
+
+
 class TestSetLabelArchivedErrors:
     """Robustesse : erreur DB ne propage pas — retourne False."""
 

@@ -609,7 +609,10 @@ ALTER TABLE etiquette_palette_history
   -- Permet d'"archiver" une étiquette (doublon, erreur de saisie...) sans
   -- la supprimer. NULL = active, timestamptz = archivée à cette date.
   -- Réversible (UPDATE … SET archived_at = NULL).
-  ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
+  -- Motif de l'archivage (Doublon, Erreur, Perte, ou texte libre). Vidé au
+  -- désarchivage. Sert aux stats "pourquoi des palettes sortent du stock".
+  ADD COLUMN IF NOT EXISTS archived_reason TEXT;
 
 -- =========================
 -- SSCC (Serial Shipping Container Code) — identifiant unique de palette

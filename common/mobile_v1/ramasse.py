@@ -157,6 +157,99 @@ async def _v1_create_previsionnel(request: Request):
     return JSONResponse(result)
 
 
+async def _v1_create_retroactive(request: Request):
+    """Crée un BL « a posteriori » pour une ramasse non scannée.
+
+    Cas d'usage : la douchette n'a pas scanné les palettes le jour de la
+    ramasse, le camion est parti mais les palettes restent en chambre froide.
+    L'opérateur sélectionne manuellement les SSCC réellement partis → on les
+    lie à une ramasse datée du jour passé et on génère un BL marqué « établi
+    a posteriori ». AUCUN email n'est envoyé (l'opérateur partage le PDF
+    lui-même depuis l'app).
+
+    Body JSON :
+      ``{"date_ramasse": "YYYY-MM-DD",
+         "sscc_list": ["...", ...],            # palettes sélectionnées en CF
+         "destinataire": "SOFRIPA"}``  # optionnel, défaut SOFRIPA
+
+    Retour 200 : PDF binaire (Content-Type: application/pdf). Headers :
+      - ``X-Ramasse-Id`` / ``X-Total-Palettes`` / ``X-Total-Cartons``
+      - ``X-Total-Poids-Kg`` / ``X-Conflicts`` (SSCC ignorés, séparés par ',')
+    Retour 400 : body malformé. Retour 409 : verrou métier (ramasse active
+    déjà ouverte) ou aucune palette valide.
+    """
+    user = await _resolve_mobile_user(request)
+    if user is None:
+        return _unauthorized()
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    body = body or {}
+
+    sscc_list_raw = body.get("sscc_list") or []
+    date_ramasse_str = str(body.get("date_ramasse") or "").strip()
+    destinataire = str(body.get("destinataire") or _DEFAULT_DESTINATAIRE).strip()
+
+    if not isinstance(sscc_list_raw, list) or not sscc_list_raw:
+        return JSONResponse(
+            {"error": "'sscc_list' must be a non-empty list"}, status_code=400,
+        )
+    if not date_ramasse_str:
+        return JSONResponse({"error": "Missing 'date_ramasse'"}, status_code=400)
+    try:
+        date_ramasse = _dt_local.date.fromisoformat(date_ramasse_str[:10])
+    except ValueError:
+        return JSONResponse(
+            {"error": "Invalid date_ramasse format (expected YYYY-MM-DD)"},
+            status_code=400,
+        )
+
+    sscc_list = [str(s).strip() for s in sscc_list_raw if str(s).strip()]
+
+    from common.services.loading_service import create_retroactive_ramasse
+
+    try:
+        info, pdf_bytes = await asyncio.to_thread(
+            create_retroactive_ramasse,
+            user["tenant_id"],
+            user_id=user["id"],
+            user_email=user.get("email") or "",
+            destinataire=destinataire,
+            date_ramasse=date_ramasse,
+            sscc_list=sscc_list,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    except Exception:
+        _log.exception("Échec création ramasse rétroactive (mobile)")
+        return JSONResponse(
+            {"error": "Failed to create retroactive loading"}, status_code=500,
+        )
+
+    _log.info(
+        "retroactive-loading : ramasse=%s dest=%s palettes=%d conflicts=%d "
+        "tenant=%s user=%s",
+        info["id"], destinataire, info["total_palettes"],
+        len(info["conflicts"]), user["tenant_id"], _scrub_email(user.get("email")),
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="BL_APosteriori_{info["id"][:8]}.pdf"'
+            ),
+            "X-Ramasse-Id": str(info["id"]),
+            "X-Total-Palettes": str(info["total_palettes"]),
+            "X-Total-Cartons": str(info["total_cartons"]),
+            "X-Total-Poids-Kg": str(info["total_poids_kg"]),
+            "X-Conflicts": ",".join(info["conflicts"]),
+        },
+    )
+
+
 async def _v1_scan_palette_to_loading(ramasse_id: str, request: Request):
     """Scan SSCC + lien immédiat à une ramasse en cours (J2 chargement).
 
