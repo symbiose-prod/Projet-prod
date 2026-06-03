@@ -47,6 +47,11 @@ ACTION_ACCOUNT_DELETED = "account_deleted"
 # Traçabilité métier : qui a téléchargé quel BL et quand.
 ACTION_PDF_DOWNLOADED = "pdf_downloaded"
 
+# Gestion des accès par un admin (invitation, changement de rôle, (dés)activation).
+ACTION_USER_INVITED = "user_invited"
+ACTION_USER_ROLE_CHANGED = "user_role_changed"
+ACTION_USER_ACTIVE_CHANGED = "user_active_changed"
+
 
 def log_event(
     *,

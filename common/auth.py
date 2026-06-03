@@ -262,6 +262,152 @@ def create_user(email: str, password: str, tenant_name_or_id: str, role: str = N
     return user
 
 
+# ── Gestion des accès (admin) ──────────────────────────────────────────────
+# Rôles autorisés — doit rester aligné avec la contrainte SQL users_role_check
+# (db/migrate.sql) et la matrice RBAC (common/permissions.py).
+ALLOWED_ROLES: frozenset[str] = frozenset({"user", "admin", "operateur"})
+
+
+def normalize_role(role: str | None) -> str:
+    """Valide et normalise un rôle. Lève ValueError si non autorisé."""
+    r = (role or "").strip().lower()
+    if r not in ALLOWED_ROLES:
+        allowed = ", ".join(sorted(ALLOWED_ROLES))
+        raise ValueError(f"Rôle invalide : {role!r} (attendu : {allowed}).")
+    return r
+
+
+def list_users_in_tenant(tenant_id: str) -> list[dict[str, Any]]:
+    """Liste les comptes d'un tenant (écran admin « gestion des accès »)."""
+    return run_sql(
+        """
+        SELECT id, email, role, is_active, created_at
+        FROM users
+        WHERE tenant_id = :t
+        ORDER BY created_at ASC
+        """,
+        {"t": tenant_id},
+    ) or []
+
+
+def _get_user_in_tenant(user_id: str, tenant_id: str) -> dict[str, Any] | None:
+    rows = run_sql(
+        """SELECT id, tenant_id, email, role, is_active, created_at
+           FROM users WHERE id::text = :u AND tenant_id = :t LIMIT 1""",
+        {"u": str(user_id), "t": tenant_id},
+    )
+    return rows[0] if rows else None
+
+
+def _count_active_admins(tenant_id: str, *, exclude_user_id: str | None = None) -> int:
+    """Nombre d'admins ACTIFS du tenant, en excluant éventuellement un user.
+
+    Sert au garde-fou « ne jamais retirer/désactiver le dernier admin actif ».
+    """
+    rows = run_sql(
+        """SELECT COUNT(*)::int AS n FROM users
+           WHERE tenant_id = :t AND role = 'admin' AND is_active = true
+             AND (:ex IS NULL OR id::text <> :ex)""",
+        {"t": tenant_id, "ex": str(exclude_user_id) if exclude_user_id else None},
+    )
+    return int(rows[0]["n"]) if rows else 0
+
+
+def update_user_role(
+    actor_user_id: str,
+    target_user_id: str,
+    tenant_id: str,
+    new_role: str,
+) -> dict[str, Any]:
+    """Change le rôle d'un membre du tenant.
+
+    Gardes : rôle valide, scoping tenant, pas d'auto-rétrogradation, et on
+    refuse de retirer le dernier administrateur actif (sinon le tenant se
+    verrouille hors de toute administration).
+    """
+    role = normalize_role(new_role)
+    target = _get_user_in_tenant(target_user_id, tenant_id)
+    if target is None:
+        raise ValueError("Utilisateur introuvable.")
+    if str(target_user_id) == str(actor_user_id) and role != "admin":
+        raise ValueError("Tu ne peux pas retirer ton propre rôle administrateur.")
+    if target["role"] == "admin" and role != "admin" and (
+        _count_active_admins(tenant_id, exclude_user_id=target_user_id) == 0
+    ):
+        raise ValueError("Impossible : c'est le dernier administrateur actif.")
+
+    updated = run_sql(
+        """UPDATE users SET role = :r WHERE id::text = :u AND tenant_id = :t
+           RETURNING id, email, role, is_active, created_at""",
+        {"r": role, "u": str(target_user_id), "t": tenant_id},
+    )
+    if not updated:
+        raise ValueError("Utilisateur introuvable.")
+    user = updated[0]
+    _audit_user_admin(
+        tenant_id, user.get("email", ""),
+        "ACTION_USER_ROLE_CHANGED",
+        {"target_id": str(target_user_id), "new_role": role},
+    )
+    return user
+
+
+def set_user_active(
+    actor_user_id: str,
+    target_user_id: str,
+    tenant_id: str,
+    active: bool,
+) -> dict[str, Any]:
+    """Active ou désactive un compte du tenant.
+
+    Gardes : scoping tenant, pas d'auto-désactivation, et on refuse de
+    désactiver le dernier administrateur actif.
+    """
+    target = _get_user_in_tenant(target_user_id, tenant_id)
+    if target is None:
+        raise ValueError("Utilisateur introuvable.")
+    if not active:
+        if str(target_user_id) == str(actor_user_id):
+            raise ValueError("Tu ne peux pas désactiver ton propre compte.")
+        if target["role"] == "admin" and (
+            _count_active_admins(tenant_id, exclude_user_id=target_user_id) == 0
+        ):
+            raise ValueError("Impossible : c'est le dernier administrateur actif.")
+
+    updated = run_sql(
+        """UPDATE users SET is_active = :a WHERE id::text = :u AND tenant_id = :t
+           RETURNING id, email, role, is_active, created_at""",
+        {"a": bool(active), "u": str(target_user_id), "t": tenant_id},
+    )
+    if not updated:
+        raise ValueError("Utilisateur introuvable.")
+    user = updated[0]
+    _audit_user_admin(
+        tenant_id, user.get("email", ""),
+        "ACTION_USER_ACTIVE_CHANGED",
+        {"target_id": str(target_user_id), "active": bool(active)},
+    )
+    return user
+
+
+def _audit_user_admin(
+    tenant_id: str, target_email: str, action_const: str, details: dict[str, Any],
+) -> None:
+    """Trace une action de gestion des accès. Best-effort (ne lève jamais)."""
+    try:
+        import common.audit as _audit
+        log_event = _audit.log_event
+        action = getattr(_audit, action_const)
+        log_event(
+            tenant_id=str(tenant_id),
+            user_email=target_email,
+            action=action,
+            details=details,
+        )
+    except Exception:
+        _auth_log.debug("Audit gestion accès échoué (%s)", action_const, exc_info=True)
+
+
 import logging as _logging
 
 _auth_log = _logging.getLogger("ferment.auth")

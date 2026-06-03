@@ -201,6 +201,46 @@ def send_reset_email(to_email: str, reset_url: str) -> dict:
     _log.info("Email reset envoyé à %s (msg_id=%s)", to_email, data.get("messageId"))
     return {"status": "sent", "provider_msg_id": data.get("messageId"), "response": data}
 
+
+def send_invite_email(
+    to_email: str,
+    invite_url: str,
+    inviter_email: str | None = None,
+) -> dict:
+    """Envoie l'email d'invitation à rejoindre Ferment Station (via Brevo).
+
+    L'invité clique le lien pour définir son mot de passe et activer son accès.
+    Retourne {status, provider_msg_id?, response?}. Lève EmailSendError sinon.
+    """
+    par = f" par {inviter_email}" if inviter_email else ""
+    text = (
+        "Bonjour,\n\n"
+        f"Vous avez été invité{par} à rejoindre l'application Ferment Station.\n"
+        "Définissez votre mot de passe pour activer votre accès (lien valable "
+        f"7 jours) : {invite_url}\n\n"
+        "Si vous ne vous attendiez pas à cette invitation, ignorez ce message."
+    )
+    html = (
+        "<p>Bonjour,</p>"
+        f"<p>Vous avez été invité{par} à rejoindre l'application "
+        "<strong>Ferment Station</strong>.</p>"
+        f'<p><a href="{invite_url}">Définir mon mot de passe et activer mon accès</a></p>'
+        "<p>Ce lien expire dans 7 jours. Si vous ne vous attendiez pas à cette "
+        "invitation, ignorez ce message.</p>"
+    )
+
+    _, sender_email, sender_name = _require_env()
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": "Invitation à rejoindre Ferment Station",
+        "htmlContent": html,
+        "textContent": text,
+    }
+    data = _post_brevo("/v3/smtp/email", payload)
+    _log.info("Email invitation envoyé à %s (msg_id=%s)", to_email, data.get("messageId"))
+    return {"status": "sent", "provider_msg_id": data.get("messageId"), "response": data}
+
 # ---------------------------------------------------------------------------
 # 2) Rétro-compatibilité pour 04_Fiche_de_ramasse.py
 #    - send_html_with_pdf(...)

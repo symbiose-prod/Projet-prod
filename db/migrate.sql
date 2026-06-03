@@ -80,14 +80,15 @@ CREATE INDEX IF NOT EXISTS idx_pp_meta_name      ON production_proposals ((paylo
 -- Recherche par e-mail (déjà normalisé en lowercase par trigger)
 CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (lower(email));
 
--- Contrainte de rôle autorisé (idempotent)
+-- Contrainte de rôle autorisé (idempotent, self-healing).
+-- DROP+ADD systématique : permet d'étendre l'ensemble des rôles sur une base
+-- déjà déployée (un simple IF NOT EXISTS ne remplacerait pas une contrainte
+-- déjà présente). 'operateur' = RBAC mobile (étiquettes palette + ramasse only).
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check'
-  ) THEN
-    ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user','admin'));
-  END IF;
+  ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+  ALTER TABLE users ADD CONSTRAINT users_role_check
+    CHECK (role IN ('user','admin','operateur'));
 END $$;
 
 -- =========================

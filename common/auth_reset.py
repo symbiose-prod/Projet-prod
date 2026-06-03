@@ -16,6 +16,8 @@ _log = logging.getLogger("ferment.auth_reset")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8502").rstrip("/")
 # Durée de validité du lien
 RESET_TTL_MINUTES = int(os.getenv("RESET_TTL_MINUTES", "60"))
+# Lien d'invitation : durée plus longue (l'invité peut tarder à l'ouvrir).
+INVITE_TTL_MINUTES = int(os.getenv("INVITE_TTL_MINUTES", str(7 * 24 * 60)))
 
 
 def _now_utc() -> datetime.datetime:
@@ -115,6 +117,40 @@ def create_password_reset(
     # 4) construire l'URL vers la page de reset (path param, pas query)
     reset_url = f"{BASE_URL}/reset/{token}"
     return reset_url
+
+
+def create_invite_link(email: str, *, ttl_minutes: int | None = None) -> str | None:
+    """Crée un lien d'invitation (token longue durée) pour un compte fraîchement
+    créé sans mot de passe utilisable.
+
+    Réutilise la table ``password_resets`` et la page web ``/reset/{token}`` :
+    l'invité y définit son mot de passe et active son accès. Contrairement à
+    ``create_password_reset``, pas d'anti-spam (action admin délibérée) et TTL
+    long (défaut 7 jours). Renvoie ``None`` si l'email est inconnu.
+    """
+    email = (email or "").strip()
+    if not email:
+        return None
+    user_rows = run_sql(
+        "SELECT id FROM users WHERE lower(email)=lower(:e) LIMIT 1",
+        {"e": email},
+    )
+    if not user_rows:
+        return None
+    user_id = user_rows[0]["id"]
+
+    token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(token)
+    ttl = ttl_minutes if ttl_minutes is not None else INVITE_TTL_MINUTES
+    expires_at = _now_utc() + datetime.timedelta(minutes=ttl)
+    run_sql(
+        """
+        INSERT INTO password_resets (user_id, token_hash, expires_at, created_at)
+        VALUES (:u, :th, :exp, now())
+        """,
+        {"u": user_id, "th": token_hash, "exp": expires_at},
+    )
+    return f"{BASE_URL}/reset/{token}"
 
 
 def verify_token(token: str) -> dict[str, Any] | None:

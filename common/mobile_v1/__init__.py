@@ -47,6 +47,10 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/admin/cuves`` | Tk* | registre des cuves + tables de calibration volume↔hauteur |
 | POST    | ``/api/v1/admin/production-sheets/{id}/finalize`` | Tk* | finalise (génère PDF + status completed) |
 | GET     | ``/api/v1/admin/production-sheets/{id}/pdf`` | Tk* | re-télécharge le PDF stocké |
+| GET     | ``/api/v1/admin/users``          | Tk*  | liste les comptes du tenant (gestion des accès) |
+| POST    | ``/api/v1/admin/users/invite``   | Tk*  | crée un compte + envoie l'email d'invitation |
+| PATCH   | ``/api/v1/admin/users/{id}/role`` | Tk* | change le rôle (user/admin/operateur) |
+| PATCH   | ``/api/v1/admin/users/{id}/active`` | Tk* | active / désactive un compte |
 
 Tk = Bearer token via `mobile_api_tokens`. Tk* = en plus, rôle = admin.
 
@@ -316,6 +320,12 @@ async def _v1_revoke_device(device_id: str, request: Request):
 # package partiellement initialisé expose déjà ces symboles (pas d'import
 # circulaire).
 
+from common.mobile_v1.admin_users import (
+    _v1_admin_invite_user,
+    _v1_admin_list_users,
+    _v1_admin_set_user_active,
+    _v1_admin_set_user_role,
+)
 from common.mobile_v1.labels import (
     _v1_archive_label,
     _v1_cold_room_palettes,
@@ -427,6 +437,11 @@ def register_routes(app) -> None:
     # Sprint 4 : finalisation + téléchargement PDF stocké
     app.post("/api/v1/admin/production-sheets/{sheet_id}/finalize")(_v1_finalize_production_sheet)
     app.get("/api/v1/admin/production-sheets/{sheet_id}/pdf")(_v1_get_production_sheet_pdf)
+    # Gestion des accès (admin only) : liste équipe + invitation + rôle + activation
+    app.get("/api/v1/admin/users")(_v1_admin_list_users)
+    app.post("/api/v1/admin/users/invite")(_v1_admin_invite_user)
+    app.patch("/api/v1/admin/users/{user_id}/role")(_v1_admin_set_user_role)
+    app.patch("/api/v1/admin/users/{user_id}/active")(_v1_admin_set_user_active)
     # Sprint Photos S3 : upload + URL signée pour photos d'incidents (OVH Object Storage)
     app.post("/api/v1/photos/upload")(_v1_upload_photo)
     app.get("/api/v1/photos/{key:path}/presigned-url")(_v1_photo_presigned_url)
