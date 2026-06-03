@@ -1570,7 +1570,11 @@ def create_retroactive_ramasse(
         ValueError: destinataire inconnu, sans emails, ramasse active déjà
             ouverte (verrou métier), ou aucune palette valide.
     """
-    from common.ramasse_history import save_ramasse, update_ramasse
+    from common.ramasse_history import (
+        mark_driver_passed,
+        save_ramasse,
+        update_ramasse,
+    )
 
     dest_obj = _resolve_destinataire(destinataire)
     if dest_obj is None:
@@ -1643,6 +1647,13 @@ def create_retroactive_ramasse(
     )
     if result is None:
         raise ValueError("Transition refusée (ramasse verrouillée)")
+
+    # 6. Camion déjà parti → la ramasse est livrée d'emblée. On la marque
+    #    « chauffeur passé » pour qu'elle sorte de l'ensemble « actif »
+    #    (get_active_ramasse_for_dest / verrou 1-ramasse-active) : sans ça, une
+    #    rétroactive definitif non-livrée resterait affichée dans l'écran de
+    #    chargement où l'opérateur tenterait de la finaliser (status != prévi).
+    mark_driver_passed(ramasse_id, tenant_id=tenant_id, user_id=user_id)
 
     _rt_broadcast(tenant_id, {
         "type": "loading_finalized",

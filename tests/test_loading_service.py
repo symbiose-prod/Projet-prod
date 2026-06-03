@@ -1124,3 +1124,104 @@ class TestFinalizeLoading:
             )
         assert info["email_sent"] is False
         assert pdf == b"%PDF"
+
+
+# ─── create_retroactive_ramasse (BL « a posteriori », camion déjà parti) ────
+
+class TestCreateRetroactiveRamasse:
+    """Tests de la création d'une ramasse rétroactive (« ramasse oubliée »)."""
+
+    _SOFRIPA_OBJ = {
+        "name": "SOFRIPA",
+        "address_lines": ["ZAC ..."],
+        "email_recipients": ["exploitation@sofripa.fr"],
+    }
+
+    def _patch_db_helpers(self, monkeypatch):
+        monkeypatch.setattr(
+            loading_service, "_resolve_destinataire",
+            lambda _name: self._SOFRIPA_OBJ,
+        )
+        monkeypatch.setattr(
+            loading_service, "link_palettes_to_ramasse",
+            lambda tid, *, sscc_list, ramasse_id, user_email: (len(sscc_list), []),
+        )
+        monkeypatch.setattr(
+            loading_service, "rebuild_lines_from_palettes",
+            lambda rid, tid, **kw: (
+                [{"ref": "X", "produit": "Kéfir", "ddm": "11/05/2027",
+                  "cartons": 96, "palettes": 1, "poids": 800}],
+                96, 1, 800,
+            ),
+        )
+        monkeypatch.setattr(
+            loading_service, "_build_df_for_pdf", lambda lines: lines,
+        )
+        monkeypatch.setattr(loading_service, "_rt_broadcast", lambda *a, **k: None)
+
+    def test_marks_driver_passed_so_it_leaves_active_set(self, monkeypatch):
+        """Régression : le camion est déjà parti pour une rétroactive. Elle doit
+        être marquée ``driver_passed`` à la création, sinon elle reste dans
+        l'ensemble « actif » (get_active_ramasse_for_dest) → l'opérateur la voit
+        dans l'écran de chargement et échoue à la finaliser (status != prévi)."""
+        self._patch_db_helpers(monkeypatch)
+        with (
+            mock.patch(
+                "common.ramasse_history.save_ramasse", return_value="retro-1",
+            ),
+            mock.patch(
+                "common.ramasse_history.update_ramasse",
+                return_value={"id": "retro-1", "status": "definitif"},
+            ),
+            mock.patch(
+                "common.ramasse_history.mark_driver_passed", return_value=True,
+            ) as m_mark,
+            mock.patch(
+                "common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf",
+                return_value=b"%PDF",
+            ),
+        ):
+            info, pdf = loading_service.create_retroactive_ramasse(
+                "tenant-A",
+                user_id="u1", user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 6, 1),
+                sscc_list=["111111111111111111"],
+            )
+
+        m_mark.assert_called_once_with(
+            "retro-1", tenant_id="tenant-A", user_id="u1",
+        )
+        assert info["id"] == "retro-1"
+        assert pdf == b"%PDF"
+
+    def test_creates_definitif_bl_without_email(self, monkeypatch):
+        """La rétroactive passe en ``definitif`` via update_ramasse et n'envoie
+        AUCUN email (choix produit : l'opérateur partage le PDF lui-même)."""
+        self._patch_db_helpers(monkeypatch)
+        with (
+            mock.patch(
+                "common.ramasse_history.save_ramasse", return_value="retro-2",
+            ),
+            mock.patch(
+                "common.ramasse_history.update_ramasse",
+                return_value={"id": "retro-2", "status": "definitif"},
+            ) as m_update,
+            mock.patch("common.ramasse_history.mark_driver_passed"),
+            mock.patch(
+                "common.xlsx_fill.bl_pdf.build_bl_enlevements_pdf",
+                return_value=b"%PDF",
+            ) as m_pdf,
+            mock.patch("common.email.send_html_with_pdf") as m_mail,
+        ):
+            loading_service.create_retroactive_ramasse(
+                "tenant-A",
+                user_id="u1", user_email="op@sym.fr",
+                destinataire="SOFRIPA",
+                date_ramasse=_dt.date(2026, 6, 1),
+                sscc_list=["111111111111111111"],
+            )
+
+        assert m_update.call_args.kwargs["target_status"] == "definitif"
+        assert m_pdf.call_args.kwargs["kind"] == "retroactif"
+        m_mail.assert_not_called()
