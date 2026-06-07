@@ -19,6 +19,8 @@ Ce module regroupe TOUS les endpoints destinés au client mobile :
 | GET     | ``/api/v1/today-labels``         | Tk   | étiquettes du jour (toutes, archivées incl.)|
 | GET     | ``/api/v1/home-summary``         | Tk   | compteurs jour/mois + 20 dernières         |
 | GET     | ``/api/v1/sscc-log``             | Tk*  | journal SSCC (admin uniquement)            |
+| GET     | ``/api/v1/sscc-log/export``      | Tk*  | export XLSX du journal SSCC (filtres, admin) |
+| POST    | ``/api/v1/ramasses/export``      | Tk*  | export XLSX palettes d'une sélection de ramasses (admin) |
 | GET     | ``/api/v1/cold-room-palettes``   | Tk   | palettes étiquetées non encore chargées    |
 | GET     | ``/api/v1/last-packaging``       | Tk   | emballages habituels du destinataire + items configurés |
 | POST    | ``/api/v1/packaging-request``    | Tk   | demande d'emballages à ramener (sans ramasse, email best-effort) |
@@ -326,6 +328,10 @@ from common.mobile_v1.admin_users import (
     _v1_admin_set_user_active,
     _v1_admin_set_user_role,
 )
+from common.mobile_v1.exports import (
+    _v1_export_ramasses,
+    _v1_export_sscc_log,
+)
 from common.mobile_v1.labels import (
     _v1_archive_label,
     _v1_cold_room_palettes,
@@ -396,6 +402,7 @@ def register_routes(app) -> None:
     app.get("/api/v1/today-labels")(_v1_today_labels)
     app.get("/api/v1/home-summary")(_v1_home_summary)
     app.get("/api/v1/sscc-log")(_v1_sscc_log)
+    app.get("/api/v1/sscc-log/export")(_v1_export_sscc_log)
     # Chargement camion (ramasse) — workflow J1 prévisionnel + J2 chargement
     app.get("/api/v1/cold-room-palettes")(_v1_cold_room_palettes)
     app.get("/api/v1/last-packaging")(_v1_last_packaging)
@@ -419,6 +426,7 @@ def register_routes(app) -> None:
     app.get("/api/v1/events/loadings")(_v1_events_loadings)
     # Historique ramasses (read-only) + actions courantes
     app.get("/api/v1/ramasses")(_v1_list_ramasses)
+    app.post("/api/v1/ramasses/export")(_v1_export_ramasses)
     app.get("/api/v1/ramasses/{ramasse_id}/pdf")(_v1_ramasse_pdf)
     app.post("/api/v1/ramasses/{ramasse_id}/mark-driver-passed")(_v1_mark_driver_passed)
     # Fiches de production (admin only, beta — Sprint 1 : create + list)

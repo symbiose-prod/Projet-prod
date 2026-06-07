@@ -307,6 +307,11 @@ def list_sscc_log(
     except Exception:
         _log.exception("Échec list_sscc_log")
         return []
+    return _rows_to_entries(rows)
+
+
+def _rows_to_entries(rows: list[dict]) -> list[SsccLogEntry]:
+    """Mappe les lignes SQL (SELECT/JOIN partagé) vers des SsccLogEntry."""
     out: list[SsccLogEntry] = []
     for r in rows:
         try:
@@ -341,6 +346,66 @@ def list_sscc_log(
         except (KeyError, TypeError, ValueError):
             _log.warning("Ligne sscc_log invalide ignorée : %r", r, exc_info=True)
     return out
+
+
+def list_sscc_for_ramasses(
+    tenant_id: str,
+    ramasse_ids: list[str],
+    *,
+    limit: int = 5000,
+) -> list[SsccLogEntry]:
+    """Liste les palettes (SSCC) appartenant à une sélection de ramasses.
+
+    Utilisé pour l'export XLSX « 1 ligne par palette des ramasses
+    sélectionnées ». Ne renvoie que les palettes effectivement liées
+    (``palette_loadings`` non dé-liée). Tri par ramasse puis SSCC pour que
+    les palettes d'une même ramasse soient contiguës dans le fichier.
+
+    Args:
+        tenant_id: scope tenant.
+        ramasse_ids: UUID des ramasses à exporter.
+        limit: garde-fou mémoire.
+
+    Returns:
+        Liste de ``SsccLogEntry`` (vide si ``ramasse_ids`` vide).
+    """
+    ids = [s for s in (str(r).strip() for r in (ramasse_ids or [])) if s]
+    if not ids:
+        return []
+    sql = """
+        SELECT sl.id, sl.sscc, sl.user_email, sl.gtin_palette, sl.lot, sl.ddm,
+               sl.case_count, sl.generated_at,
+               sl.voided_at, sl.voided_reason, sl.voided_by,
+               pl.ramasse_id AS pl_ramasse_id,
+               pl.scanned_at AS pl_loaded_at,
+               rh.date_ramasse AS rh_date,
+               rh.destinataire AS rh_destinataire,
+               rh.numero       AS rh_numero,
+               eph.id AS eph_label_id,
+               eph.archived_at AS eph_archived_at,
+               eph.archived_reason AS eph_archived_reason,
+               eph.designation AS eph_designation,
+               eph.marque AS eph_marque,
+               eph.gout AS eph_gout
+        FROM sscc_log sl
+        JOIN palette_loadings pl
+               ON pl.sscc = sl.sscc AND pl.tenant_id = sl.tenant_id
+              AND pl.unlinked_at IS NULL
+        JOIN ramasse_history rh
+               ON rh.id = pl.ramasse_id
+        LEFT JOIN etiquette_palette_history eph
+               ON eph.sscc = sl.sscc AND eph.tenant_id = sl.tenant_id
+        WHERE sl.tenant_id = :t AND pl.ramasse_id = ANY(:rids)
+        ORDER BY rh.numero NULLS LAST, rh.date_ramasse, sl.sscc
+        LIMIT :lim
+    """
+    params = {"t": tenant_id, "rids": ids, "lim": int(limit)}
+    try:
+        rows = run_sql(sql, params) or []
+    except Exception:
+        _log.exception("Échec list_sscc_for_ramasses")
+        return []
+    return _rows_to_entries(rows)
 
 
 def void_sscc(
