@@ -148,11 +148,6 @@ def _compute_ddm(detail: dict[str, Any]) -> dt.date:
         return dt.date.today() + dt.timedelta(days=_DDM_DAYS)
 
 
-def _ddm_to_lot(ddm: dt.date) -> int:
-    """Formate la DDM en numéro de lot DDMMYYYY (ex: 11032027)."""
-    return int(ddm.strftime("%d%m%Y"))
-
-
 # ─── Étape 3 : Produit + dérivés ────────────────────────────────────────────
 
 # Cache en mémoire des détails produit (reset à chaque cycle de collecte)
@@ -466,7 +461,11 @@ def collect_label_data(force_refresh: bool = False) -> list[dict[str, Any]]:
             continue
 
         ddm = _compute_ddm(detail)
-        lot = _ddm_to_lot(ddm)
+        # Lot = nom du brassin EasyBeer (ex "KGI08062026") : identifiant unique
+        # et immuable du batch, déjà présent dans EB → traçabilité directe. La
+        # DDM reste séparée (production + 1 an) et n'entre PAS dans le lot.
+        # Conforme GS1 AI(10) (alphanumérique ≤ 20). Voir audit lot 2026-06-08.
+        lot = brassin_nom
 
         # Produit principal + dérivés
         all_product_ids = _get_all_product_ids(id_produit)
@@ -539,7 +538,7 @@ def collect_label_data(force_refresh: bool = False) -> list[dict[str, Any]]:
                     "pcb": float(pcb),
                     "gtin_uvc": gtin_uvc,
                     "gtin_colis": gtin_colis,
-                    "lot": float(lot),
+                    "lot": lot,
                     "ddm": ddm.isoformat(),
                 })
 

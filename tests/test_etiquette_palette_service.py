@@ -262,6 +262,13 @@ class TestFormatLotStr:
     def test_empty_string(self):
         assert _format_lot_str("") == ""
 
+    def test_alphanumeric_lot_brassin_name(self):
+        """Nouveau format (audit 2026-06-08) : lot = nom du brassin, tel quel."""
+        assert _format_lot_str("KGI08062026") == "KGI08062026"
+
+    def test_alphanumeric_lot_trimmed(self):
+        assert _format_lot_str("  KGI08062026 ") == "KGI08062026"
+
 
 # ─── _parse_ddm_iso ──────────────────────────────────────────────────────────
 
