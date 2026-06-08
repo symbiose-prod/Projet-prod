@@ -129,7 +129,9 @@ def page_sync():
 
                 ui.label(
                     "Déclenche immédiatement la collecte des données EasyBeer "
-                    "(brassins en cours) et crée une opération de sync en attente."
+                    "(brassins en cours) et crée une opération de sync en attente. "
+                    "Récupère les codes articles à jour (ignore le cache) — utile "
+                    "juste après une correction dans EasyBeer."
                 ).classes("text-body2 q-mt-xs").style(f"color: {COLORS['ink2']}; line-height: 1.6")
 
                 trigger_status = ui.label("").classes("text-body2 q-mt-sm")
@@ -146,8 +148,12 @@ def page_sync():
                         from common.sync import create_sync_operation
                         from common.sync.collector import collect_label_data
 
+                        # Sync manuelle → force_refresh=True : on ignore le cache
+                        # 24h des codes articles pour refléter immédiatement une
+                        # correction faite dans EasyBeer (la sync auto de nuit, elle,
+                        # garde le cache).
                         products = await asyncio.wait_for(
-                            asyncio.to_thread(collect_label_data),
+                            asyncio.to_thread(collect_label_data, force_refresh=True),
                             timeout=120,
                         )
 

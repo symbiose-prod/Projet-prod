@@ -279,20 +279,30 @@ def _is_ban_error(exc: Exception) -> bool:
     return any(kw in msg for kw in ("429", "banned", "too many", "rate limit"))
 
 
-def _fetch_stock_codes() -> dict[tuple[int, str], str]:
+def _fetch_stock_codes(force_refresh: bool = False) -> dict[tuple[int, str], str]:
     """Récupère les codeArticle depuis POST /stock/produits.
 
     Retourne {(idProduit, fmt_str): codeArticle}.
 
     Utilise un cache fichier 24h pour éviter les appels API répétés.
     En cas de rate-limit ou ban, retourne ce qui a été collecté jusque-là.
-    """
-    # 1. Essayer le cache fichier d'abord
-    cached = _load_stock_codes_cache()
-    if cached is not None:
-        return cached
 
-    _log.info("Fetch codes articles depuis EasyBeer (cache absent ou expiré)")
+    Args:
+        force_refresh: si True, ignore le cache fichier et refait l'appel
+            EasyBeer (utilisé par la sync *manuelle* : quand l'opérateur
+            clique lui-même, c'est généralement qu'il vient de corriger un
+            code article dans EasyBeer et veut voir le changement tout de
+            suite, sans attendre l'expiration du cache 24h).
+    """
+    # 1. Essayer le cache fichier d'abord (sauf si on force le rafraîchissement)
+    if not force_refresh:
+        cached = _load_stock_codes_cache()
+        if cached is not None:
+            return cached
+    else:
+        _log.info("force_refresh=True : cache codes articles ignoré, refetch EasyBeer")
+
+    _log.info("Fetch codes articles depuis EasyBeer (cache absent, expiré ou forcé)")
 
     id_brasserie = int(os.environ.get("EASYBEER_ID_BRASSERIE", "2013"))
     payload = {"idBrasserie": id_brasserie}
@@ -379,13 +389,21 @@ def _fetch_stock_codes() -> dict[tuple[int, str], str]:
 from common.easybeer.products import determine_brand_from_label as _determine_brand
 
 
-def collect_label_data() -> list[dict[str, Any]]:
+def collect_label_data(force_refresh: bool = False) -> list[dict[str, Any]]:
     """Point d'entrée principal : collecte tous les produits pour la sync étiquettes.
 
     Pour chaque brassin en cours :
       1. Calcule DDM et Lot
       2. Identifie le produit principal + dérivés
       3. Pour chaque produit × format, assemble les champs Access
+
+    Args:
+        force_refresh: si True, ignore le cache fichier 24h des codes articles
+            et le refait depuis EasyBeer. Câblé sur le bouton de sync manuelle
+            de la page /sync (cf. ``pages/sync.py``). La sync automatique de
+            nuit garde force_refresh=False pour ménager l'API EasyBeer.
+            NB : la matrice codes-barres a son propre cache (DB, 24h) non
+            impacté ici — les codes-barres changent ~1-2×/an.
 
     Retourne une liste de dicts prêts pour la table Access "Produits".
     """
@@ -403,8 +421,8 @@ def collect_label_data() -> list[dict[str, Any]]:
     time.sleep(_API_GROUP_COOLDOWN)
 
     # Étape 5 : Codes articles (le plus coûteux en appels, fait en premier)
-    # Si le cache fichier est valide, c'est instantané
-    stock_codes = _fetch_stock_codes()
+    # Si le cache fichier est valide (et force_refresh=False), c'est instantané
+    stock_codes = _fetch_stock_codes(force_refresh=force_refresh)
 
     time.sleep(_API_GROUP_COOLDOWN)
 
