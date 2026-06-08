@@ -320,14 +320,22 @@ def extract_label_gout(designation: str, marque: str, product_label: str = "") -
 
 
 def _format_lot_str(lot_raw) -> str:
-    """Formate un lot depuis le payload (int/float/str) en str.
+    """Formate un lot depuis le payload en str.
 
-    Le payload sync stocke le lot comme float (ex: 8052027.0). On retourne
-    un string sans la décimale, et padding à 8 digits pour les dates DDMMYYYY
-    (ex: 8052027 → "08052027").
+    Depuis l'audit lot 2026-06-08, le lot est le **nom du brassin** EasyBeer
+    (ex: "KGI08062026"), une string alphanumérique qu'on renvoie telle quelle
+    (juste trim).
+
+    Rétro-compat : les anciens payloads stockaient le lot comme float DDMMYYYY
+    (ex: 8052027.0). On retire alors la décimale et on padde à 8 digits
+    (8052027 → "08052027").
     """
     if lot_raw is None or lot_raw == "":
         return ""
+    # Nouveau format : lot alphanumérique (nom du brassin) → tel quel.
+    if isinstance(lot_raw, str):
+        return lot_raw.strip()
+    # Ancien format numérique (float/int DDMMYYYY) → rétro-compat.
     try:
         n = int(float(lot_raw))
     except (TypeError, ValueError):
@@ -427,7 +435,8 @@ def load_label_data_from_sync(tenant_id: str) -> tuple[list[LabelEntry], str | N
 
         lot_str = _format_lot_str(p.get("lot"))
         if not lot_str:
-            # Fallback : DDM au format DDMMYYYY (cohérent avec collector)
+            # Filet de sécurité : un brassin a normalement toujours un nom
+            # (donc un lot). Si vide, on retombe sur la DDM en DDMMYYYY.
             lot_str = ddm_date.strftime("%d%m%Y")
 
         entries.append(LabelEntry(
