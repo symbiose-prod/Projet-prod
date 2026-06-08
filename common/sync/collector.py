@@ -438,7 +438,10 @@ def collect_label_data(force_refresh: bool = False) -> list[dict[str, Any]]:
 
     # Étape 2+3+6 : Pour chaque brassin, assembler les produits
     products: list[dict[str, Any]] = []
-    seen: set[str] = set()  # Dédoublonnage par (code_interne, lot)
+    # Dédoublonnage par (code_interne, lot) : on mémorise le format qui a
+    # « réservé » chaque clé pour détecter les collisions (deux formats
+    # distincts partageant le même code article → l'un est perdu).
+    seen: dict[str, tuple[int, str]] = {}  # dedup_key -> (pid, fmt_str)
 
     for brassin in brassins:
         # Check rate-limit before each brassin
@@ -511,8 +514,23 @@ def collect_label_data(force_refresh: bool = False) -> list[dict[str, Any]]:
                 # Dédoublonnage par code_interne + lot
                 dedup_key = f"{code_interne}|{lot}"
                 if dedup_key in seen:
+                    prev_pid, prev_fmt = seen[dedup_key]
+                    # Collision « légitime » (même format revu via un autre
+                    # brassin) → silencieux. Collision entre formats DIFFÉRENTS
+                    # → un conditionnement est silencieusement perdu : on alerte
+                    # pour que l'opérateur corrige le code article dans EasyBeer.
+                    if prev_fmt != fmt_str:
+                        _log.warning(
+                            "Collision code article : produit %s (%s) — les formats "
+                            "%s et %s partagent le code article '%s' (lot %s). Le "
+                            "format %s est IGNORÉ (dédoublonnage) et n'apparaîtra pas "
+                            "sur l'imprimante. → donnez-leur des codes articles "
+                            "distincts dans EasyBeer.",
+                            pid, clean_label, prev_fmt, fmt_str,
+                            code_interne, lot, fmt_str,
+                        )
                     continue
-                seen.add(dedup_key)
+                seen[dedup_key] = (pid, fmt_str)
 
                 products.append({
                     "designation": designation,
