@@ -1,0 +1,19 @@
+# Propriétaires de code — relecture demandée automatiquement sur les PR.
+#
+# Note : l'EXIGENCE de review code-owner ne s'applique que si la protection
+# de branche « Require review from Code Owners » est activée sur `main`
+# (à faire par un Owner de l'orga). Sans ça, ce fichier sert quand même à
+# demander automatiquement la review du mainteneur.
+
+# Par défaut : tout est relu par le mainteneur.
+*                       @nicolaspradignac-lang
+
+# Chemins sensibles — relecture renforcée obligatoire.
+/.github/               @nicolaspradignac-lang
+/db/                    @nicolaspradignac-lang
+/db/migrate.sql         @nicolaspradignac-lang
+/common/auth.py         @nicolaspradignac-lang
+/common/auth_reset.py   @nicolaspradignac-lang
+/common/permissions.py  @nicolaspradignac-lang
+/common/mobile_v1/      @nicolaspradignac-lang
+/requirements.txt       @nicolaspradignac-lang
