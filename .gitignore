@@ -44,3 +44,14 @@ Procfile
 .env
 .env.local
 *.env
+
+# Fichier de référence réconciliation (ne pas committer)
+data/reference_reconciliation.xlsx
+
+# Exports EB conservés par tenant (ne pas committer)
+data/reconciliation_uploads/
+
+# Cache des factures Pennylane parsées (partagé, ne pas committer)
+data/reconciliation_cache/
+.venv/
+*.lock
