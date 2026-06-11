@@ -26,9 +26,16 @@ fi
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$PROJECT_ROOT"
 
+# Interpréteur : le venv du projet s'il existe (pytest y est installé),
+# sinon python3 système — évite un faux blocage quand pytest n'est pas global.
+PYTHON="python3"
+if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
+    PYTHON="$PROJECT_ROOT/.venv/bin/python"
+fi
+
 # Les guards d'architecture eux-mêmes (4 tests, ~100 ms).
 echo "→ pre-push: running architecture guards..." >&2
-if ! python3 -m pytest tests/test_architecture_layers.py -q 2>&1 | tee /tmp/pre-push-output.txt; then
+if ! "$PYTHON" -m pytest tests/test_architecture_layers.py -q 2>&1 | tee /tmp/pre-push-output.txt; then
     echo "" >&2
     echo "✗ Architecture guards failed — push bloqué." >&2
     echo "  Corrige les violations (voir output ci-dessus) avant de repousser." >&2
