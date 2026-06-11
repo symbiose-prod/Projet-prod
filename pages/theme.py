@@ -71,6 +71,7 @@ NAV_ITEMS: list[tuple] = [
     ("history",        "Historique ramasses",  "/historique-ramasses"),
     ("inventory_2",    "Stocks",               "/stocks"),
     ("bar_chart",      "Commercial",            "/commercial"),
+    ("compare_arrows", "Réconciliation transport", "/reconciliation-transport"),
     # Groupe dépliable
     ("settings", "Paramètres", None, [
         ("menu_book",      "Instructions IA",      "/ressources"),
