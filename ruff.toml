@@ -27,6 +27,7 @@ ignore = [
 "pages/*.py" = ["E402", "E501"]  # UI modules: late imports + Quasar template strings
 "app_nicegui.py" = ["E402"]   # Late imports after dotenv loading
 "scripts/*.py" = ["E402"]     # Script-specific imports
+"core/reconciliation/*.py" = ["E702"]  # outil importé tel quel : parsing PDF avec `stmt; continue`
 
 [lint.isort]
 known-first-party = ["common", "core", "db", "pages"]
